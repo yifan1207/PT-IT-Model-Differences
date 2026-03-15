@@ -4,4 +4,18 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "circuit-tracer",
+    "einops>=0.8.2",
+    "huggingface-hub>=0.36.2",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.3",
+    "safetensors>=0.7.0",
+    "scipy>=1.17.1",
+    "torch>=2.10.0",
+    "tqdm>=4.67.3",
+    "transformer-lens>=2.17.0",
+]
+
+[tool.uv.sources]
+circuit-tracer = { git = "https://github.com/safety-research/circuit-tracer.git", rev = "26a976e" }
