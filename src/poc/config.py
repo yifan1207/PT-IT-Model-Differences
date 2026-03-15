@@ -11,7 +11,7 @@ class PocConfig:
     # circuit-tracer attribution settings
     max_n_logits: int = 10
     desired_logit_prob: float = 0.95
-    batch_size: int = 64           # lower to 32 for CPU memory safety
+    batch_size: int = 512          # H100: 512; MPS: 64; CPU: 32
     max_feature_nodes: int = 200
 
     output_path: str = "results/poc_results.json"

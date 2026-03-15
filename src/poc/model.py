@@ -22,7 +22,8 @@ def load_model(cfg) -> LoadedModel:
     )
     model.eval()
     # model.model is the HookedTransformer; W_U shape: [d_model, vocab_size]
-    W_U = model.model.W_U.detach().float()
+    # Keep on same device as model so logit-lens matmuls stay on GPU
+    W_U = model.model.W_U.detach().float().to(torch.device(cfg.device))
     return LoadedModel(model=model, W_U=W_U)
 
 
