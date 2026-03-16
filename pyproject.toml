@@ -19,3 +19,8 @@ dependencies = [
 
 [tool.uv.sources]
 circuit-tracer = { git = "https://github.com/safety-research/circuit-tracer.git", rev = "26a976e" }
+
+[dependency-groups]
+dev = [
+    "pyflakes>=3.4.0",
+]

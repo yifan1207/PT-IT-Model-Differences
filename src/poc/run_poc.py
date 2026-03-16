@@ -12,7 +12,6 @@ Usage:
     uv run python -m src.poc.run_poc --device cpu       # single CPU (slow)
 """
 import argparse
-import dataclasses
 import multiprocessing
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -24,12 +23,19 @@ from src.poc.attribution import run_attribution
 from src.poc.config import PocConfig
 from src.poc.model import get_token_id, load_model
 
-PROMPT_IDS = [
-    "A1", "A2", "A3", "A4", "A5",
-    "B1", "B2", "B3", "B4", "B5",
-    "C1", "C2", "C3", "C4", "C5",
-    "D1", "D2", "D3", "D4", "D5",
-]
+
+def _tagged_prompts(cfg: PocConfig) -> list[tuple[str, str, str]]:
+    """Flatten cfg.prompts dict → [(prompt, tok_str, prompt_id), ...].
+
+    prompt_id format: first letter of group (uppercase) + 1-based index.
+    "memorization" → M1, M2, ...   "reasoning" → R1, R2, ...
+    """
+    tagged = []
+    for group_name, group_prompts in cfg.prompts.items():
+        prefix = group_name[0].upper()
+        for i, (prompt, tok_str) in enumerate(group_prompts, 1):
+            tagged.append((prompt, tok_str, f"{prefix}{i}"))
+    return tagged
 
 
 def _gpu_worker(gpu_idx: int, prompt_items: list, cfg: PocConfig) -> list[dict]:
@@ -71,8 +77,7 @@ def _run_sequential(cfg: PocConfig) -> list[dict]:
     loaded = load_model(cfg)
     results = []
 
-    for idx, (prompt, tok_str) in enumerate(cfg.prompts):
-        prompt_id = PROMPT_IDS[idx]
+    for prompt, tok_str, prompt_id in _tagged_prompts(cfg):
         print(f"[{prompt_id}] '{prompt}'  →  '{tok_str}'")
         try:
             correct_id = get_token_id(loaded, tok_str)
@@ -81,7 +86,11 @@ def _run_sequential(cfg: PocConfig) -> list[dict]:
             continue
 
         t0 = time.time()
-        _, records = run_attribution(prompt, correct_id, prompt_id, loaded, cfg)
+        try:
+            _, records = run_attribution(prompt, correct_id, prompt_id, loaded, cfg)
+        except Exception as e:
+            print(f"  ERROR: attribution failed: {e}")
+            continue
         elapsed = time.time() - t0
 
         results.append(build_result(prompt, prompt_id, tok_str, records, elapsed))
@@ -90,9 +99,18 @@ def _run_sequential(cfg: PocConfig) -> list[dict]:
     return results
 
 
+def _default_device() -> str:
+    """Pick the best available device automatically."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--device", default="cuda", choices=["cuda", "mps", "cpu"])
+    parser.add_argument("--device", default=_default_device(), choices=["cuda", "mps", "cpu"])
     parser.add_argument("--gpus", nargs="+", type=int, default=None,
                         help="Specific GPU indices (default: all available)")
     args = parser.parse_args()
@@ -113,14 +131,17 @@ def main() -> None:
     # --- Multi-GPU path ---
     else:
         n_available = torch.cuda.device_count()
+        if n_available == 0:
+            raise RuntimeError("--device cuda specified but no CUDA GPUs found. Use --device cpu or --device mps.")
         gpu_indices = args.gpus if args.gpus else list(range(n_available))
         print(f"Found {n_available} CUDA GPUs. Using: {gpu_indices}")
         for i in gpu_indices:
             mem = torch.cuda.get_device_properties(i).total_memory / 1e9
             print(f"  GPU {i}: {torch.cuda.get_device_name(i)}  ({mem:.0f}GB)")
 
-        # Round-robin distribute prompts across GPUs
-        tagged = [(p, t, PROMPT_IDS[i]) for i, (p, t) in enumerate(cfg.prompts)]
+        tagged = _tagged_prompts(cfg)
+        order = {pid: i for i, (_, _, pid) in enumerate(tagged)}
+
         gpu_batches: dict[int, list] = {g: [] for g in gpu_indices}
         for i, item in enumerate(tagged):
             gpu_batches[gpu_indices[i % len(gpu_indices)]].append(item)
@@ -145,7 +166,6 @@ def main() -> None:
                 except Exception as e:
                     print(f"GPU {gpu_idx} failed: {e}")
 
-        order = {pid: i for i, pid in enumerate(PROMPT_IDS)}
         all_results.sort(key=lambda r: order.get(r["prompt_id"], 99))
         print(f"\nAll GPUs done in {time.time() - t_start:.1f}s total")
 

@@ -6,7 +6,7 @@ The research hypothesis (Claim 1 — Attribution Inversion):
   low-entropy (high-specificity) features, even though the latter do harder computation.
 
 We test this as a regression:
-  x = specificity(f) = logit_target / ||logit_vec||  (~0 = broad, ~1 = focused on target)
+  x = specificity(f) = logit_target / ||logit_vec||  (~-1 = suppresses target, ~0 = broad, ~+1 = promotes target)
   y = attribution(f) = |activation(f) × logit_target|
 
 If the slope is NEGATIVE, high-specificity features have smaller attribution → bias confirmed.
@@ -43,6 +43,12 @@ def run_regression(all_results: list[dict]) -> dict:
             xs.append(f["specificity"])
             ys.append(f["attribution"])
             group_labels.append(r["prompt_id"])
+
+    if len(xs) < 2:
+        raise ValueError(
+            f"Need ≥2 features for regression, got {len(xs)}. "
+            "Check that attribution ran successfully and features were collected."
+        )
 
     xs = np.array(xs)
     ys = np.array(ys)
@@ -97,8 +103,8 @@ def _print_regression_summary(stats: dict) -> None:
 
 def save_scatter_plot(xs: np.ndarray, ys: np.ndarray, group_labels: list[str],
                       stats: dict, path: str) -> None:
-    """Scatter plot of specificity vs attribution, colored by prompt group (A/B/C/D)."""
-    group_colors = {"A": "#e74c3c", "B": "#3498db", "C": "#2ecc71", "D": "#9b59b6"}
+    """Scatter plot of specificity vs attribution, colored by prompt group (M/R)."""
+    group_colors = {"M": "#e74c3c", "R": "#3498db"}
     default_color = "#95a5a6"
 
     fig, ax = plt.subplots(figsize=(8, 5))
