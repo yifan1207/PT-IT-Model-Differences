@@ -17,6 +17,7 @@ Key facts baked into this file:
   - BOS token added automatically by tokenizer. Prompts are raw text.
     Next token has a leading space (SentencePiece convention, e.g. " Paris").
 """
+import re
 import torch
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,6 +40,15 @@ class LoadedModel:
     model: ReplacementModel
     W_U: torch.Tensor  # [d_model, vocab_size] float32, on model device
     tokenizer: object  # HuggingFace tokenizer
+    # SingleLayerTranscoder objects indexed by layer, extracted before nnsight wraps them
+    # as Envoy proxies. Accessing model.transcoders[layer] via nnsight returns the whole
+    # ModuleList instead of a single transcoder; these references bypass that entirely.
+    transcoder_list: list  # list[SingleLayerTranscoder], len = n_layers
+    # Boolean mask [vocab_size] — True for real tokens, False for <unusedXXXX> placeholders.
+    # Gemma 3's 262k vocabulary has many unused slots whose W_U columns have high norms
+    # from initialization; masking them out prevents them from dominating W_dec @ W_U
+    # projections and corrupting N₉₀ / top-50 contribution metrics.
+    real_token_mask: torch.Tensor  # bool, shape [vocab_size], on model device
 
 
 def _load_transcoder_set(cfg) -> TranscoderSet:
@@ -85,6 +95,11 @@ def load_model(cfg) -> "LoadedModel":
 
     transcoder_set = _load_transcoder_set(cfg)
 
+    # Extract SingleLayerTranscoder references NOW, before nnsight wraps the TranscoderSet
+    # as Envoy proxies. After ReplacementModel is built, model.transcoders[layer] returns
+    # the whole ModuleList via nnsight's proxy instead of a single SingleLayerTranscoder.
+    transcoder_list = [transcoder_set[i] for i in range(len(transcoder_set))]
+
     print(f"  Loading {cfg.model_name} via {cfg.backend} backend ...")
     model = ReplacementModel.from_pretrained_and_transcoders(
         model_name=cfg.model_name,
@@ -101,7 +116,23 @@ def load_model(cfg) -> "LoadedModel":
     # Tokenizer: nnsight LanguageModel exposes .tokenizer directly
     tokenizer = model.tokenizer
 
-    return LoadedModel(model=model, W_U=W_U, tokenizer=tokenizer)
+    # Build real-token mask: True = real token, False = <unusedXXXX> placeholder.
+    # convert_ids_to_tokens returns the raw token string (e.g. "<unused123>") for each ID.
+    # We reject any token whose string matches the unused pattern.
+    vocab_size = W_U.shape[1]
+    all_token_strs = tokenizer.convert_ids_to_tokens(list(range(vocab_size)))
+    _unused_re = re.compile(r"^<unused\d+>$")
+    real_token_mask = torch.tensor(
+        [not _unused_re.match(t or "") for t in all_token_strs],
+        dtype=torch.bool,
+        device=device,
+    )
+    n_real = int(real_token_mask.sum().item())
+    print(f"  Vocabulary: {vocab_size} total, {n_real} real tokens, "
+          f"{vocab_size - n_real} <unusedXXXX> filtered")
+
+    return LoadedModel(model=model, W_U=W_U, tokenizer=tokenizer,
+                       transcoder_list=transcoder_list, real_token_mask=real_token_mask)
 
 
 def get_token_id(loaded: LoadedModel, token_str: str) -> int:

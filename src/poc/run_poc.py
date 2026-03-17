@@ -127,6 +127,13 @@ def main() -> None:
     else:
         cfg = PocConfig(device="cuda", dtype_str="bfloat16", batch_size=512)
 
+    print(f"Run dir  : {cfg.run_dir}/")
+    print(f"  variant: {cfg.transcoder_variant}")
+    print(f"  features: {cfg.max_feature_nodes}   logits: {cfg.max_n_logits}")
+    print(f"  results → {cfg.output_path}")
+    print(f"  scatter → {cfg.plot_path}")
+    print()
+
     # --- Single-device path ---
     if args.device != "cuda":
         print(f"Running on {args.device} (sequential)...")

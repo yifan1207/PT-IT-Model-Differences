@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -2321,6 +2321,7 @@ dependencies = [
     { name = "torch" },
     { name = "tqdm" },
     { name = "transformer-lens" },
+    { name = "transformers" },
 ]
 
 [package.dev-dependencies]
@@ -2340,6 +2341,7 @@ requires-dist = [
     { name = "torch", specifier = ">=2.10.0" },
     { name = "tqdm", specifier = ">=4.67.3" },
     { name = "transformer-lens", specifier = ">=2.17.0" },
+    { name = "transformers", specifier = ">=4.50.0" },
 ]
 
 [package.metadata.requires-dev]

@@ -52,7 +52,7 @@ def make_plot(results: list[dict], output_path: str) -> None:
 
     fig, ax = plt.subplots(figsize=(10, 6))
     sc = ax.scatter(positions, layers, c=log_n90s, cmap="coolwarm_r",
-                    s=sizes, alpha=0.5, linewidths=0)
+                    s=sizes, alpha=0.5, linewidths=0, rasterized=True)
     cbar = plt.colorbar(sc, ax=ax)
     cbar.set_label("log(N₉₀)  — cool=narrow/specific, warm=broad/distributional", fontsize=9)
 

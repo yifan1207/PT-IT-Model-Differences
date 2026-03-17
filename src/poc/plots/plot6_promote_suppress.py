@@ -49,7 +49,7 @@ def make_plot(results: list[dict], output_path: str) -> None:
 
     fig, ax = plt.subplots(figsize=(8, 5))
     sc = ax.scatter(xs, ys, c=attribs, cmap="plasma", alpha=0.4, s=15, linewidths=0,
-                    norm=norm)
+                    norm=norm, rasterized=True)
     plt.colorbar(sc, ax=ax, label="attribution  |activation × logit_target|")
 
     ax.set_xlabel("promote_ratio  [Σmax(c,0) / Σ|c|]  — 0=suppress, 1=promote", fontsize=11)

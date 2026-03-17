@@ -90,7 +90,7 @@ def _extract_records(graph, correct_token_id: int, prompt_id: str,
             int(graph.active_features[graph.selected_features[i]][2])
             for i in sel_indices
         ]
-        transcoder = loaded.model.transcoders[layer]
+        transcoder = loaded.transcoder_list[layer]
         # float() cast for precision; both W_dec and W_U are on the model device
         batch_logit_vecs = transcoder.W_dec[feat_idxs].float() @ loaded.W_U  # [n, vocab_size]
 
@@ -100,19 +100,24 @@ def _extract_records(graph, correct_token_id: int, prompt_id: str,
             logit_vec = batch_logit_vecs[j]  # [vocab_size], on model device
 
             data[sel_idx] = _compute_feature_metrics(
-                activation, logit_vec, correct_token_id, tokenizer
+                activation, logit_vec, correct_token_id, tokenizer, loaded.real_token_mask
             )
 
     # Phase 2: build FeatureRecord list
-    # incoming_edge_count: number of active features with non-negligible edges into this one
-    # adj rows=target, cols=source; first n_active cols correspond to active_features
-    adj = graph.adjacency_matrix  # [n_nodes, n_nodes]
-    n_active = graph.active_features.shape[0]
+    # incoming_edge_count: number of selected features with non-negligible edges into this one.
+    #
+    # Adjacency matrix layout (from circuit-tracer attribute_nnsight.py):
+    #   rows/cols: [selected_features(0..n_sel-1), error_nodes, embed_nodes, logit_nodes]
+    # When max_feature_nodes < total_active_feats, circuit-tracer prunes the matrix to only
+    # the n_selected columns/rows — NOT all n_active. So we must index by sel_idx (0..n_sel-1),
+    # NOT by active_idx (0..n_active-1, which can be >> n_sel and cause out-of-bounds errors).
+    adj = graph.adjacency_matrix
+    n_selected = n_features  # first n_selected rows/cols are the selected feature nodes
     records = []
     for sel_idx in range(n_features):
         active_idx = int(graph.selected_features[sel_idx])
         layer, pos, feat_idx = graph.active_features[active_idx].tolist()
-        incoming = int((adj[active_idx, :n_active].abs() > 1e-4).sum().item())
+        incoming = int((adj[sel_idx, :n_selected].abs() > 1e-4).sum().item())
         d = data[sel_idx]
         records.append(FeatureRecord(
             feature_idx=int(feat_idx),
@@ -127,48 +132,63 @@ def _extract_records(graph, correct_token_id: int, prompt_id: str,
 
 
 def _compute_feature_metrics(activation: float, logit_vec: torch.Tensor,
-                              correct_token_id: int, tokenizer) -> dict:
-    """Compute all scalar metrics and top-50 contributions from one feature's logit vector."""
+                              correct_token_id: int, tokenizer,
+                              real_token_mask: torch.Tensor) -> dict:
+    """Compute all scalar metrics and top-50 contributions from one feature's logit vector.
+
+    real_token_mask: bool tensor [vocab_size] — True for real tokens, False for <unusedXXXX>.
+    N₉₀, N₅₀, promote_ratio, and top-50 contributions are computed over real tokens only,
+    so that high-norm unused placeholder tokens (which have no semantic meaning) do not
+    dominate the distributional broadness metric or the heatmap display.
+    logit_target, logit_norm, logit_entropy, top1, and correct_token_rank use the full
+    logit_vec (including unused tokens) because they are point-wise or norm queries.
+    """
     # c(f) = activation × logit_vec  — the actual contribution to each token's logit
     c_vec = activation * logit_vec
-    abs_c = c_vec.abs()
-    total_mass = abs_c.sum().item()
 
-    # Logit-lens metrics
+    # Logit-lens metrics (full vocab — point-wise queries, not affected by unused tokens)
     logit_target = logit_vec[correct_token_id].item()
     logit_norm = logit_vec.norm().item()
     p = torch.softmax(logit_vec, dim=-1)
     logit_entropy = float(-(p * torch.log(p.clamp(min=1e-10))).sum())
 
-    # What token does this feature most promote? (interpretability)
-    top1_token_id = int(logit_vec.argmax().item())
+    # What token does this feature most promote? Restrict to real tokens for interpretability.
+    masked_logit_vec = logit_vec.clone()
+    masked_logit_vec[~real_token_mask] = -torch.inf
+    top1_token_id = int(masked_logit_vec.argmax().item())
     top1_token_str = _safe_decode(tokenizer, top1_token_id)
 
-    # Rank of the correct token in the logit distribution (1 = top prediction)
-    correct_token_rank = int((logit_vec > logit_vec[correct_token_id]).sum().item()) + 1
+    # Rank of the correct token among real tokens only
+    real_logit_at_target = logit_vec[correct_token_id]
+    correct_token_rank = int(
+        ((logit_vec > real_logit_at_target) & real_token_mask).sum().item()
+    ) + 1
 
-    # Nₓ: fewest tokens whose |c(f)| values sum to ≥x% of Σ|c(f)|
-    # Formula: (cumsum < threshold).sum() + 1 counts the index where cumsum
-    # first reaches the threshold, i.e. the minimum number of tokens needed.
+    # Broadness metrics over real tokens only — mask out <unusedXXXX> contributions
+    c_vec_real = c_vec.clone()
+    c_vec_real[~real_token_mask] = 0.0
+    abs_c_real = c_vec_real.abs()
+    total_mass = abs_c_real.sum().item()
+
+    # Nₓ: fewest real tokens whose |c(f)| values sum to ≥x% of Σ|c(f)| over real tokens.
     if total_mass > 0:
-        sorted_abs = abs_c.sort(descending=True).values
+        sorted_abs = abs_c_real.sort(descending=True).values
         cumsum = sorted_abs.cumsum(0)
         n50 = int((cumsum < 0.5 * total_mass).sum().item()) + 1
         n90 = int((cumsum < 0.9 * total_mass).sum().item()) + 1
     else:
-        # Zero total mass (all-zero W_dec row) — feature has no distributional effect.
-        # Shouldn't occur with trained transcoders; mark as -1 to distinguish from valid n90.
+        # Zero total mass — mark as -1 to distinguish from valid n90.
         n50 = -1
         n90 = -1
 
-    # promote_ratio: fraction of total |contribution| that is positive (promotion vs suppression)
-    pos_mass = c_vec.clamp(min=0).sum().item()
+    # promote_ratio: fraction of real-token |contribution| that is positive
+    pos_mass = c_vec_real.clamp(min=0).sum().item()
     promote_ratio = pos_mass / (total_mass + 1e-10)
 
-    # Top-50 tokens by absolute contribution — used by heatmap (Plot 5).
+    # Top-50 real tokens by absolute contribution — used by heatmap (Plot 5).
     # Batch decode all token IDs at once (50x faster than individual decode calls).
-    top_k = min(50, int(abs_c.numel()))
-    _, top50_idxs = abs_c.topk(top_k)
+    top_k = min(50, int(real_token_mask.sum().item()))
+    _, top50_idxs = abs_c_real.topk(top_k)
     top50_ids = top50_idxs.tolist()
     top50_strs = _batch_decode(tokenizer, top50_ids)
     top50_contributions = [

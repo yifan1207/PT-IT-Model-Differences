@@ -3,31 +3,53 @@ from dataclasses import dataclass, field
 
 @dataclass
 class PocConfig:
+    # ----------------------------------------------------------------- run dir
+    # All output paths are derived automatically from the key hyperparameters:
+    #   transcoder_variant + max_feature_nodes + max_n_logits
+    # giving e.g. results/16k_l0_big_affine_f500_k25/
+    # This means different hyperparameter sweeps never overwrite each other.
     # ------------------------------------------------------------------ model
     model_name: str = "google/gemma-3-4b-pt"          # base (pretrained) model — sentence completion
     transcoder_set: str = "google/gemma-scope-2-4b-pt" # Gemma Scope 2 transcoders, all layers
     backend: str = "nnsight"                            # nnsight required for Gemma 3
 
-    device: str = "cpu"        # override: "mps" (Apple Silicon), "cuda" (NVIDIA)
+    device: str = "cuda"        # override: "mps" (Apple Silicon), "cuda" (NVIDIA)
     dtype_str: str = "float32" # "bfloat16" on GPU
 
     # ---------------------------------------------------------------- transcoder variant
-    # google/gemma-scope-2-4b-pt has 18 variants per layer:
-    #   width  : 16k | 65k | 262k     (feature dictionary size; 262k = 262,144 features)
-    #   l0     : small (~10-20 active) | medium (~30-60 active) | big (~60-150 active)
+    # google/gemma-scope-2-4b-pt transcoder_all has 8 variants per layer:
+    #   width  : 16k | 262k           (65k does NOT exist in transcoder_all)
+    #   l0     : small (~10-20 active) | big (~60-150 active)   (no medium)
     #   affine : plain | _affine (adds W_skip affine skip connection)
-    # Using 65k + medium + affine — 4× richer than 16k, fits on single H100, captures skip connection
-    transcoder_variant: str = "width_65k_l0_medium_affine"
+    # Using 16k + big + affine — fits on single H100, captures skip connection, maximises active features.
+    # (262k would require ~146 GB VRAM, exceeding H100's 80 GB)
+    transcoder_variant: str = "width_16k_l0_big_affine"
 
     # -------------------------------------------------------- circuit-tracer
-    max_n_logits: int = 10
+    max_n_logits: int = 25
     desired_logit_prob: float = 0.95
     batch_size: int = 512       # H100: 512; MPS: 64; CPU: 32
-    max_feature_nodes: int = 200
+    max_feature_nodes: int = 500
 
     # ------------------------------------------------------------ output paths
-    output_path: str = "results/poc_results.json"
-    plot_path: str = "results/specificity_vs_attribution.png"
+    # Computed in __post_init__ from the key hyperparameters — do not set manually.
+    output_path: str = field(init=False)
+    plot_path: str = field(init=False)
+
+    def __post_init__(self) -> None:
+        rd = self.run_dir
+        self.output_path = f"{rd}/poc_results.json"
+        self.plot_path = f"{rd}/scatter.png"
+
+    @property
+    def run_dir(self) -> str:
+        """Unique output directory for this hyperparameter combination.
+
+        Format: results/{variant}_f{max_feature_nodes}_k{max_n_logits}
+        Example: results/16k_l0_big_affine_f500_k25
+        """
+        variant = self.transcoder_variant.replace("width_", "")
+        return f"results/{variant}_f{self.max_feature_nodes}_k{self.max_n_logits}"
 
     # ---------------------------------------------------------------- prompts
     # Two groups: "memorization" (direct retrieval) and "reasoning" (computation/composition).
@@ -117,11 +139,11 @@ class PocConfig:
             ("aa:2, bbb:3, cccc: ",                                   "4"),
 
             # --- multi-step reasoning (natural answer type constraint) ---
-            ("The square root of 9 is",                              " 3"),
-            ("Half of a dozen is",                                   " 6"),
-            ("A baker's dozen minus a dozen is",                     " 1"),
-            ("The number of vowels in the word hello is",            " 2"),
-            ("The next prime after 7 is",                            " 1"),  # first digit of 11
+            ("The square root of 9 is ",                              "3"),
+            ("Half of a dozen is ",                                   "6"),
+            ("A baker's dozen minus a dozen is ",                     "1"),
+            ("The number of vowels in the word hello is ",            "2"),
+            ("The next prime after 7 is ",                            "1"),  # first digit of 11
 
             # --- analogies (structural relational mapping) ---
             ("Hot is to cold as day is to",                          " night"),
@@ -136,14 +158,14 @@ class PocConfig:
             ("Every prime greater than 2 is odd. 7 is prime and greater than 2. 7 is",  " odd"),
 
             # --- arithmetic embedded in language ---
-            ("Two squared equals",                                   " 4"),
-            ("The square root of 4 is",                              " 2"),
-            ("Half of 8 is",                                         " 4"),
-            ("A dozen minus 9 equals",                               " 3"),
+            ("Two squared equals ",                                   "4"),
+            ("The square root of 4 is ",                              "2"),
+            ("Half of 8 is ",                                         "4"),
+            ("A dozen minus 9 equals ",                               "3"),
 
             # --- numeric sequences ---
-            ("9, 7, 5, 3,",                                         " 1"),
-            ("1+1=2, 2+2=4, 3+3=",                                  " 6"),
+            ("9, 7, 5, 3, ",                                         "1"),
+            ("1+1=2, 2+2=4, 3+3= ",                                  "6"),
 
             # --- word structure ---
             ("The word 'was' spelled backwards is",                  " saw"),

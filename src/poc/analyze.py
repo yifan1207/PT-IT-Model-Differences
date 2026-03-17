@@ -132,10 +132,17 @@ def save_scatter_plot(xs: np.ndarray, ys: np.ndarray, group_labels: list[str],
 
     fig, ax = plt.subplots(figsize=(8, 5))
 
-    for label, x, y in zip(group_labels, xs, ys):
-        group = label[0] if label else "?"
-        color = group_colors.get(group, default_color)
-        ax.scatter(x, y, color=color, alpha=0.35, s=12)
+    # One vectorized scatter call per group (not one per point — that would be 29k calls)
+    labels_arr = np.array([lbl[0] if lbl else "?" for lbl in group_labels])
+    for group, color in group_colors.items():
+        mask = labels_arr == group
+        if mask.any():
+            ax.scatter(xs[mask], ys[mask], color=color, alpha=0.35, s=12,
+                       linewidths=0, rasterized=True, label=f"Group {group}")
+    other = ~np.isin(labels_arr, list(group_colors))
+    if other.any():
+        ax.scatter(xs[other], ys[other], color=default_color, alpha=0.35, s=12,
+                   linewidths=0, rasterized=True)
 
     # OLS regression line
     x_line = np.linspace(xs.min(), xs.max(), 200)
@@ -146,10 +153,7 @@ def save_scatter_plot(xs: np.ndarray, ys: np.ndarray, group_labels: list[str],
         f"Pearson r={stats['pearson_r']:+.3f}"
     ))
 
-    # Legend for groups
-    for group, color in group_colors.items():
-        ax.scatter([], [], color=color, alpha=0.7, s=30,
-                   label=f"Group {group}")
+    # (legend labels already set in scatter calls above)
 
     ax.set_xlabel("log(N₉₀)  [tokens for 90% of |contribution| mass]", fontsize=11)
     ax.set_ylabel("log(attribution)  [log |activation × logit_target|]", fontsize=11)

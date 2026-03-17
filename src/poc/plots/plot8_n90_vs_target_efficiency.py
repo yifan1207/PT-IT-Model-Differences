@@ -52,7 +52,7 @@ def make_plot(results: list[dict], output_path: str) -> None:
     slope, intercept, *_ = linregress(xs, ys)
 
     fig, ax = plt.subplots(figsize=(8, 5))
-    ax.scatter(xs, ys, c=colors, alpha=0.3, s=12, linewidths=0)
+    ax.scatter(xs, ys, c=colors, alpha=0.3, s=12, linewidths=0, rasterized=True)
 
     x_line = np.linspace(xs.min(), xs.max(), 200)
     ax.plot(x_line, slope * x_line + intercept, color="black", lw=1.5,
