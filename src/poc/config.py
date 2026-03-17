@@ -71,23 +71,23 @@ class PocConfig:
             ("The Earth orbits the",           " Sun"),
 
             # --- memorized arithmetic (single-digit results) ---
-            ("3 x 2 is",                       " 6"),
-            ("4 + 5 is",                       " 9"),
-            ("9 - 3 is",                       " 6"),
-            ("8 - 1 is",                       " 7"),
-            ("2 x 4 is",                       " 8"),
-            ("7 - 4 is",                       " 3"),
-            ("3 + 4 is",                       " 7"),
-            ("6 / 2 is",                       " 3"),
-            ("5 - 2 is",                       " 3"),
-            ("2 + 6 is",                       " 8"),
+            ("3 x 2 is ",                       "6"),
+            ("4 + 5 is ",                       "9"),
+            ("9 - 3 is ",                       "6"),
+            ("8 - 1 is ",                       "7"),
+            ("2 x 4 is ",                       "8"),
+            ("7 - 4 is ",                       "3"),
+            ("3 + 4 is ",                       "7"),
+            ("6 / 2 is ",                       "3"),
+            ("5 - 2 is ",                       "3"),
+            ("2 + 6 is ",                       "8"),
 
             # --- languages ---
             ("People in France speak",         " French"),
             ("People in Germany speak",        " German"),
             ("People in Japan speak",          " Japanese"),
             ("People in Brazil speak",         " Portuguese"),
-            ("People in China speak",          " Chinese"),
+            ("People in Czech Republic speak", " Czech"),
         ],
 
         # ==================================================================
@@ -97,9 +97,9 @@ class PocConfig:
         "reasoning": [
 
             # --- OOCR: compose two facts → single answer ---
-            ("The language spoken in the capital of Japan is",       " Japanese"),
-            ("The language spoken in the capital of France is",      " French"),
-            ("The language spoken in the capital of Brazil is",      " Portuguese"),
+            ("The language spoken in Tokyo is",       " Japanese"),
+            ("The language spoken in Marseille is",      " French"),
+            ("The language spoken in Sao Paulo is",      " Portuguese"),
             ("The continent where the Eiffel Tower is located is",   " Europe"),
             ("The continent where the Pyramids are located is",      " Africa"),
             ("The color of the sky on Mars is",                      " red"),
@@ -109,12 +109,12 @@ class PocConfig:
             ("The currency used in the land of sushi is the",        " yen"),
 
             # --- ICL novel operations (answer type from pattern) ---
-            ("f(1)=3, f(2)=5, f(0)=",                               " 1"),
-            ("f(1)=2, f(2)=4, f(3)=6, f(4)=",                       " 8"),
-            ("f(0)=1, f(1)=3, f(2)=5, f(3)=",                       " 7"),
-            ("3#1=4, 2#5=7, 4#4=",                                   " 8"),
-            ("3#1=2, 5#2=3, 7#3=",                                   " 4"),
-            ("aa:2, bbb:3, cccc:",                                   " 4"),
+            ("f(1)=3, f(2)=5, f(0)= ",                               "1"),
+            ("f(1)=2, f(2)=4, f(3)=6, f(4)= ",                       "8"),
+            ("f(0)=1, f(1)=3, f(2)=5, f(3)= ",                       "7"),
+            ("3#1=4, 2#5=7, 4#4= ",                                   "8"),
+            ("3#1=2, 5#2=3, 7#3= ",                                   "4"),
+            ("aa:2, bbb:3, cccc: ",                                   "4"),
 
             # --- multi-step reasoning (natural answer type constraint) ---
             ("The square root of 9 is",                              " 3"),
