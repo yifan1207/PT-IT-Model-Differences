@@ -62,7 +62,11 @@ def _gpu_worker(gpu_idx: int, prompt_items: list, cfg: PocConfig) -> list[dict]:
             continue
 
         t0 = time.time()
-        _, records = run_attribution(prompt, correct_id, prompt_id, loaded, cfg)
+        try:
+            _, records = run_attribution(prompt, correct_id, prompt_id, loaded, cfg)
+        except Exception as e:
+            print(f"[GPU{gpu_idx}] ERROR [{prompt_id}]: attribution failed: {e}", flush=True)
+            continue
         elapsed = time.time() - t0
 
         result = build_result(prompt, prompt_id, tok_str, records, elapsed)

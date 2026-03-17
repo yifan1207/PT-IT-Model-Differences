@@ -122,5 +122,31 @@ class PocConfig:
             ("A baker's dozen minus a dozen is",                     " 1"),
             ("The number of vowels in the word hello is",            " 2"),
             ("The next prime after 7 is",                            " 1"),  # first digit of 11
+
+            # --- analogies (structural relational mapping) ---
+            ("Hot is to cold as day is to",                          " night"),
+            ("Paris is to France as Rome is to",                     " Italy"),
+            ("Fast is to slow as dark is to",                        " light"),
+            ("Sister is to brother as aunt is to",                   " uncle"),
+            ("Dog is to bark as cat is to",                          " me"),   # first token of "meow"
+
+            # --- syllogisms and logical deduction ---
+            ("All fish live in water. A salmon is a fish. A salmon lives in",  " water"),
+            ("If penguins are birds and all birds have wings, penguins have",   " wings"),
+            ("Every prime greater than 2 is odd. 7 is prime and greater than 2. 7 is",  " odd"),
+
+            # --- arithmetic embedded in language ---
+            ("Two squared equals",                                   " 4"),
+            ("The square root of 4 is",                              " 2"),
+            ("Half of 8 is",                                         " 4"),
+            ("A dozen minus 9 equals",                               " 3"),
+
+            # --- numeric sequences ---
+            ("9, 7, 5, 3,",                                         " 1"),
+            ("1+1=2, 2+2=4, 3+3=",                                  " 6"),
+
+            # --- word structure ---
+            ("The word 'was' spelled backwards is",                  " saw"),
+            ("The opposite of the word 'false' is",                  " true"),
         ],
     })

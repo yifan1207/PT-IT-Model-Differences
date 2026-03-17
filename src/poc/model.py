@@ -70,7 +70,7 @@ def _load_transcoder_set(cfg) -> TranscoderSet:
             lazy_encoder=False, lazy_decoder=False,
         )
 
-    scan = f"{repo_id}//transcoder_all/{variant}"
+    scan = f"{repo_id}/transcoder_all/{variant}"
     return TranscoderSet(
         transcoders,
         feature_input_hook=_FEATURE_INPUT_HOOK,

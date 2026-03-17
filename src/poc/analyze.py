@@ -1,17 +1,28 @@
 """
-Continuous correlation analysis: specificity vs. attribution magnitude.
+Continuous correlation analysis: broadness (N₉₀) vs. attribution magnitude.
 
 The research hypothesis (Claim 1 — Attribution Inversion):
-  High-entropy (low-specificity) features get systematically HIGHER attribution than
-  low-entropy (high-specificity) features, even though the latter do harder computation.
+  Broad features (high N₉₀) get systematically HIGHER attribution than specific features
+  (low N₉₀), even though the latter do harder computation.
 
 We test this as a regression:
-  x = specificity(f) = logit_target / ||logit_vec||  (~-1 = suppresses target, ~0 = broad, ~+1 = promotes target)
-  y = attribution(f) = |activation(f) × logit_target|
+  x = log(N₉₀(f))      — unsigned broadness; high = spreads contribution across many tokens
+  y = log(attribution)  = log(|activation(f) × logit_target(f)|)
 
-If the slope is NEGATIVE, high-specificity features have smaller attribution → bias confirmed.
+If the slope is POSITIVE, broad features have higher attribution → bias confirmed.
+
+Note: N₉₀ is used instead of signed specificity (logit_target / logit_norm) because
+specificity conflates two orthogonal dimensions — broadness (specificity ≈ 0) and
+suppression direction (specificity < 0). A strong suppressor scores low on signed
+specificity but is not broad; using it as a proxy for broadness confounds the test.
+N₉₀ directly measures distributional breadth regardless of promotion/suppression direction.
+
+Limitation: the same (layer, feature_idx) can appear across multiple prompts. Pooled
+p-values treat each occurrence as independent, which overstates significance. Treat
+p-values as indicative, not exact, for this POC.
 """
 import json
+import math
 from dataclasses import asdict
 from pathlib import Path
 
@@ -32,16 +43,21 @@ def build_result(prompt: str, prompt_id: str, correct_token: str,
     }
 
 
-def run_regression(all_results: list[dict]) -> dict:
+def run_regression(all_results: list[dict]) -> tuple[dict, np.ndarray, np.ndarray, list[str]]:
     """
-    Pool all (specificity, attribution) pairs across all prompts and run correlation analysis.
+    Pool all (log_n90, log_attribution) pairs across all prompts and run correlation analysis.
+    Skips features with n90 <= 0 (sentinel) or attribution <= 0 (can't log-transform).
     Returns a stats dict and prints a summary.
     """
     xs, ys, group_labels = [], [], []
     for r in all_results:
         for f in r["features"]:
-            xs.append(f["specificity"])
-            ys.append(f["attribution"])
+            n90 = f["n90"]
+            attr = f["attribution"]
+            if n90 <= 0 or attr <= 0:
+                continue
+            xs.append(math.log(n90))
+            ys.append(math.log(attr))
             group_labels.append(r["prompt_id"])
 
     if len(xs) < 2:
@@ -57,21 +73,25 @@ def run_regression(all_results: list[dict]) -> dict:
     spearman_r, spearman_p = spearmanr(xs, ys)
     slope, intercept, r_value, p_value, std_err = linregress(xs, ys)
 
+    # Replace NaN stats (e.g. constant xs/ys) with None for valid JSON serialization
+    def _safe(v: float) -> float | None:
+        return None if (v is None or math.isnan(v) or math.isinf(v)) else v
+
     stats = {
         "n_features_total": len(xs),
         "n_prompts": len(all_results),
-        "pearson_r": round(float(pearson_r), 4),
-        "pearson_p": float(pearson_p),
-        "spearman_r": round(float(spearman_r), 4),
-        "spearman_p": float(spearman_p),
-        "ols_slope": round(float(slope), 6),
-        "ols_intercept": round(float(intercept), 6),
-        "ols_r_squared": round(float(r_value ** 2), 4),
-        "ols_p_value": float(p_value),
-        "specificity_mean": round(float(xs.mean()), 4),
-        "specificity_std": round(float(xs.std()), 4),
-        "attribution_mean": round(float(ys.mean()), 6),
-        "attribution_std": round(float(ys.std()), 6),
+        "pearson_r": _safe(round(float(pearson_r), 4)),
+        "pearson_p": _safe(float(pearson_p)),
+        "spearman_r": _safe(round(float(spearman_r), 4)),
+        "spearman_p": _safe(float(spearman_p)),
+        "ols_slope": _safe(round(float(slope), 6)),
+        "ols_intercept": _safe(round(float(intercept), 6)),
+        "ols_r_squared": _safe(round(float(r_value ** 2), 4)),
+        "ols_p_value": _safe(float(p_value)),
+        "log_n90_mean": round(float(xs.mean()), 4),
+        "log_n90_std": round(float(xs.std()), 4),
+        "log_attribution_mean": round(float(ys.mean()), 6),
+        "log_attribution_std": round(float(ys.std()), 6),
     }
 
     _print_regression_summary(stats)
@@ -80,30 +100,33 @@ def run_regression(all_results: list[dict]) -> dict:
 
 def _print_regression_summary(stats: dict) -> None:
     print("\n" + "=" * 60)
-    print("REGRESSION: specificity  →  attribution magnitude")
+    print("REGRESSION: log(N₉₀)  →  log(attribution magnitude)")
     print("=" * 60)
     print(f"  N features pooled    : {stats['n_features_total']} across {stats['n_prompts']} prompts")
-    print(f"  Specificity range    : mean={stats['specificity_mean']:.4f}  std={stats['specificity_std']:.4f}")
-    print(f"  Attribution range    : mean={stats['attribution_mean']:.6f}  std={stats['attribution_std']:.6f}")
+    print(f"  log(N₉₀) range      : mean={stats['log_n90_mean']:.4f}  std={stats['log_n90_std']:.4f}")
+    print(f"  log(attr) range     : mean={stats['log_attribution_mean']:.6f}  std={stats['log_attribution_std']:.6f}")
     print()
     print(f"  Pearson  r = {stats['pearson_r']:+.4f}   p = {stats['pearson_p']:.2e}")
     print(f"  Spearman r = {stats['spearman_r']:+.4f}   p = {stats['spearman_p']:.2e}")
     print(f"  OLS slope  = {stats['ols_slope']:+.6f}   R² = {stats['ols_r_squared']:.4f}   p = {stats['ols_p_value']:.2e}")
     print()
 
-    if stats["pearson_r"] < -0.1 and stats["pearson_p"] < 0.05:
-        print("  ✓ ATTRIBUTION BIAS CONFIRMED: specificity negatively correlates with attribution.")
-        print("    High-entropy (broad) features dominate attribution; hard computation is invisible.")
-    elif stats["pearson_r"] < 0:
-        print("  ~ Negative trend present but weak or not significant.")
+    if stats["pearson_r"] is not None:
+        if stats["pearson_r"] > 0.1 and stats["pearson_p"] < 0.05:
+            print("  ✓ ATTRIBUTION BIAS CONFIRMED: broad features (high N₉₀) have higher attribution.")
+            print("    High-entropy features dominate attribution; specific computation is invisible.")
+        elif stats["pearson_r"] > 0:
+            print("  ~ Positive trend present but weak or not significant.")
+        else:
+            print("  ✗ No positive correlation. Hypothesis not supported (or thresholds need checking).")
     else:
-        print("  ✗ No negative correlation. Hypothesis not supported (or thresholds need checking).")
+        print("  ~ Regression produced NaN (constant input?). Check data.")
     print("=" * 60)
 
 
 def save_scatter_plot(xs: np.ndarray, ys: np.ndarray, group_labels: list[str],
                       stats: dict, path: str) -> None:
-    """Scatter plot of specificity vs attribution, colored by prompt group (M/R)."""
+    """Scatter plot of log(N₉₀) vs log(attribution), colored by prompt group (M/R)."""
     group_colors = {"M": "#e74c3c", "R": "#3498db"}
     default_color = "#95a5a6"
 
@@ -128,10 +151,10 @@ def save_scatter_plot(xs: np.ndarray, ys: np.ndarray, group_labels: list[str],
         ax.scatter([], [], color=color, alpha=0.7, s=30,
                    label=f"Group {group}")
 
-    ax.set_xlabel("Specificity  (logit_target / ||logit_vec||)", fontsize=11)
-    ax.set_ylabel("Attribution magnitude  |activation × logit_target|", fontsize=11)
-    ax.set_title("Attribution Inversion: does specificity predict attribution?", fontsize=12)
-    ax.legend(fontsize=8, loc="upper right")
+    ax.set_xlabel("log(N₉₀)  [tokens for 90% of |contribution| mass]", fontsize=11)
+    ax.set_ylabel("log(attribution)  [log |activation × logit_target|]", fontsize=11)
+    ax.set_title("Attribution Inversion: do broad features dominate attribution?", fontsize=12)
+    ax.legend(fontsize=8, loc="lower right")
     ax.grid(True, alpha=0.3)
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
