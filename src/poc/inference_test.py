@@ -24,7 +24,7 @@ import argparse
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
-from src.poc.config import PocConfig
+from src.poc.exp1.config import PocConfig
 
 
 def run_test(device: str, topk: int = 5) -> None:

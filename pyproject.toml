@@ -16,6 +16,7 @@ dependencies = [
     "transformers>=4.50.0",
     "tqdm>=4.67.3",
     "transformer-lens>=2.17.0",
+    "pytest>=9.0.2",
 ]
 
 [tool.uv.sources]

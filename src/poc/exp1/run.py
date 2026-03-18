@@ -18,10 +18,10 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import torch
 
-from src.poc.analyze import build_result, run_regression, save_results, save_scatter_plot
-from src.poc.attribution import run_attribution
-from src.poc.config import PocConfig
-from src.poc.model import get_token_id, load_model
+from src.poc.exp1.analyze import build_result, run_regression, save_results, save_scatter_plot
+from src.poc.shared.attribution import run_attribution
+from src.poc.exp1.config import PocConfig
+from src.poc.shared.model import get_token_id, load_model
 
 
 def _tagged_prompts(cfg: PocConfig) -> list[tuple[str, str, str]]:
@@ -46,9 +46,9 @@ def _gpu_worker(gpu_idx: int, prompt_items: list, cfg: PocConfig) -> list[dict]:
     """
     import dataclasses
     import time
-    from src.poc.attribution import run_attribution
-    from src.poc.analyze import build_result
-    from src.poc.model import load_model, get_token_id
+    from src.poc.shared.attribution import run_attribution
+    from src.poc.exp1.analyze import build_result
+    from src.poc.shared.model import load_model, get_token_id
 
     cfg = dataclasses.replace(cfg, device=f"cuda:{gpu_idx}")
     loaded = load_model(cfg)

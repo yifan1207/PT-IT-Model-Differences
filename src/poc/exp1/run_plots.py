@@ -14,16 +14,16 @@ import argparse
 import json
 from pathlib import Path
 
-from src.poc.plots.plot1_n90_vs_attribution import make_plot as plot1
-from src.poc.plots.plot2_decomposition import make_plot as plot2
-from src.poc.plots.plot3_activation_vs_n90 import make_plot as plot3
-from src.poc.plots.plot4_n90_histogram import make_plot as plot4
-from src.poc.plots.plot5_contribution_heatmap import make_plot as plot5
-from src.poc.plots.plot6_promote_suppress import make_plot as plot6
-from src.poc.plots.plot7_position_layer import make_plot as plot7
-from src.poc.plots.plot8_n90_vs_target_efficiency import make_plot as plot8
-from src.poc.plots.plot9_activation_cv_vs_n90 import make_plot as plot9
-from src.poc.plots.plot10_layer_n90_progression import make_plot as plot10
+from src.poc.exp1.plots.plot1_n90_vs_attribution import make_plot as plot1
+from src.poc.exp1.plots.plot2_decomposition import make_plot as plot2
+from src.poc.exp1.plots.plot3_activation_vs_n90 import make_plot as plot3
+from src.poc.exp1.plots.plot4_n90_histogram import make_plot as plot4
+from src.poc.exp1.plots.plot5_contribution_heatmap import make_plot as plot5
+from src.poc.exp1.plots.plot6_promote_suppress import make_plot as plot6
+from src.poc.exp1.plots.plot7_position_layer import make_plot as plot7
+from src.poc.exp1.plots.plot8_n90_vs_target_efficiency import make_plot as plot8
+from src.poc.exp1.plots.plot9_activation_cv_vs_n90 import make_plot as plot9
+from src.poc.exp1.plots.plot10_layer_n90_progression import make_plot as plot10
 
 
 def _latest_results() -> str:

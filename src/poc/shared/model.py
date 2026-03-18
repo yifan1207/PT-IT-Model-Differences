@@ -2,14 +2,14 @@
 Model loading for Gemma 3 4B PT + Gemma Scope 2 transcoders.
 
 Key facts baked into this file:
-  - google/gemma-3-4b-pt loads as Gemma3ForCausalLM (text-only causal LM).
-    Do NOT use the instruct variant (-it) or the multimodal class
-    (Gemma3ForConditionalGeneration) — we want raw next-token prediction.
+  - google/gemma-3-4b-pt currently loads through the Gemma3ForConditionalGeneration
+    path used by circuit-tracer/nnsight, even though we use it for raw text-only
+    next-token prediction.
   - google/gemma-scope-2-4b-pt has NO top-level config.yaml that circuit-tracer
     can auto-parse. We build the TranscoderSet manually.
   - 34 transformer layers (0–33). Each layer has transcoders at:
       transcoder_all/layer_{i}_{variant}/params.safetensors
-  - Hook names (from gemma_3_mapping in tl_nnsight_mapping.py):
+  - Hook names (from the Gemma 3 nnsight mapping):
       feature_input_hook  = "mlp.hook_in"    → pre_feedforward_layernorm.output
       feature_output_hook = "hook_mlp_out"   → post_feedforward_layernorm.output
   - unembed_weight = lm_head.weight  shape [vocab_size, d_model]
