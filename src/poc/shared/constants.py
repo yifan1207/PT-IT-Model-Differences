@@ -7,6 +7,10 @@ N_LAYERS: int = 34
 D_MODEL: int = 2560
 VOCAB_SIZE: int = 262_144
 
+# HuggingFace model IDs — shared by weight-shift analysis, config, and model loading.
+PT_MODEL_ID: str = "google/gemma-3-4b-pt"
+IT_MODEL_ID: str = "google/gemma-3-4b-it"
+
 # Hook names used by circuit-tracer (TransformerLens convention).
 # These correspond to nnsight module paths in the ReplacementModel.
 FEATURE_INPUT_HOOK: str = "mlp.hook_in"    # pre_feedforward_layernorm output

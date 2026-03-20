@@ -79,7 +79,9 @@ def make_plot(results: list[dict], output_dir: str) -> None:
 
     cats = [c for c in CATEGORY_ORDER if c in heatmaps]
     n_panels = len(cats)
-    vmax = max(np.nanmax(hm) for hm in heatmaps.values())
+    # Cap at 99th percentile so sparse high-activity spikes don't wash out the colour scale.
+    all_vals = np.concatenate([hm[~np.isnan(hm)].ravel() for hm in heatmaps.values()])
+    vmax = float(np.percentile(all_vals, 99)) if all_vals.size > 0 else 200.0
 
     fig, axes = plt.subplots(1, n_panels, figsize=(7 * n_panels, 8), sharey=True)
     if n_panels == 1:

@@ -1,153 +1,198 @@
 """
-Plot 10: Cosine similarity between category mean logit-lens entropy profiles.
+Plot 10: Cosine similarity between each layer's delta and its input residual.
 
-A synthetic measure of "representational similarity" between categories:
-computes the cosine similarity between the mean logit-lens entropy vectors
-(one value per layer) for each pair of categories.
+For every forward pass, at every layer i:
+    delta_i = h_i - h_{i-1}          (what this layer added to the stream)
+    cos_i   = dot(delta_i, h_{i-1}) / (||delta_i|| * ||h_{i-1}||)
 
-This is a scalar summary of how similar the layer-wise entropy profile is
-between IC, OOC, and R. Also shows a breakdown across generation steps —
-the first, middle, and last third of generated tokens — to capture whether
-similarity changes as generation progresses.
+  cos_i > 0  →  layer reinforces the existing stream direction
+  cos_i ≈ 0  →  layer adds orthogonal / genuinely new information
+  cos_i < 0  →  layer suppresses / contradicts the existing stream
 
-Panel A: Bar chart of cosine similarity for each category pair.
-Panel B: Cosine similarity vs generation step thirds (early/mid/late).
+We average cos_i across all prompts and all generation steps for each category
+and plot it as a function of layer depth.
 
-Interpretation:
-  - High similarity IC–R → reasoning uses similar layer activations to retrieval.
-  - Low similarity → mechanistically distinct computation modes.
+Panel A: Mean cos_i per layer, one line per category (IC / OOC / R).
+Panel B: Same, split by prompt-relative generation band (early / mid / late third).
+
+This directly answers: do IC, OOC, and R prompts cause different layer-wise
+computation patterns in the residual stream?
 """
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
+from collections import defaultdict
 
 
+CATEGORY_STYLE = {
+    "in_context":     {"color": "#2196F3", "label": "IC (in-context)",     "ls": "-"},
+    "out_of_context": {"color": "#FF9800", "label": "OOC (out-of-context)", "ls": "--"},
+    "reasoning":      {"color": "#4CAF50", "label": "R (reasoning)",        "ls": "-."},
+}
 CATEGORY_ORDER = ["in_context", "out_of_context", "reasoning"]
-CATEGORY_LABEL = {
-    "in_context":     "IC",
-    "out_of_context": "OOC",
-    "reasoning":      "R",
-}
-PAIR_STYLE = {
-    ("in_context", "out_of_context"): {"color": "#9C27B0", "label": "IC vs OOC"},
-    ("in_context", "reasoning"):      {"color": "#F44336", "label": "IC vs R"},
-    ("out_of_context", "reasoning"):  {"color": "#795548", "label": "OOC vs R"},
-}
 
 
 def _cosine(a: np.ndarray | None, b: np.ndarray | None) -> float:
+    """Cosine similarity between two 1-D arrays. Returns float('nan') if either is None."""
     if a is None or b is None:
         return float("nan")
     denom = np.linalg.norm(a) * np.linalg.norm(b)
-    return float(np.dot(a, b) / denom) if denom > 0 else float("nan")
+    if denom == 0:
+        return float("nan")
+    return float(np.dot(a, b) / denom)
 
 
-def _mean_ll_profile(results: list[dict], category: str) -> np.ndarray | None:
-    """Mean logit-lens entropy vector over layers for one category."""
-    rows = []
+def _mean_cos_profile(results: list[dict], category: str) -> np.ndarray | None:
+    """Mean cosine(delta_i, h_{i-1}) per layer for one category.
+
+    Averages over all prompts and all generation steps.
+    Returns float array [N_LAYERS], with nan at layer 0 (no h_{i-1} available).
+    """
+    if not results:
+        return None
+    n_layers = len(results[0]["layer_delta_cosine"][0]) if results else 34
+    sums = np.zeros(n_layers)
+    counts = np.zeros(n_layers)
+
     for r in results:
         if r["category"] != category:
             continue
-        for layer_vals in r["logit_lens_entropy"]:
-            rows.append(layer_vals)
-    if not rows:
+        for step_cos in r["layer_delta_cosine"]:   # one list per generation step
+            for layer, val in enumerate(step_cos):
+                if not np.isnan(val):
+                    sums[layer] += val
+                    counts[layer] += 1
+
+    if counts.sum() == 0:
         return None
-    return np.array(rows, dtype=float).mean(axis=0)
+    with np.errstate(invalid="ignore"):
+        profile = np.where(counts > 0, sums / counts, np.nan)
+    return profile
 
 
-def _split_prompt_into_thirds(steps: list[list[float]]) -> list[list[list[float]]]:
-    """Split one prompt's steps into prompt-relative early/mid/late thirds."""
-    n_steps = len(steps)
-    if n_steps == 0:
+def _split_into_thirds(steps: list) -> list[list]:
+    """Split a list of per-step values into prompt-relative early/mid/late thirds."""
+    n = len(steps)
+    if n == 0:
         return [[], [], []]
-
-    bands = [[], [], []]
-    for step_idx, layer_vals in enumerate(steps):
-        band_idx = min((step_idx * 3) // n_steps, 2)
-        bands[band_idx].append(layer_vals)
+    bands: list[list] = [[], [], []]
+    for idx, val in enumerate(steps):
+        band = min((idx * 3) // n, 2)
+        bands[band].append(val)
     return bands
 
 
-def _mean_ll_profile_for_band(results: list[dict], category: str, band_idx: int) -> np.ndarray | None:
-    rows = []
+def _mean_cos_profile_band(results: list[dict], category: str, band_idx: int) -> np.ndarray | None:
+    """Mean cosine profile for one category restricted to one generation band."""
+    if not results:
+        return None
+    n_layers = len(results[0]["layer_delta_cosine"][0]) if results else 34
+    sums = np.zeros(n_layers)
+    counts = np.zeros(n_layers)
+
     for r in results:
         if r["category"] != category:
             continue
-        for layer_vals in _split_prompt_into_thirds(r["logit_lens_entropy"])[band_idx]:
-            rows.append(layer_vals)
-    if not rows:
+        band_steps = _split_into_thirds(r["layer_delta_cosine"])[band_idx]
+        for step_cos in band_steps:
+            for layer, val in enumerate(step_cos):
+                if not np.isnan(val):
+                    sums[layer] += val
+                    counts[layer] += 1
+
+    if counts.sum() == 0:
         return None
-    return np.array(rows, dtype=float).mean(axis=0)
+    with np.errstate(invalid="ignore"):
+        profile = np.where(counts > 0, sums / counts, np.nan)
+    return profile
+
+
+def _plot_profiles(ax, profiles: dict, title: str, layers: np.ndarray) -> None:
+    for cat in CATEGORY_ORDER:
+        profile = profiles.get(cat)
+        if profile is None:
+            continue
+        style = CATEGORY_STYLE[cat]
+        valid = ~np.isnan(profile)
+        ax.plot(layers[valid], profile[valid],
+                color=style["color"], ls=style["ls"], lw=2, label=style["label"])
+    ax.axhline(0, color="black", lw=0.8, ls=":", alpha=0.5)
+    ax.set_xlabel("Layer", fontsize=10)
+    ax.set_ylabel("Mean cos(delta_i, h_{i-1})", fontsize=10)
+    ax.set_title(title, fontsize=9)
+    ax.legend(fontsize=8)
+
+
+def _plot_deviation_profiles(
+    ax,
+    band_profiles: dict,
+    overall_profiles: dict,
+    title: str,
+    layers: np.ndarray,
+) -> None:
+    """Plot band_profile − overall_profile per category (deviation from overall mean).
+
+    This reveals temporal variation that is invisible on an absolute scale because
+    cos(delta_i, h_{i-1}) is dominated by the network's structural layer pattern.
+    """
+    any_plotted = False
+    for cat in CATEGORY_ORDER:
+        band = band_profiles.get(cat)
+        overall = overall_profiles.get(cat)
+        if band is None or overall is None:
+            continue
+        style = CATEGORY_STYLE[cat]
+        delta = band - overall
+        valid = ~np.isnan(delta)
+        ax.plot(layers[valid], delta[valid],
+                color=style["color"], ls=style["ls"], lw=2, label=style["label"])
+        any_plotted = True
+    ax.axhline(0, color="black", lw=0.8, ls=":", alpha=0.5)
+    ax.set_xlabel("Layer", fontsize=10)
+    ax.set_ylabel("Δ cos (band − overall)", fontsize=10)
+    ax.set_title(title, fontsize=9)
+    if any_plotted:
+        ax.legend(fontsize=8)
 
 
 def make_plot(results: list[dict], output_dir: str) -> None:
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    if not results:
-        print("  Plot 10 skipped — no data")
+    if not results or "layer_delta_cosine" not in results[0]:
+        print("  Plot 10 skipped — no layer_delta_cosine data")
         return
 
-    # ── Panel A: overall cosine similarity ──────────────────────────────────
-    profiles = {cat: _mean_ll_profile(results, cat) for cat in CATEGORY_ORDER}
+    n_layers = len(results[0]["layer_delta_cosine"][0])
+    layers = np.arange(n_layers)
 
-    pairs = list(PAIR_STYLE.keys())
-    pair_sims = {pair: _cosine(profiles[pair[0]], profiles[pair[1]]) for pair in pairs}
+    # sharey=False: Panel A shows absolute values; panels B/C/D show deviations
+    # (a different axis range), so they must not share Y.
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5), sharey=False)
 
-    # ── Panel B: cosine similarity by prompt-relative generation thirds ─────
-    band_labels = ["Early steps", "Mid steps", "Late steps"]
-    band_sims: dict[tuple, list[float]] = {pair: [] for pair in pairs}
-    for b_idx in range(3):
-        for pair in pairs:
-            cat_a, cat_b = pair
-            p_a = _mean_ll_profile_for_band(results, cat_a, b_idx)
-            p_b = _mean_ll_profile_for_band(results, cat_b, b_idx)
-            band_sims[pair].append(_cosine(p_a, p_b))
+    # Panel A: overall absolute profile
+    profiles_all = {cat: _mean_cos_profile(results, cat) for cat in CATEGORY_ORDER}
+    _plot_profiles(axes[0], profiles_all, "All steps (absolute)", layers)
 
-    # ── Plot ────────────────────────────────────────────────────────────────
-    fig, (ax_bar, ax_band) = plt.subplots(1, 2, figsize=(13, 5))
-
-    # Panel A bar chart
-    bar_x = np.arange(len(pairs))
-    bar_vals = [pair_sims[p] for p in pairs]
-    bar_colors = [PAIR_STYLE[p]["color"] for p in pairs]
-    bar_labels = [PAIR_STYLE[p]["label"] for p in pairs]
-    bars = ax_bar.bar(bar_x, bar_vals, color=bar_colors, width=0.5)
-    ax_bar.set_xticks(bar_x)
-    ax_bar.set_xticklabels(bar_labels, fontsize=10)
-    ax_bar.set_ylim(0, 1)
-    ax_bar.set_ylabel("Cosine similarity", fontsize=11)
-    ax_bar.set_title("Panel A: Overall profile similarity\n(cosine of mean logit-lens entropy vectors)", fontsize=9)
-    for bar, val in zip(bars, bar_vals):
-        if np.isnan(val):
-            ax_bar.text(bar.get_x() + bar.get_width() / 2, 0.02,
-                        "n/a", ha="center", va="bottom", fontsize=9)
-        else:
-            ax_bar.text(bar.get_x() + bar.get_width() / 2, val + 0.01,
-                        f"{val:.3f}", ha="center", va="bottom", fontsize=9)
-
-    # Panel B grouped bars
-    bw = 0.25
-    for i, pair in enumerate(pairs):
-        xs = np.arange(3) + i * bw
-        ax_band.bar(xs, band_sims[pair], width=bw,
-                    color=PAIR_STYLE[pair]["color"], label=PAIR_STYLE[pair]["label"], alpha=0.85)
-    ax_band.set_xticks(np.arange(3) + bw)
-    ax_band.set_xticklabels(band_labels, fontsize=10)
-    ax_band.set_ylim(0, 1)
-    ax_band.set_ylabel("Cosine similarity", fontsize=11)
-    ax_band.set_title("Panel B: Similarity by prompt-relative generation band\n(early / mid / late thirds)", fontsize=9)
-    ax_band.legend(fontsize=9)
+    # Panels B/C/D: deviation of each generation band from overall mean.
+    # cos(delta_i, h_{i-1}) reflects structural layer behaviour (mostly fixed by
+    # weights), so the absolute curves for bands are nearly identical to the overall.
+    # Plotting the deviation makes temporal variation visible.
+    band_labels = [
+        "Early third\n(Δ from overall)",
+        "Mid third\n(Δ from overall)",
+        "Late third\n(Δ from overall)",
+    ]
+    for b_idx, (ax, label) in enumerate(zip(axes[1:], band_labels)):
+        profiles_band = {
+            cat: _mean_cos_profile_band(results, cat, b_idx)
+            for cat in CATEGORY_ORDER
+        }
+        _plot_deviation_profiles(ax, profiles_band, profiles_all, label, layers)
 
     fig.suptitle(
-        "Plot 10: Representational similarity between category pairs\n"
-        "Cosine similarity of mean logit-lens entropy profiles (per layer)",
-        fontsize=10,
-    )
-    ax_band.text(
-        0.01, 0.02,
-        "n/a = insufficient data for that category pair/band",
-        transform=ax_band.transAxes,
-        fontsize=8,
-        alpha=0.7,
+        "Plot 10: cos(delta_i, h_{i−1}) per layer — does the layer reinforce or replace the residual stream?\n"
+        "Panel A: absolute cos profile. Panels B/C/D: deviation from overall mean per generation third.\n"
+        "Non-zero deviations in B/C/D reveal whether layer computation changes as generation progresses.",
+        fontsize=9,
     )
     fig.tight_layout()
 

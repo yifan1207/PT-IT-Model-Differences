@@ -41,11 +41,12 @@ Implementation notes on nnsight hook paths (Gemma3ForConditionalGeneration):
     encode() returns [1, d_transcoder]; nonzero count = L0.
 
 Speed notes:
-  - torch.inference_mode() is used with every trace and every post-trace
-    computation. This is circuit-tracer's own pattern (see NNSightReplacementModel
-    .compute_activations: `with torch.inference_mode(), self.trace(inputs):`).
+  - torch.inference_mode() is NOT used to wrap the trace (it caused nnsight proxy
+    issues). Instead, inference_mode is applied only for post-trace computations
+    (L0 encoding, logit-lens entropy) where no proxy objects are involved.
     It is strictly faster than torch.no_grad() because it also disables view
-    tracking. Since exp2 never backpropagates, inference_mode is always safe.
+    tracking. Since exp2 never backpropagates, inference_mode is always safe for
+    those post-trace steps.
   - scan=False / validate=False are silently no-ops in nnsight 0.6.2 — those
     kwargs pass through to HuggingFace's **kwargs and are ignored. Removed to
     avoid misleading documentation.
@@ -93,13 +94,43 @@ def collect_prompt(
     tokenizer = loaded.tokenizer
     W_U = loaded.W_U                    # [d_model, vocab_size] float32
     real_mask = loaded.real_token_mask  # [vocab_size] bool
+    device = W_U.device
 
-    current_ids = tokenizer.encode(prompt, return_tensors="pt").to(W_U.device)
+    # ── tokenise prompt ───────────────────────────────────────────────────────
+    if cfg.is_instruction_tuned:
+        # IT model requires the Gemma chat template.
+        # Raw completion-style prompts ("The capital of France is") don't work well
+        # as bare user messages for an instruction-tuned model. We wrap them with a
+        # brief instruction so the model treats it as a sentence-completion task.
+        user_message = f"Complete the following sentence: {prompt}"
+        # apply_chat_template(tokenize=True) handles BOS and all special tokens
+        # correctly in one shot — avoids double-BOS that tokenizer.encode() would add.
+        # Produces: <bos><start_of_turn>user\n{user_message}<end_of_turn>\n<start_of_turn>model\n
+        current_ids = tokenizer.apply_chat_template(
+            [{"role": "user", "content": user_message}],
+            return_tensors="pt",
+            add_generation_prompt=True,   # appends <start_of_turn>model\n
+        ).to(device)
+    else:
+        # PT model: plain text, tokenizer adds BOS automatically.
+        current_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
+
+    # ── stop tokens ───────────────────────────────────────────────────────────
+    # PT: stop only at <eos>.
+    # IT: stop at <eos> OR <end_of_turn> (token 107 in the Gemma tokenizer).
+    #     The model emits <end_of_turn> to signal end of its assistant turn;
+    #     this is the natural stopping point for IT generation.
     eos_token_id = tokenizer.eos_token_id
+    stop_token_ids: set[int] = {eos_token_id}
+    if cfg.is_instruction_tuned:
+        end_of_turn_id = tokenizer.convert_tokens_to_ids("<end_of_turn>")
+        if end_of_turn_id is not None and end_of_turn_id != tokenizer.unk_token_id:
+            stop_token_ids.add(end_of_turn_id)
 
     generated_tokens: list[dict] = []
     residual_norm: list[list[float]] = []        # [step][layer]
     layer_delta_norm: list[list[float]] = []     # [step][layer]
+    layer_delta_cosine: list[list[float]] = []   # [step][layer]  cos(delta_i, h_{i-1})
     l0: list[list[int]] = []                     # [step][layer]
     output_entropy: list[float] = []             # [step]
     logit_lens_entropy: list[list[float]] = []   # [step][layer]
@@ -107,9 +138,10 @@ def collect_prompt(
 
     for step in range(cfg.max_gen_tokens):
         # ── forward pass ──────────────────────────────────────────────────────
-        # torch.inference_mode() + trace() is circuit-tracer's own fast pattern.
-        # inference_mode disables gradient tracking AND view tracking (faster
-        # than no_grad). The context must wrap the trace, not be inside it.
+        # The trace runs without inference_mode: wrapping the trace in
+        # inference_mode caused nnsight proxy issues (proxies need grad tracking
+        # to propagate correctly). inference_mode is used only for post-trace
+        # computations (L0 encoding, logit-lens entropy) below.
         with loaded.model.trace(current_ids):
             # nnsight 0.6 scoping rule: only variables explicitly passed to nnsave()
             # are pushed back to the caller's frame after the trace exits (see base.py
@@ -144,12 +176,24 @@ def collect_prompt(
         step_res_norms = [h.norm().item() for h in residuals]
         residual_norm.append(step_res_norms)
 
-        # ── layer delta norms: ||h_i − h_{i-1}||₂ ────────────────────────────
-        # delta[0] approximated as norm(h_0) — embedding baseline not captured.
+        # ── layer delta norms + cosine(delta_i, h_{i-1}) ─────────────────────
+        # For each layer i:
+        #   delta_i = h_i - h_{i-1}   (what this layer added to the stream)
+        #   cos_i   = dot(delta_i, h_{i-1}) / (||delta_i|| * ||h_{i-1}||)
+        # cos_i > 0 → layer reinforces the existing stream direction
+        # cos_i ≈ 0 → layer adds orthogonal / new information
+        # cos_i < 0 → layer suppresses / contradicts the existing stream
+        # Layer 0: no h_{i-1} available (would need embedding layer), store nan.
         step_delta = [residuals[0].norm().item()]
+        step_cos = [float("nan")]
         for i in range(1, N_LAYERS):
-            step_delta.append((residuals[i] - residuals[i - 1]).norm().item())
+            delta = residuals[i] - residuals[i - 1]
+            step_delta.append(delta.norm().item())
+            denom = delta.norm() * residuals[i - 1].norm()
+            cos = (torch.dot(delta, residuals[i - 1]) / denom).item() if denom > 0 else float("nan")
+            step_cos.append(cos)
         layer_delta_norm.append(step_delta)
+        layer_delta_cosine.append(step_cos)
 
         # ── L0 and active feature indices ─────────────────────────────────────
         step_l0: list[int] = []
@@ -186,11 +230,17 @@ def collect_prompt(
         masked_logits = logits.clone()
         masked_logits[~real_mask] = float("-inf")
         next_token_id = int(masked_logits.argmax().item())
-        next_token_str = tokenizer.decode([next_token_id])
-        generated_tokens.append({"token_id": next_token_id, "token_str": next_token_str})
 
-        if next_token_id == eos_token_id:
+        # Stop tokens: break before recording — never appear in generated_tokens.
+        if next_token_id in stop_token_ids:
             break
+
+        # Skip ALL other special tokens (BOS, PAD, etc.) from the recorded token list.
+        # They should never appear mid-generation but if they do we don't want to
+        # analyse them. We still append to current_ids so the context stays correct.
+        if next_token_id not in tokenizer.all_special_ids:
+            next_token_str = tokenizer.decode([next_token_id])
+            generated_tokens.append({"token_id": next_token_id, "token_str": next_token_str})
 
         current_ids = torch.cat(
             [current_ids, torch.tensor([[next_token_id]], device=current_ids.device)],
@@ -204,6 +254,7 @@ def collect_prompt(
         "generated_tokens": generated_tokens,
         "residual_norm": residual_norm,
         "layer_delta_norm": layer_delta_norm,
+        "layer_delta_cosine": layer_delta_cosine,
         "l0": l0,
         "output_entropy": output_entropy,
         "logit_lens_entropy": logit_lens_entropy,
@@ -305,6 +356,12 @@ def collect_all(loaded: "LoadedModel | None", cfg: "Exp2Config", prompts_dict: d
     import multiprocessing as mp
 
     n_gpus = cfg.n_gpus
+    available = torch.cuda.device_count()
+    if n_gpus > available:
+        print(f"  Warning: n_gpus={n_gpus} but only {available} GPU(s) available — clamping to {available}")
+        n_gpus = available
+    if n_gpus == 0:
+        raise RuntimeError("No CUDA GPUs available. Set cfg.n_gpus=1 to run on CPU or check your CUDA setup.")
     # Round-robin split: GPU i gets items[i], items[i+n], items[i+2n], ...
     chunks = [items[i::n_gpus] for i in range(n_gpus)]
     sizes = [len(c) for c in chunks]

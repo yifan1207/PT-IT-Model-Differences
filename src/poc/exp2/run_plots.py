@@ -22,6 +22,7 @@ from src.poc.exp2.plots.plot7_logit_lens_entropy import make_plot as plot7
 from src.poc.exp2.plots.plot8_logit_lens_heatmap import make_plot as plot8
 from src.poc.exp2.plots.plot9_generation_length import make_plot as plot9
 from src.poc.exp2.plots.plot10_cosine_similarity import make_plot as plot10
+from src.poc.exp2.plots.plot11_cosine_heatmap import make_plot as plot11
 
 
 REQUIRED_RESULT_KEYS = {
@@ -30,6 +31,7 @@ REQUIRED_RESULT_KEYS = {
     "generated_tokens",
     "l0",
     "layer_delta_norm",
+    "layer_delta_cosine",
     "residual_norm",
     "output_entropy",
     "logit_lens_entropy",
@@ -58,13 +60,17 @@ def _validate_results(results: object) -> list[dict] | None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate Exp2 plots")
     parser.add_argument(
+        "--variant", choices=["pt", "it"], default="pt",
+        help="Model variant to plot results for (default: pt)",
+    )
+    parser.add_argument(
         "--results",
         default=None,
-        help="Path to exp2_results.json (default: use Exp2Config.output_path)",
+        help="Explicit path to exp2_results.json (overrides --variant)",
     )
     args = parser.parse_args()
 
-    cfg = Exp2Config()
+    cfg = Exp2Config(model_variant=args.variant)
     results_path = Path(args.results) if args.results else Path(cfg.output_path)
     plot_dir = str(results_path.parent / "plots")
 
@@ -107,9 +113,10 @@ def main() -> None:
     plot7(results, plot_dir)
     plot8(results, plot_dir)
 
-    # Plots 9–10: Generation-level dynamics
+    # Plots 9–11: Generation-level dynamics
     plot9(results, plot_dir)
     plot10(results, plot_dir)
+    plot11(results, plot_dir)
 
     print("\nAll plots generated.")
 

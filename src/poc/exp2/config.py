@@ -12,45 +12,72 @@ Unlike Exp1 (single next-token attribution), Exp2:
   - Captures per-layer, per-token residual stream and MLP statistics
   - Captures feature L0 (active feature count) per layer via transcoders
   - Computes logit-lens entropy at each layer
+
+Model variants
+--------------
+  "pt"  google/gemma-3-4b-pt   Pretrained base model. Raw next-token completion.
+                                Prompts are plain text; no chat template applied.
+                                Stop token: <eos> only.
+                                Transcoders: google/gemma-scope-2-4b-pt
+
+  "it"  google/gemma-3-4b-it   Instruction-tuned (RLHF) model. Responds to
+                                conversational turns. Prompts are wrapped in the
+                                Gemma chat template before tokenisation.
+                                Stop tokens: <eos> AND <end_of_turn>.
+                                Transcoders: google/gemma-scope-2-4b-it
+                                NOTE: circuit-tracer zeros out the first 4 token
+                                positions (<bos><start_of_turn>user\\n) for -it
+                                models to avoid artefacts at those positions.
 """
 from dataclasses import dataclass, field
 
 
 @dataclass
 class Exp2Config:
-    # ── model / transcoder ───────────────────────────────────────────
-    model_name: str = "google/gemma-3-4b-pt"
-    transcoder_set: str = "google/gemma-scope-2-4b-pt"
+    # ── model variant ────────────────────────────────────────────────
+    # "pt" = pretrained base  |  "it" = instruction-tuned
+    # model_name and transcoder_set are derived from this in __post_init__.
+    model_variant: str = "pt"
+
+    # Derived in __post_init__ — do not set directly.
+    model_name:     str = field(init=False)
+    transcoder_set: str = field(init=False)
+
+    # ── transcoder / backend ─────────────────────────────────────────
     transcoder_variant: str = "width_16k_l0_big_affine"
-    backend: str = "nnsight"
+    backend:   str = "nnsight"
     dtype_str: str = "bfloat16"   # "float32" | "bfloat16"
-    device: str = "cuda"
+    device:    str = "cuda"
 
     # ── generation ───────────────────────────────────────────────────
-    # Safety ceiling only — generation stops at EOS first.
-    # 512 is generous enough that no IC/OOC/R prompt should hit it
-    # before the model generates EOS naturally.
-    max_gen_tokens: int = 512     # max new tokens per prompt (EOS stops earlier)
-    # Greedy decoding (argmax) for deterministic, comparable outputs
+    # Safety ceiling only — generation stops at EOS / end_of_turn first.
+    max_gen_tokens: int = 512
 
     # ── parallelism ──────────────────────────────────────────────────
-    # Number of GPUs to use. Each GPU gets its own worker process with a
-    # full copy of the model. Set to 1 to disable multi-GPU.
+    # Each GPU gets its own worker process with a full model copy.
     n_gpus: int = 8
 
     # ── data collection flags ────────────────────────────────────────
-    collect_attribution: bool = False  # run circuit-tracer for plot 10 (slow)
+    collect_attribution: bool = False
 
     # ── output paths (derived in __post_init__) ──────────────────────
     output_path: str = field(init=False)
-    plot_path: str = field(init=False)   # directory (exp2 plots are per-category)
+    plot_path:   str = field(init=False)
 
     def __post_init__(self) -> None:
+        if self.model_variant not in ("pt", "it"):
+            raise ValueError(f"model_variant must be 'pt' or 'it', got {self.model_variant!r}")
+        self.model_name    = f"google/gemma-3-4b-{self.model_variant}"
+        self.transcoder_set = f"google/gemma-scope-2-4b-{self.model_variant}"
         rd = self.run_dir
         self.output_path = f"{rd}/exp2_results.json"
-        self.plot_path = f"{rd}/plots"
+        self.plot_path   = f"{rd}/plots"
 
     @property
     def run_dir(self) -> str:
         variant = self.transcoder_variant.replace("width_", "")
-        return f"results/exp2/{variant}_t{self.max_gen_tokens}"
+        return f"results/exp2/{self.model_variant}_{variant}_t{self.max_gen_tokens}"
+
+    @property
+    def is_instruction_tuned(self) -> bool:
+        return self.model_variant == "it"

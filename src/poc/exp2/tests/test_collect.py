@@ -355,6 +355,7 @@ def test_collect_prompt_output_schema():
 
     cfg = MagicMock(spec=Exp2Config)
     cfg.max_gen_tokens = max_gen
+    cfg.is_instruction_tuned = False
 
     # Real tensors we'll inject
     W_U = torch.randn(d_model, vocab_size)
@@ -375,6 +376,7 @@ def test_collect_prompt_output_schema():
     tok = MagicMock()
     tok.encode.return_value = torch.tensor([[1, 5, 7]])
     tok.eos_token_id = 99  # won't be generated (logits[99] is masked out)
+    tok.all_special_ids = set()
     call_count = [0]
     def decode_side(ids):
         call_count[0] += 1
@@ -414,8 +416,9 @@ def test_collect_prompt_output_schema():
 
         @property
         def output(self):
-            # output[0][0, -1, :].save() → ChainProxy chain → save_obj
-            return ChainProxy(self._res)
+            # nnsave(layers[i].output[0]) — output[0] must be a real tensor [1, 1, d_model]
+            # so that r[0, -1, :].float() works directly after the trace.
+            return (self._res.unsqueeze(0).unsqueeze(0),)
 
         @property
         def pre_feedforward_layernorm(self):
@@ -423,8 +426,8 @@ def test_collect_prompt_output_schema():
             class LNMock:
                 @property
                 def output(self2):
-                    # output[0, -1, :].save() → ChainProxy chain → save_obj
-                    return ChainProxy(outer._mlp_in)
+                    # nnsave(layers[i].pre_feedforward_layernorm.output) → real tensor [1, 1, d_model]
+                    return outer._mlp_in.unsqueeze(0).unsqueeze(0)
             return LNMock()
 
     fake_layers = [FakeLayer(residual_tensors[i], mlp_input_tensors[i])
@@ -433,8 +436,9 @@ def test_collect_prompt_output_schema():
     class FakeLMHead:
         @property
         def output(self):
-            # output[0, -1, :].save() → ChainProxy chain → save_obj
-            return ChainProxy(logit_tensor)
+            # nnsave(lm_head.output) → real tensor [1, 1, vocab_size]
+            # so that logits_save[0, -1, :].float() works after the trace.
+            return logit_tensor.unsqueeze(0).unsqueeze(0)
 
     class FakeLM:
         @property
@@ -486,7 +490,7 @@ def test_collect_prompt_output_schema():
     assert len(result["generated_tokens"]) >= 1
     assert len(result["generated_tokens"]) <= max_gen
 
-    for key in ("residual_norm", "layer_delta_norm", "l0", "logit_lens_entropy"):
+    for key in ("residual_norm", "layer_delta_norm", "layer_delta_cosine", "l0", "logit_lens_entropy"):
         assert key in result, f"Missing key: {key}"
         assert isinstance(result[key], list)
         for step_vals in result[key]:
@@ -523,6 +527,7 @@ def test_collect_all_strips_active_features_from_json():
             "generated_tokens": [{"token_id": 1, "token_str": " a"}],
             "residual_norm": [[1.0]*n_layers],
             "layer_delta_norm": [[0.5]*n_layers],
+            "layer_delta_cosine": [[float("nan")] + [0.1]*(n_layers-1)],
             "l0": [[3]*n_layers],
             "output_entropy": [2.0],
             "logit_lens_entropy": [[5.0]*n_layers],
@@ -581,6 +586,7 @@ def _make_synthetic_results(n_prompts_per_cat=5, n_layers=34, max_steps=5):
                 "generated_tokens": [{"token_id": j+1, "token_str": f" t{j}"} for j in range(n_steps)],
                 "residual_norm": [[float(np.random.randn() + 20)] * n_layers for _ in range(n_steps)],
                 "layer_delta_norm": [[float(abs(np.random.randn()))] * n_layers for _ in range(n_steps)],
+                "layer_delta_cosine": [[float("nan")] + [float(np.random.uniform(-0.5, 0.5)) for _ in range(n_layers-1)] for _ in range(n_steps)],
                 "l0": [[int(np.random.randint(5, 50))] * n_layers for _ in range(n_steps)],
                 "output_entropy": [float(np.random.rand() * 5) for _ in range(n_steps)],
                 "logit_lens_entropy": [[float(np.random.rand() * 8)] * n_layers for _ in range(n_steps)],
@@ -728,11 +734,11 @@ def test_selected_plots_skip_cleanly_on_empty_results(plot_module, tmp_path):
 
 def test_plot10_missing_data_produces_nan_not_zero():
     """Missing categories/bands should not be rendered as numeric zero similarity."""
-    from src.poc.exp2.plots.plot10_cosine_similarity import _mean_ll_profile, _cosine
+    from src.poc.exp2.plots.plot10_cosine_similarity import _mean_cos_profile, _cosine
 
     results = [r for r in _make_synthetic_results(n_prompts_per_cat=1, max_steps=2)
                if r["category"] != "reasoning"]
-    profile = _mean_ll_profile(results, "reasoning")
+    profile = _mean_cos_profile(results, "reasoning")
     sim = _cosine(profile, np.ones(34))
     assert profile is None
     assert math.isnan(sim)
@@ -740,10 +746,10 @@ def test_plot10_missing_data_produces_nan_not_zero():
 
 def test_plot10_uses_prompt_relative_thirds():
     """Each prompt should contribute to all three bands when it has >=3 steps."""
-    from src.poc.exp2.plots.plot10_cosine_similarity import _split_prompt_into_thirds
+    from src.poc.exp2.plots.plot10_cosine_similarity import _split_into_thirds
 
     steps = [[0.0], [1.0], [2.0], [3.0], [4.0], [5.0]]
-    bands = _split_prompt_into_thirds(steps)
+    bands = _split_into_thirds(steps)
     assert [len(b) for b in bands] == [2, 2, 2]
     assert bands[0][0] == [0.0]
     assert bands[2][-1] == [5.0]

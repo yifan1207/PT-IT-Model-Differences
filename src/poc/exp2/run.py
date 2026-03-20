@@ -22,11 +22,15 @@ from src.poc.exp2.collect import collect_all, save_results
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Exp2 data collection")
+    parser.add_argument("--variant", choices=["pt", "it"], default="pt",
+                        help="Model variant: 'pt' (pretrained base) or 'it' (instruction-tuned). "
+                             "pt uses raw text completion; it applies the Gemma chat template.")
     parser.add_argument("--gpus", type=int, default=None,
                         help="Number of GPUs (overrides Exp2Config.n_gpus)")
     args = parser.parse_args()
 
-    cfg = Exp2Config()
+    cfg = Exp2Config(model_variant=args.variant)
+    print(cfg)
     if args.gpus is not None:
         cfg.n_gpus = args.gpus
 
