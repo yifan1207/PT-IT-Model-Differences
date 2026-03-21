@@ -21,6 +21,7 @@ SPLIT_COLORS: dict[str, str] = {
     "F":    "#2196F3",   # Factual          — blue
     "R":    "#4CAF50",   # Reasoning        — green
     "OOD":  "#FF9800",   # Out-of-Distrib   — orange
+    "GEN":  "#9C27B0",   # General/Diverse  — purple
     "A":    "#E91E63",   # Alignment        — pink/red
 
     # ── Old taxonomy (backward compat) ─────────────────────
@@ -34,12 +35,19 @@ SPLIT_COLORS: dict[str, str] = {
     "rule":            "#4CAF50",
     "reasoning":       "#4CAF50",
 
-    # ── Alignment subcategories ─────────────────────────────
-    "4a":  "#D32F2F",   # Harmful        — dark red
-    "4b":  "#FF7043",   # Borderline     — deep orange
-    "4c":  "#FBC02D",   # Format         — amber
-    "4d":  "#7B1FA2",   # Conversational — purple
-    "4e":  "#78909C",   # Raw completion — grey-blue
+    # ── Alignment subcategories (new 5a-5e taxonomy) ────────
+    "5a":  "#D32F2F",   # Harmful        — dark red
+    "5b":  "#FF7043",   # Borderline     — deep orange
+    "5c":  "#FBC02D",   # Format         — amber
+    "5d":  "#7B1FA2",   # Conversational — purple
+    "5e":  "#78909C",   # Raw completion — grey-blue
+
+    # ── Alignment subcategories (old 4a-4e, backward compat) ─
+    "4a":  "#D32F2F",
+    "4b":  "#FF7043",
+    "4c":  "#FBC02D",
+    "4d":  "#7B1FA2",
+    "4e":  "#78909C",
 
     # ── Question types ──────────────────────────────────────
     "factual":       "#2196F3",
@@ -70,7 +78,7 @@ def split_color(category: str) -> str:
 
 
 # Ordered list of splits for consistent legend ordering
-SPLIT_ORDER = ["F", "R", "OOD", "A", "IC", "OOC", "GEN"]
+SPLIT_ORDER = ["F", "R", "OOD", "GEN", "A", "IC", "OOC"]
 
 # Line styles for PT vs IT overlays
 PT_LINESTYLE = "--"

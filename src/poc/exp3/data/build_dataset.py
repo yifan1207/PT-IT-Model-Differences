@@ -1,54 +1,62 @@
 """
-Build the Exp3 evaluation dataset (~2000 prompts).
+Build the Exp3 evaluation dataset (~2935 prompts).
 
 Output: data/exp3_dataset.jsonl  (one JSON object per line)
 
 Categories
 ----------
-  F    Factual Knowledge (~500)
-         TriviaQA (Joshi et al. 2017)               ~200
-         NQ-Open  (Kwiatkowski et al. 2019)          ~175
-         WebQuestions (Berant et al. 2013)           ~125
+  F    Factual Knowledge (~625)
+         TriviaQA (Joshi et al. 2017)               ~225
+         NQ-Open  (Kwiatkowski et al. 2019)          ~200
+         WebQuestions (Berant et al. 2013)           ~200
          Control: model knows the answer from PT.  Corrective stage baseline.
 
-  R    Reasoning (~500)
+  R    Reasoning (~700)
          GSM8K (Cobbe et al. 2021)                   ~150
          ARC-Challenge (Clark et al. 2018)           ~130
          StrategyQA (Geva et al. 2021)               ~100
-         CommonsenseQA (Talmor et al. 2019)          ~120
+         CommonsenseQA (Talmor et al. 2019)          ~125
+         BoolQ (Clark et al. 2019)                   ~110
+         WinoGrande (Sakaguchi et al. 2021)          ~85
          Tests whether corrective stage activates MORE for reasoning vs factual.
-         Hypothesis: it should NOT if corrective stage is about alignment, not content.
 
-  OOD  Out-of-Distribution (~500)
+  OOD  Out-of-Distribution (~485)
          Novel fictional entities                    ~200
          Post-training unknowable                    ~150
-         Counterfactual / indeterminate              ~150
+         Counterfactual / indeterminate              ~135
          Model has no confident answer — tests suppression/hedging behavior.
 
+  GEN  General/Diverse (~625)
+         MMLU-Pro (Wang et al. 2024)                 ~325
+         HumanEval (Chen et al. 2021)                ~100
+         MBPP (Austin et al. 2021)                    ~75
+         HellaSwag (Zellers et al. 2019)             ~125
+         Diverse tasks: multi-domain MCQA, code gen, commonsense NLI.
+
   A    Alignment-Sensitive (~500) — directly tests corrective stage function
-         4a  Harmful requests (AdvBench + hand-written)          ~100
-         4b  Borderline/ambiguous (XSTest + hand-written)        ~100
-         4c  Format-constrained (IFEval + hand-written)          ~100
-         4d  Conversational/persona (multi-turn + roleplay)      ~100
-         4e  Raw completion (Wikipedia truncations + hand-written)~100
+         5a  Harmful requests (AdvBench + hand-written)          ~100
+         5b  Borderline/ambiguous (XSTest + hand-written)         ~80
+         5c  Format-constrained (IFEval + hand-written)          ~120
+         5d  Conversational/persona (multi-turn + roleplay)      ~100
+         5e  Raw completion (Wikipedia truncations + hand-written)~100
 
 Two prompt formats per record:
 
   A: Raw completion — question rephrased as an incomplete statement (natural for PT)
   B: Q&A format    — "Question: …\\nAnswer:" (PRIMARY, same for PT and IT)
-  [Category A 4e exception: both formats are the raw continuation text]
+  [Category A 5e exception: both formats are the raw continuation text]
 
 Tags
 ----
 Each record has:
-  split         : "F" | "R" | "OOD" | "A"
+  split         : "F" | "R" | "OOD" | "GEN" | "A"
   question_type : "factual" | "yes_no" | "numerical" | "multi_choice" |
                   "code" | "completion" | "coreference" |
                   "fictional" | "unknowable" | "counterfactual" |
                   "harmful" | "borderline" | "format" | "continuation" |
                   "conversation" | "roleplay"
   domain        : subject area
-  metadata.alignment_subcategory : "4a"–"4e" for A-split records
+  metadata.alignment_subcategory : "5a"–"5e" for A-split records
   metadata.expected_behavior     : "refuse" | "comply" | "comply_safely"
   metadata.ooc_type              : "novel_entity" | "post_training" | "counterfactual"
 
@@ -301,6 +309,54 @@ def _load_commonsense_qa(n: int, rng: np.random.Generator) -> list[dict]:
     return results
 
 
+def _load_boolq(n: int, rng: np.random.Generator) -> list[dict]:
+    """BoolQ — yes/no reading comprehension questions."""
+    from datasets import load_dataset
+    try:
+        ds = load_dataset("google/boolq", split="train")
+    except Exception:
+        ds = load_dataset("boolq", split="train")
+    indices = rng.choice(len(ds), size=min(n, len(ds)), replace=False)
+    results = []
+    for i in indices:
+        item = ds[int(i)]
+        q = item["question"].strip()
+        if not q.endswith("?"):
+            q += "?"
+        answer = "Yes" if item["answer"] else "No"
+        aliases = ["yes" if item["answer"] else "no"]
+        passage = item.get("passage", "")
+        results.append(_rec("R", "boolq", q, answer, aliases,
+                            "yes_no", "reading_comprehension",
+                            metadata={"passage": passage[:300] if passage else ""}))
+    return results
+
+
+def _load_winogrande(n: int, rng: np.random.Generator) -> list[dict]:
+    """WinoGrande — commonsense pronoun resolution."""
+    from datasets import load_dataset
+    try:
+        ds = load_dataset("winogrande", "winogrande_xl", split="train",
+                          trust_remote_code=True)
+    except Exception as e:
+        print(f"[WARN] WinoGrande unavailable ({e}); skipping.", file=sys.stderr)
+        return []
+    indices = rng.choice(len(ds), size=min(n, len(ds)), replace=False)
+    results = []
+    for i in indices:
+        item = ds[int(i)]
+        sentence = item["sentence"].strip()
+        opt1 = item["option1"].strip()
+        opt2 = item["option2"].strip()
+        answer_key = item["answer"].strip()  # "1" or "2"
+        answer = opt1 if answer_key == "1" else opt2
+        q = f"{sentence}\n(1) {opt1}  (2) {opt2}"
+        results.append(_rec("R", "winogrande", q, answer, [],
+                            "coreference", "commonsense",
+                            metadata={"option1": opt1, "option2": opt2}))
+    return results
+
+
 # ---------------------------------------------------------------------------
 # OOD loader
 # ---------------------------------------------------------------------------
@@ -319,6 +375,148 @@ def _load_ooc() -> list[dict]:
         results.append(_rec("OOD", "custom", q, item["answer"], [],
                             _TYPE_TO_QTYPE[ooc_type], "ooc",
                             ooc_type=ooc_type))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# GEN loaders (General / Diverse)
+# ---------------------------------------------------------------------------
+
+def _load_mmlu_pro(n: int, rng: np.random.Generator) -> list[dict]:
+    """MMLU-Pro — multi-domain 10-choice MCQA.
+
+    Loads 25 items from each of 13 subjects = 325 total.
+    """
+    from datasets import load_dataset
+    SUBJECTS = [
+        "math", "physics", "chemistry", "biology", "computer science",
+        "engineering", "law", "economics", "psychology", "history",
+        "philosophy", "health", "business",
+    ]
+    per_subject = max(1, n // len(SUBJECTS))
+    try:
+        ds = load_dataset("TIGER-Lab/MMLU-Pro", split="test")
+    except Exception as e:
+        print(f"[WARN] MMLU-Pro unavailable ({e}); skipping.", file=sys.stderr)
+        return []
+
+    by_subject: dict[str, list] = defaultdict(list)
+    for item in ds:
+        subj = item.get("category", "general").lower()
+        for s in SUBJECTS:
+            if s in subj:
+                by_subject[s].append(item)
+                break
+        else:
+            by_subject["general"].append(item)
+
+    results = []
+    for subj in SUBJECTS:
+        items = by_subject[subj]
+        if not items:
+            continue
+        idxs = rng.choice(len(items), size=min(per_subject, len(items)), replace=False)
+        for idx in idxs:
+            item = items[int(idx)]
+            q = item["question"].strip()
+            options = item.get("options", [])
+            choices_str = "  ".join(f"({chr(65+j)}) {opt}"
+                                    for j, opt in enumerate(options))
+            full_q = f"{q}\n{choices_str}" if choices_str else q
+            answer_idx = item.get("answer_index", 0)
+            answer = (f"({chr(65+answer_idx)}) {options[answer_idx]}"
+                      if options and answer_idx < len(options)
+                      else item.get("answer", ""))
+            results.append(_rec("GEN", "mmlu_pro", full_q, answer,
+                                [chr(65 + answer_idx)],
+                                "multi_choice", subj,
+                                metadata={"subject": subj}))
+    return results
+
+
+def _load_humaneval(n: int, rng: np.random.Generator) -> list[dict]:
+    """HumanEval — Python function synthesis from docstrings."""
+    from datasets import load_dataset
+    try:
+        ds = load_dataset("openai/openai_humaneval", split="test")
+    except Exception:
+        try:
+            ds = load_dataset("openai/openai-human-eval", split="test")
+        except Exception as e:
+            print(f"[WARN] HumanEval unavailable ({e}); skipping.", file=sys.stderr)
+            return []
+
+    all_items = list(ds)
+    indices = rng.choice(len(all_items), size=min(n, len(all_items)), replace=False)
+    results = []
+    for i in indices:
+        item = all_items[int(i)]
+        prompt = item["prompt"].strip()
+        entry = item.get("entry_point", "")
+        q = f"Complete the following Python function:\n\n{prompt}"
+        results.append(_rec("GEN", "humaneval", q, "", [],
+                            "code", "programming",
+                            metadata={"task_id": item.get("task_id", ""),
+                                      "entry_point": entry}))
+    return results
+
+
+def _load_mbpp(n: int, rng: np.random.Generator) -> list[dict]:
+    """MBPP — Mostly Basic Python Programming problems."""
+    from datasets import load_dataset
+    try:
+        ds = load_dataset("google-research-datasets/mbpp", "sanitized", split="train")
+    except Exception:
+        try:
+            ds = load_dataset("mbpp", split="train")
+        except Exception as e:
+            print(f"[WARN] MBPP unavailable ({e}); skipping.", file=sys.stderr)
+            return []
+
+    all_items = list(ds)
+    indices = rng.choice(len(all_items), size=min(n, len(all_items)), replace=False)
+    results = []
+    for i in indices:
+        item = all_items[int(i)]
+        text = item.get("text", item.get("prompt", "")).strip()
+        q = f"Write a Python function to {text}"
+        test_list = item.get("test_list", [])
+        results.append(_rec("GEN", "mbpp", q, "", [],
+                            "code", "programming",
+                            metadata={"task_id": item.get("task_id", ""),
+                                      "test_list": test_list[:3]}))
+    return results
+
+
+def _load_hellaswag(n: int, rng: np.random.Generator) -> list[dict]:
+    """HellaSwag — commonsense NLI, sentence completion."""
+    from datasets import load_dataset
+    try:
+        ds = load_dataset("Rowan/hellaswag", split="train")
+    except Exception as e:
+        print(f"[WARN] HellaSwag unavailable ({e}); skipping.", file=sys.stderr)
+        return []
+
+    all_items = list(ds)
+    indices = rng.choice(len(all_items), size=min(n, len(all_items)), replace=False)
+    results = []
+    for i in indices:
+        item = all_items[int(i)]
+        ctx = (item.get("ctx") or "").strip()
+        if not ctx:
+            ctx_a = (item.get("ctx_a") or "").strip()
+            ctx_b = (item.get("ctx_b") or "").strip()
+            ctx = f"{ctx_a} {ctx_b}".strip()
+        endings = item.get("endings", [])
+        label = int(item.get("label", 0))
+        choices_str = "  ".join(f"({chr(65+j)}) {e}" for j, e in enumerate(endings))
+        q = f"{ctx}\n{choices_str}" if choices_str else ctx
+        answer = (f"({chr(65+label)}) {endings[label]}"
+                  if endings and label < len(endings) else "")
+        results.append(_rec("GEN", "hellaswag", q, answer,
+                            [chr(65 + label)],
+                            "multi_choice", "commonsense",
+                            metadata={"activity_label": item.get("activity_label", "")}))
     return results
 
 
@@ -349,8 +547,8 @@ def _load_advbench_csv() -> list[str]:
         return []
 
 
-def _load_a4a_harmful(n: int, rng: np.random.Generator) -> list[dict]:
-    """4a: Direct harmful requests.
+def _load_a5a_harmful(n: int, rng: np.random.Generator) -> list[dict]:
+    """5a: Direct harmful requests.
     Priority: (1) AdvBench GitHub CSV, (2) AdvBench on HuggingFace,
     (3) hand-written fallback list.
     """
@@ -359,9 +557,8 @@ def _load_a4a_harmful(n: int, rng: np.random.Generator) -> list[dict]:
     # Try GitHub CSV first (public, no auth required)
     github_goals = _load_advbench_csv()
     if github_goals:
-        records = [_rec_a("4a", "advbench", q, "harmful", "safety", "refuse")
+        records = [_rec_a("5a", "advbench", q, "harmful", "safety", "refuse")
                    for q in github_goals]
-        # Sample down to n if more available
         if len(records) > n:
             idxs = rng.choice(len(records), size=n, replace=False)
             records = [records[int(i)] for i in idxs]
@@ -380,7 +577,7 @@ def _load_a4a_harmful(n: int, rng: np.random.Generator) -> list[dict]:
                 col_use = col if col in ds.column_names else ds.column_names[0]
                 for item in ds:
                     hf_records.append(
-                        _rec_a("4a", "advbench", str(item[col_use]).strip(),
+                        _rec_a("5a", "advbench", str(item[col_use]).strip(),
                                "harmful", "safety", "refuse"))
                 break
             except Exception:
@@ -395,9 +592,9 @@ def _load_a4a_harmful(n: int, rng: np.random.Generator) -> list[dict]:
         return hf_records
 
     # Fall back to hand-written list
-    print("  [INFO] Using hand-written A4A prompts (AdvBench not accessible).",
+    print("  [INFO] Using hand-written A5A prompts (AdvBench not accessible).",
           file=sys.stderr)
-    records = [_rec_a("4a", "malicious_instruct", q, "harmful", "safety", "refuse")
+    records = [_rec_a("5a", "malicious_instruct", q, "harmful", "safety", "refuse")
                for q in A4A_HARMFUL]
     if len(records) > n:
         idxs = rng.choice(len(records), size=n, replace=False)
@@ -405,14 +602,12 @@ def _load_a4a_harmful(n: int, rng: np.random.Generator) -> list[dict]:
     return records
 
 
-def _load_a4b_borderline(n: int, rng: np.random.Generator) -> list[dict]:
-    """4b: Borderline/ambiguous — XSTest (HF) + hand-written.
+def _load_a5b_borderline(n: int, rng: np.random.Generator) -> list[dict]:
+    """5b: Borderline/ambiguous — XSTest (HF) + hand-written.
 
     XSTest (Röttger et al. 2023, Paul/xstest) has 250 safe prompts
-    (label=="safe") that look harmful but should be answered, spanning:
-    safe_targets, safe_contexts, homonyms, figurative_language,
-    historical_events, definitions, privacy_public, etc.
-    We use the 'label' field (not 'type') to select all 250.
+    (label=="safe") that look harmful but should be answered.
+    We use the 'label' field to select all 250.
     """
     from src.poc.exp3.data.safety_prompts import A4B_BORDERLINE
     hf_records: list[dict] = []
@@ -420,21 +615,19 @@ def _load_a4b_borderline(n: int, rng: np.random.Generator) -> list[dict]:
         from datasets import load_dataset
         ds = load_dataset("Paul/xstest", split="train")
         col = "prompt" if "prompt" in ds.column_names else ds.column_names[0]
-        # Use label field: "safe" = prompts that SHOULD be answered
         safe_items = [x for x in ds if str(x.get("label", "")).lower() == "safe"]
         if not safe_items:
-            safe_items = list(ds)   # fallback: use all
+            safe_items = list(ds)
         for item in safe_items:
             hf_records.append(
-                _rec_a("4b", "xstest", str(item[col]).strip(),
-                       "borderline", "safety", "comply",
-                       ))
+                _rec_a("5b", "xstest", str(item[col]).strip(),
+                       "borderline", "safety", "comply"))
         print(f"  Loaded {len(hf_records)} XSTest safe prompts.")
     except Exception as e:
-        print(f"[WARN] XSTest unavailable ({e}); using hand-written 4b only.",
+        print(f"[WARN] XSTest unavailable ({e}); using hand-written 5b only.",
               file=sys.stderr)
 
-    hand_written = [_rec_a("4b", "custom", q, "borderline", "safety", "comply")
+    hand_written = [_rec_a("5b", "custom", q, "borderline", "safety", "comply")
                     for q in A4B_BORDERLINE]
     combined = hf_records + hand_written
     if len(combined) > n:
@@ -443,8 +636,8 @@ def _load_a4b_borderline(n: int, rng: np.random.Generator) -> list[dict]:
     return combined
 
 
-def _load_a4c_format(n: int, rng: np.random.Generator) -> list[dict]:
-    """4c: Format-constrained — IFEval (HF) + hand-written."""
+def _load_a5c_format(n: int, rng: np.random.Generator) -> list[dict]:
+    """5c: Format-constrained — IFEval (HF) + hand-written."""
     from src.poc.exp3.data.safety_prompts import A4C_FORMAT
     hf_records: list[dict] = []
     try:
@@ -453,14 +646,14 @@ def _load_a4c_format(n: int, rng: np.random.Generator) -> list[dict]:
         col = "prompt" if "prompt" in ds.column_names else ds.column_names[0]
         for item in ds:
             q = str(item[col]).strip()
-            r = _rec_a("4c", "ifeval", q, "format", "instruction_following", "comply")
-            r["formats"]["B"] = q   # IFEval prompt already contains constraints
+            r = _rec_a("5c", "ifeval", q, "format", "instruction_following", "comply")
+            r["formats"]["B"] = q
             hf_records.append(r)
     except Exception as e:
-        print(f"[WARN] IFEval unavailable ({e}); using hand-written 4c only.",
+        print(f"[WARN] IFEval unavailable ({e}); using hand-written 5c only.",
               file=sys.stderr)
 
-    hand_written = [_rec_a("4c", "custom", q, "format", "instruction_following", "comply")
+    hand_written = [_rec_a("5c", "custom", q, "format", "instruction_following", "comply")
                     for q in A4C_FORMAT]
     combined = hf_records + hand_written
     if len(combined) > n:
@@ -469,21 +662,21 @@ def _load_a4c_format(n: int, rng: np.random.Generator) -> list[dict]:
     return combined
 
 
-def _load_a4d_conversational() -> list[dict]:
-    """4d: Conversational/persona — multi-turn + roleplay, all hand-written."""
+def _load_a5d_conversational() -> list[dict]:
+    """5d: Conversational/persona — multi-turn + roleplay, all hand-written."""
     from src.poc.exp3.data.safety_prompts import A4D_MULTI_TURN, A4D_ROLEPLAY
     results = []
     for prompt, expected in A4D_MULTI_TURN:
-        results.append(_rec_a("4d", "custom", prompt, "conversation",
+        results.append(_rec_a("5d", "custom", prompt, "conversation",
                               "general", expected))
     for prompt, expected in A4D_ROLEPLAY:
-        results.append(_rec_a("4d", "custom", prompt, "roleplay",
+        results.append(_rec_a("5d", "custom", prompt, "roleplay",
                               "general", expected))
     return results
 
 
-def _load_a4e_raw_completion(n: int, rng: np.random.Generator) -> list[dict]:
-    """4e: Raw completion — Wikipedia truncations + hand-written.
+def _load_a5e_raw_completion(n: int, rng: np.random.Generator) -> list[dict]:
+    """5e: Raw completion — Wikipedia truncations + hand-written.
     Format B = raw text (no Q&A wrapper). Tests corrective stage with no alignment target.
     """
     from src.poc.exp3.data.safety_prompts import A4E_EXTRA_CONTINUATIONS
@@ -503,7 +696,7 @@ def _load_a4e_raw_completion(n: int, rng: np.random.Generator) -> list[dict]:
             if len(candidates) >= (n - len(A4E_EXTRA_CONTINUATIONS)) * 4:
                 break
     except Exception as e:
-        print(f"[WARN] Wikipedia unavailable ({e}); using hand-written 4e only.",
+        print(f"[WARN] Wikipedia unavailable ({e}); using hand-written 5e only.",
               file=sys.stderr)
 
     candidates.extend(A4E_EXTRA_CONTINUATIONS)
@@ -512,7 +705,7 @@ def _load_a4e_raw_completion(n: int, rng: np.random.Generator) -> list[dict]:
         idxs = rng.choice(len(candidates), size=n, replace=False)
         candidates = [candidates[int(i)] for i in idxs]
 
-    return [_rec_a("4e", "custom" if t in A4E_EXTRA_CONTINUATIONS else "wikipedia",
+    return [_rec_a("5e", "custom" if t in A4E_EXTRA_CONTINUATIONS else "wikipedia",
                    t, "continuation", "general", "comply", raw_continuation=True)
             for t in candidates]
 
@@ -522,23 +715,30 @@ def _load_a4e_raw_completion(n: int, rng: np.random.Generator) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 TARGETS = {
-    # F: Factual Knowledge (~500)
-    "F_triviaqa":      200,
-    "F_nq_open":       175,
-    "F_webquestions":  125,
-    # R: Reasoning (~500)
+    # F: Factual Knowledge (~625)
+    "F_triviaqa":      225,
+    "F_nq_open":       200,
+    "F_webquestions":  200,
+    # R: Reasoning (~700)
     "R_gsm8k":         150,
     "R_arc":           130,
     "R_strategy":      100,
-    "R_commonsenseqa": 120,
+    "R_commonsenseqa": 125,
+    "R_boolq":         110,
+    "R_winogrande":     85,
     # OOD: Out-of-Distribution — from ooc_prompts.py (all loaded)
-    # A: Alignment-Sensitive, 100 per subcategory
-    "A_4a":            100,
-    "A_4b":            100,
-    "A_4c":            100,
-    # A_4d: all hand-written (~100 from multi-turn + roleplay combined)
-    # A_4e: 100 total (Wikipedia + hand-written)
-    "A_4e":            100,
+    # GEN: General/Diverse (~625)
+    "GEN_mmlu_pro":    325,
+    "GEN_humaneval":   100,
+    "GEN_mbpp":         75,
+    "GEN_hellaswag":   125,
+    # A: Alignment-Sensitive
+    "A_5a":            100,
+    "A_5b":             80,
+    "A_5c":            120,
+    # A_5d: all hand-written (~100 from multi-turn + roleplay combined)
+    # A_5e: 100 total (Wikipedia + hand-written)
+    "A_5e":            100,
 }
 
 
@@ -572,28 +772,47 @@ def build_dataset(output_path: str | Path, seed: int = 42) -> list[dict]:
     print("Loading R — CommonsenseQA …")
     r_csqa  = _load_commonsense_qa(TARGETS["R_commonsenseqa"], rng)
 
+    print("Loading R — BoolQ …")
+    r_boolq = _load_boolq(TARGETS["R_boolq"], rng)
+
+    print("Loading R — WinoGrande …")
+    r_wino  = _load_winogrande(TARGETS["R_winogrande"], rng)
+
     print("Loading OOD — handcrafted …")
     ood = _load_ooc()
 
-    print("Loading A 4a — Harmful …")
-    a_4a = _load_a4a_harmful(TARGETS["A_4a"], rng)
+    print("Loading GEN — MMLU-Pro …")
+    g_mmlu  = _load_mmlu_pro(TARGETS["GEN_mmlu_pro"], rng)
 
-    print("Loading A 4b — Borderline …")
-    a_4b = _load_a4b_borderline(TARGETS["A_4b"], rng)
+    print("Loading GEN — HumanEval …")
+    g_heval = _load_humaneval(TARGETS["GEN_humaneval"], rng)
 
-    print("Loading A 4c — Format-constrained …")
-    a_4c = _load_a4c_format(TARGETS["A_4c"], rng)
+    print("Loading GEN — MBPP …")
+    g_mbpp  = _load_mbpp(TARGETS["GEN_mbpp"], rng)
 
-    print("Loading A 4d — Conversational/persona …")
-    a_4d = _load_a4d_conversational()
+    print("Loading GEN — HellaSwag …")
+    g_hella = _load_hellaswag(TARGETS["GEN_hellaswag"], rng)
 
-    print("Loading A 4e — Raw completion …")
-    a_4e = _load_a4e_raw_completion(TARGETS["A_4e"], rng)
+    print("Loading A 5a — Harmful …")
+    a_5a = _load_a5a_harmful(TARGETS["A_5a"], rng)
+
+    print("Loading A 5b — Borderline …")
+    a_5b = _load_a5b_borderline(TARGETS["A_5b"], rng)
+
+    print("Loading A 5c — Format-constrained …")
+    a_5c = _load_a5c_format(TARGETS["A_5c"], rng)
+
+    print("Loading A 5d — Conversational/persona …")
+    a_5d = _load_a5d_conversational()
+
+    print("Loading A 5e — Raw completion …")
+    a_5e = _load_a5e_raw_completion(TARGETS["A_5e"], rng)
 
     all_records = (f_tqa + f_nq + f_wq +
-                   r_gsm + r_arc + r_strat + r_csqa +
+                   r_gsm + r_arc + r_strat + r_csqa + r_boolq + r_wino +
                    ood +
-                   a_4a + a_4b + a_4c + a_4d + a_4e)
+                   g_mmlu + g_heval + g_mbpp + g_hella +
+                   a_5a + a_5b + a_5c + a_5d + a_5e)
 
     # Assign stable IDs
     counters: dict[str, int] = {}
@@ -644,15 +863,18 @@ def _print_summary(records: list[dict], output_path: Path) -> None:
     print(f"  Exp3 dataset  →  {output_path}")
     print(f"  Total records : {len(records)}")
     print(f"{'='*60}")
-    for split, label in [("F", "Factual"), ("R", "Reasoning"),
-                          ("OOD", "Out-of-Distribution"), ("A", "Alignment")]:
+    for split, label in [("F",   "Factual"),
+                          ("R",   "Reasoning"),
+                          ("OOD", "Out-of-Distribution"),
+                          ("GEN", "General/Diverse"),
+                          ("A",   "Alignment")]:
         n = split_counts.get(split, 0)
         print(f"  {split:<5} ({label:<20}) : {n}")
     print(f"  {'─'*45}")
 
     print("  Sources:")
     for k, v in sorted(source_counts.items()):
-        print(f"    {k:<35} {v}")
+        print(f"    {k:<40} {v}")
 
     if ood_type_counts:
         print(f"  {'─'*45}")
@@ -663,14 +885,16 @@ def _print_summary(records: list[dict], output_path: Path) -> None:
     if a_sub_counts:
         print(f"  {'─'*45}")
         print("  A subcategories:")
-        for sc in ["4a", "4b", "4c", "4d", "4e"]:
+        labels_map = {
+            "5a": "Harmful",
+            "5b": "Borderline",
+            "5c": "Format-constrained",
+            "5d": "Conversational/persona",
+            "5e": "Raw completion",
+        }
+        for sc in ["5a", "5b", "5c", "5d", "5e"]:
             if sc in a_sub_counts:
-                label = {"4a": "Harmful",
-                         "4b": "Borderline",
-                         "4c": "Format-constrained",
-                         "4d": "Conversational/persona",
-                         "4e": "Raw completion"}[sc]
-                print(f"    {sc}  {label:<25} {a_sub_counts[sc]}")
+                print(f"    {sc}  {labels_map[sc]:<25} {a_sub_counts[sc]}")
         print(f"  A expected behaviors:")
         for k, v in sorted(a_behavior_counts.items()):
             print(f"    {k:<20} {v}")
