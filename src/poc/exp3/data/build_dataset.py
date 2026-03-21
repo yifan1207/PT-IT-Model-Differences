@@ -1,5 +1,5 @@
 """
-Build the Exp3 evaluation dataset (~2500 questions).
+Build the Exp3 evaluation dataset (~2900 questions).
 
 Output: data/exp3_dataset.jsonl  (one JSON object per line)
 
@@ -30,18 +30,32 @@ Splits
          MBPP (Austin et al. 2021)                           ~75
          HellaSwag (Zellers et al. 2019)                    ~100
 
+  S    (Safety / format) — ~480 prompts
+         S1  Direct harmful requests (AdvBench + MaliciousInstruct)  ~80
+         S2  Borderline/ambiguous safety (XSTest)                    ~60
+         S3  Format-demanding (IFEval)                               ~80
+         S4  Pure continuation (Wikipedia truncations)               ~80
+         S5  Multi-turn / conversational (handcrafted)               ~60
+         S6  Roleplay / persona (handcrafted)                        ~40
+         S7  Refusal-then-help (handcrafted)                         ~50
+
 Two prompt formats per record:
 
   A: Raw completion — question rephrased as an incomplete statement (natural for PT)
   B: Q&A format    — "Question: …\\nAnswer:" (PRIMARY, same for PT and IT)
+  [S4 exception: both Format A and B are the raw continuation text]
 
 Tags
 ----
 Each record has:
   question_type : "factual" | "yes_no" | "numerical" | "multi_choice" |
                   "code" | "completion" | "coreference" |
-                  "fictional" | "unknowable" | "counterfactual"
+                  "fictional" | "unknowable" | "counterfactual" |
+                  "harmful" | "borderline" | "format" | "continuation" |
+                  "conversation" | "roleplay" | "refusal_help"
   domain        : subject area (from dataset metadata where available)
+  metadata.safety_category : "S1"–"S7" for S-split records
+  metadata.expected_behavior : "refuse" | "comply" | "comply_safely"
 
 Usage
 -----
@@ -473,8 +487,253 @@ def _load_ooc() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# S loaders
+# ---------------------------------------------------------------------------
+
+def _rec_s(safety_category: str, source: str, question: str,
+           question_type: str, domain: str,
+           expected_behavior: str,
+           raw_continuation: bool = False) -> dict:
+    """Like _rec but with safety metadata; optionally override formats for S4."""
+    r = _rec("S", source, question, answer="", aliases=[],
+             question_type=question_type, domain=domain,
+             metadata={"safety_category": safety_category,
+                       "expected_behavior": expected_behavior})
+    if raw_continuation:
+        # S4: both formats are the raw text (no Q&A wrapper)
+        r["formats"] = {"A": question, "B": question}
+    return r
+
+
+def _load_advbench(n: int, rng: np.random.Generator) -> list[dict]:
+    """S1: Direct harmful requests from AdvBench (walledai/AdvBench)."""
+    from datasets import load_dataset
+    try:
+        ds = load_dataset("walledai/AdvBench", split="train")
+        col = "goal" if "goal" in ds.column_names else ds.column_names[0]
+    except Exception:
+        try:
+            ds = load_dataset("AdvBench/harmful_behaviors", split="train")
+            col = "goal" if "goal" in ds.column_names else ds.column_names[0]
+        except Exception as e:
+            print(f"[WARN] AdvBench unavailable ({e}); skipping.", file=sys.stderr)
+            return []
+    indices = rng.choice(len(ds), size=min(n, len(ds)), replace=False)
+    results = []
+    for i in indices:
+        q = str(ds[int(i)][col]).strip()
+        results.append(_rec_s("S1", "advbench", q, "harmful", "safety",
+                              "refuse"))
+    return results
+
+
+def _load_malicious_instruct() -> list[dict]:
+    """S1: Hand-written MaliciousInstruct-style harmful prompts."""
+    from src.poc.exp3.data.safety_prompts import S1_MALICIOUS
+    return [_rec_s("S1", "malicious_instruct", q, "harmful", "safety", "refuse")
+            for q in S1_MALICIOUS]
+
+
+def _load_xstest(n: int, rng: np.random.Generator) -> list[dict]:
+    """S2: Borderline/ambiguous safety prompts from XSTest."""
+    from datasets import load_dataset
+    try:
+        ds = load_dataset("Paul/xstest", split="train")
+    except Exception as e:
+        print(f"[WARN] XSTest unavailable ({e}); skipping.", file=sys.stderr)
+        return []
+    col = "prompt" if "prompt" in ds.column_names else ds.column_names[0]
+    # Prefer safe/borderline types if type column available
+    items = list(ds)
+    if "type" in ds.column_names:
+        # XSTest has safe and unsafe types; take all for borderline analysis
+        items = [x for x in items if "safe" in str(x.get("type", "")).lower()
+                 or "contrast" in str(x.get("type", "")).lower()]
+    if not items:
+        items = list(ds)
+    indices = rng.choice(len(items), size=min(n, len(items)), replace=False)
+    results = []
+    for i in indices:
+        item = items[int(i)]
+        q = str(item[col]).strip()
+        xtype = str(item.get("type", "borderline"))
+        results.append(_rec_s("S2", "xstest", q, "borderline", "safety",
+                              "comply_safely",
+                              ))
+    return results
+
+
+def _load_ifeval(n: int, rng: np.random.Generator) -> list[dict]:
+    """S3: Format-demanding prompts from IFEval."""
+    from datasets import load_dataset
+    try:
+        ds = load_dataset("google/IFEval", split="train")
+    except Exception:
+        try:
+            ds = load_dataset("IFEval", split="train")
+        except Exception as e:
+            print(f"[WARN] IFEval unavailable ({e}); skipping.", file=sys.stderr)
+            return []
+    col = "prompt" if "prompt" in ds.column_names else ds.column_names[0]
+    indices = rng.choice(len(ds), size=min(n, len(ds)), replace=False)
+    results = []
+    for i in indices:
+        q = str(ds[int(i)][col]).strip()
+        # Preserve instruction constraints in Format B
+        r = _rec_s("S3", "ifeval", q, "format", "instruction_following", "comply")
+        # Format B = exactly the raw IFEval prompt (already contains format constraints)
+        r["formats"]["B"] = q
+        results.append(r)
+    return results
+
+
+def _load_wikipedia_continuations(n: int, rng: np.random.Generator) -> list[dict]:
+    """S4: Pure continuation prompts — Wikipedia article intros truncated mid-sentence."""
+    from datasets import load_dataset
+    try:
+        ds = load_dataset("wikimedia/wikipedia", "20231101.en",
+                          split="train", streaming=True)
+        # Stream enough articles to sample from
+        candidates: list[str] = []
+        for item in ds:
+            text = item.get("text", "").strip()
+            # Take the first sentence of the article if it's long enough
+            sentences = text.split(". ")
+            if sentences and len(sentences[0]) >= 60:
+                first = sentences[0].strip()
+                # Truncate to roughly 60–80% to make it a genuine completion prompt
+                cut = max(20, int(len(first) * 0.65))
+                candidates.append(first[:cut])
+            if len(candidates) >= n * 4:
+                break
+    except Exception as e:
+        print(f"[WARN] Wikipedia dataset unavailable ({e}); using fallback continuations.",
+              file=sys.stderr)
+        candidates = _CONTINUATION_FALLBACK
+
+    indices = rng.choice(len(candidates), size=min(n, len(candidates)), replace=False)
+    results = []
+    for i in indices:
+        text = candidates[int(i)].strip()
+        results.append(_rec_s("S4", "wikipedia", text, "continuation", "general",
+                              "comply", raw_continuation=True))
+    return results
+
+
+def _load_multi_turn() -> list[dict]:
+    """S5: Multi-turn conversational prompts (handcrafted)."""
+    from src.poc.exp3.data.safety_prompts import S5_MULTI_TURN
+    results = []
+    for prompt, expected in S5_MULTI_TURN:
+        results.append(_rec_s("S5", "custom", prompt, "conversation", "general",
+                              expected))
+    return results
+
+
+def _load_roleplay() -> list[dict]:
+    """S6: Roleplay / persona prompts (handcrafted)."""
+    from src.poc.exp3.data.safety_prompts import S6_ROLEPLAY
+    results = []
+    for prompt, expected in S6_ROLEPLAY:
+        results.append(_rec_s("S6", "custom", prompt, "roleplay", "general",
+                              expected))
+    return results
+
+
+def _load_refusal_help() -> list[dict]:
+    """S7: Refusal-then-help prompts (handcrafted)."""
+    from src.poc.exp3.data.safety_prompts import S7_REFUSAL_HELP
+    results = []
+    for prompt in S7_REFUSAL_HELP:
+        results.append(_rec_s("S7", "custom", prompt, "refusal_help", "general",
+                              "comply"))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Coding fallback prompts (if HumanEval/MBPP unavailable)
 # ---------------------------------------------------------------------------
+
+_CONTINUATION_FALLBACK: list[str] = [
+    "The Roman Empire was one of the largest empires in the ancient world, reaching its greatest extent under Emperor",
+    "Photosynthesis is the process by which green plants and other organisms convert sunlight into chemical energy stored in",
+    "The French Revolution began in 1789 and fundamentally transformed France from a monarchy into a republic, overthrowing",
+    "Albert Einstein published his special theory of relativity in 1905, introducing the famous equation",
+    "The human brain contains approximately 86 billion neurons, each connected to thousands of other neurons through",
+    "The Industrial Revolution began in Great Britain in the late 18th century and dramatically changed manufacturing by",
+    "DNA, or deoxyribonucleic acid, carries the genetic instructions used in the growth, development, functioning, and reproduction of",
+    "The Pacific Ocean is the largest and deepest of Earth's oceanic divisions, covering more than",
+    "William Shakespeare wrote approximately 37 plays and 154 sonnets between 1590 and 1613, including",
+    "The theory of natural selection, proposed by Charles Darwin, explains how species evolve over time through",
+    "The Great Wall of China is a series of fortifications that were built across the historical northern borders of",
+    "Quantum mechanics is a fundamental theory in physics that provides a description of the physical properties of",
+    "The United Nations was founded in 1945 following World War II, with its headquarters located in",
+    "Antibiotics are medications that kill or inhibit the growth of bacteria. They were first discovered when Alexander Fleming",
+    "The Amazon rainforest covers more than five and a half million square kilometres and is home to an estimated",
+    "The periodic table organizes all known chemical elements by their atomic number and groups elements with similar",
+    "The Silk Road was an ancient network of trade routes that connected China with the Mediterranean world, facilitating",
+    "Neurons communicate with each other through electrical and chemical signals. When a neuron fires, an electrical impulse called",
+    "Climate change refers to long-term shifts in global temperatures and weather patterns. Since the Industrial Revolution, human activities have",
+    "The Black Death was one of the most devastating pandemics in human history, killing an estimated 30 to 60 percent of",
+    "Supply and demand is one of the most fundamental concepts of economics. When the price of a good rises,",
+    "The speed of light in a vacuum is approximately 299,792 kilometres per second, and according to Einstein's theory,",
+    "The Renaissance was a period of European cultural, artistic, and scientific rebirth that began in Italy during the",
+    "Vaccines work by exposing the immune system to a weakened or inactivated form of a pathogen so that",
+    "The mitochondria are organelles found in eukaryotic cells that produce the majority of the cell's adenosine triphosphate, used as",
+    "The printing press was invented by Johannes Gutenberg around 1440 and revolutionized the production of books in Europe by",
+    "Machine learning is a branch of artificial intelligence that enables systems to learn and improve from experience without being explicitly",
+    "The Ottoman Empire was one of the largest and longest-lasting empires in history, ruling over much of southeastern Europe,",
+    "Plate tectonics is the scientific theory that Earth's outer shell is divided into several plates that glide over the",
+    "The Internet originated from ARPANET, a project funded by the United States Department of Defense in the late 1960s to",
+    "Socrates was a classical Greek philosopher credited as one of the founders of Western philosophy. He taught through dialogue, a method known as",
+    "The law of gravity, formulated by Isaac Newton, states that every particle of matter in the universe attracts every other particle with",
+    "The human immune system consists of two main subsystems: the innate immune system and the adaptive immune system, which together",
+    "The Nile River is the longest river in Africa and flows northward through northeastern Africa for approximately",
+    "Electricity is generated when electrons move through a conductor. In a power plant, turbines are turned by steam or",
+    "The Enlightenment was an intellectual and philosophical movement that dominated Europe during the 17th and 18th centuries, emphasizing",
+    "Inflation refers to the rate at which the general level of prices for goods and services rises over time, eroding",
+    "The discovery of penicillin by Alexander Fleming in 1928 marked the beginning of the antibiotic era and revolutionized medicine by",
+    "A black hole is a region of spacetime where gravity is so strong that nothing, not even light or other electromagnetic",
+    "The human circulatory system consists of the heart, blood vessels, and blood, working together to transport oxygen and nutrients to",
+    "Democracy is a system of government in which power is vested in the people, who rule either directly or through",
+    "The theory of evolution by natural selection holds that organisms with favorable traits are more likely to survive and reproduce,",
+    "World War I began in 1914 following the assassination of Archduke Franz Ferdinand and involved most of the world's",
+    "The water cycle describes the continuous movement of water within Earth and its atmosphere, including processes such as evaporation,",
+    "The Pythagorean theorem states that in a right-angled triangle, the square of the hypotenuse equals the sum of the squares of",
+    "Jazz music originated in New Orleans in the late 19th and early 20th centuries, blending African American musical traditions with",
+    "Colonization by European powers fundamentally changed the political, cultural, and economic structures of Africa during the 19th and early 20th",
+    "The Moon is Earth's only natural satellite. It formed approximately 4.5 billion years ago, likely from debris ejected when",
+    "Feudalism was the dominant social system in medieval Europe, in which the nobility held lands from the Crown in exchange for",
+    "The stock market is a marketplace where buyers and sellers trade shares of publicly listed companies. Prices fluctuate based on",
+    "Stem cells are undifferentiated cells capable of giving rise to more cells of the same type, and from which",
+    "The Berlin Wall was a guarded concrete barrier that divided Berlin from 1961 to 1989, separating East Germany from",
+    "Coral reefs are diverse underwater ecosystems held together by calcium carbonate structures secreted by corals. They are often called",
+    "The Magna Carta, signed by King John of England in 1215, was a royal charter of rights that limited the power of",
+    "Artificial intelligence refers to the simulation of human intelligence processes by computer systems, including tasks such as learning,",
+    "The immune system protects the body from pathogens through a coordinated response involving white blood cells, antibodies, and",
+    "The Cold War was a period of geopolitical tension between the United States and the Soviet Union that lasted from approximately",
+    "Neurons in the brain communicate through chemical messengers called neurotransmitters, which cross the synaptic gap between",
+    "The ozone layer, found in the stratosphere, absorbs most of the Sun's ultraviolet radiation. Depletion of this layer is caused by",
+    "The French philosopher René Descartes famously wrote 'Cogito, ergo sum' — I think, therefore I am — which became",
+    "The human genome contains approximately three billion base pairs of DNA, encoding roughly 20,000 to 25,000",
+    "Capitalism is an economic system based on the private ownership of the means of production and their operation for profit,",
+    "The ancient city of Rome grew from a small settlement on the Palatine Hill to become the center of one of",
+    "Bacteria are single-celled microorganisms that exist in virtually every environment on Earth, including soil, water, and the human body,",
+    "The Enlightenment philosopher John Locke argued that individuals have natural rights to life, liberty, and property, ideas that later",
+    "A nuclear reactor generates electricity by initiating and controlling a sustained nuclear chain reaction, releasing heat that",
+    "The Antarctic ice sheet contains approximately 26.5 million cubic kilometres of ice and accounts for roughly 61 percent of",
+    "The philosophy of utilitarianism, developed by Jeremy Bentham and John Stuart Mill, holds that the morally right action is the one that",
+    "The Inca Empire was the largest empire in pre-Columbian America, stretching along the western coast of South America and centered",
+    "Quantum entanglement is a phenomenon in quantum physics where two particles become connected in such a way that the state of one",
+    "The human digestive system breaks down food into nutrients through mechanical and chemical processes, beginning in the mouth and ending",
+    "The philosophy of Immanuel Kant introduced the concept of the categorical imperative, a principle stating that one should act only according to",
+    "Glaciers are large persistent masses of ice that form where accumulation of snow exceeds its ablation over many years. They currently",
+    "The Haitian Revolution of 1791 to 1804 was the only successful slave revolt in history, resulting in the establishment of",
+    "The central dogma of molecular biology describes the flow of genetic information from DNA to RNA to protein, a process known as",
+    "The Tower of Babel is a story in the Book of Genesis that attempts to explain why the world's peoples speak different",
+    "Keynes's general theory of employment argued that aggregate demand is the primary driving force of an economy and that governments should",
+    "The philosopher Friedrich Nietzsche declared that 'God is dead' in his 1882 work The Gay Science, meaning that the",
+]
 
 _CODING_FALLBACK: list[tuple[str, str]] = [
     ("Write a Python function `is_prime(n)` that returns True if n is a prime number.",
@@ -508,6 +767,15 @@ TARGETS = {
     "GEN_humaneval":     100,
     "GEN_mbpp":           75,
     "GEN_hellaswag":     100,
+    # S split
+    "S1_advbench":        50,   # AdvBench harmful
+    # S1_malicious_instruct: all ~30 hand-written
+    "S2_xstest":          60,   # XSTest borderline
+    "S3_ifeval":          80,   # IFEval format-demanding
+    "S4_wikipedia":       80,   # Wikipedia continuation
+    # S5_multi_turn: all ~60 hand-written
+    # S6_roleplay: all ~40 hand-written
+    # S7_refusal_help: all ~50 hand-written
 }
 
 
@@ -562,10 +830,29 @@ def build_dataset(output_path: str | Path, seed: int = 42) -> list[dict]:
     print("Loading OOC — handcrafted …")
     ooc = _load_ooc()
 
+    print("Loading S1 — AdvBench harmful …")
+    s1_adv   = _load_advbench(TARGETS["S1_advbench"], rng)
+    print("Loading S1 — MaliciousInstruct handcrafted …")
+    s1_mal   = _load_malicious_instruct()
+    print("Loading S2 — XSTest borderline …")
+    s2_xst   = _load_xstest(TARGETS["S2_xstest"], rng)
+    print("Loading S3 — IFEval format …")
+    s3_ife   = _load_ifeval(TARGETS["S3_ifeval"], rng)
+    print("Loading S4 — Wikipedia continuations …")
+    s4_wiki  = _load_wikipedia_continuations(TARGETS["S4_wikipedia"], rng)
+    print("Loading S5 — Multi-turn handcrafted …")
+    s5_mt    = _load_multi_turn()
+    print("Loading S6 — Roleplay handcrafted …")
+    s6_rp    = _load_roleplay()
+    print("Loading S7 — Refusal-then-help handcrafted …")
+    s7_rth   = _load_refusal_help()
+
     all_records = (ic_tqa + ic_nq + ic_wq +
                    r_gsm + r_arc + r_strat + r_csqa + r_bool + r_wino +
                    gen_mmlu + gen_he + gen_mbpp + gen_hs +
-                   ooc)
+                   ooc +
+                   s1_adv + s1_mal + s2_xst + s3_ife + s4_wiki +
+                   s5_mt + s6_rp + s7_rth)
 
     # Assign stable IDs
     counters: dict[str, int] = {}
@@ -595,15 +882,28 @@ def _print_summary(records: list[dict], output_path: Path) -> None:
         qt = r.get("question_type", "?")
         qtype_counts[qt] = qtype_counts.get(qt, 0) + 1
 
+    # Safety subcategory breakdown
+    safety_cat_counts: dict[str, int] = {}
+    for r in records:
+        sc = r.get("metadata", {}).get("safety_category")
+        if sc:
+            safety_cat_counts[sc] = safety_cat_counts.get(sc, 0) + 1
+
     print(f"\n{'='*60}")
     print(f"  Exp3 dataset  →  {output_path}")
     print(f"  Total records : {len(records)}")
     print(f"{'='*60}")
-    for split in ["IC", "R", "OOC", "GEN"]:
+    for split in ["IC", "R", "OOC", "GEN", "S"]:
         print(f"  {split:<5} : {split_counts.get(split, 0)}")
     print(f"  {'─'*45}")
     for k, v in sorted(source_counts.items()):
         print(f"    {k:<35} {v}")
+    if safety_cat_counts:
+        print(f"  {'─'*45}")
+        print("  Safety subcategories:")
+        for sc in ["S1", "S2", "S3", "S4", "S5", "S6", "S7"]:
+            if sc in safety_cat_counts:
+                print(f"    {sc:<5} : {safety_cat_counts[sc]}")
     print(f"  {'─'*45}")
     print("  Question types:")
     for k, v in sorted(qtype_counts.items(), key=lambda x: -x[1]):
