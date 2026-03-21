@@ -59,7 +59,7 @@ def main() -> None:
         "--dataset",
         default=None,
         help="Path to exp3 JSONL dataset (default: data/exp3_dataset.jsonl). "
-             "If not found, falls back to exp2 prompts.",
+             "Raises FileNotFoundError if not found — no silent fallback.",
     )
     parser.add_argument(
         "--chat-template",
@@ -70,8 +70,9 @@ def main() -> None:
     parser.add_argument(
         "--raw-completion",
         action="store_true",
-        help="IT only: skip chat template (exp 0b confound test). "
-             "Same as default behaviour; kept for clarity.",
+        help="Deprecated alias for the default mode (apply_chat_template=False). "
+             "Has no effect beyond setting raw_completion=True in config for "
+             "path-suffix disambiguation.  Use --chat-template to change behaviour.",
     )
     parser.add_argument("--no-emergence",   action="store_true")
     parser.add_argument("--no-attribution", action="store_true")
@@ -89,15 +90,15 @@ def main() -> None:
 
     # ── Load prompts ──────────────────────────────────────────────────────────
     dataset_path = args.dataset or "data/exp3_dataset.jsonl"
-    if Path(dataset_path).exists():
-        prompts = _load_prompts_from_dataset(dataset_path)
-        n_prompts = sum(len(ps) for cat in prompts.values() for ps in cat.values())
-        prompt_source = dataset_path
-    else:
-        # Fallback to exp2 prompts if dataset hasn't been built yet
-        from src.poc.exp2.prompts import PROMPTS as prompts  # noqa: F401
-        n_prompts = sum(len(ps) for cat in prompts.values() for ps in cat.values())
-        prompt_source = "src/poc/exp2/prompts.py (fallback — build exp3 dataset first)"
+    if not Path(dataset_path).exists():
+        raise FileNotFoundError(
+            f"Exp3 dataset not found: {dataset_path}\n"
+            f"Build it first:  uv run python -m src.poc.exp3.data.build_dataset\n"
+            f"Or pass an explicit path:  --dataset /path/to/dataset.jsonl"
+        )
+    prompts = _load_prompts_from_dataset(dataset_path)
+    n_prompts = sum(len(ps) for cat in prompts.values() for ps in cat.values())
+    prompt_source = dataset_path
 
     print("=" * 60)
     print("Exp3: Corrective Computational Stage")

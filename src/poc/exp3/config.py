@@ -123,7 +123,14 @@ class Exp3Config:
     @property
     def run_dir(self) -> str:
         variant = self.transcoder_variant.replace("width_", "")
-        suffix = "_raw" if self.raw_completion else ""
+        # Encode chat_template in path so secondary analysis runs never overwrite
+        # the confound-controlled (default) results.
+        if self.apply_chat_template:
+            suffix = "_chat"
+        elif self.raw_completion:
+            suffix = "_raw"
+        else:
+            suffix = ""
         return f"results/exp3/{self.model_variant}_{variant}_t{self.max_gen_tokens}{suffix}"
 
     @property
