@@ -31,16 +31,7 @@ from src.poc.shared.constants import N_LAYERS
 
 _BOUNDARY = 20
 
-CATEGORY_COLORS = {
-    "in_context":     "#2196F3",
-    "out_of_context": "#FF9800",
-    "reasoning":      "#4CAF50",
-    "IC":             "#2196F3",
-    "OOC":            "#FF9800",
-    "R":              "#4CAF50",
-    "GEN":            "#9C27B0",
-}
-_DEFAULT_COLOR = "#888888"
+from src.poc.shared.plot_colors import SPLIT_COLORS as CATEGORY_COLORS, _DEFAULT_COLOR
 
 
 def _per_layer_frac_with_sem(results: list[dict],

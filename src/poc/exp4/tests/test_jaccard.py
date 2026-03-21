@@ -1,9 +1,4 @@
-"""
-Tests for analysis/jaccard.py.
-
-All tests are self-contained — no GPU, no model, no real data files.
-We build synthetic active_features arrays and verify correctness.
-"""
+"""Tests for alignment-based continuity analysis in analysis/jaccard.py."""
 import numpy as np
 import pytest
 import tempfile
@@ -12,7 +7,7 @@ import os
 from src.poc.exp4.analysis.jaccard import (
     jaccard,
     jaccard_curve_for_prompt,
-    compute_jaccard_stats,
+    compute_continuity_stats,
     dip_summary,
     load_features_exp4,
 )
@@ -84,8 +79,8 @@ class TestJaccardCurveForPrompt:
         af = self._make_af(1, 5, feats)
         pairs = [(0, 1)]
         result = jaccard_curve_for_prompt(af, pairs)
-        # intersection = {1,2}, union = {0,1,2,3} → J = 0.5
-        assert result[(0, 1)] == [pytest.approx(0.5)]
+        # With a single event, profile-based matching can align all active features.
+        assert result[(0, 1)] == [pytest.approx(1.0)]
 
     def test_two_steps_constant(self):
         feats = {
@@ -106,13 +101,13 @@ class TestJaccardCurveForPrompt:
         feats = {(0, 0): [0, 1], (0, 1): [1, 2], (0, 2): [2, 3]}
         af = self._make_af(1, 4, feats)
         result = jaccard_curve_for_prompt(af, [(0, 1), (1, 2)])
-        assert result[(0, 1)][0] == pytest.approx(1.0 / 3.0)
-        assert result[(1, 2)][0] == pytest.approx(1.0 / 3.0)
+        assert result[(0, 1)][0] == pytest.approx(1.0)
+        assert result[(1, 2)][0] == pytest.approx(1.0)
 
 
 # ── compute_jaccard_stats() ───────────────────────────────────────────────────
 
-class TestComputeJaccardStats:
+class TestComputeContinuityStats:
     def _make_features_dict(self, n_prompts: int, n_layers: int,
                             layer_feats: dict) -> dict:
         """Build dict of prompt_id → [1, n_layers] object arrays.
@@ -132,36 +127,40 @@ class TestComputeJaccardStats:
         # All layers have the same features → all Jaccard = 1
         feats = {l: [0, 1, 2] for l in range(15)}
         fd = self._make_features_dict(3, 15, feats)
-        stats = compute_jaccard_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
+        stats = compute_continuity_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
         for pair in stats["adjacent_pairs"]:
-            assert stats["mean_jaccard"][pair] == pytest.approx(1.0)
+            assert stats["mean_continuity"][pair] == pytest.approx(1.0)
 
     def test_disjoint_at_dip(self):
-        # Layers 0-10: features {0,1,2}; layers 11+: features {3,4,5}
-        layer_feats = {}
-        for l in range(11):
-            layer_feats[l] = [0, 1, 2]
-        for l in range(11, 15):
-            layer_feats[l] = [3, 4, 5]
-        fd = self._make_features_dict(5, 15, layer_feats)
-        stats = compute_jaccard_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
-        # J(10, 11) should be 0 — transition at the dip
+        # Build disjoint prompt-level activation profiles across the dip.
+        fd = {}
+        for pid in range(5):
+            af = np.empty((1, 15), dtype=object)
+            for l in range(15):
+                af[0, l] = np.array([], dtype=np.int32)
+            if pid < 2:
+                af[0, 10] = np.array([0, 1, 2], dtype=np.int32)
+            else:
+                af[0, 11] = np.array([3, 4, 5], dtype=np.int32)
+                af[0, 12] = np.array([3, 4, 5], dtype=np.int32)
+                af[0, 13] = np.array([3, 4, 5], dtype=np.int32)
+            fd[str(pid)] = af
+        stats = compute_continuity_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
+        # C(10, 11) should be 0 — no shared prompt-level activation profiles
         pair = (10, 11)
-        assert stats["mean_jaccard"][pair] == pytest.approx(0.0)
-        # J(8, 9) should be 1 — both pre-dip
-        assert stats["mean_jaccard"][(8, 9)] == pytest.approx(1.0)
-        # J(12, 13) should be 1 — both post-dip
-        assert stats["mean_jaccard"][(12, 13)] == pytest.approx(1.0)
-        # Cross-dip J(10, 12) should be 0 — complete disjointness
+        assert stats["mean_continuity"][pair] == pytest.approx(0.0)
+        # Post-dip adjacent layers still align perfectly.
+        assert stats["mean_continuity"][(12, 13)] == pytest.approx(1.0)
+        # Cross-dip continuity is also 0.
         cross = stats["cross_dip_pair"]
-        assert stats["mean_jaccard"][cross] == pytest.approx(0.0)
+        assert stats["mean_continuity"][cross] == pytest.approx(0.0)
 
     def test_feature_death_count(self):
         # 3 features die at layer 8→9: layer 8 has {0,1,2}, layer 9+ is empty
         # feature_death[la] counts |features_at_la - features_at_la+1|
         layer_feats = {8: [0, 1, 2]}  # all other layers empty
         fd = self._make_features_dict(2, 15, layer_feats)
-        stats = compute_jaccard_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
+        stats = compute_continuity_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
         # At transition 8→9: layer 8 has {0,1,2}, layer 9 has {} → 3 deaths
         assert stats["feature_death"].get(8, 0) == pytest.approx(3.0)
 
@@ -169,16 +168,16 @@ class TestComputeJaccardStats:
         # Single prompt → SEM should be 0
         feats = {l: [0, 1] for l in range(15)}
         fd = self._make_features_dict(1, 15, feats)
-        stats = compute_jaccard_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
+        stats = compute_continuity_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
         for pair in stats["adjacent_pairs"]:
-            assert stats["sem_jaccard"][pair] == pytest.approx(0.0)
+            assert stats["sem_continuity"][pair] == pytest.approx(0.0)
 
     def test_returns_cross_dip_pair(self):
         feats = {l: [l] for l in range(15)}
         fd = self._make_features_dict(2, 15, feats)
-        stats = compute_jaccard_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
+        stats = compute_continuity_stats(fd, analysis_start=8, analysis_end=15, dip_layer=11)
         assert stats["cross_dip_pair"] == (10, 12)
-        assert stats["cross_dip_pair"] in stats["mean_jaccard"]
+        assert stats["cross_dip_pair"] in stats["mean_continuity"]
 
 
 # ── dip_summary() ─────────────────────────────────────────────────────────────
@@ -193,8 +192,8 @@ class TestDipSummary:
             "adjacent_pairs": adj_pairs,
             "cross_dip_pair": cross,
             "all_pairs":      all_pairs,
-            "mean_jaccard":   {**{p: jaccard_by_pair.get(p, 0.5) for p in all_pairs}},
-            "sem_jaccard":    {p: 0.0 for p in all_pairs},
+            "mean_continuity": {**{p: jaccard_by_pair.get(p, 0.5) for p in all_pairs}},
+            "sem_continuity":  {p: 0.0 for p in all_pairs},
             "per_prompt":     {p: [] for p in all_pairs},
             "feature_death":  {p[0]: 1.0 for p in adj_pairs},
             "feature_birth":  {p[0]: 1.0 for p in adj_pairs},

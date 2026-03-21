@@ -46,6 +46,8 @@ from pathlib import Path
 from collections import defaultdict
 from typing import Optional
 
+from src.poc.exp4.analysis.feature_alignment import build_population_partition
+
 
 # ── Neuronpedia configuration ──────────────────────────────────────────────────
 
@@ -93,54 +95,46 @@ def extract_feature_populations(
         "post_dip_layer"     : int
     """
     data = np.load(npz_path, allow_pickle=True)
-    prompt_ids = data.files
-    n_prompts  = len(prompt_ids)
+    features_dict: dict[str, np.ndarray] = {}
+    for pid in data.files:
+        arr = data[pid]
+        if arr.ndim == 1:
+            arr = arr[None, :]
+        features_dict[pid] = arr
 
-    # Count how often each feature appears at each layer across prompts
-    count_pre  = defaultdict(int)
-    count_post = defaultdict(int)
+    partition = build_population_partition(
+        features_dict,
+        pre_layer=pre_dip_layer,
+        post_layer=post_dip_layer,
+        min_frequency=min_frequency,
+        event_mode="prompt",
+    )
 
-    for pid in prompt_ids:
-        af = data[pid]  # [n_layers] object array
-
-        def _get_features(layer: int) -> set:
-            if layer >= len(af):
-                return set()
-            arr = af[layer]
-            return set(arr.tolist()) if len(arr) > 0 else set()
-
-        pre_set  = _get_features(pre_dip_layer)
-        post_set = _get_features(post_dip_layer)
-
-        for feat in pre_set:
-            count_pre[feat] += 1
-        for feat in post_set:
-            count_post[feat] += 1
-
-    min_count = max(1, int(min_frequency * n_prompts))
-
-    frequent_pre  = set(f for f, c in count_pre.items()  if c >= min_count)
-    frequent_post = set(f for f, c in count_post.items() if c >= min_count)
-
-    pre_exclusive  = sorted(frequent_pre  - frequent_post)
-    post_exclusive = sorted(frequent_post - frequent_pre)
-    surviving      = sorted(frequent_pre  & frequent_post)
-
-    # Sort by frequency (most frequent first) before capping
-    pre_exclusive  = sorted(pre_exclusive,  key=lambda f: count_pre[f],  reverse=True)
-    post_exclusive = sorted(post_exclusive, key=lambda f: count_post[f], reverse=True)
-    surviving      = sorted(surviving,
-                            key=lambda f: count_pre[f] + count_post[f], reverse=True)
+    pre_exclusive = sorted(
+        partition["pre_exclusive"],
+        key=lambda f: partition["count_pre"].get(f, 0),
+        reverse=True,
+    )
+    post_exclusive = sorted(
+        partition["post_exclusive"],
+        key=lambda f: partition["count_post"].get(f, 0),
+        reverse=True,
+    )
+    surviving = sorted(
+        partition["surviving_pre"],
+        key=lambda f: partition["count_pre"].get(f, 0),
+        reverse=True,
+    )
 
     return {
         "pre_dip_exclusive":  pre_exclusive[:max_features_per_pop],
         "post_dip_exclusive": post_exclusive[:max_features_per_pop],
         "surviving":          surviving[:max_features_per_pop],
-        "n_prompts":          n_prompts,
+        "n_prompts":          partition["n_prompts"],
         "pre_dip_layer":      pre_dip_layer,
         "post_dip_layer":     post_dip_layer,
-        "count_pre":          dict(count_pre),
-        "count_post":         dict(count_post),
+        "count_pre":          dict(partition["count_pre"]),
+        "count_post":         dict(partition["count_post"]),
     }
 
 

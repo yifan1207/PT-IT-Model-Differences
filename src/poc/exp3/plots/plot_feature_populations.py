@@ -37,22 +37,27 @@ Four panels:
 REQUIRES: exp3_results.json + exp3_results.npz for both PT and IT.
 """
 import json
-import math
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 from collections import defaultdict
+from tqdm import tqdm
 
 from src.poc.exp3.analysis.token_types import classify_generated_tokens
+from src.poc.exp4.analysis.feature_alignment import (
+    build_feature_event_sets,
+    build_population_partition,
+    mutual_nearest_feature_matches,
+)
 
 _PRE_DIP_LAYER  = 10
 _POST_DIP_LAYER = 12
 _MIN_FREQUENCY  = 0.05   # feature must appear in >=5% of prompts to count
-_MAX_FEATURES   = 300    # cap per population
-
-_TOKEN_TYPES = ["CONTENT", "DISCOURSE", "STRUCTURAL", "PUNCTUATION", "OTHER"]
+_MATCH_TOP_K    = 512
+_TOKEN_TYPES = ["CONTENT", "FUNCTION", "DISCOURSE", "STRUCTURAL", "PUNCTUATION", "OTHER"]
 _TYPE_COLORS = {
     "CONTENT":     "#1565C0",
+    "FUNCTION":    "#00897B",
     "DISCOURSE":   "#E65100",
     "STRUCTURAL":  "#558B2F",
     "PUNCTUATION": "#6A1B9A",
@@ -71,118 +76,72 @@ def _load(json_path: str, npz_path: str) -> tuple[dict, object]:
     return results_by_id, npz
 
 
-# ── feature population extraction (exp3 format: [n_steps, n_layers]) ──────────
-
-def _extract_populations(npz, min_frequency: float = _MIN_FREQUENCY,
-                          max_features: int = _MAX_FEATURES) -> dict:
-    """Identify pre-dip exclusive, post-dip exclusive, and surviving features.
-
-    For exp3 format: each npz key is a prompt_id; value is [n_steps, n_layers].
-    A feature is counted as "present at layer L for this prompt" if it appears
-    in ANY generation step for that prompt at layer L.
-    """
-    prompt_ids = npz.files
-    n_prompts  = len(prompt_ids)
-
-    count_pre  = defaultdict(int)   # how many prompts activate feature at L10
-    count_post = defaultdict(int)   # how many prompts activate feature at L12
-
-    for pid in prompt_ids:
-        af = npz[pid]   # [n_steps, n_layers]
-        n_layers = af.shape[1]
-
-        # Union features across all steps at each layer
-        pre_set  = set()
-        post_set = set()
-        if _PRE_DIP_LAYER < n_layers:
-            for step in range(af.shape[0]):
-                arr = af[step, _PRE_DIP_LAYER]
-                if arr is not None and len(arr) > 0:
-                    pre_set.update(arr.tolist())
-        if _POST_DIP_LAYER < n_layers:
-            for step in range(af.shape[0]):
-                arr = af[step, _POST_DIP_LAYER]
-                if arr is not None and len(arr) > 0:
-                    post_set.update(arr.tolist())
-
-        for f in pre_set:
-            count_pre[f] += 1
-        for f in post_set:
-            count_post[f] += 1
-
-    min_count = max(1, int(min_frequency * n_prompts))
-
-    frequent_pre  = {f for f, c in count_pre.items()  if c >= min_count}
-    frequent_post = {f for f, c in count_post.items() if c >= min_count}
-
-    pre_excl = sorted(frequent_pre - frequent_post,
-                      key=lambda f: -count_pre[f])[:max_features]
-    post_excl = sorted(frequent_post - frequent_pre,
-                       key=lambda f: -count_post[f])[:max_features]
-    surviving = sorted(frequent_pre & frequent_post,
-                       key=lambda f: -(count_pre[f] + count_post[f]))[:max_features]
-
-    return {
-        "pre_exclusive":  set(pre_excl),
-        "post_exclusive": set(post_excl),
-        "surviving":      set(surviving),
-        "count_pre":      count_pre,
-        "count_post":     count_post,
-        "n_prompts":      n_prompts,
-    }
+def _npz_to_feature_dict(npz) -> dict[str, np.ndarray]:
+    return {pid: npz[pid] for pid in npz.files}
 
 
-# ── token-type fingerprinting ─────────────────────────────────────────────────
-
-def _token_type_fingerprint(
-        npz, results_by_id: dict,
-        feature_sets: dict,
-        layer: int) -> dict[str, dict[str, float]]:
-    """For each feature population, compute token-type activation fractions.
-
-    For each (prompt, step) where a population-member feature is active at `layer`,
-    record the token type generated at that step.
-
-    Returns dict: population_name → {token_type → fraction}.
-    """
-    # Accumulate activation counts: population → token_type → count
-    pop_counts: dict[str, dict[str, int]] = {
-        pop: defaultdict(int) for pop in feature_sets
-    }
-
-    for pid in npz.files:
-        af = npz[pid]  # [n_steps, n_layers]
-        r  = results_by_id.get(pid)
+def _build_prompt_cache(npz, results_by_id: dict, layers: tuple[int, ...]) -> dict[str, dict]:
+    cache: dict[str, dict] = {}
+    for pid in tqdm(npz.files, desc="  Caching prompt states", leave=False):
+        af = npz[pid]
+        r = results_by_id.get(pid)
         if r is None:
             continue
-
         token_types = classify_generated_tokens(r.get("generated_tokens", []))
-        n_steps     = min(af.shape[0], len(token_types))
+        n_steps = min(af.shape[0], len(token_types))
+        active_by_layer: dict[int, list[set[int]]] = {}
+        for layer in layers:
+            if layer >= af.shape[1]:
+                active_by_layer[layer] = []
+                continue
+            step_sets: list[set[int]] = []
+            for step in range(n_steps):
+                arr = af[step, layer]
+                step_sets.append(set() if arr is None else {int(x) for x in arr.tolist()})
+            active_by_layer[layer] = step_sets
+        cache[pid] = {
+            "token_types": token_types[:n_steps],
+            "active_by_layer": active_by_layer,
+            "n_steps": n_steps,
+        }
+    return cache
 
-        if layer >= af.shape[1]:
-            continue
 
-        for step in range(n_steps):
-            tok_type = token_types[step]
-            active   = set(af[step, layer].tolist()) if af[step, layer] is not None else set()
+def _aggregate_fingerprints(
+    prompt_cache: dict[str, dict],
+    feature_sets_by_layer: dict[int, dict[str, set[int]]],
+) -> dict[str, dict[str, float]]:
+    pop_counts: dict[str, dict[str, int]] = {}
+    for populations in feature_sets_by_layer.values():
+        for pop_name in populations:
+            pop_counts.setdefault(pop_name, defaultdict(int))
 
-            for pop_name, pop_set in feature_sets.items():
-                if active & pop_set:   # at least one population feature active
-                    pop_counts[pop_name][tok_type] += 1
+    for prompt_data in tqdm(prompt_cache.values(), desc="  Aggregating fingerprints", leave=False):
+        token_types = prompt_data["token_types"]
+        active_by_layer = prompt_data["active_by_layer"]
+        n_steps = prompt_data["n_steps"]
+        for layer, populations in feature_sets_by_layer.items():
+            step_sets = active_by_layer.get(layer, [])
+            if not step_sets:
+                continue
+            for step in range(min(n_steps, len(step_sets))):
+                tok_type = token_types[step]
+                active = step_sets[step]
+                for pop_name, pop_set in populations.items():
+                    if active & pop_set:
+                        pop_counts[pop_name][tok_type] += 1
 
-    # Normalise to fractions
     fingerprints = {}
     for pop_name, counts in pop_counts.items():
         total = sum(counts.values())
-        if total == 0:
-            fingerprints[pop_name] = {t: 0.0 for t in _TOKEN_TYPES}
-        else:
-            fingerprints[pop_name] = {t: counts[t] / total for t in _TOKEN_TYPES}
+        fingerprints[pop_name] = {
+            t: (counts[t] / total if total else 0.0) for t in _TOKEN_TYPES
+        }
     return fingerprints
 
 
 def _pop_sizes(pops: dict) -> tuple[int, int, int]:
-    return len(pops["pre_exclusive"]), len(pops["surviving"]), len(pops["post_exclusive"])
+    return len(pops["pre_exclusive"]), len(pops["surviving_pairs"]), len(pops["post_exclusive"])
 
 
 # ── plotting ──────────────────────────────────────────────────────────────────
@@ -223,69 +182,94 @@ def make_plot(it_json: str, it_npz: str,
     it_res, it_features = _load(it_json, it_npz)
     print("  Loading PT data ...")
     pt_res, pt_features = _load(pt_json, pt_npz)
+    print("  Building per-prompt caches ...")
+    it_cache = _build_prompt_cache(it_features, it_res, (_PRE_DIP_LAYER, _POST_DIP_LAYER))
+    pt_cache = _build_prompt_cache(pt_features, pt_res, (_PRE_DIP_LAYER, _POST_DIP_LAYER))
 
-    print("  Extracting IT feature populations ...")
-    it_pops = _extract_populations(it_features)
-    print("  Extracting PT feature populations ...")
-    pt_pops = _extract_populations(pt_features)
-
-    # IT-exclusive post-dip features: active post-dip in IT but not in PT's post-dip
-    it_only_post = it_pops["post_exclusive"] - pt_pops["post_exclusive"]
-
-    # Token-type fingerprints
-    # For pre-dip populations: use pre_dip_layer
-    # For post-dip populations: use post_dip_layer
-    # Surviving: use pre_dip_layer (they exist at both)
-    it_fp_pre = _token_type_fingerprint(
-        it_features, it_res,
-        {"pre_exclusive": it_pops["pre_exclusive"],
-         "surviving":     it_pops["surviving"],
-         "post_exclusive": it_pops["post_exclusive"]},
-        layer=_PRE_DIP_LAYER,
+    print("  Aligning IT feature populations ...")
+    it_dict = _npz_to_feature_dict(it_features)
+    it_pops = build_population_partition(
+        it_dict,
+        pre_layer=_PRE_DIP_LAYER,
+        post_layer=_POST_DIP_LAYER,
+        min_frequency=_MIN_FREQUENCY,
+        event_mode="prompt",
+        top_k_for_matching=_MATCH_TOP_K,
     )
-    # Re-check post-dip features at the post-dip layer
-    it_fp_post = _token_type_fingerprint(
-        it_features, it_res,
-        {"pre_exclusive": it_pops["pre_exclusive"],
-         "surviving":     it_pops["surviving"],
-         "post_exclusive": it_pops["post_exclusive"]},
-        layer=_POST_DIP_LAYER,
+    print("  Aligning PT feature populations ...")
+    pt_dict = _npz_to_feature_dict(pt_features)
+    pt_pops = build_population_partition(
+        pt_dict,
+        pre_layer=_PRE_DIP_LAYER,
+        post_layer=_POST_DIP_LAYER,
+        min_frequency=_MIN_FREQUENCY,
+        event_mode="prompt",
+        top_k_for_matching=_MATCH_TOP_K,
     )
-    # Merge: pre_excl fingerprint from pre-dip layer; post_excl from post-dip layer;
-    # surviving average both layers
-    it_fp = {
-        "pre_exclusive":  it_fp_pre["pre_exclusive"],
-        "post_exclusive": it_fp_post["post_exclusive"],
-        "surviving": {t: (it_fp_pre["surviving"][t] + it_fp_post["surviving"][t]) / 2
-                      for t in _TOKEN_TYPES},
+
+    post_event_keys = [pid for pid in it_dict if pid in pt_dict]
+    it_post_events, _ = build_feature_event_sets(it_dict, _POST_DIP_LAYER, event_mode="prompt")
+    pt_post_events, _ = build_feature_event_sets(pt_dict, _POST_DIP_LAYER, event_mode="prompt")
+    it_post_events = dict(sorted(
+        it_post_events.items(),
+        key=lambda item: (-len(item[1]), item[0]),
+    )[:_MATCH_TOP_K])
+    pt_post_events = dict(sorted(
+        pt_post_events.items(),
+        key=lambda item: (-len(item[1]), item[0]),
+    )[:_MATCH_TOP_K])
+    cross_matches = mutual_nearest_feature_matches(
+        pt_post_events,
+        it_post_events,
+        post_event_keys,
+        min_score=0.20,
+    )
+    matched_it_post = {m.feature_b for m in cross_matches}
+    it_only_post = {
+        feat for feat in it_pops["post_exclusive"]
+        if feat not in matched_it_post
     }
 
-    pt_fp_pre = _token_type_fingerprint(
-        pt_features, pt_res,
-        {"pre_exclusive": pt_pops["pre_exclusive"],
-         "surviving":     pt_pops["surviving"],
-         "post_exclusive": pt_pops["post_exclusive"]},
-        layer=_PRE_DIP_LAYER,
+    it_fps = _aggregate_fingerprints(
+        it_cache,
+        {
+            _PRE_DIP_LAYER: {
+                "pre_exclusive": it_pops["pre_exclusive"],
+                "surviving_pre": it_pops["surviving_pre"],
+            },
+            _POST_DIP_LAYER: {
+                "post_exclusive": it_pops["post_exclusive"],
+                "surviving_post": it_pops["surviving_post"],
+                "it_only_post": it_only_post,
+            },
+        },
     )
-    pt_fp_post = _token_type_fingerprint(
-        pt_features, pt_res,
-        {"pre_exclusive": pt_pops["pre_exclusive"],
-         "surviving":     pt_pops["surviving"],
-         "post_exclusive": pt_pops["post_exclusive"]},
-        layer=_POST_DIP_LAYER,
+    it_fp = {
+        "pre_exclusive":  it_fps["pre_exclusive"],
+        "post_exclusive": it_fps["post_exclusive"],
+        "surviving": {t: (it_fps["surviving_pre"][t] + it_fps["surviving_post"][t]) / 2
+                      for t in _TOKEN_TYPES},
+    }
+    pt_fps = _aggregate_fingerprints(
+        pt_cache,
+        {
+            _PRE_DIP_LAYER: {
+                "pre_exclusive": pt_pops["pre_exclusive"],
+                "surviving_pre": pt_pops["surviving_pre"],
+            },
+            _POST_DIP_LAYER: {
+                "post_exclusive": pt_pops["post_exclusive"],
+                "surviving_post": pt_pops["surviving_post"],
+            },
+        },
     )
     pt_fp = {
-        "pre_exclusive":  pt_fp_pre["pre_exclusive"],
-        "post_exclusive": pt_fp_post["post_exclusive"],
-        "surviving": {t: (pt_fp_pre["surviving"][t] + pt_fp_post["surviving"][t]) / 2
+        "pre_exclusive":  pt_fps["pre_exclusive"],
+        "post_exclusive": pt_fps["post_exclusive"],
+        "surviving": {t: (pt_fps["surviving_pre"][t] + pt_fps["surviving_post"][t]) / 2
                       for t in _TOKEN_TYPES},
     }
-
-    it_only_fp = _token_type_fingerprint(
-        it_features, it_res,
-        {"it_only_post": it_only_post},
-        layer=_POST_DIP_LAYER,
-    )
+    it_only_fp = {"it_only_post": it_fps.get("it_only_post", {t: 0.0 for t in _TOKEN_TYPES})}
 
     # ── figure ────────────────────────────────────────────────────────────────
     fig, axes = plt.subplots(2, 2, figsize=(16, 11))
@@ -314,22 +298,22 @@ def make_plot(it_json: str, it_npz: str,
     ax_a.set_ylabel(f"Feature count (≥{_MIN_FREQUENCY:.0%} of prompts)")
     ax_a.set_title(
         f"Panel A — Feature population sizes  IT vs PT\n"
-        f"(L{_PRE_DIP_LAYER} exclusive vs surviving vs L{_POST_DIP_LAYER} exclusive)\n"
-        f"IT-only post-dip features: {len(it_only_post)}"
+        f"(alignment-based L{_PRE_DIP_LAYER} exclusive vs surviving vs L{_POST_DIP_LAYER} exclusive)\n"
+        f"matching on top {_MATCH_TOP_K} recurrent features/layer; IT-only post-dip: {len(it_only_post)}"
     )
     ax_a.legend(fontsize=9)
     ax_a.grid(axis="y", alpha=0.25)
 
     # ── Panel B: IT token-type fingerprint ────────────────────────────────────
     _fingerprint_panel(ax_b, it_fp,
-                       f"Panel B — IT token-type fingerprint per population\n"
-                       f"Pre-dip~CONTENT = lexical; Post-dip~DISCOURSE/STRUCTURAL = format")
+                       "Panel B — IT token-type fingerprint per population\n"
+                       "Pre-dip~CONTENT/FUNCTION = lexical; Post-dip~DISCOURSE/STRUCTURAL = format")
     ax_b.legend(fontsize=7, ncol=3, loc="upper right")
 
     # ── Panel C: PT token-type fingerprint ────────────────────────────────────
     _fingerprint_panel(ax_c, pt_fp,
-                       f"Panel C — PT token-type fingerprint per population\n"
-                       f"PT post-dip should have less DISCOURSE/STRUCTURAL than IT")
+                       "Panel C — PT token-type fingerprint per population\n"
+                       "PT post-dip should have less DISCOURSE/STRUCTURAL than IT")
     ax_c.legend(fontsize=7, ncol=3, loc="upper right")
 
     # ── Panel D: IT-only post-dip features fingerprint ────────────────────────
@@ -338,7 +322,7 @@ def make_plot(it_json: str, it_npz: str,
         _fingerprint_panel(
             ax_d, {"it_only_post": it_only_fp["it_only_post"]},
             f"Panel D — IT-only post-dip features (n={n_it_only})\n"
-            f"Features active post-dip in IT but NOT in PT — should be most DISCOURSE/STRUCTURAL",
+            "Features active post-dip in IT but unmatched to PT post-dip features",
             pops_order=("it_only_post",),
             pop_labels=("IT-only\npost-dip",),
         )

@@ -30,9 +30,10 @@ from src.poc.exp3.analysis.token_types import stratify_by_token_type
 from src.poc.shared.constants import N_LAYERS
 
 _BOUNDARY = 20
-_TOKEN_TYPES = ["CONTENT", "DISCOURSE", "STRUCTURAL", "PUNCTUATION", "OTHER"]
+_TOKEN_TYPES = ["CONTENT", "FUNCTION", "DISCOURSE", "STRUCTURAL", "PUNCTUATION", "OTHER"]
 _TYPE_COLORS  = {
     "CONTENT":     "#1565C0",
+    "FUNCTION":    "#00897B",
     "DISCOURSE":   "#E65100",
     "STRUCTURAL":  "#558B2F",
     "PUNCTUATION": "#6A1B9A",

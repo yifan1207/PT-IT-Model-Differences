@@ -30,16 +30,7 @@ from collections import defaultdict
 
 from src.poc.shared.constants import N_LAYERS
 
-CATEGORY_COLORS = {
-    "in_context":     "#2196F3",
-    "out_of_context": "#FF9800",
-    "reasoning":      "#4CAF50",
-    "IC":             "#2196F3",
-    "OOC":            "#FF9800",
-    "R":              "#4CAF50",
-    "GEN":            "#9C27B0",
-}
-_DEFAULT_COLOR    = "#888888"
+from src.poc.shared.plot_colors import SPLIT_COLORS as CATEGORY_COLORS, _DEFAULT_COLOR
 _BOUNDARY         = 20
 _KL_THRESHOLD     = 0.1   # nats — "committed" when KL drops below this
 _HEATMAP_STEP_CAP = 80
