@@ -405,7 +405,7 @@ def _pack_active_features(af: list, n_steps: int) -> np.ndarray:
 
 
 def _collect_worker(gpu_id: int, prompt_items: list, cfg: "Exp3Config") -> tuple:
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id + getattr(cfg, "gpu_offset", 0))
     cfg.device = "cuda"
     from src.poc.shared.model import load_model
     loaded = load_model(cfg)

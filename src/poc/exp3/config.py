@@ -64,6 +64,7 @@ class Exp3Config:
 
     # ── parallelism ───────────────────────────────────────────────────
     n_gpus: int = 8
+    gpu_offset: int = 0
 
     # ── collection flags ──────────────────────────────────────────────
     # Core exp2 quantities are always collected.

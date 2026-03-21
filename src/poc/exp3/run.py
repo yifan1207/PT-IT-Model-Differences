@@ -55,6 +55,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Exp3 data collection")
     parser.add_argument("--variant", choices=["pt", "it"], default="pt")
     parser.add_argument("--gpus", type=int, default=None)
+    parser.add_argument("--gpu-offset", type=int, default=0, help="First physical GPU index (e.g. 4 to use GPUs 4-7)")
     parser.add_argument(
         "--dataset",
         default=None,
@@ -87,6 +88,7 @@ def main() -> None:
     )
     if args.gpus is not None:
         cfg.n_gpus = args.gpus
+    cfg.gpu_offset = args.gpu_offset
 
     # ── Load prompts ──────────────────────────────────────────────────────────
     dataset_path = args.dataset or "data/exp3_dataset.jsonl"
