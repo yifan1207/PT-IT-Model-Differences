@@ -208,6 +208,10 @@ __marimo__/
 
 # results
 results/*
+!results/exp2/
+!results/exp2/**/
+results/exp2/**/exp2_results.json
+results/exp2/**/exp2_results.npz
 !results/exp3/
 !results/exp3/**/
 results/exp3/**/exp3_results.json
