@@ -120,10 +120,10 @@ def main() -> None:
         loaded = load_model(cfg)
 
     print("\n[2/3] Collecting data ...")
-    results, npz_data = collect_all(loaded, cfg, prompts)
+    results, npz_data, feature_summary = collect_all(loaded, cfg, prompts)
 
     print(f"\n[3/3] Saving {len(results)} results ...")
-    save_results(results, npz_data, cfg)
+    save_results(results, npz_data, feature_summary, cfg)
     print("\nDone.")
 
 

@@ -44,6 +44,13 @@ def _load_results(json_path: str) -> list[dict]:
         return json.load(f)
 
 
+def _resolve_exp3_features(run_dir: Path) -> str:
+    for candidate in (run_dir / "features.npz", run_dir / "exp3_results.npz"):
+        if candidate.exists():
+            return str(candidate)
+    return str(run_dir / "features.npz")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate Exp4 plots")
     parser.add_argument("--pt-dir", required=True,
@@ -76,20 +83,20 @@ def main() -> None:
     pt_residuals_path = str(pt_dir / "exp4_residuals.npz")
     it_residuals_path = str(it_dir / "exp4_residuals.npz")
 
-    # Features: exp4 has exp4_features.npz; exp3 has exp3_results.npz
+    # Features: exp4 has exp4_features.npz; exp3 may be either features.npz or exp3_results.npz
     if args.pt_features:
         pt_feats_path = args.pt_features
     elif args.features_source == "exp4":
         pt_feats_path = str(pt_dir / "exp4_features.npz")
     else:
-        pt_feats_path = str(pt_dir / "exp3_results.npz")
+        pt_feats_path = _resolve_exp3_features(pt_dir)
 
     if args.it_features:
         it_feats_path = args.it_features
     elif args.features_source == "exp4":
         it_feats_path = str(it_dir / "exp4_features.npz")
     else:
-        it_feats_path = str(it_dir / "exp3_results.npz")
+        it_feats_path = _resolve_exp3_features(it_dir)
 
     # Load JSON results for plots that need them
     print(f"Loading PT results from {pt_results_path} ...")

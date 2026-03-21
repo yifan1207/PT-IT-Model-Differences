@@ -67,6 +67,31 @@ GEMMA3_4B_HOOKS  = ModelHooks()                           # default — Gemma 3 
 GEMMA2_2B_HOOKS  = ModelHooks()                           # same layout, verify before use
 GEMMA2_9B_HOOKS  = ModelHooks()                           # same layout, verify before use
 
+# LLaMA 3.1 / 3.2 — LlamaForCausalLM layout
+# Pre-MLP norm is called post_attention_layernorm in Llama; layers live at model.layers
+LLAMA3_HOOKS = ModelHooks(
+    layer_residual="output[0]",
+    mlp_input="post_attention_layernorm.output",
+    mlp_output="mlp.output",
+    attn_weights="self_attn.output[1]",
+    layers_root="model.layers",
+    final_norm="model.norm",
+    lm_head="lm_head",
+    attn_implementation="eager",
+)
+
+# Qwen 2 / 2.5 — Qwen2ForCausalLM layout (same structure as Llama)
+QWEN2_HOOKS = ModelHooks(
+    layer_residual="output[0]",
+    mlp_input="post_attention_layernorm.output",
+    mlp_output="mlp.output",
+    attn_weights="self_attn.output[1]",
+    layers_root="model.layers",
+    final_norm="model.norm",
+    lm_head="lm_head",
+    attn_implementation="eager",
+)
+
 
 def hooks_for_model(model_id: str) -> ModelHooks:
     """Return the appropriate ModelHooks for a known model_id.
@@ -79,7 +104,17 @@ def hooks_for_model(model_id: str) -> ModelHooks:
         return GEMMA3_4B_HOOKS
     if "gemma-2" in mid or "gemma2" in mid:
         return GEMMA2_2B_HOOKS
+    if "llama-3" in mid or "llama3" in mid:
+        return LLAMA3_HOOKS
+    if "qwen2" in mid or "qwen-2" in mid:
+        return QWEN2_HOOKS
     # Unknown — return defaults and log a warning at runtime
+    import warnings
+    warnings.warn(
+        f"Unknown model architecture for '{model_id}', defaulting to Gemma3 hook paths. "
+        "Verify hook paths (layers_root, mlp_input, etc.) before running.",
+        stacklevel=2,
+    )
     return ModelHooks()
 
 
@@ -199,6 +234,116 @@ class CollectionConfig:
     Large disk usage (~700 KB per record at bfloat16).  Required for TwoNN
     intrinsic-dimension analysis.  Disabled by default."""
 
+    # ── Force-decode ──────────────────────────────────────────────────────────
+    force_decode_file: str = ""
+    """Path to a JSON file mapping record_id → list[int] of token IDs.
+    When set, generation iterates through the provided tokens instead of greedy
+    decoding, recording rank/prob of each forced token at every layer.
+    Primary use: run IT in force-decode mode on PT-generated tokens to produce
+    pt_token_rank_in_it[step][layer] for commitment delay confound analysis."""
+
+    # ── Residual saving (generation mode) ─────────────────────────────────────
+    save_residual_layers: list[int] = field(default_factory=list)
+    """Layer indices at which to save full residual vectors during generation.
+    Suggested: [10, 11, 12, 20, 25, 30, 33] for phase-boundary + corrective
+    stage + steering vector extraction.  Empty = disabled.
+    Output → gen_residuals.npz  {record_id: [n_steps, n_layers, d_model] float16}"""
+
+    save_residual_strategy: str = "last"
+    """Which generation steps to save residuals for (generation mode):
+      'last'      — only the final generated token (~168 MB for 3k prompts)
+      'subsample' — steps {1, 10, 50, 100, 200, 500} (1-indexed)
+      'none'      — disabled (same as empty save_residual_layers)"""
+
+    # ── MLP IO saving (generation mode) ───────────────────────────────────────
+    save_mlp_layers: list[int] = field(default_factory=list)
+    """Layer indices at which to save MLP inputs + outputs during generation.
+    Intended for layers 20-33 (corrective stage) for transcoder adapter training.
+    Same step-selection strategy as save_residual_strategy.
+    Empty = disabled.
+    Output → gen_mlp_inputs.npz / gen_mlp_outputs.npz  {record_id: [...] float16}"""
+
+    # ── Attribution extensions ─────────────────────────────────────────────────
+    collect_forward_contrib: bool = False
+    """Collect forward-looking logit attribution: for each generation step t and layer i,
+    record how much layer i contributed to making the token generated at step t+1 more
+    likely (i.e. retroactively attributes layer activity to the next token, not just the
+    current greedy token).
+    Stored as forward_logit_contrib_k1[step][layer] — same shape as logit_delta_contrib.
+    Requires buffering one extra step's logit-lens (~35 MB for Gemma3 4B vocab).
+    Overhead: one extra scalar lookup per layer per step."""
+
+    collect_repulsion: bool = False
+    """Collect repulsion contribution: for each layer transition, compute the mean logit
+    change of the top-K 'wrong' tokens (highest-logit tokens that are NOT the next token).
+    Negative = those alternatives are being pushed down (repulsion / competition).
+    Positive = the layer boosts alternatives.
+    Stored as repulsion_contrib[step][layer].  Overhead: one topk(K+1) per layer per step."""
+
+    repulsion_top_k: int = 10
+    """Number of top wrong-tokens to average over for repulsion_contrib computation."""
+
+    # ── Logit-lens extras (generation mode) ────────────────────────────────────
+    collect_layer_extras: bool = True
+    """Collect top1_token_per_layer, kl_adjacent_layer, lens_entropy_delta.
+    All three are derived from all_lens_logits which is computed every step anyway.
+    Near-zero overhead — one argmax + two softmax/KL ops per layer per step.
+    - top1_token_per_layer[step][layer]:  int  argmax token id from logit lens
+    - kl_adjacent_layer[step][layer]:     float KL(lens_i ∥ lens_{i-1}), nan at i=0
+    - lens_entropy_delta[step][layer]:    float entropy[i] - entropy[i-1], nan at i=0"""
+
+    collect_top5_tokens: bool = False
+    """Collect top-5 token IDs and probabilities per layer per step.
+    Stored as two parallel arrays:
+    - top5_token_ids_per_layer[step][layer]:   list[int]   vocab indices of top-5 tokens
+    - top5_token_probs_per_layer[step][layer]: list[float] corresponding probabilities
+    Lets you measure how much the corrective stage reshuffles the candidate set vs
+    just reweighting.  Cost: one masked topk(5) per layer per step."""
+
+    collect_step_kl: bool = True
+    """Collect step_to_step_kl[step][layer]: KL(lens_i at step t ∥ lens_i at step t-1).
+    Tests whether the corrective-stage representation is truly constant (§4.4 claim)
+    or adapts between generation steps.  Nan at step 0.
+    Requires buffering previous step's real-token softmax distributions
+    (~n_layers × real_vocab floats ≈ 2 MB for Gemma 3 4B)."""
+
+    collect_feature_values: bool = False
+    """Collect feature_activation_values[step][layer]: activation magnitudes of active
+    features (parallel to active_feature indices stored in features.npz).
+    Enables weighted enrichment analysis and dominant-feature scoring.
+    Stored in gen_feature_vals.npz {record_id: [n_steps, n_layers] object}.
+    Cost: one float32 index-select per layer per step (negligible)."""
+
+    collect_transcoder_norms: bool = False
+    """Collect transcoder_output_norm[step][layer]: L2 norm of the transcoder's
+    reconstructed MLP output tc.forward(x).  Combined with transcoder_mse gives
+    reconstruction fraction (MSE / norm²) showing where transcoders are trustworthy.
+    Cost: one tc.forward() call per layer per step (same as collect_transcoder_mse).
+    If collect_transcoder_mse is also True, the forward pass is shared."""
+
+    collect_residual_cosine: bool = False
+    """Collect residual_cosine_to_final[step][layer]: cosine similarity between
+    h_i and h_{n_layers-1} (final residual stream vector).  Representation-space
+    analog of kl_to_final.  Cost: one dot product per layer per step (negligible —
+    all residuals are already materialised)."""
+
+    collect_mlp_norms: bool = False
+    """Collect mlp_contribution_norm[step][layer]: L2 norm of the MLP output per layer.
+    Shows MLP contribution magnitude independently of the residual stream.
+    Requires the mlp_output nnsight hook (same hook used by collect_transcoder_mse).
+    Cost: enables capture_mlp_output=True for all layers when not already active."""
+
+    # ── Attention matrix saving (encode mode) ─────────────────────────────────
+    attn_save_layers: list[int] = field(
+        default_factory=lambda: [6, 7, 8, 9, 10, 11, 12, 13, 14]
+    )
+    """Layer indices for which to save the full raw attention weight matrix in encode mode.
+    Default: layers 6-14 (the dip region identified in exp2/3).
+    Each matrix is [n_heads, T, T] float16 where T = prompt token length.
+    Output → enc_attn_weights.npz  {record_id: object array [n_save_layers] of float16 matrices}
+    Memory: ~3000 prompts × 9 layers × 8 heads × 50² tokens × 2 bytes ≈ 1 GB.
+    Set to empty list to disable."""
+
     # ── Architecture ──────────────────────────────────────────────────────────
     n_layers: int = 34
     """Number of transformer layers."""
@@ -295,6 +440,11 @@ class CollectionConfig:
     @property
     def proposal_layers(self) -> range:
         return range(0, self.proposal_boundary)
+
+    @property
+    def attn_save_layers_set(self) -> frozenset[int]:
+        """Frozenset of attn_save_layers for O(1) membership tests."""
+        return frozenset(self.attn_save_layers)
 
     @property
     def is_instruction_tuned(self) -> bool:

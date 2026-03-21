@@ -108,6 +108,7 @@ class Exp3Config:
     # ── output paths (derived in __post_init__) ───────────────────────
     output_path: str = field(init=False)
     plot_path:   str = field(init=False)
+    feature_importance_path: str = field(init=False)
 
     def __post_init__(self) -> None:
         if self.model_variant not in ("pt", "it"):
@@ -119,6 +120,7 @@ class Exp3Config:
         rd = self.run_dir
         self.output_path = f"{rd}/exp3_results.json"
         self.plot_path   = f"{rd}/plots"
+        self.feature_importance_path = f"{rd}/feature_importance_summary.npz"
 
     @property
     def run_dir(self) -> str:

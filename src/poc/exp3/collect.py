@@ -98,6 +98,7 @@ def collect_prompt(
     prompt: str,
     loaded: LoadedModel,
     cfg: Exp3Config,
+    feature_summary: Optional[dict] = None,
 ) -> dict:
     """Autoregressively generate up to cfg.max_gen_tokens tokens for one prompt.
 
@@ -156,6 +157,12 @@ def collect_prompt(
     kl_to_final:          list[list[float]] = []   # collect_emergence
     logit_delta_contrib:  list[list[float]] = []   # collect_attribution
     transcoder_mse:       list[list[float]] = []   # collect_transcoder_mse
+    step_to_step_kl:      list[list[float]] = []
+    top1_token_per_layer: list[list[int]] = []
+    kl_adjacent_layer:    list[list[float]] = []
+    top5_token_ids_per_layer: list[list[list[int]]] = []
+    top5_token_probs_per_layer: list[list[list[float]]] = []
+    prev_step_probs: Optional[list[torch.Tensor]] = None
 
     for step in range(cfg.max_gen_tokens):
         # ── forward pass (nnsight trace) ──────────────────────────────────────
@@ -217,9 +224,18 @@ def collect_prompt(
                 tc = loaded.transcoder_list[i]
                 x = mlp_inputs[i].unsqueeze(0).to(device=tc.b_enc.device, dtype=tc.b_enc.dtype)
                 acts = tc.encode(x)
-                active_idxs = acts[0].nonzero(as_tuple=False).squeeze(1).tolist()
+                active_idxs_t = acts[0].nonzero(as_tuple=False).squeeze(1)
+                active_idxs = active_idxs_t.tolist()
                 step_l0.append(len(active_idxs))
                 step_active.append(active_idxs)
+                if feature_summary is not None and active_idxs:
+                    if feature_summary["count"][i] is None:
+                        d_feat = int(acts.shape[-1])
+                        feature_summary["count"][i] = np.zeros(d_feat, dtype=np.int64)
+                        feature_summary["sum"][i] = np.zeros(d_feat, dtype=np.float32)
+                    active_vals = acts[0][active_idxs_t].float().cpu().numpy()
+                    np.add.at(feature_summary["count"][i], active_idxs, 1)
+                    np.add.at(feature_summary["sum"][i], active_idxs, active_vals)
         l0.append(step_l0)
         active_features.append(step_active)
 
@@ -234,13 +250,38 @@ def collect_prompt(
         all_lens_logits: list[torch.Tensor] = []  # kept for exp3 quantities
 
         with torch.inference_mode():
+            step_top1: list[int] = []
+            step_adj_kl: list[float] = [float("nan")]
+            step_step_kl: list[float] = [float("nan")] * N_LAYERS if prev_step_probs is None else []
+            step_top5_ids: list[list[int]] = []
+            step_top5_probs: list[list[float]] = []
+            cur_step_probs: list[torch.Tensor] = []
             for i in range(N_LAYERS):
                 h = residuals[i].to(device=W_U.device)
                 h_normed = loaded.model.language_model.norm(h).float()
                 lens_logits = h_normed @ W_U                  # [vocab_size]
                 all_lens_logits.append(lens_logits)
                 step_ll_ent.append(_entropy_from_logits(lens_logits, mask=real_mask))
+                masked_ll = lens_logits.clone()
+                masked_ll[~real_mask] = float("-inf")
+                step_top1.append(int(masked_ll.argmax().item()))
+                top5 = torch.topk(torch.softmax(masked_ll.float(), dim=-1), k=5)
+                step_top5_ids.append([int(v) for v in top5.indices.tolist()])
+                step_top5_probs.append([float(v) for v in top5.values.tolist()])
+                p_i = torch.softmax(lens_logits[real_mask].float(), dim=-1)
+                cur_step_probs.append(p_i.cpu())
+                if i > 0:
+                    p_prev_layer = torch.softmax(all_lens_logits[i - 1][real_mask].float(), dim=-1)
+                    step_adj_kl.append(_kl_divergence(p_i, p_prev_layer))
+                    if prev_step_probs is not None:
+                        step_step_kl.append(_kl_divergence(p_i, prev_step_probs[i].to(p_i.device)))
         logit_lens_entropy.append(step_ll_ent)
+        top1_token_per_layer.append(step_top1)
+        kl_adjacent_layer.append(step_adj_kl)
+        step_to_step_kl.append(step_step_kl)
+        top5_token_ids_per_layer.append(step_top5_ids)
+        top5_token_probs_per_layer.append(step_top5_probs)
+        prev_step_probs = cur_step_probs
 
         # ── exp3: transcoder MSE ──────────────────────────────────────────────
         if cfg.collect_transcoder_mse:
@@ -344,6 +385,11 @@ def collect_prompt(
         "kl_to_final":         kl_to_final,
         "logit_delta_contrib": logit_delta_contrib,
         "transcoder_mse":      transcoder_mse,
+        "step_to_step_kl":     step_to_step_kl,
+        "top1_token_per_layer": top1_token_per_layer,
+        "kl_adjacent_layer":   kl_adjacent_layer,
+        "top5_token_ids_per_layer": top5_token_ids_per_layer,
+        "top5_token_probs_per_layer": top5_token_probs_per_layer,
     }
     return result
 
@@ -364,13 +410,17 @@ def _collect_worker(gpu_id: int, prompt_items: list, cfg: "Exp3Config") -> tuple
     from src.poc.shared.model import load_model
     loaded = load_model(cfg)
     results, npz_data = [], {}
+    feature_summary = {
+        "count": [None] * N_LAYERS,
+        "sum": [None] * N_LAYERS,
+    }
     for done, (prompt_id, category, prompt) in enumerate(prompt_items):
         print(f"  [GPU {gpu_id}] [{done + 1}/{len(prompt_items)}] {prompt_id}", flush=True)
-        result = collect_prompt(prompt_id, category, prompt, loaded, cfg)
+        result = collect_prompt(prompt_id, category, prompt, loaded, cfg, feature_summary=feature_summary)
         af = result.pop("active_features")
         npz_data[prompt_id] = _pack_active_features(af, len(af))
         results.append(result)
-    return results, npz_data
+    return results, npz_data, feature_summary
 
 
 def _build_flat_items(prompts_dict: dict) -> list:
@@ -385,16 +435,20 @@ def _build_flat_items(prompts_dict: dict) -> list:
 def collect_all(loaded, cfg: "Exp3Config", prompts_dict: dict) -> tuple:
     items = _build_flat_items(prompts_dict)
     total = len(items)
+    feature_summary = {
+        "count": [None] * N_LAYERS,
+        "sum": [None] * N_LAYERS,
+    }
 
     if cfg.n_gpus <= 1:
         results, npz_data = [], {}
         for done, (prompt_id, category, prompt) in enumerate(items):
             print(f"  [{done + 1}/{total}] {prompt_id}: '{prompt[:60]}'")
-            result = collect_prompt(prompt_id, category, prompt, loaded, cfg)
+            result = collect_prompt(prompt_id, category, prompt, loaded, cfg, feature_summary=feature_summary)
             af = result.pop("active_features")
             npz_data[prompt_id] = _pack_active_features(af, len(af))
             results.append(result)
-        return results, npz_data
+        return results, npz_data, feature_summary
 
     import multiprocessing as mp
     n_gpus = min(cfg.n_gpus, torch.cuda.device_count())
@@ -405,14 +459,27 @@ def collect_all(loaded, cfg: "Exp3Config", prompts_dict: dict) -> tuple:
 
     ctx = mp.get_context("spawn")
     all_results, all_npz = [], {}
+    def _merge_feature_summary(dst: dict, src: dict) -> None:
+        for layer_i in range(N_LAYERS):
+            src_count = src["count"][layer_i]
+            src_sum = src["sum"][layer_i]
+            if src_count is None or src_sum is None:
+                continue
+            if dst["count"][layer_i] is None:
+                dst["count"][layer_i] = src_count
+                dst["sum"][layer_i] = src_sum
+            else:
+                dst["count"][layer_i] += src_count
+                dst["sum"][layer_i] += src_sum
     with ProcessPoolExecutor(max_workers=n_gpus, mp_context=ctx) as pool:
         futures = {pool.submit(_collect_worker, gpu_id, chunks[gpu_id], cfg): gpu_id
                    for gpu_id in range(n_gpus)}
         for future in as_completed(futures):
-            r, npz = future.result()
+            r, npz, fs = future.result()
             all_results.extend(r)
             all_npz.update(npz)
-    return all_results, all_npz
+            _merge_feature_summary(feature_summary, fs)
+    return all_results, all_npz, feature_summary
 
 
 def _sanitise_for_json(obj):
@@ -432,7 +499,7 @@ def _sanitise_for_json(obj):
     return obj
 
 
-def save_results(results: list[dict], npz_data: dict, cfg: Exp3Config) -> None:
+def save_results(results: list[dict], npz_data: dict, feature_summary: dict, cfg: Exp3Config) -> None:
     out_path = Path(cfg.output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w") as f:
@@ -441,3 +508,14 @@ def save_results(results: list[dict], npz_data: dict, cfg: Exp3Config) -> None:
     npz_path = out_path.with_suffix(".npz")
     np.savez_compressed(str(npz_path), **npz_data)
     print(f"  Saved active_features → {npz_path}")
+    summary_payload = {}
+    for layer_i in range(N_LAYERS):
+        counts = feature_summary["count"][layer_i]
+        sums = feature_summary["sum"][layer_i]
+        if counts is None or sums is None:
+            continue
+        summary_payload[f"count_l{layer_i}"] = counts.astype(np.int64, copy=False)
+        summary_payload[f"sum_l{layer_i}"] = sums.astype(np.float32, copy=False)
+    if summary_payload:
+        np.savez_compressed(cfg.feature_importance_path, **summary_payload)
+        print(f"  Saved feature importance summary → {cfg.feature_importance_path}")
