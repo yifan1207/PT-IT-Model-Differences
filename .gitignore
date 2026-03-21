@@ -207,4 +207,8 @@ marimo/_lsp/
 __marimo__/
 
 # results
-results/
+results/*
+!results/exp3/
+!results/exp3/**/
+results/exp3/**/exp3_results.json
+results/exp3/**/exp3_results.npz
