@@ -75,8 +75,9 @@ def main() -> None:
              "Has no effect beyond setting raw_completion=True in config for "
              "path-suffix disambiguation.  Use --chat-template to change behaviour.",
     )
-    parser.add_argument("--no-emergence",   action="store_true")
-    parser.add_argument("--no-attribution", action="store_true")
+    parser.add_argument("--no-emergence",      action="store_true")
+    parser.add_argument("--no-attribution",    action="store_true")
+    parser.add_argument("--no-transcoder-mse", action="store_true")
     args = parser.parse_args()
 
     cfg = Exp3Config(
@@ -85,6 +86,7 @@ def main() -> None:
         raw_completion=args.raw_completion,
         collect_emergence=not args.no_emergence,
         collect_attribution=not args.no_attribution,
+        collect_transcoder_mse=not args.no_transcoder_mse,
     )
     if args.gpus is not None:
         cfg.n_gpus = args.gpus

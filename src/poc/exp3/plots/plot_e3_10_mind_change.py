@@ -84,16 +84,16 @@ def make_plot(results: list[dict], output_dir: str, pt_results: list[dict] | Non
         return
 
     it_frac, it_kl, it_corrected = _mind_change_stats(results)
-    pt_frac = pt_kl = None
+    pt_frac = pt_kl = pt_corrected = None
     if pt_results and _has_required(pt_results):
-        pt_frac, pt_kl, _ = _mind_change_stats(pt_results)
+        pt_frac, pt_kl, pt_corrected = _mind_change_stats(pt_results)
 
     labels = list(_PHASE_BINS.keys())
     x = np.arange(len(labels))
     w = 0.34
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5.4))
-    ax_a, ax_b, ax_c = axes
+    fig, axes = plt.subplots(1, 4, figsize=(23, 5.4))
+    ax_a, ax_b, ax_c, ax_d = axes
 
     ax_a.bar(x - w / 2, [it_frac[k] for k in labels], width=w, color="#F57C00", label="IT")
     if pt_frac is not None:
@@ -122,7 +122,19 @@ def make_plot(results: list[dict], output_dir: str, pt_results: list[dict] | Non
         ax_c.grid(axis="x", alpha=0.25)
     else:
         ax_c.axis("off")
-        ax_c.text(0.5, 0.5, "No corrective-stage corrections found", ha="center", va="center")
+        ax_c.text(0.5, 0.5, "No IT corrective-stage corrections found", ha="center", va="center")
+
+    pt_corr_labels = list((pt_corrected or {}).keys())[:10][::-1]
+    pt_corr_vals = list((pt_corrected or {}).values())[:10][::-1]
+    if pt_corr_labels:
+        ax_d.barh(np.arange(len(pt_corr_labels)), pt_corr_vals, color="#1976D2", alpha=0.85)
+        ax_d.set_yticks(np.arange(len(pt_corr_labels)), pt_corr_labels)
+        ax_d.set_xlabel("Count")
+        ax_d.set_title("Panel D — PT tokens corrected after layer 20")
+        ax_d.grid(axis="x", alpha=0.25)
+    else:
+        ax_d.axis("off")
+        ax_d.text(0.5, 0.5, "No PT corrective-stage corrections found", ha="center", va="center")
 
     fig.suptitle(
         "E3.10 — Mind Change Analysis\n"

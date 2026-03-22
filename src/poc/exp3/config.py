@@ -77,10 +77,9 @@ class Exp3Config:
     # Enables: logit_delta_contrib[step][layer]
     # Cost: one extra scalar lookup per layer per step — negligible.
 
-    collect_transcoder_mse: bool = False
+    collect_transcoder_mse: bool = True
     # Enables: transcoder_mse[step][layer]
     # REQUIRES a new nnsight hook for mlp.output — see collect.py for details.
-    # Disabled by default until hook path is verified on the live model.
 
     # ── intervention mode ─────────────────────────────────────────────
     apply_chat_template: bool = False

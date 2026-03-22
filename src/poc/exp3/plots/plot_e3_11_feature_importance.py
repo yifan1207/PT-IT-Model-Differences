@@ -10,6 +10,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
+from src.poc.shared.feature_labels import make_label_str
+
 _CORRECTIVE_START = 20
 
 
@@ -28,7 +30,11 @@ def _load_summary(path: str) -> dict[int, dict[str, np.ndarray]] | None:
     return out
 
 
-def _rank_features(summary: dict[int, dict[str, np.ndarray]], top_k: int = 15) -> list[tuple[str, float, int, float]]:
+def _rank_features(
+    summary: dict[int, dict[str, np.ndarray]],
+    top_k: int = 15,
+    variant: str = "it",
+) -> list[tuple[str, float, int, float]]:
     rows: list[tuple[str, float, int, float]] = []
     for layer_i in range(_CORRECTIVE_START, 34):
         if layer_i not in summary or "sum" not in summary[layer_i] or "count" not in summary[layer_i]:
@@ -40,9 +46,15 @@ def _rank_features(summary: dict[int, dict[str, np.ndarray]], top_k: int = 15) -
             total = float(sums[feat_idx])
             count = int(counts[feat_idx])
             mean = total / count if count > 0 else 0.0
-            rows.append((f"L{layer_i}:F{feat_idx}", total, count, mean))
-    rows.sort(key=lambda x: x[1], reverse=True)
-    return rows[:top_k]
+            rows.append((feat_idx, layer_i, total, count, mean))
+    rows.sort(key=lambda x: x[2], reverse=True)
+    top_rows = rows[:top_k]
+    # Fetch labels for the top features (batched by layer to reuse cache)
+    labeled: list[tuple[str, float, int, float]] = []
+    for feat_idx, layer_i, total, count, mean in top_rows:
+        label = make_label_str(variant, layer_i, feat_idx)
+        labeled.append((label, total, count, mean))
+    return labeled
 
 
 def _layer_mass(summary: dict[int, dict[str, np.ndarray]]) -> np.ndarray:
@@ -78,8 +90,8 @@ def make_plot(summary_path: str, output_dir: str, pt_summary_path: str | None = 
         return
     pt_summary = _load_summary(pt_summary_path) if pt_summary_path else None
 
-    it_rows = _rank_features(it_summary, top_k=top_k)
-    pt_rows = _rank_features(pt_summary, top_k=top_k) if pt_summary else []
+    it_rows = _rank_features(it_summary, top_k=top_k, variant="it")
+    pt_rows = _rank_features(pt_summary, top_k=top_k, variant="pt") if pt_summary else []
     it_mass = _layer_mass(it_summary)
     pt_mass = _layer_mass(pt_summary) if pt_summary else None
 
