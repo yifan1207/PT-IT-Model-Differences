@@ -67,6 +67,10 @@ class Exp4Config:
     dtype_str: str = "bfloat16"
     device:    str = "cuda"
 
+    # ── multi-GPU ─────────────────────────────────────────────────────
+    n_gpus:     int = 1   # number of GPUs to parallelise across
+    gpu_offset: int = 0   # first physical GPU index (e.g. 4 → uses GPUs 4,5,6,...)
+
     # ── collection flags ──────────────────────────────────────────────
     collect_residuals: bool = True
     # Saves last-token residual vector per layer per prompt.

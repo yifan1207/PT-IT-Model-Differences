@@ -46,6 +46,11 @@ class ModelHooks:
     # MLP module output (before residual add); needed for transcoder MSE
     mlp_output: str = "mlp.output"
 
+    # Attention hidden-state output; index [0] of the self_attn output tuple.
+    # Shape [B, T, d_model] — the value written to the residual stream by attention.
+    # Used by the layer-skip intervention to zero the attention contribution.
+    attn_hidden_output: str = "self_attn.output[0]"
+
     # Self-attention weights; index [1] of output tuple when output_attentions=True
     attn_weights: str = "self_attn.output[1]"
 

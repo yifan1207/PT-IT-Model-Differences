@@ -144,9 +144,14 @@ def _commitment_by_bin(
     results: list[dict],
     threshold: float = _KL_THRESHOLD,
     n_layers: int = N_LAYERS,
-) -> dict[str, list[int]]:
-    """Commitment layers grouped by confidence bin."""
-    by_bin: dict[str, list[int]] = {"HIGH": [], "MED": [], "LOW": []}
+) -> dict[str, list[float]]:
+    """Commitment layers (fractional) grouped by confidence bin.
+
+    Uses linear interpolation between the last layer above threshold and the
+    first layer below, so values are continuous rather than snapping to integers.
+    E.g. with threshold=0.1: if KL[25]=0.15 and KL[26]=0.05, commitment = 25 + (0.15-0.1)/(0.15-0.05) = 25.5.
+    """
+    by_bin: dict[str, list[float]] = {"HIGH": [], "MED": [], "LOW": []}
     for r in results:
         kl_data = r.get("kl_to_final", [])
         for step_i, step_kl in enumerate(kl_data):
@@ -154,9 +159,20 @@ def _commitment_by_bin(
             if prob is None:
                 continue
             bname = _bin_name(prob)
-            for li, v in enumerate(step_kl[:n_layers]):
-                if v is not None and not math.isnan(float(v)) and float(v) < threshold:
-                    by_bin[bname].append(li)
+            kl_vals = [float(v) if (v is not None and not math.isnan(float(v))) else float("nan")
+                       for v in step_kl[:n_layers]]
+            for li in range(len(kl_vals)):
+                v = kl_vals[li]
+                if math.isnan(v):
+                    continue
+                if v < threshold:
+                    # Interpolate with previous layer if available
+                    if li > 0 and not math.isnan(kl_vals[li - 1]) and kl_vals[li - 1] > threshold:
+                        prev = kl_vals[li - 1]
+                        t = (prev - threshold) / (prev - v)   # fraction into interval
+                        by_bin[bname].append(li - 1 + t)
+                    else:
+                        by_bin[bname].append(float(li))
                     break
     return by_bin
 
@@ -176,6 +192,7 @@ def make_plot(
     results: list[dict],
     output_dir: str,
     pt_results: list[dict] | None = None,
+    threshold: float = _KL_THRESHOLD,
 ) -> None:
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
@@ -188,7 +205,7 @@ def make_plot(
     # ── Data extraction ───────────────────────────────────────────────────────
     it_kl_by_bin    = _kl_by_confidence_bin(results)
     it_delta_by_bin = _delta_by_confidence_bin(results)
-    it_commit_by_bin = _commitment_by_bin(results)
+    it_commit_by_bin = _commitment_by_bin(results, threshold=threshold)
     it_step_counts  = _bin_step_counts(results)
 
     pt_kl_by_bin:    dict = {}
@@ -198,7 +215,7 @@ def make_plot(
     if pt_results:
         pt_kl_by_bin    = _kl_by_confidence_bin(pt_results)
         pt_delta_by_bin = _delta_by_confidence_bin(pt_results)
-        pt_commit_by_bin = _commitment_by_bin(pt_results)
+        pt_commit_by_bin = _commitment_by_bin(pt_results, threshold=threshold)
         pt_step_counts  = _bin_step_counts(pt_results)
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 11))
@@ -209,8 +226,8 @@ def make_plot(
     ax_a.axvspan(_BOUNDARY, N_LAYERS, alpha=0.04, color="grey")
     ax_a.axvline(11, color="grey", lw=0.8, ls=":", alpha=0.6)
     ax_a.axvline(_BOUNDARY, color="black", lw=0.8, ls=":", alpha=0.4)
-    ax_a.axhline(_KL_THRESHOLD, color="green", lw=0.8, ls="--", alpha=0.5,
-                 label=f"commit threshold")
+    ax_a.axhline(threshold, color="green", lw=0.8, ls="--", alpha=0.5,
+                 label=f"commit threshold ({threshold} nats)")
 
     for bname, lo, hi, color, _ in _BINS:
         n = it_step_counts.get(bname, 0)
@@ -252,21 +269,23 @@ def make_plot(
         if it_c:
             ax_b.hist(it_c, bins=bins_hist, density=True, alpha=alpha_base,
                       color=color, histtype="stepfilled",
-                      label=f"IT {bname} med={np.median(it_c):.0f}")
-            ax_b.axvline(np.median(it_c), color=color, lw=2, ls="-")
+                      label=f"IT {bname} mean={np.mean(it_c):.1f} med={np.median(it_c):.1f}")
+            ax_b.axvline(np.mean(it_c),   color=color, lw=2.0, ls="-",  alpha=0.95)  # mean solid
+            ax_b.axvline(np.median(it_c), color=color, lw=1.5, ls=":",  alpha=0.95)  # median dotted
         if pt_c:
             ax_b.hist(pt_c, bins=bins_hist, density=True, alpha=alpha_base * 0.5,
                       color=color, histtype="step", lw=1.8, ls="--",
-                      label=f"PT {bname} med={np.median(pt_c):.0f}")
-            ax_b.axvline(np.median(pt_c), color=color, lw=1.5, ls="--", alpha=0.7)
+                      label=f"PT {bname} mean={np.mean(pt_c):.1f} med={np.median(pt_c):.1f}")
+            ax_b.axvline(np.mean(pt_c),   color=color, lw=1.8, ls="--", alpha=0.70)  # mean dashed
+            ax_b.axvline(np.median(pt_c), color=color, lw=1.3, ls="-.", alpha=0.70)  # median dash-dot
 
     ax_b.axvline(_BOUNDARY, color="black", lw=0.8, ls=":", alpha=0.4)
     ax_b.axvline(11, color="grey", lw=0.8, ls=":", alpha=0.6)
-    ax_b.set_xlabel("Commitment layer")
+    ax_b.set_xlabel(f"Commitment layer (KL < {threshold} nats, interpolated)")
     ax_b.set_ylabel("Density")
     ax_b.set_title(
-        f"Panel B — Commitment distribution per confidence bin\n"
-        f"IT filled / PT outline  |  Same bin, does IT still commit later?"
+        f"Panel B — Commitment distribution per confidence bin  (threshold={threshold} nats)\n"
+        "IT filled / PT outline  |  solid=mean  dotted/dash-dot=median"
     )
     ax_b.legend(fontsize=7, ncol=2)
     ax_b.grid(axis="y", alpha=0.25)
@@ -293,68 +312,73 @@ def make_plot(
     ax_c.legend(fontsize=8, ncol=2)
     ax_c.grid(axis="y", alpha=0.25)
 
-    # ── Panel D: summary bar chart — median commitment layer ──────────────────
+    # ── Panel D: mean bars + median markers, both IT and PT ──────────────────
     x = np.arange(len(bin_names))
-    w = 0.35
+    w = 0.30
 
-    def _median_iqr(commits: list[int]) -> tuple[float, float, float]:
+    def _stats(commits):
         if not commits:
             return float("nan"), float("nan"), float("nan")
         arr = np.array(commits)
-        return float(np.median(arr)), float(np.percentile(arr, 25)), float(np.percentile(arr, 75))
+        return float(np.mean(arr)), float(np.median(arr)), float(np.std(arr) / math.sqrt(len(arr)))
 
-    it_meds, it_q25, it_q75 = zip(*[_median_iqr(it_commit_by_bin.get(b, [])) for b in bin_names])
-    it_err_lo = [m - q25 for m, q25 in zip(it_meds, it_q25)]
-    it_err_hi = [q75 - m  for m, q75 in zip(it_meds, it_q75)]
+    it_stats = [_stats(it_commit_by_bin.get(b, [])) for b in bin_names]
+    it_means  = [s[0] for s in it_stats]
+    it_meds   = [s[1] for s in it_stats]
+    it_sems   = [s[2] for s in it_stats]
 
-    ax_d.bar(x - w/2, it_meds, w,
-             color=[bin_colors_map[b] for b in bin_names],
-             alpha=0.85, label="IT median")
-    ax_d.errorbar(x - w/2, it_meds, yerr=[it_err_lo, it_err_hi],
-                  fmt="none", color="black", capsize=5, lw=1.5)
+    colors_d = [bin_colors_map[b] for b in bin_names]
+    ax_d.bar(x - w/2, it_means, w, color=colors_d, alpha=0.85, label="IT mean")
+    ax_d.errorbar(x - w/2, it_means, yerr=it_sems,
+                  fmt="none", color="black", capsize=4, lw=1.5)
+    ax_d.scatter(x - w/2, it_meds, marker="D", s=60, color="black",
+                 zorder=5, label="IT median")
 
     if pt_results:
-        pt_meds, pt_q25, pt_q75 = zip(*[_median_iqr(pt_commit_by_bin.get(b, [])) for b in bin_names])
-        pt_err_lo = [m - q25 for m, q25 in zip(pt_meds, pt_q25)]
-        pt_err_hi = [q75 - m  for m, q75 in zip(pt_meds, pt_q75)]
-        ax_d.bar(x + w/2, pt_meds, w,
-                 color=[bin_colors_map[b] for b in bin_names],
-                 alpha=0.40, hatch="//", label="PT median")
-        ax_d.errorbar(x + w/2, pt_meds, yerr=[pt_err_lo, pt_err_hi],
-                      fmt="none", color="black", capsize=5, lw=1.2, alpha=0.7)
+        pt_stats = [_stats(pt_commit_by_bin.get(b, [])) for b in bin_names]
+        pt_means  = [s[0] for s in pt_stats]
+        pt_meds   = [s[1] for s in pt_stats]
+        pt_sems   = [s[2] for s in pt_stats]
+        ax_d.bar(x + w/2, pt_means, w, color=colors_d, alpha=0.38,
+                 hatch="//", label="PT mean")
+        ax_d.errorbar(x + w/2, pt_means, yerr=pt_sems,
+                      fmt="none", color="black", capsize=4, lw=1.2, alpha=0.7)
+        ax_d.scatter(x + w/2, pt_meds, marker="D", s=60, color="grey",
+                     zorder=5, label="PT median")
 
-    # Annotate IT-PT delta for each bin
-    for xi, bname in enumerate(bin_names):
-        if pt_results and not math.isnan(float(it_meds[xi])):
-            pt_med = pt_meds[xi] if pt_results else float("nan")
-            if not math.isnan(float(pt_med)):
-                delta = float(it_meds[xi]) - float(pt_med)
-                ax_d.text(xi, max(float(it_meds[xi]), float(pt_med)) + 0.5,
-                          f"Δ={delta:+.1f}L", ha="center", va="bottom", fontsize=9,
-                          fontweight="bold",
-                          color="green" if delta > 0 else "red")
+        # Annotate both Δmean and Δmedian above each group
+        for xi, bname in enumerate(bin_names):
+            dm = it_means[xi] - pt_means[xi]
+            dd = it_meds[xi]  - pt_meds[xi]
+            top = max(it_means[xi], pt_means[xi], it_meds[xi], pt_meds[xi]) + 0.4
+            cm = "green" if dm > 0 else ("red" if dm < 0 else "black")
+            cd = "green" if dd > 0 else ("red" if dd < 0 else "black")
+            if not (math.isnan(dm) or math.isnan(dd)):
+                ax_d.text(xi, top,
+                          f"μΔ={dm:+.2f}\nM̃Δ={dd:+.2f}",
+                          ha="center", va="bottom", fontsize=8, fontweight="bold",
+                          color="black",
+                          bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.7))
 
     ax_d.set_xticks(x)
-    ax_d.set_xticklabels([
-        f"{b}\n({lo:.0%}–{hi:.0%})" for b, lo, hi, _, _ in _BINS
-    ], fontsize=9)
-    ax_d.set_ylabel("Median commitment layer  (error bars = IQR)")
-    ax_d.set_title("Panel D — Median commitment layer by confidence × variant\n"
-                   "Δ = IT median − PT median per bin  |  Positive → IT delays more")
-    ax_d.legend(fontsize=9)
+    ax_d.set_xticklabels([f"{b}\n({lo:.0%}–{hi:.0%})" for b, lo, hi, _, _ in _BINS], fontsize=9)
+    ax_d.set_ylabel(f"Commitment layer  (KL < {threshold} nats, interpolated  |  bars=mean±SEM  ◆=median)")
+    ax_d.set_title(f"Panel D — Mean & median commitment by confidence × variant  (threshold={threshold} nats)\n"
+                   "μΔ = IT mean − PT mean  |  M̃Δ = IT median − PT median")
+    ax_d.legend(fontsize=8, ncol=2)
     ax_d.grid(axis="y", alpha=0.25)
-    ax_d.axhline(_BOUNDARY, color="black", lw=0.8, ls=":", alpha=0.4,
-                 label=f"corrective boundary (L{_BOUNDARY})")
+    ax_d.axhline(_BOUNDARY, color="black", lw=0.8, ls=":", alpha=0.4)
 
     fig.suptitle(
         "E3.5 — Confidence-Stratified Commitment\n"
         "Controls 'IT generates harder tokens' confound at the probability level\n"
-        f"Bins: HIGH >90%, MED 50–90%, LOW <50%  |  threshold={_KL_THRESHOLD} nats",
-        fontsize=12, fontweight="bold",
+        f"Bins: HIGH >90%, MED 50–90%, LOW <50%  |  threshold={threshold} nats  |  commitment layer = interpolated crossing",
+        fontsize=11, fontweight="bold",
     )
     fig.tight_layout()
 
-    out_path = Path(output_dir) / "plot_e3_5_confidence_stratified.png"
+    thresh_tag = f"_t{int(threshold*10):02d}"
+    out_path = Path(output_dir) / f"plot_e3_5_confidence_stratified{thresh_tag}.png"
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  Plot E3.5 saved → {out_path}")

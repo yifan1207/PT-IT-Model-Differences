@@ -122,8 +122,13 @@ def _commitment_from_kl(
     matched: bool | None,
     threshold: float = _KL_THRESHOLD,
     n_layers: int = N_LAYERS,
-) -> list[int]:
-    """Commitment layers, optionally filtered by match status."""
+) -> list[float]:
+    """Commitment layers (fractional via linear interpolation), optionally filtered by match status.
+
+    Uses the same interpolation as E3.5: linearly interpolates the crossing point
+    between the last layer above threshold and first below, giving continuous values
+    instead of snapping to integers.
+    """
     out = []
     for r in results:
         rid = r.get("record_id") or r.get("prompt_id", "")
@@ -132,9 +137,19 @@ def _commitment_from_kl(
             if match_by_id is not None and matched is not None:
                 if step_i >= len(flags) or flags[step_i] != matched:
                     continue
-            for li, v in enumerate(step_kl[:n_layers]):
-                if v is not None and not math.isnan(float(v)) and float(v) < threshold:
-                    out.append(li)
+            kl_vals = [float(v) if (v is not None and not math.isnan(float(v))) else float("nan")
+                       for v in step_kl[:n_layers]]
+            for li in range(len(kl_vals)):
+                v = kl_vals[li]
+                if math.isnan(v):
+                    continue
+                if v < threshold:
+                    if li > 0 and not math.isnan(kl_vals[li - 1]) and kl_vals[li - 1] > threshold:
+                        prev = kl_vals[li - 1]
+                        t = (prev - threshold) / (prev - v)
+                        out.append(li - 1 + t)
+                    else:
+                        out.append(float(li))
                     break
     return out
 
@@ -143,6 +158,7 @@ def make_plot(
     results: list[dict],
     output_dir: str,
     pt_results: list[dict] | None = None,
+    threshold: float = _KL_THRESHOLD,
 ) -> None:
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
@@ -180,10 +196,10 @@ def make_plot(
     pt_mismatch_kl_m, pt_mismatch_kl_s = _kl_by_match(pt_results, pt_match_by_id, matched=False)
 
     # ── Commitment layer distributions ────────────────────────────────────────
-    it_commit_match    = _commitment_from_kl(results,    match_by_id,    matched=True)
-    it_commit_mismatch = _commitment_from_kl(results,    match_by_id,    matched=False)
-    pt_commit_match    = _commitment_from_kl(pt_results, pt_match_by_id, matched=True)
-    pt_commit_mismatch = _commitment_from_kl(pt_results, pt_match_by_id, matched=False)
+    it_commit_match    = _commitment_from_kl(results,    match_by_id,    matched=True,  threshold=threshold)
+    it_commit_mismatch = _commitment_from_kl(results,    match_by_id,    matched=False, threshold=threshold)
+    pt_commit_match    = _commitment_from_kl(pt_results, pt_match_by_id, matched=True,  threshold=threshold)
+    pt_commit_mismatch = _commitment_from_kl(pt_results, pt_match_by_id, matched=False, threshold=threshold)
 
     fig, axes = plt.subplots(2, 2, figsize=(16, 11))
     ax_a, ax_b = axes[0]
@@ -211,8 +227,8 @@ def make_plot(
     ax_b.axvspan(_BOUNDARY, N_LAYERS, alpha=0.04, color="grey")
     ax_b.axvline(11, color="grey", lw=0.8, ls=":", alpha=0.6)
     ax_b.axvline(_BOUNDARY, color="black", lw=0.8, ls=":", alpha=0.4)
-    ax_b.axhline(_KL_THRESHOLD, color="green", lw=0.8, ls="--", alpha=0.5,
-                 label=f"commit threshold")
+    ax_b.axhline(threshold, color="green", lw=0.8, ls="--", alpha=0.5,
+                 label=f"commit threshold ({threshold} nats)")
 
     for m, s, label, color, ls, alpha in [
         (it_match_kl_m,     it_match_kl_s,     "IT matched",    _IT_COLOR, "-",  1.0),
@@ -225,67 +241,70 @@ def make_plot(
 
     ax_b.set_xlabel("Transformer Layer")
     ax_b.set_ylabel("Mean KL(layer_i ∥ final) nats (±SEM)")
-    ax_b.set_title("Panel B — KL trajectory: matched vs mismatched tokens\n"
+    ax_b.set_title(f"Panel B — KL trajectory: matched vs mismatched tokens  (commit={threshold} nats)\n"
                    "IT matched still higher than PT matched → confound controlled")
     ax_b.legend(fontsize=8, ncol=2)
     ax_b.grid(axis="y", alpha=0.25)
 
+    def _hist_panel(ax, it_c, pt_c, title, xlabel):
+        """Draw histogram with both mean (solid) and median (dashed) lines for IT and PT."""
+        bins = np.arange(0, N_LAYERS + 2) - 0.5
+        if it_c:
+            it_mean = np.mean(it_c); it_med = np.median(it_c)
+            ax.hist(it_c, bins=bins, density=True, alpha=0.55, color=_IT_COLOR,
+                    label=f"IT  mean={it_mean:.1f}  med={it_med:.1f}  n={len(it_c):,}")
+            ax.axvline(it_mean, color=_IT_COLOR, lw=2.2, ls="-",  label="IT mean")
+            ax.axvline(it_med,  color=_IT_COLOR, lw=2.2, ls="--", label="IT median")
+        if pt_c:
+            pt_mean = np.mean(pt_c); pt_med = np.median(pt_c)
+            ax.hist(pt_c, bins=bins, density=True, alpha=0.40, color=_PT_COLOR,
+                    label=f"PT  mean={pt_mean:.1f}  med={pt_med:.1f}  n={len(pt_c):,}")
+            ax.axvline(pt_mean, color=_PT_COLOR, lw=2.2, ls="-",  label="PT mean")
+            ax.axvline(pt_med,  color=_PT_COLOR, lw=2.2, ls="--", label="PT median")
+        if it_c and pt_c:
+            dm = np.mean(it_c) - np.mean(pt_c)
+            dd = np.median(it_c) - np.median(pt_c)
+            clr_m = "green" if dm > 0 else "red"; clr_d = "green" if dd > 0 else "red"
+            ax.text(0.97, 0.97,
+                    f"Δmean={dm:+.2f}L\nΔmed ={dd:+.2f}L",
+                    transform=ax.transAxes, ha="right", va="top", fontsize=10,
+                    fontweight="bold",
+                    color="black",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.7))
+        ax.axvline(_BOUNDARY, color="black", lw=0.8, ls=":", alpha=0.4)
+        ax.axvline(11, color="grey", lw=0.8, ls=":", alpha=0.6)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Density")
+        ax.set_title(title)
+        ax.legend(fontsize=8, ncol=2)
+        ax.grid(axis="y", alpha=0.25)
+
     # ── Panel C: commitment layer — matched tokens (KEY PANEL) ────────────────
-    bins = np.arange(0, N_LAYERS + 2) - 0.5
-    if it_commit_match:
-        ax_c.hist(it_commit_match, bins=bins, density=True, alpha=0.65,
-                  color=_IT_COLOR,
-                  label=f"IT matched  (med={np.median(it_commit_match):.0f}, n={len(it_commit_match):,})")
-        ax_c.axvline(np.median(it_commit_match), color=_IT_COLOR, lw=2.5, ls="-")
-    if pt_commit_match:
-        ax_c.hist(pt_commit_match, bins=bins, density=True, alpha=0.65,
-                  color=_PT_COLOR,
-                  label=f"PT matched  (med={np.median(pt_commit_match):.0f}, n={len(pt_commit_match):,})")
-        ax_c.axvline(np.median(pt_commit_match), color=_PT_COLOR, lw=2.5, ls="--")
-    ax_c.axvline(_BOUNDARY, color="black", lw=0.8, ls=":", alpha=0.4)
-    ax_c.axvline(11, color="grey", lw=0.8, ls=":", alpha=0.6)
-    ax_c.set_xlabel("First layer where KL < threshold (commitment layer)")
-    ax_c.set_ylabel("Density")
-    ax_c.set_title(
-        f"Panel C — Commitment layer: MATCHED tokens only ★ (threshold={_KL_THRESHOLD} nats)\n"
-        "Same token, same prompt → purely commitment depth difference"
+    _hist_panel(
+        ax_c, it_commit_match, pt_commit_match,
+        title=(f"Panel C — Commitment layer: MATCHED tokens only ★  (threshold={threshold} nats)\n"
+               "Same token, same prompt → purely commitment depth diff"),
+        xlabel=f"Commitment layer (interpolated, threshold={threshold} nats)",
     )
-    ax_c.legend(fontsize=9)
-    ax_c.grid(axis="y", alpha=0.25)
 
     # ── Panel D: commitment layer — mismatched tokens ─────────────────────────
-    if it_commit_mismatch:
-        ax_d.hist(it_commit_mismatch, bins=bins, density=True, alpha=0.65,
-                  color=_IT_COLOR,
-                  label=f"IT mismatch (med={np.median(it_commit_mismatch):.0f}, n={len(it_commit_mismatch):,})")
-        ax_d.axvline(np.median(it_commit_mismatch), color=_IT_COLOR, lw=2.5, ls="-")
-    if pt_commit_mismatch:
-        ax_d.hist(pt_commit_mismatch, bins=bins, density=True, alpha=0.65,
-                  color=_PT_COLOR,
-                  label=f"PT mismatch (med={np.median(pt_commit_mismatch):.0f}, n={len(pt_commit_mismatch):,})")
-        ax_d.axvline(np.median(pt_commit_mismatch), color=_PT_COLOR, lw=2.5, ls="--")
-    ax_d.axvline(_BOUNDARY, color="black", lw=0.8, ls=":", alpha=0.4)
-    ax_d.axvline(11, color="grey", lw=0.8, ls=":", alpha=0.6)
-    ax_d.set_xlabel("Commitment layer")
-    ax_d.set_ylabel("Density")
-    ax_d.set_title(
-        f"Panel D — Commitment layer: MISMATCHED tokens\n"
-        "IT rewrote PT's token — expect strongest IT commitment delay here"
+    _hist_panel(
+        ax_d, it_commit_mismatch, pt_commit_mismatch,
+        title=(f"Panel D — Commitment layer: MISMATCHED tokens  (threshold={threshold} nats)\n"
+               "⚠ post-divergence steps are in different contexts — comparison is approximate"),
+        xlabel=f"Commitment layer (interpolated, threshold={threshold} nats)",
     )
-    handles, labels = ax_d.get_legend_handles_labels()
-    if handles:
-        ax_d.legend(fontsize=9)
-    ax_d.grid(axis="y", alpha=0.25)
 
     fig.suptitle(
-        "E3.4 — Matched-Token Commitment Analysis\n"
+        f"E3.4 — Matched-Token Commitment Analysis  (threshold={threshold} nats)\n"
         "Controls 'IT generates harder tokens' confound via same-token filtering\n"
         "Panel C is the key test: matched tokens, IT still commits later → intrinsic IT delay",
         fontsize=12, fontweight="bold",
     )
     fig.tight_layout()
 
-    out_path = Path(output_dir) / "plot_e3_4_matched_token.png"
+    thresh_tag = f"_t{int(threshold*10):02d}"  # e.g. 0.1→_t01, 0.2→_t02, 0.5→_t05
+    out_path = Path(output_dir) / f"plot_e3_4_matched_token{thresh_tag}.png"
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
     print(f"  Plot E3.4 saved → {out_path}")

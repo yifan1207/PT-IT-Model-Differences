@@ -51,12 +51,14 @@ To materialise the [B, H, T, T] attention weight matrix in Gemma 3:
 If output_attentions=True is not supported by the circuit_tracer version,
 the code falls back to entropy=NaN for all layers and logs a warning.
 """
+import os
 import json
 import math
 import torch
 import numpy as np
 from pathlib import Path
 from typing import Optional
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from nnsight import save as nnsave
 
@@ -130,20 +132,24 @@ def collect_prompt(
     try:
         with loaded.model.trace(current_ids, **trace_kwargs):
             for i in range(N_LAYERS):
-                if cfg.collect_residuals:
-                    residual_saves.append(
-                        nnsave(loaded.model.language_model.layers[i].output[0])
-                    )
-                if cfg.collect_features:
-                    mlp_input_saves.append(
-                        nnsave(loaded.model.language_model.layers[i].pre_feedforward_layernorm.output)
-                    )
+                # Register saves in forward-pass order within each layer:
+                # self_attn → pre_feedforward_layernorm → layer output.
+                # nnsight requires registration order to match execution order.
                 if cfg.collect_attention:
+                    # self_attn runs first within each layer.
                     # self_attn.output is (hidden_states, attn_weights, [past_kv])
                     # when output_attentions=True with eager attention.
                     # Index [1] selects the attention weight matrix [B, H, T, T].
                     attn_saves[i] = nnsave(
                         loaded.model.language_model.layers[i].self_attn.output[1]
+                    )
+                if cfg.collect_features:
+                    mlp_input_saves.append(
+                        nnsave(loaded.model.language_model.layers[i].pre_feedforward_layernorm.output)
+                    )
+                if cfg.collect_residuals:
+                    residual_saves.append(
+                        nnsave(loaded.model.language_model.layers[i].output[0])
                     )
         attn_trace_ok = True
     except Exception as e:
@@ -152,15 +158,19 @@ def collect_prompt(
         print(f"    [WARN] Retrying without output_attentions=True ...")
         attn_trace_ok = False
         attn_saves = {}
+        # Reset lists — may have partial entries from the failed attempt above.
+        residual_saves = []
+        mlp_input_saves = []
         with loaded.model.trace(current_ids):
             for i in range(N_LAYERS):
-                if cfg.collect_residuals:
-                    residual_saves.append(
-                        nnsave(loaded.model.language_model.layers[i].output[0])
-                    )
+                # Same forward-pass order: pre_feedforward_layernorm before layer output.
                 if cfg.collect_features:
                     mlp_input_saves.append(
                         nnsave(loaded.model.language_model.layers[i].pre_feedforward_layernorm.output)
+                    )
+                if cfg.collect_residuals:
+                    residual_saves.append(
+                        nnsave(loaded.model.language_model.layers[i].output[0])
                     )
 
     # ── materialise residuals ─────────────────────────────────────────────────
@@ -250,8 +260,52 @@ def _build_flat_items(prompts_dict: dict) -> list:
     return items
 
 
+def _pack_active_features(active_features: list) -> np.ndarray:
+    """Pack list[list[int]] into object-array [n_layers] of int32 arrays."""
+    arr = np.empty(N_LAYERS, dtype=object)
+    for layer_i, idxs in enumerate(active_features):
+        arr[layer_i] = np.array(idxs, dtype=np.int32)
+    return arr
+
+
+def _collect_worker(gpu_id: int, prompt_items: list, cfg: "Exp4Config") -> tuple:
+    """Worker: load model on one GPU, process a chunk of prompts."""
+    try:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id + getattr(cfg, "gpu_offset", 0))
+        cfg.device = "cuda"
+        from src.poc.exp4.model import load_model
+        loaded = load_model(cfg)
+
+        results: list[dict] = []
+        all_residuals: dict = {}
+        all_features: dict = {}
+        all_attn_weights: dict = {}
+
+        for done, (prompt_id, category, prompt) in enumerate(prompt_items):
+            print(f"  [GPU {gpu_id}] [{done + 1}/{len(prompt_items)}] {prompt_id}", flush=True)
+            result, extras = collect_prompt(prompt_id, category, prompt, loaded, cfg)
+            results.append(result)
+
+            if extras["residuals"] is not None:
+                all_residuals[prompt_id] = extras["residuals"]
+
+            if extras["active_features"] is not None:
+                all_features[prompt_id] = _pack_active_features(extras["active_features"])
+
+            if extras["attn_weights"] is not None:
+                for layer_i, mat in extras["attn_weights"].items():
+                    all_attn_weights[f"{prompt_id}_{layer_i}"] = mat
+
+        return results, all_residuals, all_features, all_attn_weights
+    except Exception as e:
+        # NNsightException and similar custom exceptions are not picklable,
+        # which causes concurrent.futures to crash when sending the error back.
+        # Re-raise as plain RuntimeError so multiprocessing can serialise it.
+        raise RuntimeError(f"[GPU {gpu_id}] {type(e).__name__}: {e}") from None
+
+
 def collect_all(
-    loaded: LoadedModel,
+    loaded,   # LoadedModel | None — ignored when n_gpus > 1
     cfg: Exp4Config,
     prompts_dict: dict,
 ) -> tuple[list[dict], dict, dict, dict]:
@@ -267,32 +321,55 @@ def collect_all(
     items = _build_flat_items(prompts_dict)
     total = len(items)
 
-    results          = []
-    all_residuals    = {}
-    all_features     = {}
-    all_attn_weights = {}
+    # ── single-GPU path ───────────────────────────────────────────────────────
+    if cfg.n_gpus <= 1:
+        results: list[dict] = []
+        all_residuals: dict = {}
+        all_features: dict = {}
+        all_attn_weights: dict = {}
 
-    for done, (prompt_id, category, prompt) in enumerate(items):
-        print(f"  [{done + 1}/{total}] {prompt_id}: '{prompt[:55]}'")
-        result, extras = collect_prompt(prompt_id, category, prompt, loaded, cfg)
-        results.append(result)
+        for done, (prompt_id, category, prompt) in enumerate(items):
+            print(f"  [{done + 1}/{total}] {prompt_id}: '{prompt[:55]}'")
+            result, extras = collect_prompt(prompt_id, category, prompt, loaded, cfg)
+            results.append(result)
 
-        if extras["residuals"] is not None:
-            all_residuals[prompt_id] = extras["residuals"]
+            if extras["residuals"] is not None:
+                all_residuals[prompt_id] = extras["residuals"]
 
-        if extras["active_features"] is not None:
-            # Pack into object array [n_layers] of int32 arrays
-            n_layers = N_LAYERS
-            af_arr = np.empty(n_layers, dtype=object)
-            for layer_i, idxs in enumerate(extras["active_features"]):
-                af_arr[layer_i] = np.array(idxs, dtype=np.int32)
-            all_features[prompt_id] = af_arr
+            if extras["active_features"] is not None:
+                all_features[prompt_id] = _pack_active_features(extras["active_features"])
 
-        if extras["attn_weights"] is not None:
-            for layer_i, mat in extras["attn_weights"].items():
-                all_attn_weights[f"{prompt_id}_{layer_i}"] = mat
+            if extras["attn_weights"] is not None:
+                for layer_i, mat in extras["attn_weights"].items():
+                    all_attn_weights[f"{prompt_id}_{layer_i}"] = mat
 
-    return results, all_residuals, all_features, all_attn_weights
+        return results, all_residuals, all_features, all_attn_weights
+
+    # ── multi-GPU path ────────────────────────────────────────────────────────
+    import multiprocessing as mp
+    n_gpus = min(cfg.n_gpus, torch.cuda.device_count())
+    if n_gpus == 0:
+        raise RuntimeError("No CUDA GPUs available.")
+    chunks = [items[i::n_gpus] for i in range(n_gpus)]
+    print(f"  Distributing {total} prompts across {n_gpus} GPUs (offset={cfg.gpu_offset})")
+
+    ctx = mp.get_context("spawn")
+    all_results: list[dict] = []
+    all_residuals_m: dict = {}
+    all_features_m: dict = {}
+    all_attn_weights_m: dict = {}
+
+    with ProcessPoolExecutor(max_workers=n_gpus, mp_context=ctx) as pool:
+        futures = {pool.submit(_collect_worker, gpu_id, chunks[gpu_id], cfg): gpu_id
+                   for gpu_id in range(n_gpus)}
+        for future in as_completed(futures):
+            r, res, feat, attn = future.result()
+            all_results.extend(r)
+            all_residuals_m.update(res)
+            all_features_m.update(feat)
+            all_attn_weights_m.update(attn)
+
+    return all_results, all_residuals_m, all_features_m, all_attn_weights_m
 
 
 # ── serialisation ──────────────────────────────────────────────────────────────

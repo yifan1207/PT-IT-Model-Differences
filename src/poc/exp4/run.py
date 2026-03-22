@@ -81,8 +81,10 @@ def main() -> None:
     parser.add_argument(
         "--device",
         default="cuda",
-        help="PyTorch device (default: cuda). E.g. cuda:0, cuda:1, cpu.",
+        help="PyTorch device for single-GPU mode (default: cuda). Ignored when --gpus > 1.",
     )
+    parser.add_argument("--gpus", type=int, default=None, help="Number of GPUs to parallelise across.")
+    parser.add_argument("--gpu-offset", type=int, default=0, help="First physical GPU index (e.g. 4 uses GPUs 4,5,...).")
     args = parser.parse_args()
 
     cfg = Exp4Config(
@@ -92,6 +94,9 @@ def main() -> None:
         collect_features=not args.no_features,
         device=args.device,
     )
+    if args.gpus is not None:
+        cfg.n_gpus = args.gpus
+    cfg.gpu_offset = args.gpu_offset
 
     # ── Load prompts ──────────────────────────────────────────────────────────
     dataset_path = args.dataset or "data/exp3_dataset.jsonl"
@@ -122,9 +127,13 @@ def main() -> None:
         print("       If this fails, re-run with --no-attention.\n")
 
     # ── Load model ────────────────────────────────────────────────────────────
-    print("\n[1/3] Loading model + transcoders ...")
-    from src.poc.exp4.model import load_model
-    loaded = load_model(cfg)
+    if cfg.n_gpus > 1:
+        print("\n[1/3] Skipping main-process model load (workers load independently)")
+        loaded = None
+    else:
+        print("\n[1/3] Loading model + transcoders ...")
+        from src.poc.exp4.model import load_model
+        loaded = load_model(cfg)
 
     # ── Collect ───────────────────────────────────────────────────────────────
     print("\n[2/3] Collecting data (single forward pass per prompt) ...")
