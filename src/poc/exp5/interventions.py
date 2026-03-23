@@ -57,11 +57,17 @@ class PrecomputedAblationStats:
 
 
 def _broadcast_like(vec: torch.Tensor, ref: torch.Tensor) -> torch.Tensor:
-    """Broadcast a [d_model] vector to the exact shape of an MLP output tensor."""
-    v = vec.to(device=ref.device, dtype=ref.dtype)
-    while v.dim() < ref.dim():
-        v = v.unsqueeze(0)
-    return v.expand_as(ref)
+    """Broadcast a [d_model] mean vector for in-place assignment to an MLP output.
+
+    MLP outputs for Gemma 3 are always [batch, seq_len, d_model].  We unsqueeze
+    twice to [1, 1, d_model] and let PyTorch broadcasting handle the expansion on
+    the `target[:] = value` assignment inside the trace.
+
+    Deliberately avoids accessing .device, .dtype, .dim(), or .expand_as() on
+    `ref` because `ref` is an nnsight trace proxy and those calls may not resolve
+    to concrete values.  Device/dtype are handled by the assignment target.
+    """
+    return vec.unsqueeze(0).unsqueeze(0)  # [d_model] -> [1, 1, d_model]
 
 
 def directional_ablate_tensor(
@@ -116,7 +122,13 @@ class InterventionSpec:
     def active(self) -> bool:
         return self.method != "none" and bool(self.layers)
 
-    def validate(self) -> None:
+    def validate(self, n_layers: int = 34) -> None:
+        # Bounds check: catch layer indices that would silently never match the loop.
+        out_of_range = sorted(i for i in self.layers if not (0 <= i < n_layers))
+        if out_of_range:
+            raise ValueError(
+                f"Ablation layer indices out of range [0, {n_layers}): {out_of_range}"
+            )
         if self.method == "mean":
             missing = sorted(i for i in self.layers if i not in self.stats.mean_mlp_outputs)
             if missing:
@@ -131,6 +143,19 @@ class InterventionSpec:
             missing = sorted(i for i in self.layers if i not in self.stats.corrective_directions)
             if missing:
                 raise ValueError(f"Missing corrective directions for layers: {missing}")
+            # Degenerate direction check: near-zero norm means IT-PT difference was near-zero
+            # at that layer; normalising it produces a random direction that ablates nothing
+            # useful while appearing to run successfully.
+            degenerate = sorted(
+                i for i in self.layers
+                if i in self.stats.corrective_directions
+                and float(self.stats.corrective_directions[i].norm()) < 1e-4
+            )
+            if degenerate:
+                raise ValueError(
+                    f"Corrective directions at layers {degenerate} have near-zero norm "
+                    f"(IT-PT difference is negligible). Re-run precompute or inspect the data."
+                )
         if self.method == "resample":
             raise NotImplementedError(
                 "Resample ablation is not yet implemented end-to-end: the current "

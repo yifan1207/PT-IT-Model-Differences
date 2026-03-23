@@ -1,0 +1,32 @@
+{
+  "it": {
+    "gini_corrective_mean": 0.5289,
+    "median_activation": 168.7,
+    "p90_activation": 315.2,
+    "heavy_tail_ratio": 1.83,
+    "frac_mass_l32_33": 0.1929,
+    "median_n50": 2799,
+    "median_n90": 9728,
+    "mean_active_per_layer": 16344.0
+  },
+  "pt": {
+    "gini_corrective_mean": 0.6874,
+    "median_activation": 137.5,
+    "p90_activation": 240.9,
+    "heavy_tail_ratio": 1.73,
+    "frac_mass_l32_33": 0.2258,
+    "median_n50": 919,
+    "median_n90": 8207,
+    "mean_active_per_layer": 16283.0
+  },
+  "overlap_jaccard_k100_mean": 0.1488,
+  "overlap_by_k": {
+    "10": 0.1075,
+    "25": 0.1382,
+    "50": 0.1459,
+    "100": 0.1488,
+    "200": 0.1771,
+    "500": 0.1959,
+    "1000": 0.225
+  }
+}

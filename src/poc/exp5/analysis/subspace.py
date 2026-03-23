@@ -29,8 +29,9 @@ def mean_cosine_to_reference(x: np.ndarray, ref: np.ndarray) -> float:
 def linear_cka(x: np.ndarray, y: np.ndarray) -> float:
     if x.size == 0 or y.size == 0 or x.shape[0] != y.shape[0]:
         return float("nan")
-    x = x - x.mean(axis=0, keepdims=True)
-    y = y - y.mean(axis=0, keepdims=True)
+    # Cast to float64 before squaring to avoid overflow on large d_model matrices.
+    x = x.astype(np.float64) - x.astype(np.float64).mean(axis=0, keepdims=True)
+    y = y.astype(np.float64) - y.astype(np.float64).mean(axis=0, keepdims=True)
     hsic_xy = np.square(x.T @ y).sum()
     hsic_xx = np.square(x.T @ x).sum()
     hsic_yy = np.square(y.T @ y).sum()

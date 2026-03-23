@@ -20,15 +20,8 @@ class GeneratedSample:
     generated_text: str
     generated_tokens: list[dict]
     hidden_states: dict[int, np.ndarray]
-    logit_lens_entropy: list[list[float]]
-    top1_token_per_layer: list[list[int]]
-
-
-def _entropy(logits: torch.Tensor, mask: torch.Tensor | None = None) -> float:
-    if mask is not None:
-        logits = logits[mask]
-    probs = torch.softmax(logits.float(), dim=-1)
-    return float(-(probs * torch.log(probs + 1e-12)).sum().item())
+    logit_lens_entropy: list[list[float]]   # empty in exp5 — kept for schema compat
+    top1_token_per_layer: list[list[int]]   # empty in exp5 — kept for schema compat
 
 
 def _prepare_input_ids(record: dict, loaded: Any, cfg: Exp5Config) -> torch.Tensor:
@@ -50,6 +43,16 @@ def generate_record(
     cfg: Exp5Config,
     intervention: InterventionSpec,
 ) -> GeneratedSample:
+    """Generate one record under the given intervention.
+
+    Speed optimisations vs the original implementation:
+    - Only nnsave at checkpoint_layers (4 saves vs 34) — eliminates 30 unnecessary
+      GPU→CPU tensor copies per step.
+    - Logit lens (34 × W_U matmuls per step) is skipped entirely — it was computed
+      but never used by any exp5 scorer or written to the output JSONL.
+    - hooks_for_model is called once per record (unchanged) but the result is
+      looked up by key, not recomputed inside the token loop.
+    """
     tokenizer = loaded.tokenizer
     device = loaded.W_U.device
     hooks = hooks_for_model(cfg.model_id)
@@ -64,22 +67,27 @@ def generate_record(
 
     generated_tokens: list[dict] = []
     hidden_states: dict[int, list[np.ndarray]] = {li: [] for li in cfg.checkpoint_layers}
-    ll_entropy: list[list[float]] = []
-    top1_by_layer: list[list[int]] = []
+    checkpoint_set = set(cfg.checkpoint_layers)
 
-    intervention.validate()
+    intervention.validate(n_layers=cfg.n_layers)
 
     for _ in range(cfg.max_gen_tokens):
+        checkpoint_saves: dict[int, Any] = {}
         with loaded.model.trace(current_ids):
-            residual_saves = []
             layers_root = navigate_path(loaded.model, hooks.layers_root)
             for layer_i in range(cfg.n_layers):
                 layer = layers_root[layer_i]
+                # Apply ablation intervention (all layers, as before).
                 intervention.apply_in_trace(layer, layer_i, hooks)
-                residual_saves.append(nnsave(navigate_path(layer, hooks.layer_residual)))
+                # Only nnsave at checkpoint layers — 4 saves instead of 34.
+                # The other 30 residuals were transferred to CPU and discarded;
+                # skipping them eliminates ~88% of per-step GPU→CPU copies.
+                if layer_i in checkpoint_set:
+                    checkpoint_saves[layer_i] = nnsave(
+                        navigate_path(layer, hooks.layer_residual)
+                    )
             logits_save = nnsave(navigate_path(loaded.model, hooks.lm_head).output)
 
-        residuals = [r[0, -1, :].float() for r in residual_saves]
         logits = logits_save[0, -1, :].float()
         masked_logits = logits.clone()
         masked_logits[~loaded.real_token_mask] = float("-inf")
@@ -88,23 +96,9 @@ def generate_record(
             {"token_id": next_token_id, "token_str": tokenizer.decode([next_token_id])}
         )
 
-        final_norm = navigate_path(loaded.model, hooks.final_norm)
-        step_ent: list[float] = []
-        step_top1: list[int] = []
-        with torch.inference_mode():
-            for layer_i, h in enumerate(residuals):
-                ll = final_norm(h.to(device)).float() @ loaded.W_U
-                step_ent.append(_entropy(ll, mask=loaded.real_token_mask))
-                masked_ll = ll.clone()
-                masked_ll[~loaded.real_token_mask] = float("-inf")
-                step_top1.append(int(masked_ll.argmax().item()))
-            for checkpoint_layer in cfg.checkpoint_layers:
-                hidden_states[checkpoint_layer].append(
-                    residuals[checkpoint_layer].cpu().to(torch.float32).numpy()
-                )
-
-        ll_entropy.append(step_ent)
-        top1_by_layer.append(step_top1)
+        # Save checkpoint hidden states (last-token position only).
+        for li, saved in checkpoint_saves.items():
+            hidden_states[li].append(saved[0, -1, :].detach().float().cpu().numpy())
 
         current_ids = torch.cat(
             [current_ids, torch.tensor([[next_token_id]], device=device)], dim=1
@@ -116,8 +110,8 @@ def generate_record(
         [t["token_id"] for t in generated_tokens], skip_special_tokens=True
     )
     hidden_arrays = {
-        layer_i: np.stack(steps, axis=0) if steps else np.zeros((0, cfg.d_model), dtype=np.float32)
-        for layer_i, steps in hidden_states.items()
+        li: np.stack(steps, axis=0) if steps else np.zeros((0, cfg.d_model), dtype=np.float32)
+        for li, steps in hidden_states.items()
     }
     return GeneratedSample(
         record_id=record["id"],
@@ -125,8 +119,8 @@ def generate_record(
         generated_text=generated_text,
         generated_tokens=generated_tokens,
         hidden_states=hidden_arrays,
-        logit_lens_entropy=ll_entropy,
-        top1_token_per_layer=top1_by_layer,
+        logit_lens_entropy=[],      # not used in exp5; omitted for speed
+        top1_token_per_layer=[],    # not used in exp5; omitted for speed
     )
 
 
@@ -144,4 +138,3 @@ def build_intervention(cfg: Exp5Config) -> InterventionSpec:
         stats=stats,
         proposal_boundary=cfg.proposal_boundary,
     )
-

@@ -22,7 +22,9 @@ import torch
 from dataclasses import dataclass
 from pathlib import Path
 
+import nnsight
 from huggingface_hub import snapshot_download
+from transformers import AutoModelForCausalLM, AutoTokenizer
 from circuit_tracer import ReplacementModel
 from circuit_tracer.transcoder.single_layer_transcoder import (
     load_gemma_scope_2_transcoder,
@@ -93,25 +95,40 @@ def load_model(cfg) -> "LoadedModel":
     dtype = torch.float32 if cfg.dtype_str == "float32" else torch.bfloat16
     device = torch.device(cfg.device)
 
-    transcoder_set = _load_transcoder_set(cfg)
+    if getattr(cfg, "skip_transcoders", False):
+        # Exp5 path: load base model only — no transcoder download, no 11 GB of safetensors.
+        # We load the HF model directly, extract W_U, then pass the already-loaded nn.Module
+        # to nnsight.LanguageModel.  Passing an nn.Module triggers the MetaMixin dispatch path
+        # (isinstance(args[0], nn.Module) == True) so nnsight wraps real weights, not meta tensors.
+        print(f"  Loading {cfg.model_name} (no transcoders) ...")
+        hf_model = AutoModelForCausalLM.from_pretrained(
+            cfg.model_name, torch_dtype=dtype, device_map=str(device)
+        )
+        hf_tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
+        # get_output_embeddings() is the HF-standard accessor for the output projection
+        # (lm_head) across all model families — avoids hardcoding nested attribute paths.
+        W_U = hf_model.get_output_embeddings().weight.detach().float().T.contiguous().to(device)
+        model = nnsight.LanguageModel(hf_model, tokenizer=hf_tokenizer)
+        model.eval()
+        transcoder_list = []
+    else:
+        transcoder_set = _load_transcoder_set(cfg)
+        # Extract SingleLayerTranscoder references NOW, before nnsight wraps the TranscoderSet
+        # as Envoy proxies. After ReplacementModel is built, model.transcoders[layer] returns
+        # the whole ModuleList via nnsight's proxy instead of a single SingleLayerTranscoder.
+        transcoder_list = [transcoder_set[i] for i in range(len(transcoder_set))]
 
-    # Extract SingleLayerTranscoder references NOW, before nnsight wraps the TranscoderSet
-    # as Envoy proxies. After ReplacementModel is built, model.transcoders[layer] returns
-    # the whole ModuleList via nnsight's proxy instead of a single SingleLayerTranscoder.
-    transcoder_list = [transcoder_set[i] for i in range(len(transcoder_set))]
-
-    print(f"  Loading {cfg.model_name} via {cfg.backend} backend ...")
-    model = ReplacementModel.from_pretrained_and_transcoders(
-        model_name=cfg.model_name,
-        transcoders=transcoder_set,
-        backend=cfg.backend,
-        device=device,
-        dtype=dtype,
-    )
-    model.eval()
-
-    # W_U: nnsight exposes lm_head.weight as [vocab_size, d_model] → transpose to [d_model, vocab_size]
-    W_U = model.unembed_weight.detach().float().T.contiguous().to(device)
+        print(f"  Loading {cfg.model_name} via {cfg.backend} backend ...")
+        model = ReplacementModel.from_pretrained_and_transcoders(
+            model_name=cfg.model_name,
+            transcoders=transcoder_set,
+            backend=cfg.backend,
+            device=device,
+            dtype=dtype,
+        )
+        model.eval()
+        # W_U: nnsight exposes lm_head.weight as [vocab_size, d_model] → transpose to [d_model, vocab_size]
+        W_U = model.unembed_weight.detach().float().T.contiguous().to(device)
 
     # Tokenizer: nnsight LanguageModel exposes .tokenizer directly
     tokenizer = model.tokenizer

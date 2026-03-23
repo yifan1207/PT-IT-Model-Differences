@@ -18,7 +18,7 @@ from src.poc.exp5.plots.dose_response import plot_dose_response
 from src.poc.exp5.plots.heatmap import plot_phase_benchmark_heatmap
 from src.poc.exp5.plots.subspace import plot_checkpoint_metrics
 from src.poc.exp5.runtime import build_intervention, generate_record
-from src.poc.exp5.utils import ensure_dir, sanitise_json, save_json, save_jsonl
+from src.poc.exp5.utils import ensure_dir, sanitise_json, save_json
 from src.poc.shared.model import load_model
 
 _DISK_WARN_GB = 5.0   # print warning below this
@@ -90,6 +90,16 @@ def _condition_specs(cfg: Exp5Config) -> list[tuple[str, Exp5Config]]:
                     "corrective_directional",
                     replace(cfg, method="directional", ablation_layers=layers),
                 ))
+        # Size-matched random controls (seed 42) — rule out "any N layers" confound.
+        # Fixed random subsets independent of phase boundaries; sizes match content/format/corrective.
+        import random as _rand
+        _rng = _rand.Random(42)
+        ctrl_12 = sorted(_rng.sample(range(34), 12))   # same size as content (12)
+        ctrl_8  = sorted(_rng.sample(range(34), 8))    # same size as format (8)
+        ctrl_14 = sorted(_rng.sample(range(34), 14))   # same size as corrective (14)
+        specs.append(("ctrl_12_mean", replace(cfg, method="mean", ablation_layers=ctrl_12)))
+        specs.append(("ctrl_8_mean",  replace(cfg, method="mean", ablation_layers=ctrl_8)))
+        specs.append(("ctrl_14_mean", replace(cfg, method="mean", ablation_layers=ctrl_14)))
         return specs
 
     if cfg.experiment == "progressive":
@@ -103,6 +113,25 @@ def _condition_specs(cfg: Exp5Config) -> list[tuple[str, Exp5Config]]:
                 replace(cfg, method="directional", ablation_layers=list(range(20, 34)), directional_alpha=alpha),
             ))
         return specs
+
+    if cfg.experiment == "single_layer_phase":
+        # One middle layer per phase — tests whether a single representative layer
+        # is sufficient to carry the phase's function.
+        # Middle layers: content=5 (mid of 0-11), format=15 (mid of 12-19), corrective=26 (mid of 20-33).
+        # alpha=-1 (reversed IT direction) is only available for corrective layer 26
+        # because corrective_directions.npz only covers layers 20-33.
+        single_layers = {"content": 5, "format": 15, "corrective": 26}
+        # No baseline here — caller merges with existing baseline from the phase run.
+        specs = []
+        for phase_name, layer in single_layers.items():
+            specs.append((f"{phase_name}_single_mean", replace(cfg, method="mean",  ablation_layers=[layer])))
+            specs.append((f"{phase_name}_single_skip", replace(cfg, method="skip",  ablation_layers=[layer])))
+            if phase_name == "corrective":
+                specs.append((
+                    "corrective_single_neg",
+                    replace(cfg, method="directional", ablation_layers=[layer], directional_alpha=-1.0),
+                ))
+        return specs  # 7 conditions total
 
     if cfg.experiment == "subspace":
         return [("subspace", cfg)]
@@ -142,14 +171,30 @@ def _select_records(records: list[dict], benchmark: str, n: int) -> list[dict]:
     return _random.Random(42).sample(subset, n)
 
 
-def _run_condition(name: str, cfg: Exp5Config, records: list[dict], loaded) -> tuple[list[dict], list[dict], dict[int, np.ndarray]]:
+def _run_condition(
+    name: str,
+    cfg: Exp5Config,
+    records: list[dict],
+    loaded,
+    scores_jsonl: Path,
+    samples_jsonl: Path,
+    done_benchmarks: set[str],
+) -> tuple[list[dict], dict[int, np.ndarray]]:
+    """Run one ablation condition, flushing to disk after every benchmark.
+
+    done_benchmarks: set of benchmark names already saved in a previous run.
+    Returns (score_rows_new, checkpoint_store) — only newly-computed scores.
+    """
     intervention = build_intervention(cfg)
     score_rows: list[dict] = []
-    sample_rows: list[dict] = []
     checkpoint_store: dict[int, list[np.ndarray]] = {li: [] for li in cfg.checkpoint_layers}
     records_done = 0
 
     for benchmark in cfg.benchmarks:
+        if benchmark in done_benchmarks:
+            print(f"[exp5] {name}/{benchmark}: already done, skipping", flush=True)
+            continue
+
         benchmark_records = _select_records(records, benchmark, cfg.n_eval_examples)
         outputs = []
         for rec in benchmark_records:
@@ -157,10 +202,14 @@ def _run_condition(name: str, cfg: Exp5Config, records: list[dict], loaded) -> t
             records_done += 1
             if records_done % 200 == 0:
                 _check_disk()
-                print(f"[exp5] {name}: {records_done} records done, {_free_gb():.1f} GB free", flush=True)
+                print(f"[exp5] {name}/{benchmark}: {records_done} records done, {_free_gb():.1f} GB free", flush=True)
+
+        # Collect hidden states for subspace analysis.
+        bench_samples = []
         for out in outputs:
-            sample_rows.append({
+            bench_samples.append({
                 "condition": name,
+                "benchmark": benchmark,
                 "record_id": out.record_id,
                 "prompt": out.prompt,
                 "generated_text": out.generated_text,
@@ -168,9 +217,11 @@ def _run_condition(name: str, cfg: Exp5Config, records: list[dict], loaded) -> t
             for li, arr in out.hidden_states.items():
                 if arr.size > 0:
                     checkpoint_store[li].append(arr[-1])
+
+        bench_scores = []
         if (cfg.eval_backend in {"custom", "hybrid"} and benchmark.startswith("exp3_")) or benchmark == "structural_tokens":
             result = evaluate_custom_benchmark(benchmark, benchmark_records, outputs)
-            score_rows.append({
+            bench_scores.append({
                 "condition": name,
                 "benchmark": result.benchmark,
                 "metric": result.metric,
@@ -181,9 +232,15 @@ def _run_condition(name: str, cfg: Exp5Config, records: list[dict], loaded) -> t
                 "alpha": cfg.directional_alpha,
             })
 
+        # Flush to disk immediately after each benchmark — crash-safe.
+        _append_jsonl(scores_jsonl, bench_scores)
+        _append_jsonl(samples_jsonl, bench_samples)
+        score_rows.extend(bench_scores)
+        print(f"[exp5] {name}/{benchmark}: saved ({len(bench_records) if (bench_records := benchmark_records) else 0} records), {_free_gb():.1f} GB free", flush=True)
+
     if cfg.use_lm_eval and cfg.eval_backend in {"harness", "hybrid"}:
         for hs in run_harness_stub(cfg=cfg):
-            score_rows.append({
+            row = {
                 "condition": name,
                 "benchmark": hs.benchmark,
                 "metric": hs.metric,
@@ -192,18 +249,20 @@ def _run_condition(name: str, cfg: Exp5Config, records: list[dict], loaded) -> t
                 "method": cfg.method,
                 "layers": cfg.ablation_layers,
                 "alpha": cfg.directional_alpha,
-            })
+            }
+            _append_jsonl(scores_jsonl, [row])
+            score_rows.append(row)
 
     stacked = {
         li: np.stack(values, axis=0) if values else np.zeros((0, cfg.d_model), dtype=np.float32)
         for li, values in checkpoint_store.items()
     }
-    return score_rows, sample_rows, stacked
+    return score_rows, stacked
 
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run exp5 three-phase ablation experiments.")
-    p.add_argument("--experiment", choices=["baseline", "cartography", "phase", "progressive", "subspace"], default="baseline")
+    p.add_argument("--experiment", choices=["baseline", "cartography", "phase", "progressive", "subspace", "single_layer_phase"], default="baseline")
     p.add_argument("--variant", choices=["pt", "it"], default="it")
     p.add_argument("--dataset", default="data/exp3_dataset.jsonl")
     p.add_argument("--prompt-format", choices=["A", "B"], default="B")
@@ -218,6 +277,9 @@ def main() -> None:
     p.add_argument("--corrective-direction-path", default="")
     p.add_argument("--resample-bank-path", default="")
     p.add_argument("--use-lm-eval", action="store_true")
+    p.add_argument("--device", default="cuda", help="CUDA device string, e.g. cuda or cuda:0")
+    p.add_argument("--worker-index", type=int, default=0, help="0-based index of this worker (for parallel runs)")
+    p.add_argument("--n-workers", type=int, default=1, help="Total number of parallel workers")
     args = p.parse_args()
 
     if args.use_lm_eval:
@@ -236,6 +298,8 @@ def main() -> None:
             elif part:
                 layers.append(int(part))
 
+    worker_suffix = f"_w{args.worker_index}" if args.n_workers > 1 else ""
+    run_name = (args.run_name + worker_suffix) if args.run_name else ""
     cfg = Exp5Config(
         experiment=args.experiment,
         model_variant=args.variant,
@@ -247,11 +311,15 @@ def main() -> None:
         directional_alpha=args.alpha,
         max_gen_tokens=args.max_gen_tokens,
         n_eval_examples=args.n_eval_examples,
-        run_name=args.run_name,
+        run_name=run_name,
         mean_acts_path=args.mean_acts_path,
         corrective_direction_path=args.corrective_direction_path,
         resample_bank_path=args.resample_bank_path,
         use_lm_eval=args.use_lm_eval,
+        device=args.device,
+        # Subspace analysis (baseline_ref pass) requires all conditions in one process;
+        # disable it for parallel workers — run merge_exp5.py afterwards instead.
+        save_hidden_states=(args.n_workers == 1),
     )
 
     ensure_dir(cfg.run_dir)
@@ -263,10 +331,12 @@ def main() -> None:
     samples_jsonl = cfg.run_dir / "sample_outputs.jsonl"
 
     # Resume: load any scores already written from a previous interrupted run.
+    # Track at (condition, benchmark) granularity — finer than condition-level.
     all_scores: list[dict] = _read_jsonl(scores_jsonl)
-    done_conditions = {r["condition"] for r in all_scores}
-    if done_conditions:
-        print(f"[exp5] resuming — already done: {sorted(done_conditions)}", flush=True)
+    done_pairs: set[tuple[str, str]] = {(r["condition"], r["benchmark"]) for r in all_scores}
+    if done_pairs:
+        done_conditions = {c for c, _ in done_pairs}
+        print(f"[exp5] resuming — conditions with partial/full progress: {sorted(done_conditions)}", flush=True)
 
     _check_disk()
     print(f"[exp5] disk free: {_free_gb():.1f} GB", flush=True)
@@ -274,6 +344,19 @@ def main() -> None:
     records = load_dataset_records(cfg.dataset_path, prompt_format=cfg.prompt_format)
     loaded = load_model(cfg)
     condition_specs = _condition_specs(cfg)
+
+    # Parallel mode: each worker handles a round-robin slice of conditions.
+    if args.n_workers > 1:
+        condition_specs = [
+            (name, cond_cfg)
+            for i, (name, cond_cfg) in enumerate(condition_specs)
+            if i % args.n_workers == args.worker_index
+        ]
+        print(
+            f"[exp5] worker {args.worker_index}/{args.n_workers} — "
+            f"handling {len(condition_specs)} conditions: {[n for n, _ in condition_specs]}",
+            flush=True,
+        )
 
     baseline_checkpoints: dict[int, np.ndarray] | None = None
     subspace_rows: dict[str, dict[int, dict[str, float]]] = {}
@@ -290,14 +373,20 @@ def main() -> None:
                 }
         else:
             baseline_cfg = replace(cfg, method="none", ablation_layers=[], directional_alpha=1.0)
-            _, _, baseline_checkpoints = _run_condition("baseline_ref", baseline_cfg, records, loaded)
+            _, baseline_checkpoints = _run_condition(
+                "baseline_ref", baseline_cfg, records, loaded,
+                scores_jsonl, samples_jsonl, done_benchmarks=set(),
+            )
             np.savez_compressed(ref_npz, **{
                 f"layer_{li}": arr for li, arr in baseline_checkpoints.items()
             })
 
     for condition_name, condition_cfg in condition_specs:
-        if condition_name in done_conditions:
-            print(f"[exp5] skip {condition_name} (already done)", flush=True)
+        done_benchmarks = {b for (c, b) in done_pairs if c == condition_name}
+        all_benchmarks_done = done_benchmarks >= set(condition_cfg.benchmarks)
+
+        if all_benchmarks_done:
+            print(f"[exp5] skip {condition_name} (all benchmarks done)", flush=True)
             # Reload its checkpoints so subspace analysis still works.
             npz = condition_cfg.checkpoints_dir / f"{condition_name}_hidden_states.npz"
             if npz.exists() and baseline_checkpoints is not None:
@@ -306,15 +395,21 @@ def main() -> None:
                 subspace_rows[condition_name] = summarise_checkpoint_shift(baseline_checkpoints, checkpoints)
             continue
 
-        print(f"[exp5] running condition: {condition_name}", flush=True)
-        score_rows, sample_rows, checkpoints = _run_condition(condition_name, condition_cfg, records, loaded)
+        if done_benchmarks:
+            print(f"[exp5] resuming {condition_name} — done: {sorted(done_benchmarks)}", flush=True)
+        else:
+            print(f"[exp5] running condition: {condition_name}", flush=True)
 
-        # Persist immediately — before touching any aggregates.
+        # scores/samples are flushed inside _run_condition after each benchmark.
+        score_rows, checkpoints = _run_condition(
+            condition_name, condition_cfg, records, loaded,
+            scores_jsonl, samples_jsonl, done_benchmarks,
+        )
+
+        # Save hidden-state checkpoints once the full condition is done.
         np.savez_compressed(condition_cfg.checkpoints_dir / f"{condition_name}_hidden_states.npz", **{
             f"layer_{li}": arr for li, arr in checkpoints.items()
         })
-        _append_jsonl(scores_jsonl, score_rows)
-        _append_jsonl(samples_jsonl, sample_rows)
 
         all_scores.extend(score_rows)
         if baseline_checkpoints is None:

@@ -6,7 +6,7 @@ from typing import Literal
 
 
 AblationMethod = Literal["none", "mean", "skip", "directional", "resample"]
-ExperimentKind = Literal["baseline", "cartography", "phase", "progressive", "subspace"]
+ExperimentKind = Literal["baseline", "cartography", "phase", "progressive", "subspace", "single_layer_phase"]
 EvalBackend = Literal["custom", "harness", "hybrid"]
 
 
@@ -58,6 +58,8 @@ class Exp5Config:
     save_hidden_states: bool = True
     checkpoint_layers: list[int] = field(default_factory=lambda: [0, 11, 20, 33])
     n_prompts_for_subspace: int = 500
+
+    skip_transcoders: bool = True  # exp5 never uses transcoder features — skip the ~11 GB load
 
     device: str = "cuda"
     dtype_str: str = "bfloat16"

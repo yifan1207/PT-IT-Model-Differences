@@ -105,3 +105,16 @@ def test_intervention_mean_without_stats_raises():
     spec = InterventionSpec(method="mean", layers=[5])
     with pytest.raises(ValueError, match="Missing mean MLP outputs"):
         spec.validate()
+
+
+def test_intervention_out_of_range_layer_raises():
+    """Layer indices >= n_layers must be rejected — they would silently never match."""
+    spec = InterventionSpec(method="skip", layers=[34])
+    with pytest.raises(ValueError, match="out of range"):
+        spec.validate(n_layers=34)
+
+
+def test_intervention_in_range_layer_ok():
+    """Layer 33 (last valid layer for 34-layer model) must not raise."""
+    spec = InterventionSpec(method="skip", layers=[33])
+    spec.validate(n_layers=34)  # should not raise
