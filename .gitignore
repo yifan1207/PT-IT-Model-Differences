@@ -217,3 +217,14 @@ results/exp2/**/exp2_results.npz
 results/exp3/**/exp3_results.json
 results/exp3/**/exp3_results.npz
 results/exp3/**/feature_importance_summary.npz
+!results/exp4/
+!results/exp4/**/
+results/exp4/**
+!results/exp4/**/plots/
+!results/exp4/**/plots/**
+!results/exp5/
+!results/exp5/**/
+results/exp5/**
+!results/exp5/*/
+!results/exp5/**/plots/
+!results/exp5/**/plots/**
