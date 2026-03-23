@@ -118,20 +118,20 @@ def _condition_specs(cfg: Exp5Config) -> list[tuple[str, Exp5Config]]:
         # One middle layer per phase — tests whether a single representative layer
         # is sufficient to carry the phase's function.
         # Middle layers: content=5 (mid of 0-11), format=15 (mid of 12-19), corrective=26 (mid of 20-33).
-        # alpha=-1 (reversed IT direction) is only available for corrective layer 26
-        # because corrective_directions.npz only covers layers 20-33.
+        # Middle layers: content=5 (mid 0-11), format=15 (mid 12-19), corrective=26 (mid 20-33).
+        # alpha=-1 (reversed IT direction) available for all three — corrective_directions.npz
+        # must contain layer_5, layer_15, and layer_26 before launching neg workers.
         single_layers = {"content": 5, "format": 15, "corrective": 26}
         # No baseline here — caller merges with existing baseline from the phase run.
         specs = []
         for phase_name, layer in single_layers.items():
             specs.append((f"{phase_name}_single_mean", replace(cfg, method="mean",  ablation_layers=[layer])))
             specs.append((f"{phase_name}_single_skip", replace(cfg, method="skip",  ablation_layers=[layer])))
-            if phase_name == "corrective":
-                specs.append((
-                    "corrective_single_neg",
-                    replace(cfg, method="directional", ablation_layers=[layer], directional_alpha=-1.0),
-                ))
-        return specs  # 7 conditions total
+            specs.append((
+                f"{phase_name}_single_neg",
+                replace(cfg, method="directional", ablation_layers=[layer], directional_alpha=-1.0),
+            ))
+        return specs  # 9 conditions total
 
     if cfg.experiment == "subspace":
         return [("subspace", cfg)]

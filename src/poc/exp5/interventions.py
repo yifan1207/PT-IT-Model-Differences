@@ -134,12 +134,6 @@ class InterventionSpec:
             if missing:
                 raise ValueError(f"Missing mean MLP outputs for layers: {missing}")
         if self.method == "directional":
-            bad = sorted(i for i in self.layers if i < self.proposal_boundary)
-            if bad:
-                raise ValueError(
-                    f"Directional ablation is only supported for corrective layers >= "
-                    f"{self.proposal_boundary}; got {bad}"
-                )
             missing = sorted(i for i in self.layers if i not in self.stats.corrective_directions)
             if missing:
                 raise ValueError(f"Missing corrective directions for layers: {missing}")
