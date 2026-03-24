@@ -128,11 +128,15 @@ def score_dir(merged_dir: Path, dataset_path: Path) -> None:
 
     all_rows = existing + new_rows
     if all_rows:
-        fieldnames = list(all_rows[0].keys())
+        # Union of all keys across all rows (handles schema differences between A/B experiments)
+        seen_keys: dict[str, None] = {}
+        for row in all_rows:
+            seen_keys.update(dict.fromkeys(row.keys()))
+        fieldnames = list(seen_keys.keys())
         with open(scores_csv, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
-            writer.writerows(all_rows)
+            writer.writerows([{k: row.get(k, "") for k in fieldnames} for row in all_rows])
         print(f"\nUpdated {scores_csv} (+{len(new_rows)} exp3_alignment_behavior rows)")
 
 

@@ -263,18 +263,21 @@ def build_intervention(cfg) -> Exp6InterventionSpec:
     corrective_dirs = load_directions_from_npz(cfg.corrective_direction_path, cfg.device)
     content_dirs = load_directions_from_npz(cfg.content_direction_path, cfg.device)
 
-    # Aggregate content directions (mean of all proposal layers) into a single direction
-    # when only one aggregate direction file is present (the content_direction_aggregate.npz
-    # written by precompute.py which stores a single "aggregate" key).
-    # Map it to every corrective layer so apply_in_trace() finds it by layer index.
+    # Determine which layers this intervention targets.
+    # cfg.ablation_layers overrides the default corrective_layers when explicitly set
+    # (used by A1_early / A1_mid layer-specificity ablations).
+    target_layers = cfg.ablation_layers if cfg.ablation_layers else cfg.corrective_layers
+
+    # Aggregate content directions into a single direction when only one aggregate
+    # direction file is present. Map it to every target layer.
     if content_dirs and "aggregate" in content_dirs:
         agg = content_dirs.pop("aggregate")
-        for li in cfg.corrective_layers:
+        for li in target_layers:
             content_dirs[li] = agg
 
     return Exp6InterventionSpec(
         method=cfg.method,
-        layers=cfg.corrective_layers,
+        layers=target_layers,
         alpha=cfg.directional_alpha,
         beta=cfg.directional_beta,
         corrective_directions=corrective_dirs,

@@ -89,15 +89,18 @@ def main() -> None:
     with open(merged_dir / "scores.json", "w") as f:
         json.dump(deduped_scores, f, indent=2)
 
-    # Write CSV
+    # Write CSV — use union of all keys to handle mixed A/B experiment schemas
     if deduped_scores:
         import csv
         import io
-        keys = list(deduped_scores[0].keys())
+        seen_keys: dict[str, None] = {}
+        for row in deduped_scores:
+            seen_keys.update(dict.fromkeys(row.keys()))
+        keys = list(seen_keys.keys())
         buf = io.StringIO()
-        writer = csv.DictWriter(buf, fieldnames=keys)
+        writer = csv.DictWriter(buf, fieldnames=keys, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(deduped_scores)
+        writer.writerows([{k: row.get(k, "") for k in keys} for row in deduped_scores])
         (merged_dir / "scores.csv").write_text(buf.getvalue())
 
     # Summary by condition
@@ -108,7 +111,7 @@ def main() -> None:
     print(f"\nCondition summary ({len(cond_bench)} conditions):")
     for cond in sorted(cond_bench.keys()):
         vals = cond_bench[cond]
-        bench_str = ", ".join(f"{b}={v:.4f}" for b, v in sorted(vals.items()))
+        bench_str = ", ".join(f"{b}={v:.4f}" if v is not None else f"{b}=None" for b, v in sorted(vals.items()))
         print(f"  {cond}: {bench_str}")
 
     # Generate dose-response plot

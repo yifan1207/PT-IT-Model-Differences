@@ -375,21 +375,120 @@ def plot_A2(a2_dir: Path, a1_dir: Path, out_path: Path) -> None:
     print(f"A2 plot saved → {out_path}")
 
 
+# ── A1 v5: layer-specificity overlay (A1 / A1_early / A1_mid) ────────────────
+
+def plot_A1_v5(a1_dir: Path, a1_early_dir: Path, a1_mid_dir: Path, out_path: Path) -> None:
+    """v5: overlay A1 (20-33), A1_early (0-7), A1_mid (8-19) on same axes.
+
+    Layout: 2 rows × 3 cols
+      Row 0: governance benchmarks (coherent_assistant_rate, structural_token_ratio, format_compliance)
+      Row 1: content benchmarks + alignment (mmlu_accuracy, exp3_reasoning_em, exp3_alignment_behavior)
+    Each subplot shows all 3 layer ranges as separate lines.
+    """
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    LAYER_SETS = [
+        ("A1",       a1_dir,       "Corrective 20-33", "#e74c3c", "-",  "o"),
+        ("A1_early", a1_early_dir, "Early 0-7",        "#3498db", "--", "s"),
+        ("A1_mid",   a1_mid_dir,   "Mid 8-19",         "#2ecc71", ":",  "^"),
+    ]
+    # condition prefix and alpha parser per experiment
+    def _get_alpha(cond: str, prefix: str) -> float | None:
+        tag = f"{prefix}_alpha_"
+        if not cond.startswith(tag):
+            return None
+        try:
+            return float(cond[len(tag):])
+        except ValueError:
+            return None
+
+    BENCHMARKS = [
+        ("coherent_assistant_rate", "Coherent Asst Rate", "Governance"),
+        ("structural_token_ratio",  "Structural Token Ratio", "Governance"),
+        ("format_compliance",       "Format Compliance", "Governance"),
+        ("mmlu_accuracy",           "MMLU Accuracy", "Content"),
+        ("exp3_reasoning_em",       "Reasoning EM", "Content"),
+        ("exp3_alignment_behavior", "Alignment Behavior", "Safety"),
+    ]
+
+    # Map experiment prefix to the condition name prefix used in CSV
+    EXP_COND_PREFIX = {"A1": "A1", "A1_early": "A1early", "A1_mid": "A1mid"}
+
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+
+    for ax_idx, (bench, bench_label, group) in enumerate(BENCHMARKS):
+        ax = axes[ax_idx // 3][ax_idx % 3]
+
+        for exp_key, exp_dir, layer_label, color, ls, marker in LAYER_SETS:
+            scores = _load_scores(exp_dir / "scores.csv")
+            cond_prefix = EXP_COND_PREFIX[exp_key]
+
+            # Collect sweep points
+            pts = []
+            for cond, bdict in scores.items():
+                a = _get_alpha(cond, cond_prefix)
+                if a is not None and bench in bdict:
+                    pts.append((a, bdict[bench]))
+            if not pts:
+                continue
+            pts.sort()
+            xs, ys = zip(*pts)
+
+            # Baseline value (α=1.0 condition)
+            bl_cond = f"{cond_prefix}_baseline"
+            bl_val = scores.get(bl_cond, {}).get(bench)
+
+            ax.plot(xs, ys, marker=marker, markersize=4, color=color,
+                    label=layer_label, linewidth=2.0, linestyle=ls)
+            if bl_val is not None:
+                ax.axhline(bl_val, color=color, linestyle=ls, linewidth=0.8, alpha=0.35)
+
+        ax.axvline(1.0, color="gray", linestyle="--", alpha=0.35, linewidth=1)
+        ax.axvline(0.0, color="lightgray", linestyle=":", alpha=0.5, linewidth=1)
+        ax.set_xlabel("α  (1.0 = baseline; <1 removes direction; <0 injects it)", fontsize=8)
+        ax.set_ylabel("Score", fontsize=9)
+        ax.set_title(f"{bench_label}  [{group}]", fontsize=10, fontweight="bold")
+        ax.set_ylim(-0.05, 1.1)
+        ax.grid(True, alpha=0.2)
+        if ax_idx == 0:
+            ax.legend(fontsize=9, loc="best")
+
+    fig.suptitle(
+        "A1 v5: Layer-Specificity — Same α Sweep Applied at 3 Layer Ranges\n"
+        "Red=Corrective(20-33)  Blue=Early(0-7)  Green=Mid(8-19)  "
+        "Dashed=baseline; α<0 injects corrective direction (amplification)",
+        fontsize=11, fontweight="bold"
+    )
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"A1 v5 plot saved → {out_path}")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--experiment", choices=["A1", "A2", "both"], default="both")
+    p.add_argument("--experiment", choices=["A1", "A2", "both", "A1v5"], default="both")
     p.add_argument("--a1-dir", default="results/exp6/merged_A1_it")
     p.add_argument("--a2-dir", default="results/exp6/merged_A2_pt")
+    p.add_argument("--a1-early-dir", default="results/exp6/merged_A1_early_it")
+    p.add_argument("--a1-mid-dir", default="results/exp6/merged_A1_mid_it")
     args = p.parse_args()
 
     a1 = Path(args.a1_dir)
     a2 = Path(args.a2_dir)
+    a1_early = Path(args.a1_early_dir)
+    a1_mid = Path(args.a1_mid_dir)
+
     if args.experiment in ("A1", "both"):
-        plot_A1(a1, a2, a1 / "plots" / "A1_dose_response_v4.png")
+        plot_A1(a1, a2, a1 / "plots" / "A1_dose_response_v5.png")
     if args.experiment in ("A2", "both"):
-        plot_A2(a2, a1, a2 / "plots" / "A2_dose_response_v4.png")
+        plot_A2(a2, a1, a2 / "plots" / "A2_dose_response_v5.png")
+    if args.experiment in ("A1v5", "both", "A1"):
+        plot_A1_v5(a1, a1_early, a1_mid, a1 / "plots" / "A1_layer_specificity_v5.png")
 
 
 if __name__ == "__main__":

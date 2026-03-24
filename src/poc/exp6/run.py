@@ -200,14 +200,86 @@ def _B4_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     return specs
 
 
+def _B5_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """B5: Full γ sweep × layer-range — controlled layer-specificity study.
+
+    Extends B4 from 2 γ values to a full sweep including negative γ (suppression below
+    mean) so we can characterise the dose-response separately for each sub-range of the
+    corrective stage, matching the A1_early/A1_mid ablation design on the B side.
+
+    Layer ranges:
+      all        — layers 20-33 (same as B1, reference)
+      early_20_25 — first 6 corrective layers
+      mid_26_29   — middle 4 corrective layers
+      late_30_33  — final 4 corrective layers
+
+    Gamma sweep includes negative values (γ < 0 → feature activation set below zero,
+    effectively suppressing; γ = 0 → full suppression to 0; γ = 1 → neutral/mean).
+    """
+    GAMMA_VALUES = [-2.0, -1.0, -0.5, 0.0, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0]
+    LAYER_RANGES = ["all", "early_20_25", "mid_26_29", "late_30_33"]
+
+    specs = [("B5_baseline", replace(cfg, method="none", gamma=1.0))]
+    for layer_range in LAYER_RANGES:
+        for gamma in GAMMA_VALUES:
+            specs.append((f"B5_{layer_range}_g{gamma:g}", replace(cfg,
+                method="feature_clamp", gamma=gamma,
+                feature_set="method12_top100",
+                feature_layer_range=layer_range,
+            )))
+    return specs  # 1 + 4 × 10 = 41 conditions
+
+
+def _A1_early_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A1_early: Remove corrective direction from IT at early layers (0–7) — α sweep.
+
+    Layer-specificity ablation: same direction and α sweep as A1, but applied to
+    content/encoding layers instead of the corrective stage (20–33).
+    Expected: little or no effect on governance metrics → confirms the corrective stage
+    is the mechanistic locus of structural steering.
+    """
+    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
+    EARLY_LAYERS = list(range(0, 8))   # layers 0–7
+    specs = [("A1early_baseline", replace(cfg, method="none", directional_alpha=1.0))]
+    for alpha in ALPHA_VALUES:
+        specs.append((f"A1early_alpha_{alpha:g}", replace(cfg,
+            method="directional_remove",
+            ablation_layers=EARLY_LAYERS,
+            directional_alpha=alpha,
+        )))
+    return specs  # 14 conditions
+
+
+def _A1_mid_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A1_mid: Remove corrective direction from IT at mid layers (8–19) — α sweep.
+
+    Layer-specificity ablation: same as A1_early but applied to the pre-corrective
+    middle layers.  Together with A1_early and A1 (20–33), sweeps the full depth of
+    the network to isolate where the direction has causal governance leverage.
+    """
+    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
+    MID_LAYERS = list(range(8, 20))    # layers 8–19
+    specs = [("A1mid_baseline", replace(cfg, method="none", directional_alpha=1.0))]
+    for alpha in ALPHA_VALUES:
+        specs.append((f"A1mid_alpha_{alpha:g}", replace(cfg,
+            method="directional_remove",
+            ablation_layers=MID_LAYERS,
+            directional_alpha=alpha,
+        )))
+    return specs  # 14 conditions
+
+
 def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     match cfg.experiment:
         case "A1": return _A1_conditions(cfg)
+        case "A1_early": return _A1_early_conditions(cfg)
+        case "A1_mid": return _A1_mid_conditions(cfg)
         case "A2": return _A2_conditions(cfg)
         case "B1": return _B1_conditions(cfg)
         case "B2": return _B2_conditions(cfg)
         case "B3": return _B3_conditions(cfg)
         case "B4": return _B4_conditions(cfg)
+        case "B5": return _B5_conditions(cfg)
         case _: raise ValueError(f"Unknown experiment: {cfg.experiment!r}")
 
 
@@ -467,7 +539,7 @@ def _load_B_hooks_config(cfg: Exp6Config, loaded: Any) -> dict:
     config: dict = {}
 
     # Determine needed methods from experiment type, not base cfg.method (which may be "none")
-    _FEATURE_CLAMP_EXPERIMENTS = {"B1", "B3", "B4"}
+    _FEATURE_CLAMP_EXPERIMENTS = {"B1", "B3", "B4", "B5"}
     _WDEC_INJECT_EXPERIMENTS = {"B2"}
     needs_feature_clamp = cfg.experiment in _FEATURE_CLAMP_EXPERIMENTS
     needs_wdec = cfg.experiment in _WDEC_INJECT_EXPERIMENTS
@@ -517,7 +589,7 @@ def _load_B_hooks_config(cfg: Exp6Config, loaded: Any) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run exp6 steering experiments.")
-    p.add_argument("--experiment", choices=["A1", "A2", "B1", "B2", "B3", "B4"], required=True)
+    p.add_argument("--experiment", choices=["A1", "A1_early", "A1_mid", "A2", "B1", "B2", "B3", "B4", "B5"], required=True)
     p.add_argument("--variant", choices=["pt", "it"], default="it")
     p.add_argument("--dataset", default="data/exp6_dataset.jsonl")
     p.add_argument("--device", default="cuda")
