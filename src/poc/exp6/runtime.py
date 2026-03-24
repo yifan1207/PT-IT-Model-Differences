@@ -216,8 +216,8 @@ def _make_feature_clamp_hooks(
                     for f in feats:
                         if f < encoded.shape[-1]:
                             encoded[:, f] = gamma * means_dev[f]
-                    # Decode back to residual stream
-                    decoded = transcoder.decode(encoded)
+                    # Decode back to residual stream (pass input_acts for skip connection)
+                    decoded = transcoder.decode(encoded, input_acts=x_flat)
                     return decoded.reshape(orig_shape).to(out.dtype)
 
             return pre_hook, mlp_hook

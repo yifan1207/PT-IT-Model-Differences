@@ -36,7 +36,7 @@ from src.poc.shared.model import load_model
 
 _DISK_WARN_GB = 5.0
 _DISK_STOP_GB = 2.0
-_GOV_BENCHMARKS = {"structural_token_ratio", "turn_structure", "format_compliance"}
+_GOV_BENCHMARKS = {"structural_token_ratio", "turn_structure", "format_compliance", "mmlu_accuracy", "coherent_assistant_rate"}
 _EXP5_BENCHMARKS = {"factual_em": "exp3_factual_em", "reasoning_em": "exp3_reasoning_em",
                      "alignment_behavior": "exp3_alignment_behavior"}
 
@@ -215,7 +215,7 @@ def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
 
 def _select_records(records: list[dict], benchmark: str) -> list[dict]:
     """Filter records to those relevant for the given benchmark."""
-    if benchmark in ("factual_em",):
+    if benchmark in ("factual_em", "mmlu_accuracy"):
         return [r for r in records if r.get("category") == "CONTENT-FACT"]
     if benchmark in ("reasoning_em",):
         return [r for r in records if r.get("category") == "CONTENT-REASON"]
@@ -268,7 +268,7 @@ def _run_condition_A(
     score_rows: list[dict] = []
 
     # Pre-generate outputs for all-records benchmarks once (shared across structural benchmarks)
-    _ALL_RECORDS_BENCHMARKS = {"structural_token_ratio", "turn_structure"}
+    _ALL_RECORDS_BENCHMARKS = {"structural_token_ratio", "turn_structure", "coherent_assistant_rate"}
     all_records_benchmarks_todo = [b for b in cfg.benchmarks
                                    if b in _ALL_RECORDS_BENCHMARKS and b not in done_benchmarks]
     cached_all_outputs: list[GeneratedSample6] | None = None
@@ -361,7 +361,7 @@ def _run_condition_B(
     real_token_mask = loaded.real_token_mask
     score_rows: list[dict] = []
 
-    _ALL_RECORDS_BENCHMARKS = {"structural_token_ratio", "turn_structure"}
+    _ALL_RECORDS_BENCHMARKS = {"structural_token_ratio", "turn_structure", "coherent_assistant_rate"}
     all_records_benchmarks_todo = [b for b in cfg.benchmarks
                                    if b in _ALL_RECORDS_BENCHMARKS and b not in done_benchmarks]
     cached_all_outputs: list[GeneratedSample6] | None = None
@@ -466,7 +466,13 @@ def _load_B_hooks_config(cfg: Exp6Config, loaded: Any) -> dict:
     """Load all feature-steering artifacts into a hooks_config dict."""
     config: dict = {}
 
-    if cfg.method == "feature_clamp":
+    # Determine needed methods from experiment type, not base cfg.method (which may be "none")
+    _FEATURE_CLAMP_EXPERIMENTS = {"B1", "B3", "B4"}
+    _WDEC_INJECT_EXPERIMENTS = {"B2"}
+    needs_feature_clamp = cfg.experiment in _FEATURE_CLAMP_EXPERIMENTS
+    needs_wdec = cfg.experiment in _WDEC_INJECT_EXPERIMENTS
+
+    if needs_feature_clamp or cfg.method == "feature_clamp":
         # Transcoders: loaded.transcoder_list is list[transcoder] indexed by layer
         config["transcoders"] = loaded.transcoder_list
 
@@ -491,7 +497,7 @@ def _load_B_hooks_config(cfg: Exp6Config, loaded: Any) -> dict:
                 mean_acts[l_idx] = np.load(str(npy_path))
         config["mean_acts"] = mean_acts
 
-    elif cfg.method == "wdec_inject":
+    if needs_wdec or cfg.method == "wdec_inject":
         import torch
         gov_dir_path = Path(cfg.governance_direction_path)
         if not gov_dir_path.exists():

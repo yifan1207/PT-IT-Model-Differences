@@ -207,6 +207,13 @@ def compute_governance_direction(
     out.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, np.ndarray] = {}
 
+    # Download transcoder safetensors once for all layers
+    from circuit_tracer.transcoder.single_layer_transcoder import load_gemma_scope_2_transcoder
+    from huggingface_hub import snapshot_download
+    pattern = f"transcoder_all/layer_*_{transcoder_variant}/params.safetensors"
+    tc_local_dir = snapshot_download(transcoder_release, allow_patterns=[pattern])
+    print(f"Transcoders downloaded to {tc_local_dir}", flush=True)
+
     for l_idx in corrective_layers:
         layer_key = f"layer_{l_idx}"
         feat_indices = all_sets.get(layer_key, {}).get(feature_set_key, [])
@@ -222,14 +229,10 @@ def compute_governance_direction(
 
         # Load W_dec for this layer from the transcoder
         try:
-            from circuit_tracer.transcoder.single_layer_transcoder import load_gemma_scope_2_transcoder
-            from huggingface_hub import snapshot_download
-            pattern = f"transcoder_all/layer_*_{transcoder_variant}/params.safetensors"
-            local_dir = snapshot_download(transcoder_release, allow_patterns=[pattern])
-            tc_path = Path(local_dir) / "transcoder_all" / f"layer_{l_idx}_{transcoder_variant}" / "params.safetensors"
+            tc_path = Path(tc_local_dir) / "transcoder_all" / f"layer_{l_idx}_{transcoder_variant}" / "params.safetensors"
             tc = load_gemma_scope_2_transcoder(str(tc_path), layer=l_idx, device=torch.device(device), dtype=torch.bfloat16,
                                                lazy_encoder=True, lazy_decoder=False)
-            W_dec = tc.W_dec.float().cpu().numpy()  # [n_features, d_model]
+            W_dec = tc.W_dec.detach().float().cpu().numpy()  # [n_features, d_model]
         except Exception as e:
             print(f"  layer {l_idx}: could not load W_dec: {e}", flush=True)
             continue

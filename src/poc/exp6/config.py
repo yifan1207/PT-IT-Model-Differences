@@ -88,10 +88,11 @@ class Exp6Config:
 
     # ── Benchmarks ────────────────────────────────────────────────────────
     benchmarks: list[str] = field(default_factory=lambda: [
+        "coherent_assistant_rate",  # primary governance: IT ~90% vs PT ~10%, deterministic
         "structural_token_ratio",
-        "turn_structure",
+        # turn_structure removed: confounded by response length and web training artifacts
         "format_compliance",
-        "factual_em",
+        "mmlu_accuracy",   # replaces factual_em: standard multiple-choice, no LLM judge
         "reasoning_em",
         "alignment_behavior",
     ])

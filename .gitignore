@@ -235,3 +235,7 @@ results/exp6/**
 !results/exp6/merged_A1_it/*.png
 !results/exp6/merged_A1_it/plots/
 !results/exp6/merged_A1_it/plots/**
+!results/exp6/merged_A2_pt/
+!results/exp6/merged_A2_pt/*.png
+!results/exp6/merged_A2_pt/plots/
+!results/exp6/merged_A2_pt/plots/**
