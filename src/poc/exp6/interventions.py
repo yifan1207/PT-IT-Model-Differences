@@ -73,9 +73,9 @@ def _rotated_direction(direction: torch.Tensor, seed: int, layer_idx: int) -> to
     Gramm-Schmidt: pick a random vector, subtract its projection onto direction.
     This gives a vector that is exactly orthogonal to direction (dot product = 0).
     """
-    rng = torch.Generator()
+    rng = torch.Generator()  # CPU generator — generate on CPU, then move to target device
     rng.manual_seed(seed + layer_idx * 1031 + 999983)
-    random_v = torch.randn(direction.shape, generator=rng, dtype=direction.dtype, device=direction.device)
+    random_v = torch.randn(direction.shape, generator=rng, dtype=direction.dtype).to(device=direction.device)
     random_v = random_v / (random_v.norm() + 1e-12)
     d_norm = direction / (direction.norm() + 1e-12)
     # Remove component along direction
@@ -247,6 +247,8 @@ def load_directions_from_npz(
             if k.startswith("layer_"):
                 layer = int(k.split("_", 1)[1])
                 out[layer] = torch.tensor(data[k], dtype=torch.float32, device=device)
+            else:
+                out[k] = torch.tensor(data[k], dtype=torch.float32, device=device)
     return out
 
 

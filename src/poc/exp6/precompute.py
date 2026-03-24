@@ -99,28 +99,21 @@ def compute_mean_feature_acts(
     model.eval()
     print("Model loaded.", flush=True)
 
-    # Load transcoders for corrective layers
+    # Load transcoders for corrective layers using the same path as shared/model.py
     print(f"Loading transcoders from {transcoder_release}...", flush=True)
-    from src.poc.shared.model import _load_transcoders  # noqa: F401 (may not exist, fallback below)
-
-    # Fallback: load transcoders directly via HuggingFace
-    try:
-        from src.poc.shared.model import _load_transcoders
-        transcoders = _load_transcoders(transcoder_release, transcoder_variant, device)
-    except (ImportError, AttributeError):
-        # Manual loading via safetensors
-        from sae_lens import SAE  # type: ignore
-        transcoders = {}
-        for l in corrective_layers:
-            try:
-                sae, _, _ = SAE.from_pretrained(
-                    release=transcoder_release,
-                    sae_id=f"layer_{l}/{transcoder_variant}",
-                    device=device,
-                )
-                transcoders[l] = sae
-            except Exception as e:
-                print(f"  Warning: could not load transcoder for layer {l}: {e}", flush=True)
+    from circuit_tracer.transcoder.single_layer_transcoder import load_gemma_scope_2_transcoder
+    pattern = f"transcoder_all/layer_*_{transcoder_variant}/params.safetensors"
+    local_dir = snapshot_download(transcoder_release, allow_patterns=[pattern])
+    transcoders = {}
+    for l in corrective_layers:
+        path = Path(local_dir) / "transcoder_all" / f"layer_{l}_{transcoder_variant}" / "params.safetensors"
+        if path.exists():
+            transcoders[l] = load_gemma_scope_2_transcoder(
+                str(path), layer=l, device=torch.device(device), dtype=torch.bfloat16,
+                lazy_encoder=False, lazy_decoder=False,
+            )
+        else:
+            print(f"  Warning: transcoder not found for layer {l}: {path}", flush=True)
 
     # Load dataset
     print(f"Loading dataset {dataset_path}...", flush=True)
@@ -229,13 +222,14 @@ def compute_governance_direction(
 
         # Load W_dec for this layer from the transcoder
         try:
-            from sae_lens import SAE  # type: ignore
-            sae, _, _ = SAE.from_pretrained(
-                release=transcoder_release,
-                sae_id=f"layer_{l_idx}/{transcoder_variant}",
-                device=device,
-            )
-            W_dec = sae.W_dec.float().cpu().numpy()  # [n_features, d_model]
+            from circuit_tracer.transcoder.single_layer_transcoder import load_gemma_scope_2_transcoder
+            from huggingface_hub import snapshot_download
+            pattern = f"transcoder_all/layer_*_{transcoder_variant}/params.safetensors"
+            local_dir = snapshot_download(transcoder_release, allow_patterns=[pattern])
+            tc_path = Path(local_dir) / "transcoder_all" / f"layer_{l_idx}_{transcoder_variant}" / "params.safetensors"
+            tc = load_gemma_scope_2_transcoder(str(tc_path), layer=l_idx, device=torch.device(device), dtype=torch.bfloat16,
+                                               lazy_encoder=True, lazy_decoder=False)
+            W_dec = tc.W_dec.float().cpu().numpy()  # [n_features, d_model]
         except Exception as e:
             print(f"  layer {l_idx}: could not load W_dec: {e}", flush=True)
             continue

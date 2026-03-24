@@ -29,7 +29,7 @@ from src.poc.collect import load_dataset_records
 from src.poc.exp6.benchmarks.governance import evaluate_governance_benchmark
 from src.poc.exp6.config import Exp6Config
 from src.poc.exp6.interventions import build_intervention
-from src.poc.exp6.runtime import GeneratedSample6, generate_record_A, generate_record_B, generate_records_A_batch
+from src.poc.exp6.runtime import GeneratedSample6, generate_record_A, generate_record_B, generate_records_A_batch, generate_records_B_batch
 from src.poc.exp5.benchmarks.custom import evaluate_custom_benchmark
 from src.poc.exp5.utils import ensure_dir, sanitise_json, save_json
 from src.poc.shared.model import load_model
@@ -342,6 +342,9 @@ def _get_raw_model(loaded: Any) -> Any:
     return loaded.model._model
 
 
+BATCH_SIZE_B = 8
+
+
 def _run_condition_B(
     name: str,
     cfg: Exp6Config,
@@ -352,7 +355,7 @@ def _run_condition_B(
     done_benchmarks: set[str],
     hooks_config: dict,
 ) -> list[dict]:
-    """Run one B-experiment condition (plain forward hooks)."""
+    """Run one B-experiment condition (batched forward hooks, partial-save for crash resilience)."""
     model_raw = _get_raw_model(loaded)
     tokenizer = loaded.tokenizer
     real_token_mask = loaded.real_token_mask
@@ -364,13 +367,57 @@ def _run_condition_B(
     cached_all_outputs: list[GeneratedSample6] | None = None
 
     if all_records_benchmarks_todo:
-        print(f"[exp6] {name}: generating all-records outputs (shared for {all_records_benchmarks_todo})", flush=True)
-        cached_all_outputs = []
-        for i, rec in enumerate(records):
-            cached_all_outputs.append(generate_record_B(rec, model_raw, tokenizer, real_token_mask, cfg, hooks_config))
-            if (i + 1) % 100 == 0:
+        # Partial-save path — resume across crashes
+        partial_path = scores_jsonl.parent / f"_partial_{name}_all_records.jsonl"
+        already_done: dict[str, GeneratedSample6] = {}
+        if partial_path.exists():
+            for line in partial_path.read_text().splitlines():
+                try:
+                    d = json.loads(line)
+                    already_done[d["record_id"]] = GeneratedSample6(
+                        record_id=d["record_id"], prompt=d["prompt"],
+                        generated_text=d["generated_text"],
+                        generated_tokens=d.get("generated_tokens", []),
+                        category=d.get("category", ""),
+                    )
+                except Exception:
+                    pass
+
+        remaining = [r for r in records if r["id"] not in already_done]
+        print(
+            f"[exp6] {name}: generating all-records outputs (batch={BATCH_SIZE_B}, "
+            f"shared for {all_records_benchmarks_todo}, "
+            f"{len(already_done)} resumed, {len(remaining)} to go)",
+            flush=True,
+        )
+
+        for batch_start in range(0, len(remaining), BATCH_SIZE_B):
+            batch = remaining[batch_start: batch_start + BATCH_SIZE_B]
+            new_outputs = generate_records_B_batch(
+                batch, model_raw, tokenizer, real_token_mask, cfg, hooks_config,
+                batch_size=BATCH_SIZE_B,
+            )
+            for o in new_outputs:
+                already_done[o.record_id] = o
+            # Append to partial file immediately
+            with open(partial_path, "a") as pf:
+                for o in new_outputs:
+                    pf.write(json.dumps({
+                        "record_id": o.record_id, "prompt": o.prompt,
+                        "generated_text": o.generated_text,
+                        "generated_tokens": o.generated_tokens,
+                        "category": o.category,
+                    }) + "\n")
+            done_so_far = min(batch_start + BATCH_SIZE_B, len(remaining)) + len(records) - len(remaining)
+            if done_so_far % 100 < BATCH_SIZE_B or done_so_far >= len(records):
                 _check_disk()
-                print(f"[exp6] {name}/all_records: {i+1}/{len(records)} done", flush=True)
+                print(f"[exp6] {name}/all_records: {done_so_far}/{len(records)} done", flush=True)
+
+        # Reconstruct in original record order
+        cached_all_outputs = [already_done[r["id"]] for r in records if r["id"] in already_done]
+        # Clean up partial file once fully done
+        if partial_path.exists():
+            partial_path.unlink()
 
     for benchmark in cfg.benchmarks:
         if benchmark in done_benchmarks:
@@ -382,12 +429,11 @@ def _run_condition_B(
             outputs = cached_all_outputs
         else:
             bench_records = _select_records(records, benchmark)
-            outputs = []
-            for i, rec in enumerate(bench_records):
-                outputs.append(generate_record_B(rec, model_raw, tokenizer, real_token_mask, cfg, hooks_config))
-                if (i + 1) % 100 == 0:
-                    _check_disk()
-                    print(f"[exp6] {name}/{benchmark}: {i+1}/{len(bench_records)} done", flush=True)
+            outputs = generate_records_B_batch(
+                bench_records, model_raw, tokenizer, real_token_mask, cfg, hooks_config,
+                batch_size=BATCH_SIZE_B,
+            )
+            print(f"[exp6] {name}/{benchmark}: {len(outputs)}/{len(bench_records)} done", flush=True)
 
         result = _score_benchmark(benchmark, bench_records, outputs)
         row = {

@@ -214,7 +214,7 @@ def main() -> None:
     p.add_argument("--out-dir", default="results/exp6/feature_classifications")
     p.add_argument("--batch-size", type=int, default=200,
                    help="Labels per API call.")
-    p.add_argument("--model", default="anthropic/claude-sonnet-4-6",
+    p.add_argument("--model", default="google/gemini-2.0-flash-001",
                    help="OpenRouter model ID.")
     p.add_argument("--rate-limit-sleep", type=float, default=1.0,
                    help="Seconds to sleep between batches.")

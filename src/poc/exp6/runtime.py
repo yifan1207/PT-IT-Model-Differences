@@ -263,6 +263,103 @@ def _make_wdec_inject_hooks(
     return handles
 
 
+_BATCH_SIZE_B = 8
+
+
+def generate_records_B_batch(
+    records: list[dict],
+    model_raw: Any,
+    tokenizer: Any,
+    real_token_mask: torch.Tensor,
+    cfg: Exp6Config,
+    hooks_config: dict,
+    batch_size: int = _BATCH_SIZE_B,
+) -> list[GeneratedSample6]:
+    """Batched generation for B experiments using register_forward_hook + model.generate().
+
+    Same approach as generate_records_A_batch but registers B-specific hooks
+    (feature_clamp or wdec_inject) instead of direction hooks.  ~20× faster than
+    the original token-by-token loop because model.generate() uses KV cache.
+    """
+    device = next(model_raw.parameters()).device
+    orig_padding_side = tokenizer.padding_side
+    tokenizer.padding_side = "left"
+
+    bad_mask = ~real_token_mask.to(device)
+    logits_processor = LogitsProcessorList([_RealTokenMaskProcessor(bad_mask)])
+    eos_ids = _eos_token_ids(tokenizer, cfg)
+
+    results: list[GeneratedSample6] = []
+    try:
+        for batch_start in range(0, len(records), batch_size):
+            batch = records[batch_start: batch_start + batch_size]
+            prompts = [r["formats"][cfg.prompt_format] for r in batch]
+            if cfg.model_variant == "it" and cfg.apply_chat_template:
+                encoded = tokenizer.apply_chat_template(
+                    [[{"role": "user", "content": p}] for p in prompts],
+                    return_tensors="pt",
+                    add_generation_prompt=True,
+                    padding=True,
+                ).to(device)
+            else:
+                encoded = tokenizer(prompts, return_tensors="pt", padding=True)["input_ids"].to(device)
+
+            attn_mask = (encoded != tokenizer.pad_token_id).long()
+
+            # Register B-specific hooks
+            hook_handles: list = []
+            if cfg.method == "feature_clamp":
+                hook_handles = _make_feature_clamp_hooks(
+                    model_raw,
+                    hooks_config["transcoders"],
+                    hooks_config["governance_features"],
+                    hooks_config["mean_acts"],
+                    cfg,
+                )
+            elif cfg.method == "wdec_inject":
+                hook_handles = _make_wdec_inject_hooks(
+                    model_raw,
+                    hooks_config["governance_direction"],
+                    cfg,
+                )
+
+            try:
+                with torch.no_grad():
+                    out_ids = model_raw.generate(
+                        encoded,
+                        attention_mask=attn_mask,
+                        max_new_tokens=cfg.max_gen_tokens,
+                        do_sample=False,
+                        eos_token_id=eos_ids,
+                        pad_token_id=tokenizer.pad_token_id,
+                        logits_processor=logits_processor,
+                        use_cache=True,
+                    )
+            finally:
+                for h in hook_handles:
+                    h.remove()
+
+            prompt_len = encoded.shape[1]
+            for i, rec in enumerate(batch):
+                new_ids = [
+                    tid for tid in out_ids[i, prompt_len:].tolist()
+                    if tid != tokenizer.pad_token_id
+                ]
+                gen_tokens = [{"token_id": tid, "token_str": tokenizer.decode([tid])} for tid in new_ids]
+                text = tokenizer.decode(new_ids, skip_special_tokens=True)
+                results.append(GeneratedSample6(
+                    record_id=rec["id"],
+                    prompt=rec["formats"][cfg.prompt_format],
+                    generated_text=text,
+                    generated_tokens=gen_tokens,
+                    category=rec.get("category", ""),
+                ))
+    finally:
+        tokenizer.padding_side = orig_padding_side
+
+    return results
+
+
 def generate_record_B(
     record: dict,
     model_raw: Any,

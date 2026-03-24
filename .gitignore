@@ -228,3 +228,10 @@ results/exp5/**
 !results/exp5/*/
 !results/exp5/**/plots/
 !results/exp5/**/plots/**
+!results/exp6/
+!results/exp6/**/
+results/exp6/**
+!results/exp6/merged_A1_it/
+!results/exp6/merged_A1_it/*.png
+!results/exp6/merged_A1_it/plots/
+!results/exp6/merged_A1_it/plots/**
