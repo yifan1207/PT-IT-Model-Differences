@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Merge exp6 worker outputs into a single results directory.
+
+Usage:
+    python scripts/merge_exp6_workers.py --experiment A1 --variant it --n-workers 8
+    python scripts/merge_exp6_workers.py --experiment B1 --variant it --n-workers 8
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from collections import defaultdict
+from pathlib import Path
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--experiment", required=True)
+    p.add_argument("--variant", required=True)
+    p.add_argument("--n-workers", type=int, required=True)
+    p.add_argument("--output-base", default="results/exp6")
+    p.add_argument("--source-dirs", nargs="*", default=None,
+                   help="Explicit source dirs (default: auto-detect from {experiment}_{variant}_w*)")
+    args = p.parse_args()
+
+    base = Path(args.output_base)
+    merged_dir = base / f"merged_{args.experiment}_{args.variant}"
+    merged_dir.mkdir(parents=True, exist_ok=True)
+
+    # Find source directories
+    if args.source_dirs:
+        source_dirs = [Path(d) for d in args.source_dirs]
+    else:
+        source_dirs = []
+        for i in range(args.n_workers):
+            d = base / f"{args.experiment}_{args.variant}_w{i}"
+            if d.exists():
+                source_dirs.append(d)
+            else:
+                print(f"WARNING: worker dir not found: {d}", flush=True)
+
+    print(f"Merging from {len(source_dirs)} source dirs into {merged_dir}...", flush=True)
+
+    # Collect all scores
+    all_scores: list[dict] = []
+    all_samples: list[dict] = []
+
+    for src_dir in source_dirs:
+        scores = _read_jsonl(src_dir / "scores.jsonl")
+        samples = _read_jsonl(src_dir / "sample_outputs.jsonl")
+        all_scores.extend(scores)
+        all_samples.extend(samples)
+        print(f"  {src_dir.name}: {len(scores)} score rows, {len(samples)} samples", flush=True)
+
+    # Deduplicate on (condition, benchmark)
+    seen: set[tuple[str, str]] = set()
+    deduped_scores: list[dict] = []
+    for row in all_scores:
+        key = (row["condition"], row["benchmark"])
+        if key not in seen:
+            seen.add(key)
+            deduped_scores.append(row)
+
+    print(f"Total: {len(all_scores)} rows → {len(deduped_scores)} after dedup", flush=True)
+
+    # Write merged files
+    _write_jsonl(merged_dir / "scores.jsonl", deduped_scores)
+    _write_jsonl(merged_dir / "sample_outputs.jsonl", all_samples)
+
+    with open(merged_dir / "scores.json", "w") as f:
+        json.dump(deduped_scores, f, indent=2)
+
+    # Write CSV
+    if deduped_scores:
+        import csv
+        import io
+        keys = list(deduped_scores[0].keys())
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(deduped_scores)
+        (merged_dir / "scores.csv").write_text(buf.getvalue())
+
+    # Summary by condition
+    cond_bench: dict[str, dict[str, float]] = defaultdict(dict)
+    for row in deduped_scores:
+        cond_bench[row["condition"]][row["benchmark"]] = row["value"]
+
+    print(f"\nCondition summary ({len(cond_bench)} conditions):")
+    for cond in sorted(cond_bench.keys()):
+        vals = cond_bench[cond]
+        bench_str = ", ".join(f"{b}={v:.4f}" for b, v in sorted(vals.items()))
+        print(f"  {cond}: {bench_str}")
+
+    # Generate dose-response plot
+    try:
+        _plot_dose_response(args.experiment, deduped_scores, merged_dir / "plots")
+    except Exception as e:
+        print(f"WARNING: plotting failed: {e}", flush=True)
+
+    print(f"\nMerged results → {merged_dir}")
+
+
+def _plot_dose_response(experiment: str, scores: list[dict], plots_dir: Path) -> None:
+    """Generate dose-response plots for A experiments."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from collections import defaultdict
+
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    GOV_BENCHMARKS = {"structural_token_ratio", "turn_structure", "format_compliance"}
+    CONTENT_BENCHMARKS = {"factual_em", "reasoning_em"}
+
+    if experiment == "A1":
+        x_key, x_label = "alpha", "α (correction strength)"
+        conditions = [r for r in scores if r["condition"].startswith("A1_alpha_")]
+    elif experiment == "A2":
+        x_key, x_label = "beta", "β (injection magnitude)"
+        conditions = [r for r in scores if r["condition"].startswith("A2_beta_")]
+    else:
+        return
+
+    # Group by benchmark
+    bench_data: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    for row in conditions:
+        x = row.get(x_key)
+        if x is not None:
+            bench_data[row["benchmark"]].append((float(x), row["value"]))
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Governance metrics
+    ax = axes[0]
+    for bench, data in bench_data.items():
+        if bench in GOV_BENCHMARKS:
+            data.sort(key=lambda t: t[0])
+            xs, ys = zip(*data)
+            ax.plot(xs, ys, marker="o", label=bench)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Score")
+    ax.set_title(f"{experiment}: Governance Metrics")
+    ax.legend(fontsize=8)
+    ax.axvline(x=1.0 if experiment == "A1" else 0.0, color="gray", linestyle="--", alpha=0.5)
+    ax.grid(True, alpha=0.3)
+
+    # Content metrics
+    ax = axes[1]
+    for bench, data in bench_data.items():
+        if bench in CONTENT_BENCHMARKS:
+            data.sort(key=lambda t: t[0])
+            xs, ys = zip(*data)
+            ax.plot(xs, ys, marker="o", label=bench)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel("Score")
+    ax.set_title(f"{experiment}: Content Metrics")
+    ax.legend(fontsize=8)
+    ax.axvline(x=1.0 if experiment == "A1" else 0.0, color="gray", linestyle="--", alpha=0.5)
+    ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    out_path = plots_dir / f"{experiment}_dose_response.png"
+    plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"  Plot saved → {out_path}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

@@ -12,7 +12,11 @@ PYTHONPATH=/home/yifan/structral-semantic-features
 export PYTHONPATH
 cd /home/yifan/structral-semantic-features
 
-OPENROUTER_KEY="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"
+# Load API key from .env
+if [ -f "$(dirname "$0")/../.env" ]; then
+    set -a; source "$(dirname "$0")/../.env"; set +a
+fi
+OPENROUTER_KEY="${OPENROUTER_API_KEY:?'.env missing OPENROUTER_API_KEY'}"
 LOG() { echo "[pipeline $(date '+%H:%M:%S')] $*" | tee -a logs/completion_pipeline.log; }
 
 # ─── Helper: wait for a list of PIDs ─────────────────────────────────────────

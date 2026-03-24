@@ -1,11 +1,12 @@
 """
 Rigorous audit tests for collect.py and collect_config.py.
 CPU-only, no GPU, no nnsight required.
-Run with: uv run python test_audit.py
+Run with: uv run python tools/test_audit.py
 """
 from __future__ import annotations
 
 import math
+import pathlib
 import sys
 import traceback
 import types
@@ -43,9 +44,10 @@ from src.poc.shared.collect_config import CollectionConfig, ModelHooks  # noqa: 
 # Import only the pure-Python functions from collect.py — we avoid anything
 # that calls nnsight or torch.cuda at module-level.
 import importlib.util, pathlib
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location(
     "collect",
-    pathlib.Path(__file__).parent / "src/poc/collect.py",
+    REPO_ROOT / "src/poc/collect.py",
 )
 collect_mod = importlib.util.module_from_spec(spec)
 # Patch nnsight.save before exec
@@ -1504,7 +1506,7 @@ class TestSpecificBugDetection(unittest.TestCase):
 if __name__ == "__main__":
     # Run all tests with verbose output and collect results
     loader = unittest.TestLoader()
-    suite  = loader.discover(start_dir=".", pattern="test_audit.py")
+    suite  = loader.discover(start_dir=str(pathlib.Path(__file__).resolve().parent), pattern=pathlib.Path(__file__).name)
 
     runner = unittest.TextTestRunner(verbosity=2, stream=sys.stdout)
     result = runner.run(suite)
