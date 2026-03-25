@@ -336,11 +336,39 @@ def _A5b_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     return specs  # 1 + 7 = 8 conditions
 
 
+def _A1_rand_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A1_rand: Identical α-sweep as A1 but with random unit vectors at corrective layers.
+
+    Specificity control for reviewer R4: if the dose-response in A1 reflects the
+    *content* of the IT-PT corrective direction (not just any perturbation at layers
+    20-33), random directions should produce flat metrics across all α values.
+
+    Direction source: results/exp6/precompute/random_directions.npz  (seed=42, fixed).
+    Pass this file via --corrective-direction-path when launching.
+
+    Expected:  flat across α  →  governance effect is direction-specific ✓
+    Concern:   dose-response present  →  any perturbation at these layers causes effect
+               (weakens mechanistic claim, requires reframing)
+    """
+    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
+    CORR_LAYERS  = list(range(cfg.proposal_boundary, cfg.n_layers))   # layers 20-33
+
+    specs = [("A1rand_baseline", replace(cfg, method="none", directional_alpha=1.0))]
+    for alpha in ALPHA_VALUES:
+        specs.append((f"A1rand_alpha_{alpha:g}", replace(cfg,
+            method="directional_remove",
+            ablation_layers=CORR_LAYERS,
+            directional_alpha=alpha,
+        )))
+    return specs  # 1 + 14 = 15 conditions
+
+
 def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     match cfg.experiment:
         case "A1": return _A1_conditions(cfg)
         case "A1_early": return _A1_early_conditions(cfg)
         case "A1_mid": return _A1_mid_conditions(cfg)
+        case "A1_rand": return _A1_rand_conditions(cfg)
         case "A2": return _A2_conditions(cfg)
         case "A5a": return _A5a_conditions(cfg)
         case "A5b": return _A5b_conditions(cfg)
@@ -699,7 +727,7 @@ def _load_B_hooks_config(cfg: Exp6Config, loaded: Any) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run exp6 steering experiments.")
-    p.add_argument("--experiment", choices=["A1", "A1_early", "A1_mid", "A2", "A5a", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
+    p.add_argument("--experiment", choices=["A1", "A1_early", "A1_mid", "A1_rand", "A2", "A5a", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
     p.add_argument("--variant", choices=["pt", "it"], default="it")
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
     p.add_argument("--device", default="cuda")

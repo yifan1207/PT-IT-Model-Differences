@@ -555,21 +555,331 @@ def plot_A1_v5(a1_dir: Path, a1_early_dir: Path, a1_mid_dir: Path, out_path: Pat
     print(f"A1 v5 plot saved → {out_path}")
 
 
+# ── A5b: IT corrective direction α-sweep (rerun with v2 eval) ─────────────────
+
+def _A5b_alpha(cond: str) -> float | None:
+    if not cond.startswith("A5b_alpha_"):
+        return None
+    try:
+        return float(cond[len("A5b_alpha_"):])
+    except ValueError:
+        return None
+
+
+def _A5a_skip(cond: str) -> int | None:
+    if not cond.startswith("A5a_skip_from_"):
+        return None
+    try:
+        return int(cond[len("A5a_skip_from_"):])
+    except ValueError:
+        return None
+
+
+def plot_A5b(a5b_dir: Path, out_path: Path, pt_dir: Path | None = None) -> None:
+    """A5b: IT corrective direction α-sweep with v2 eval pipeline."""
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    scores   = _load_scores(a5b_dir / "scores.csv")
+    judge_v2 = _load_judge_v2(a5b_dir / "llm_judge_v2_scores.jsonl")
+    car      = _load_coherent_from_samples(a5b_dir / "sample_outputs.jsonl", "GOV-CONV")
+
+    sweep = sorted(
+        {(a, c) for c in scores for a in [_A5b_alpha(c)] if a is not None},
+        key=lambda t: t[0],
+    )
+    if not sweep:
+        print("No A5b sweep conditions found"); return
+    xs    = [a for a, _ in sweep]
+    conds = [c for _, c in sweep]
+
+    it_b     = scores.get("A5b_baseline", {})
+    it_j_v2  = judge_v2.get("A5b_baseline", {})
+    it_car   = car.get("A5b_baseline")
+
+    # PT baseline
+    pt_b    = _load_scores(pt_dir / "scores.csv").get("A2_baseline_pt", {}) if pt_dir else {}
+    pt_j_v2 = _load_judge_v2(pt_dir / "llm_judge_v2_scores.jsonl").get("A2_baseline_pt", {}) if pt_dir else {}
+
+    def gs(bench):   return [scores.get(c, {}).get(bench) for c in conds]
+    def gv2(task):   return [judge_v2.get(c, {}).get(task) for c in conds]
+    def gcar():      return [car.get(c) for c in conds]
+
+    gov_baselines = {
+        "structural_token_ratio": (pt_b.get("structural_token_ratio"), it_b.get("structural_token_ratio")),
+        "format_compliance_v2":   (pt_b.get("format_compliance_v2"),   it_b.get("format_compliance_v2")),
+        "g1": (pt_j_v2.get("g1"), it_j_v2.get("g1")),
+        "g2": (pt_j_v2.get("g2"), it_j_v2.get("g2")),
+        "coherent_assistant_rate": (None, it_car),
+    }
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle("A5b (rerun): IT model — Corrective Direction α-sweep  [v2 eval]",
+                 fontsize=12, fontweight="bold")
+
+    # Panel 1: Governance
+    gov_series: dict = {}
+    g1_vals = gv2("g1")
+    g2_vals = gv2("g2")
+    if any(y is not None for y in g1_vals): gov_series["g1"] = g1_vals
+    if any(y is not None for y in g2_vals): gov_series["g2"] = g2_vals
+    gov_series["structural_token_ratio"] = gs("structural_token_ratio")
+    for b in ("format_compliance_v2", "format_compliance"):
+        ys = gs(b)
+        if any(y is not None for y in ys): gov_series[b] = ys; break
+    if "g1" not in gov_series:
+        gov_series["coherent_assistant_rate"] = gcar()
+    _plot_panel(axes[0], xs, gov_series, gov_baselines,
+                "Governance", "α (1.0 = baseline IT)", baseline_x=1.0)
+
+    # Panel 2: Content
+    content_benches = ["mmlu_forced_choice", "mmlu_accuracy", "exp3_factual_em",
+                       "exp3_reasoning_em", "reasoning_em"]
+    content_series = {}
+    content_baselines = {b: (pt_b.get(b), it_b.get(b)) for b in content_benches}
+    for b in content_benches:
+        ys = gs(b)
+        if any(y is not None for y in ys):
+            content_series[b] = ys
+    _plot_panel(axes[1], xs, content_series, content_baselines,
+                "Content (should be stable)", "α", baseline_x=1.0)
+
+    # Panel 3: Safety / Alignment
+    safety_series = {}
+    safety_baselines = dict(gov_baselines)
+    for b in ["s1", "s2", "exp3_alignment_behavior", "exp3_reasoning_em"]:
+        if b in ("s1", "s2"):
+            ys = gv2(b)
+            safety_baselines[b] = (pt_j_v2.get(b), it_j_v2.get(b))
+        else:
+            ys = gs(b)
+            safety_baselines[b] = (pt_b.get(b), it_b.get(b))
+        if any(y is not None for y in ys):
+            safety_series[b] = ys
+    _plot_panel(axes[2], xs, safety_series, safety_baselines,
+                "Safety / Alignment", "α", baseline_x=1.0)
+
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"A5b plot saved → {out_path}")
+
+
+def plot_A5a(a5a_dir: Path, out_path: Path, pt_dir: Path | None = None) -> None:
+    """A5a: IT progressive skip (skip from layer X to 33) with v2 eval pipeline."""
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    scores   = _load_scores(a5a_dir / "scores.csv")
+    judge_v2 = _load_judge_v2(a5a_dir / "llm_judge_v2_scores.jsonl")
+
+    sweep = sorted(
+        {(k, c) for c in scores for k in [_A5a_skip(c)] if k is not None},
+        key=lambda t: t[0],
+    )
+    if not sweep:
+        print("No A5a sweep conditions found"); return
+    xs    = [k for k, _ in sweep]   # layer index: 20→33 (fewer skipped = higher x)
+    conds = [c for _, c in sweep]
+
+    it_b    = scores.get("A5a_baseline", {})
+    it_j_v2 = judge_v2.get("A5a_baseline", {})
+
+    # PT baseline
+    pt_b    = _load_scores(pt_dir / "scores.csv").get("A2_baseline_pt", {}) if pt_dir else {}
+    pt_j_v2 = _load_judge_v2(pt_dir / "llm_judge_v2_scores.jsonl").get("A2_baseline_pt", {}) if pt_dir else {}
+
+    def gs(bench): return [scores.get(c, {}).get(bench) for c in conds]
+    def gv2(task): return [judge_v2.get(c, {}).get(task) for c in conds]
+
+    baselines = {
+        "structural_token_ratio": (pt_b.get("structural_token_ratio"), it_b.get("structural_token_ratio")),
+        "format_compliance_v2":   (pt_b.get("format_compliance_v2"),   it_b.get("format_compliance_v2")),
+        "g1": (pt_j_v2.get("g1"), it_j_v2.get("g1")),
+        "g2": (pt_j_v2.get("g2"), it_j_v2.get("g2")),
+        "mmlu_forced_choice":      (pt_b.get("mmlu_forced_choice"),      it_b.get("mmlu_forced_choice")),
+        "exp3_reasoning_em":       (pt_b.get("exp3_reasoning_em"),       it_b.get("exp3_reasoning_em")),
+        "exp3_alignment_behavior": (pt_b.get("exp3_alignment_behavior"), it_b.get("exp3_alignment_behavior")),
+        "s1": (pt_j_v2.get("s1"), it_j_v2.get("s1")),
+        "s2": (pt_j_v2.get("s2"), it_j_v2.get("s2")),
+    }
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle("A5a (rerun): IT model — Progressive Skip (layers X→33)  [v2 eval]\n"
+                 "x=first skipped layer; higher x = fewer layers skipped = closer to baseline",
+                 fontsize=11, fontweight="bold")
+
+    # Panel 1: Governance
+    gov_series: dict = {}
+    for b in ("g1", "g2"):
+        ys = gv2(b)
+        if any(y is not None for y in ys): gov_series[b] = ys
+    gov_series["structural_token_ratio"] = gs("structural_token_ratio")
+    for b in ("format_compliance_v2", "format_compliance"):
+        ys = gs(b)
+        if any(y is not None for y in ys): gov_series[b] = ys; break
+    _plot_panel(axes[0], xs, gov_series, baselines,
+                "Governance", "First skipped layer (33=skip only L33)", baseline_x=34.0)
+
+    # Panel 2: Content
+    content_series = {}
+    for b in ["mmlu_forced_choice", "mmlu_accuracy", "exp3_factual_em", "exp3_reasoning_em"]:
+        ys = gs(b)
+        if any(y is not None for y in ys): content_series[b] = ys
+    _plot_panel(axes[1], xs, content_series, baselines,
+                "Content", "First skipped layer", baseline_x=34.0)
+
+    # Panel 3: Safety
+    safety_series = {}
+    for b in ["s1", "s2"]:
+        ys = gv2(b)
+        if any(y is not None for y in ys): safety_series[b] = ys
+    for b in ["exp3_alignment_behavior"]:
+        ys = gs(b)
+        if any(y is not None for y in ys): safety_series[b] = ys
+    _plot_panel(axes[2], xs, safety_series, baselines,
+                "Safety / Alignment", "First skipped layer", baseline_x=34.0)
+
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"A5a plot saved → {out_path}")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
+
+def plot_A1_rand(a1_dir: Path, a1_rand_dir: Path, out_path: Path) -> None:
+    """Overlay A1 (corrective direction) vs A1_rand (random direction) α-sweeps.
+
+    Each subplot shows one benchmark with two lines:
+      - Red solid:  A1  (actual IT-PT corrective direction)
+      - Blue dashed: A1_rand (random unit vector, same layers and α values)
+
+    If the governance dose-response in A1 is direction-specific, A1_rand should
+    be flat (close to the baseline dashed line) across all α values.
+    """
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    BENCHMARKS = [
+        ("structural_token_ratio",  "Structural Token Ratio", "Governance"),
+        ("format_compliance_v2",    "Format Compliance v2",   "Governance"),
+        ("mmlu_forced_choice",      "MMLU Forced Choice",     "Content"),
+        ("exp3_reasoning_em",       "Reasoning EM",           "Content"),
+        ("exp3_alignment_behavior", "Alignment Behavior",     "Safety"),
+    ]
+    judge_tasks = [
+        ("g1", "G1 governance quality (/5)", "Governance"),
+        ("g2", "G2 register quality (/5)",   "Governance"),
+        ("s1", "S1 safety refuse rate",      "Safety"),
+    ]
+
+    def _get_sweep(scores_csv: Path, judge_jsonl: Path, cond_prefix: str):
+        """Return {alpha: {bench: value}} for the α-sweep conditions."""
+        scores = _load_scores(scores_csv)
+        judge  = _load_judge_v2(judge_jsonl)
+        pts: dict[float, dict[str, float]] = {}
+        for cond, bdict in scores.items():
+            tag = f"{cond_prefix}_alpha_"
+            if cond.startswith(tag):
+                try:
+                    a = float(cond[len(tag):])
+                except ValueError:
+                    continue
+                pts[a] = dict(bdict)
+                if cond in judge:
+                    pts[a].update(judge[cond])
+        return dict(sorted(pts.items()))
+
+    all_benches = [(b, lbl, grp) for b, lbl, grp in BENCHMARKS] + \
+                  [(t, lbl, grp) for t, lbl, grp in judge_tasks]
+    n_cols = 4
+    n_rows = (len(all_benches) + n_cols - 1) // n_cols
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+    axes_flat = axes.flatten() if n_rows > 1 else [axes] if n_cols == 1 else list(axes)
+
+    a1_sweep   = _get_sweep(a1_dir    / "scores.csv", a1_dir    / "llm_judge_v2_scores.jsonl", "A1")
+    rand_sweep = _get_sweep(a1_rand_dir / "scores.csv", a1_rand_dir / "llm_judge_v2_scores.jsonl", "A1rand")
+
+    a1_base   = _load_scores(a1_dir    / "scores.csv").get("A1_baseline", {})
+    rand_base = _load_scores(a1_rand_dir / "scores.csv").get("A1rand_baseline", {})
+    a1_jbase   = _load_judge_v2(a1_dir    / "llm_judge_v2_scores.jsonl").get("A1_baseline", {})
+    rand_jbase = _load_judge_v2(a1_rand_dir / "llm_judge_v2_scores.jsonl").get("A1rand_baseline", {})
+
+    for ax_idx, (bench, bench_label, group) in enumerate(all_benches):
+        ax = axes_flat[ax_idx]
+
+        for sweep, label, color, ls in [
+            (a1_sweep,   "A1 corrective dir", "#e74c3c", "-"),
+            (rand_sweep, "A1_rand random dir", "#3498db", "--"),
+        ]:
+            xs = sorted(sweep.keys())
+            ys = [sweep[a].get(bench) for a in xs]
+            clean = [(x, y) for x, y in zip(xs, ys) if y is not None]
+            if clean:
+                cx, cy = zip(*clean)
+                ax.plot(cx, cy, marker="o", markersize=3, color=color,
+                        label=label, linewidth=2.0, linestyle=ls)
+
+        # Baseline reference lines
+        bl_a1  = (a1_base if bench in a1_base else a1_jbase).get(bench)
+        bl_rand = (rand_base if bench in rand_base else rand_jbase).get(bench)
+        if bl_a1 is not None:
+            ax.axhline(bl_a1,  color="#e74c3c", linestyle=":", linewidth=1, alpha=0.5,
+                       label=f"A1 baseline={bl_a1:.3f}")
+        if bl_rand is not None:
+            ax.axhline(bl_rand, color="#3498db", linestyle=":", linewidth=1, alpha=0.5,
+                       label=f"rand baseline={bl_rand:.3f}")
+
+        ax.axvline(1.0, color="gray", linestyle="--", alpha=0.35, linewidth=1)
+        ax.set_xlabel("α  (1.0 = baseline)", fontsize=8)
+        ax.set_ylabel("Score", fontsize=8)
+        ax.set_title(f"{bench_label}  [{group}]", fontsize=9, fontweight="bold")
+        ax.set_ylim(-0.05, 1.1)
+        ax.grid(True, alpha=0.2)
+        if ax_idx == 0:
+            ax.legend(fontsize=7, loc="best")
+
+    # Hide unused axes
+    for ax in axes_flat[len(all_benches):]:
+        ax.set_visible(False)
+
+    fig.suptitle(
+        "A1 vs A1_rand: Specificity Control\n"
+        "Red=corrective direction (IT-PT)  Blue=random unit vector (seed=42)\n"
+        "Flat blue line → effect is direction-specific ✓",
+        fontsize=11, fontweight="bold",
+    )
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"A1_rand comparison plot saved → {out_path}")
+
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--experiment", choices=["A1", "A2", "both", "A1v5"], default="both")
-    p.add_argument("--a1-dir", default="results/exp6/merged_A1_it")
-    p.add_argument("--a2-dir", default="results/exp6/merged_A2_pt")
+    p.add_argument("--experiment", choices=["A1", "A2", "both", "A1v5", "A1rand", "A5a", "A5b", "A5"], default="both")
+    p.add_argument("--a1-dir",      default="results/exp6/merged_A1_it")
+    p.add_argument("--a2-dir",      default="results/exp6/merged_A2_pt")
     p.add_argument("--a1-early-dir", default="results/exp6/merged_A1_early_it")
-    p.add_argument("--a1-mid-dir", default="results/exp6/merged_A1_mid_it")
+    p.add_argument("--a1-mid-dir",   default="results/exp6/merged_A1_mid_it")
+    p.add_argument("--a1-rand-dir",  default="results/exp6/merged_A1_rand_it_v1")
+    p.add_argument("--a5a-dir",     default="results/exp6/merged_A5a_it_v1")
+    p.add_argument("--a5b-dir",     default="results/exp6/merged_A5b_it_v1")
+    p.add_argument("--pt-dir",      default="results/exp6/merged_A2_pt_v4")
     args = p.parse_args()
 
-    a1 = Path(args.a1_dir)
-    a2 = Path(args.a2_dir)
+    a1       = Path(args.a1_dir)
+    a2       = Path(args.a2_dir)
     a1_early = Path(args.a1_early_dir)
-    a1_mid = Path(args.a1_mid_dir)
+    a1_mid   = Path(args.a1_mid_dir)
+    a1_rand  = Path(args.a1_rand_dir)
+    a5a      = Path(args.a5a_dir)
+    a5b      = Path(args.a5b_dir)
+    pt       = Path(args.pt_dir) if args.pt_dir else None
 
     if args.experiment in ("A1", "both"):
         plot_A1(a1, a2, a1 / "plots" / "A1_dose_response_v5.png")
@@ -577,6 +887,12 @@ def main() -> None:
         plot_A2(a2, a1, a2 / "plots" / "A2_dose_response_v5.png")
     if args.experiment in ("A1v5", "both", "A1"):
         plot_A1_v5(a1, a1_early, a1_mid, a1 / "plots" / "A1_layer_specificity_v5.png")
+    if args.experiment == "A1rand":
+        plot_A1_rand(a1, a1_rand, a1_rand / "plots" / "A1_rand_vs_A1.png")
+    if args.experiment in ("A5b", "A5"):
+        plot_A5b(a5b, a5b / "plots" / "A5b_dose_response.png", pt_dir=pt)
+    if args.experiment in ("A5a", "A5"):
+        plot_A5a(a5a, a5a / "plots" / "A5a_progressive_skip.png", pt_dir=pt)
 
 
 if __name__ == "__main__":
