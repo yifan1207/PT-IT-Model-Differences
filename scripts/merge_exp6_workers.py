@@ -38,12 +38,15 @@ def main() -> None:
     p.add_argument("--variant", required=True)
     p.add_argument("--n-workers", type=int, required=True)
     p.add_argument("--output-base", default="results/exp6")
+    p.add_argument("--merged-name", default="",
+                   help="Override merged dir name (default: merged_{experiment}_{variant})")
     p.add_argument("--source-dirs", nargs="*", default=None,
                    help="Explicit source dirs (default: auto-detect from {experiment}_{variant}_w*)")
     args = p.parse_args()
 
     base = Path(args.output_base)
-    merged_dir = base / f"merged_{args.experiment}_{args.variant}"
+    merged_name = args.merged_name or f"merged_{args.experiment}_{args.variant}"
+    merged_dir = base / merged_name
     merged_dir.mkdir(parents=True, exist_ok=True)
 
     # Find source directories

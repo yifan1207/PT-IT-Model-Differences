@@ -19,9 +19,13 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
+
+# Ensure project root is on sys.path when run as a script (src/poc/exp6/run.py → ../../..)
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 import numpy as np
 
@@ -244,7 +248,7 @@ def _A1_early_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     is the mechanistic locus of structural steering.
     """
     ALPHA_VALUES = [5.0, 3.0, 2.0, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
-    EARLY_LAYERS = list(range(0, 8))   # layers 0–7
+    EARLY_LAYERS = list(range(1, 12))  # layers 1–11
     specs = [("A1early_baseline", replace(cfg, method="none", directional_alpha=1.0))]
     for alpha in ALPHA_VALUES:
         specs.append((f"A1early_alpha_{alpha:g}", replace(cfg,
@@ -263,7 +267,7 @@ def _A1_mid_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     the network to isolate where the direction has causal governance leverage.
     """
     ALPHA_VALUES = [5.0, 3.0, 2.0, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
-    MID_LAYERS = list(range(8, 20))    # layers 8–19
+    MID_LAYERS = list(range(12, 20))   # layers 12–19
     specs = [("A1mid_baseline", replace(cfg, method="none", directional_alpha=1.0))]
     for alpha in ALPHA_VALUES:
         specs.append((f"A1mid_alpha_{alpha:g}", replace(cfg,

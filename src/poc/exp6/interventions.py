@@ -275,6 +275,20 @@ def build_intervention(cfg) -> Exp6InterventionSpec:
         for li in target_layers:
             content_dirs[li] = agg
 
+    # For A1_early / A1_mid ablations: target layers (0–7 or 8–19) may not have
+    # precomputed corrective directions (those were only extracted for layers 20–33).
+    # Fill missing layers with the mean of available directions so we can test
+    # whether applying the governance direction at a different depth has any effect.
+    if cfg.method in ("directional_remove", "directional_add"):
+        missing = [li for li in target_layers if li not in corrective_dirs]
+        if missing:
+            available = [v for k, v in corrective_dirs.items() if isinstance(k, int)]
+            if available:
+                mean_dir = torch.stack(available).mean(dim=0)
+                mean_dir = mean_dir / (mean_dir.norm() + 1e-12)
+                for li in missing:
+                    corrective_dirs[li] = mean_dir
+
     return Exp6InterventionSpec(
         method=cfg.method,
         layers=target_layers,
