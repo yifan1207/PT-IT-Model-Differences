@@ -27,6 +27,7 @@ import numpy as np
 
 from src.poc.collect import load_dataset_records
 from src.poc.exp6.benchmarks.governance import evaluate_governance_benchmark
+from src.poc.exp6.benchmarks.governance_v2 import score_format_compliance_v2, score_mmlu_forced_choice
 from src.poc.exp6.config import Exp6Config
 from src.poc.exp6.interventions import build_intervention
 from src.poc.exp6.runtime import GeneratedSample6, generate_record_A, generate_record_B, generate_records_A_batch, generate_records_B_batch
@@ -36,7 +37,13 @@ from src.poc.shared.model import load_model
 
 _DISK_WARN_GB = 5.0
 _DISK_STOP_GB = 2.0
-_GOV_BENCHMARKS = {"structural_token_ratio", "turn_structure", "format_compliance", "mmlu_accuracy", "coherent_assistant_rate"}
+# v2 benchmarks (drop turn_structure, coherent_assistant_rate, format_compliance, mmlu_accuracy)
+_GOV_BENCHMARKS = {
+    "structural_token_ratio",
+    # Legacy (kept for backward compat with v1 dataset runs)
+    "turn_structure", "format_compliance", "mmlu_accuracy", "coherent_assistant_rate",
+}
+_MMLU_FC_BENCHMARK = "mmlu_forced_choice"        # special forced-choice generation
 _EXP5_BENCHMARKS = {"factual_em": "exp3_factual_em", "reasoning_em": "exp3_reasoning_em",
                      "alignment_behavior": "exp3_alignment_behavior"}
 
@@ -287,15 +294,15 @@ def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
 
 def _select_records(records: list[dict], benchmark: str) -> list[dict]:
     """Filter records to those relevant for the given benchmark."""
-    if benchmark in ("factual_em", "mmlu_accuracy"):
+    if benchmark in ("factual_em", "mmlu_accuracy", "mmlu_forced_choice"):
         return [r for r in records if r.get("category") == "CONTENT-FACT"]
     if benchmark in ("reasoning_em",):
         return [r for r in records if r.get("category") == "CONTENT-REASON"]
     if benchmark == "alignment_behavior":
         return [r for r in records if r.get("category") == "SAFETY"]
-    if benchmark == "format_compliance":
+    if benchmark in ("format_compliance", "format_compliance_v2"):
         return [r for r in records if r.get("category") == "GOV-FORMAT"]
-    # structural_token_ratio and turn_structure: use all records
+    # structural_token_ratio, turn_structure, coherent_assistant_rate: use all records
     return records
 
 
@@ -306,6 +313,12 @@ def _score_benchmark(
     records: list[dict],
     outputs: list[GeneratedSample6],
 ) -> Any:
+    # v2 governance scorers
+    if benchmark == "format_compliance_v2":
+        return score_format_compliance_v2(records, outputs)
+    if benchmark == "mmlu_forced_choice":
+        return score_mmlu_forced_choice(records, outputs)
+    # v1 governance scorers (legacy + structural_token_ratio)
     if benchmark in _GOV_BENCHMARKS:
         return evaluate_governance_benchmark(benchmark, records, outputs)
     # Map exp6 benchmark names to exp5 names
@@ -333,13 +346,14 @@ def _run_condition_A(
 ) -> list[dict]:
     """Run one A-experiment condition (nnsight trace).
 
-    Benchmarks that use all records (structural_token_ratio, turn_structure) share a
-    single generation pass to avoid redundant inference.
+    Benchmarks that use all records (structural_token_ratio) share a single
+    generation pass to avoid redundant inference.
+    mmlu_forced_choice uses a separate short generation with format C and max_new_tokens=3.
     """
     intervention = build_intervention(cfg)
     score_rows: list[dict] = []
 
-    # Pre-generate outputs for all-records benchmarks once (shared across structural benchmarks)
+    # Pre-generate outputs for all-records benchmarks once
     _ALL_RECORDS_BENCHMARKS = {"structural_token_ratio", "turn_structure", "coherent_assistant_rate"}
     all_records_benchmarks_todo = [b for b in cfg.benchmarks
                                    if b in _ALL_RECORDS_BENCHMARKS and b not in done_benchmarks]
@@ -366,6 +380,20 @@ def _run_condition_A(
         if benchmark in _ALL_RECORDS_BENCHMARKS and cached_all_outputs is not None:
             bench_records = records
             outputs = cached_all_outputs
+        elif benchmark == _MMLU_FC_BENCHMARK:
+            # Forced-choice: short generation with format C
+            bench_records = _select_records(records, benchmark)
+            # Only v2 records with format C are valid
+            bench_records = [r for r in bench_records if "C" in r.get("formats", {})]
+            fc_cfg = replace(cfg, prompt_format="C", max_gen_tokens=3, apply_chat_template=False)
+            outputs = []
+            for batch_start in range(0, len(bench_records), BATCH_SIZE):
+                batch = bench_records[batch_start: batch_start + BATCH_SIZE]
+                outputs.extend(generate_records_A_batch(batch, loaded, fc_cfg, intervention, batch_size=BATCH_SIZE))
+                done_so_far = min(batch_start + BATCH_SIZE, len(bench_records))
+                if done_so_far % 100 < BATCH_SIZE or done_so_far == len(bench_records):
+                    _check_disk()
+                    print(f"[exp6] {name}/{benchmark}: {done_so_far}/{len(bench_records)} done", flush=True)
         else:
             bench_records = _select_records(records, benchmark)
             outputs = []
@@ -499,6 +527,16 @@ def _run_condition_B(
         if benchmark in _ALL_RECORDS_BENCHMARKS and cached_all_outputs is not None:
             bench_records = records
             outputs = cached_all_outputs
+        elif benchmark == _MMLU_FC_BENCHMARK:
+            # Forced-choice: short generation with format C, no chat template
+            bench_records = _select_records(records, benchmark)
+            bench_records = [r for r in bench_records if "C" in r.get("formats", {})]
+            fc_cfg = replace(cfg, prompt_format="C", max_gen_tokens=3, apply_chat_template=False)
+            outputs = generate_records_B_batch(
+                bench_records, model_raw, tokenizer, real_token_mask, fc_cfg, hooks_config,
+                batch_size=BATCH_SIZE_B,
+            )
+            print(f"[exp6] {name}/{benchmark}: {len(outputs)}/{len(bench_records)} done", flush=True)
         else:
             bench_records = _select_records(records, benchmark)
             outputs = generate_records_B_batch(
@@ -591,10 +629,10 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Run exp6 steering experiments.")
     p.add_argument("--experiment", choices=["A1", "A1_early", "A1_mid", "A2", "B1", "B2", "B3", "B4", "B5"], required=True)
     p.add_argument("--variant", choices=["pt", "it"], default="it")
-    p.add_argument("--dataset", default="data/exp6_dataset.jsonl")
+    p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
     p.add_argument("--device", default="cuda")
     p.add_argument("--max-gen-tokens", type=int, default=200)
-    p.add_argument("--n-eval-examples", type=int, default=1000)
+    p.add_argument("--n-eval-examples", type=int, default=1400)
     p.add_argument("--run-name", default="")
     p.add_argument("--worker-index", type=int, default=0)
     p.add_argument("--n-workers", type=int, default=1)

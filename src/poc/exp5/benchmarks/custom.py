@@ -122,7 +122,9 @@ def score_reasoning_em(records: list[dict], outputs: list[GeneratedSample]) -> B
     """
     scores = []
     for rec, out in zip(records, outputs):
-        golds = [rec.get("answer", "")] + list(rec.get("answer_aliases", []))
+        # "answer" (exp3/v1 schema) or "expected_answer" (v2 schema) — take whichever is set
+        primary = rec.get("answer") or rec.get("expected_answer", "")
+        golds = [primary] + list(rec.get("answer_aliases", []))
         # Try MC letter extraction first.
         letter = _extract_mc_letter(out.generated_text)
         if letter is not None:

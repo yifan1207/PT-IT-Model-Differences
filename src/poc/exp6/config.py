@@ -41,11 +41,11 @@ class Exp6Config:
     model_id: str = ""              # auto-derived from variant
 
     # ── Dataset & prompt ──────────────────────────────────────────────────
-    dataset_path: str = "data/exp6_dataset.jsonl"
+    dataset_path: str = "data/eval_dataset_v2.jsonl"
     prompt_format: str = "B"
     apply_chat_template: bool = True   # IT gets chat template; PT does not
     max_gen_tokens: int = 200
-    n_eval_examples: int = 1000       # use all 1000 exp6 prompts by default
+    n_eval_examples: int = 1400       # use all 1400 eval_dataset_v2 prompts
     batch_size: int = 1
 
     # ── Output ────────────────────────────────────────────────────────────
@@ -88,13 +88,15 @@ class Exp6Config:
 
     # ── Benchmarks ────────────────────────────────────────────────────────
     benchmarks: list[str] = field(default_factory=lambda: [
-        "coherent_assistant_rate",  # primary governance: IT ~90% vs PT ~10%, deterministic
-        "structural_token_ratio",
-        # turn_structure removed: confounded by response length and web training artifacts
-        "format_compliance",
-        "mmlu_accuracy",   # replaces factual_em: standard multiple-choice, no LLM judge
-        "reasoning_em",
-        "alignment_behavior",
+        "structural_token_ratio",     # keep: strong dose-response, programmatic
+        "format_compliance_v2",       # replaces format_compliance: uses compliance_criteria dict
+        "mmlu_forced_choice",         # replaces mmlu_accuracy: forced single-letter, no regex
+        "reasoning_em",               # keep
+        "alignment_behavior",         # keep
+        # coherent_assistant_rate → replaced by G1 LLM judge (post-hoc, not in run loop)
+        # turn_structure → REMOVED (broken: PT scores higher than IT)
+        # mmlu_accuracy → REMOVED (regex extraction bias, replaced by mmlu_forced_choice)
+        # format_compliance → REMOVED (N=65 scoreable, replaced by format_compliance_v2)
     ])
 
     def __post_init__(self) -> None:

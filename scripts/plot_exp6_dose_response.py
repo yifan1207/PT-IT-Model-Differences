@@ -80,7 +80,7 @@ def _load_scores(path: Path) -> dict[str, dict[str, float]]:
 # ── Load LLM judge scores ─────────────────────────────────────────────────────
 
 def _load_judge(path: Path) -> dict[str, dict[str, float]]:
-    """Returns {condition: {task: mean_score_0_1}}."""
+    """Returns {condition: {task: mean_score_0_1}} — legacy 0-3 format."""
     if not path.exists():
         return {}
     by_ct: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
@@ -93,6 +93,36 @@ def _load_judge(path: Path) -> dict[str, dict[str, float]]:
             if r.get("score", -1) < 0:
                 continue
             by_ct[r["condition"]][r["task"]].append(float(r["score"]) / 3.0)
+    return {
+        cond: {task: sum(v) / len(v) for task, v in tasks.items()}
+        for cond, tasks in by_ct.items()
+    }
+
+
+def _load_judge_v2(path: Path) -> dict[str, dict[str, float]]:
+    """Returns {condition: {task: normalized_0_1}} — v2 G1/G2/S1/S2 format.
+
+    G1: mean/5  (governance quality, higher=better)
+    G2: mean/5  (register quality, higher=better)
+    S1: mean/3  (safety rate: REFUSE=3, COMPLY=0, INCOHERENT=1; higher=safer)
+    S2: mean/1  (false-refusal rate; lower=better)
+    """
+    if not path.exists():
+        return {}
+    max_scores = {"g1": 5.0, "g2": 5.0, "s1": 3.0, "s2": 1.0}
+    by_ct: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
+    with open(path) as f:
+        for line in f:
+            try:
+                r = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            score = r.get("score", -1)
+            task = r.get("task", "")
+            if score < 0 or task not in max_scores:
+                continue
+            norm = float(score) / max_scores[task]
+            by_ct[r["condition"]][task].append(norm)
     return {
         cond: {task: sum(v) / len(v) for task, v in tasks.items()}
         for cond, tasks in by_ct.items()
@@ -122,29 +152,41 @@ def _beta(cond: str) -> float | None:
 # ── Shared plot helpers ───────────────────────────────────────────────────────
 
 _COLORS = {
-    "coherent_assistant_rate": "#1f77b4",   # blue  — primary governance
+    "coherent_assistant_rate": "#1f77b4",   # blue  — legacy governance
     "structural_token_ratio":   "#ff7f0e",  # orange
     "format_compliance":        "#2ca02c",  # green
+    "format_compliance_v2":     "#2ca02c",  # green (v2)
     "mmlu_accuracy":            "#d62728",  # red
+    "mmlu_forced_choice":       "#d62728",  # red (v2)
     "exp3_factual_em":          "#d62728",
     "exp3_reasoning_em":        "#9467bd",  # purple
     "reasoning_em":             "#9467bd",
     "exp3_alignment_behavior":  "#8c564b",  # brown
     "alignment_behavior":       "#8c564b",
-    "safety":                   "#7f7f7f",  # gray
+    "safety":                   "#7f7f7f",  # gray (legacy)
+    "g1":                       "#1f77b4",  # blue — primary governance quality (v2)
+    "g2":                       "#17becf",  # teal — register quality (v2)
+    "s1":                       "#7f7f7f",  # gray — safety refuse rate (v2)
+    "s2":                       "#bcbd22",  # yellow-green — false-refusal (v2, lower=better)
 }
 
 _LABELS = {
-    "coherent_assistant_rate": "coherent_assistant (GOV-CONV)",
+    "coherent_assistant_rate": "coherent_assistant (deprecated)",
     "structural_token_ratio":   "structural_token_ratio",
-    "format_compliance":        "format_compliance (IFEval)",
-    "mmlu_accuracy":            "mmlu_accuracy",
+    "format_compliance":        "format_compliance (legacy)",
+    "format_compliance_v2":     "format_compliance_v2 (IFEval criteria)",
+    "mmlu_accuracy":            "mmlu_accuracy (legacy)",
+    "mmlu_forced_choice":       "mmlu_forced_choice",
     "exp3_factual_em":          "factual_em",
     "exp3_reasoning_em":        "reasoning_em",
     "reasoning_em":             "reasoning_em",
     "exp3_alignment_behavior":  "alignment_behavior",
     "alignment_behavior":       "alignment_behavior",
-    "safety":                   "safety (judge, 0-3→1)",
+    "safety":                   "safety (judge v1, 0-3→1)",
+    "g1":                       "G1 governance quality (LLM judge, /5)",
+    "g2":                       "G2 register quality (LLM judge, /5)",
+    "s1":                       "S1 safety refuse rate (LLM judge)",
+    "s2":                       "S2 false-refusal rate (lower=better)",
 }
 
 
@@ -190,15 +232,17 @@ def plot_A1(a1_dir: Path, a2_dir: Path, out_path: Path) -> None:
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    scores = _load_scores(a1_dir / "scores.csv")
-    judge  = _load_judge(a1_dir / "llm_judge_scores.jsonl")
-    car    = _load_coherent_from_samples(a1_dir / "sample_outputs.jsonl", "GOV-CONV")
+    scores  = _load_scores(a1_dir / "scores.csv")
+    judge   = _load_judge(a1_dir / "llm_judge_scores.jsonl")
+    judge_v2 = _load_judge_v2(a1_dir / "llm_judge_v2_scores.jsonl")
+    car     = _load_coherent_from_samples(a1_dir / "sample_outputs.jsonl", "GOV-CONV")
 
     # PT baselines (from A2 merged dir)
-    pt_scores = _load_scores(a2_dir / "scores.csv").get("A2_baseline_pt", {})
-    pt_judge  = _load_judge(a2_dir / "llm_judge_scores.jsonl").get("A2_baseline_pt", {})
-    pt_car    = _load_coherent_from_samples(a2_dir / "sample_outputs.jsonl", "GOV-CONV").get("A2_baseline_pt")
-    it_car    = car.get("A1_baseline")
+    pt_scores   = _load_scores(a2_dir / "scores.csv").get("A2_baseline_pt", {})
+    pt_judge    = _load_judge(a2_dir / "llm_judge_scores.jsonl").get("A2_baseline_pt", {})
+    pt_judge_v2 = _load_judge_v2(a2_dir / "llm_judge_v2_scores.jsonl").get("A2_baseline_pt", {})
+    pt_car      = _load_coherent_from_samples(a2_dir / "sample_outputs.jsonl", "GOV-CONV").get("A2_baseline_pt")
+    it_car      = car.get("A1_baseline")
 
     # Sweep conditions
     sweep = sorted(
@@ -219,27 +263,48 @@ def plot_A1(a1_dir: Path, a2_dir: Path, out_path: Path) -> None:
     def gjudge(task):
         return [judge.get(c, {}).get(task) for c in conds]
 
+    def gjudge_v2(task):
+        return [judge_v2.get(c, {}).get(task) for c in conds]
+
     # Baselines: (pt_val, it_val)
     it_b = scores.get("A1_baseline", {})
+    it_j_v2 = judge_v2.get("A1_baseline", {})
 
     gov_baselines = {
-        "coherent_assistant_rate": (pt_car, it_car),
-        "structural_token_ratio":  (pt_scores.get("structural_token_ratio"), it_b.get("structural_token_ratio")),
-        "format_compliance":       (pt_scores.get("format_compliance"), it_b.get("format_compliance")),
+        "structural_token_ratio": (pt_scores.get("structural_token_ratio"), it_b.get("structural_token_ratio")),
+        "format_compliance_v2":   (pt_scores.get("format_compliance_v2"), it_b.get("format_compliance_v2")),
+        "format_compliance":      (pt_scores.get("format_compliance"), it_b.get("format_compliance")),
+        "g1":                     (pt_judge_v2.get("g1"), it_j_v2.get("g1")),
+        "g2":                     (pt_judge_v2.get("g2"), it_j_v2.get("g2")),
+        "coherent_assistant_rate":(pt_car, it_car),
     }
-    content_benches = ["mmlu_accuracy", "exp3_factual_em", "exp3_reasoning_em", "reasoning_em"]
-    safety_benches  = ["exp3_alignment_behavior", "alignment_behavior", "safety"]
+    content_benches = ["mmlu_forced_choice", "mmlu_accuracy", "exp3_factual_em",
+                       "exp3_reasoning_em", "reasoning_em"]
+    safety_benches  = ["s1", "s2", "exp3_alignment_behavior", "alignment_behavior", "safety"]
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle("A1: IT model — Corrective Direction Ablation (α sweep, 1.0 = baseline)",
                  fontsize=12, fontweight="bold")
 
     # Panel 1: Governance
-    gov_series = {
-        "coherent_assistant_rate": gcar(),
-        "structural_token_ratio":  gs("structural_token_ratio"),
-        "format_compliance":       gs("format_compliance"),
-    }
+    gov_series: dict = {}
+    # Primary: G1/G2 from v2 judge (if available)
+    g1_vals = gjudge_v2("g1")
+    g2_vals = gjudge_v2("g2")
+    if any(y is not None for y in g1_vals):
+        gov_series["g1"] = g1_vals
+    if any(y is not None for y in g2_vals):
+        gov_series["g2"] = g2_vals
+    # Programmatic
+    gov_series["structural_token_ratio"] = gs("structural_token_ratio")
+    for b in ("format_compliance_v2", "format_compliance"):
+        ys = gs(b)
+        if any(y is not None for y in ys):
+            gov_series[b] = ys
+            break
+    # Legacy coherent_assistant (if no G1)
+    if "g1" not in gov_series:
+        gov_series["coherent_assistant_rate"] = gcar()
     _plot_panel(axes[0], xs, gov_series, gov_baselines,
                 "Governance (IT ≫ PT)",
                 "α (correction strength)",
@@ -251,28 +316,29 @@ def plot_A1(a1_dir: Path, a2_dir: Path, out_path: Path) -> None:
         ys = gs(b)
         if any(y is not None for y in ys):
             content_series[b] = ys
-    content_baselines = {
-        b: (pt_scores.get(b), it_b.get(b)) for b in content_benches
-    }
+            break  # show only first available content metric
+    content_baselines = {b: (pt_scores.get(b), it_b.get(b)) for b in content_benches}
     _plot_panel(axes[1], xs, content_series, content_baselines,
                 "Content (should be stable)",
                 "α", baseline_x=1.0)
 
     # Panel 3: Safety
     safety_series = {}
+    it_j  = judge.get("A1_baseline", {})
     for b in safety_benches:
-        if b == "safety":
+        if b in ("s1", "s2"):
+            ys = gjudge_v2(b)
+            bline = (pt_judge_v2.get(b), it_j_v2.get(b))
+        elif b == "safety":
             ys = gjudge("safety")
+            bline = (pt_judge.get("safety"), it_j.get("safety"))
         else:
             ys = gs(b)
+            bline = (pt_scores.get(b), it_b.get(b))
         if any(y is not None for y in ys):
             safety_series[b] = ys
-    safety_baselines = {
-        b: (pt_judge.get("safety") if b == "safety" else pt_scores.get(b),
-            judge.get("A1_baseline", {}).get("safety") if b == "safety" else it_b.get(b))
-        for b in safety_benches
-    }
-    _plot_panel(axes[2], xs, safety_series, safety_baselines,
+            gov_baselines[b] = bline
+    _plot_panel(axes[2], xs, safety_series, gov_baselines,
                 "Safety / Alignment",
                 "α", baseline_x=1.0)
 
@@ -289,19 +355,22 @@ def plot_A2(a2_dir: Path, a1_dir: Path, out_path: Path) -> None:
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    scores = _load_scores(a2_dir / "scores.csv")
-    judge  = _load_judge(a2_dir / "llm_judge_scores.jsonl")
-    car    = _load_coherent_from_samples(a2_dir / "sample_outputs.jsonl", "GOV-CONV")
+    scores   = _load_scores(a2_dir / "scores.csv")
+    judge    = _load_judge(a2_dir / "llm_judge_scores.jsonl")
+    judge_v2 = _load_judge_v2(a2_dir / "llm_judge_v2_scores.jsonl")
+    car      = _load_coherent_from_samples(a2_dir / "sample_outputs.jsonl", "GOV-CONV")
 
     # IT/PT baselines
-    pt_scores = scores.get("A2_baseline_pt", {})
-    pt_judge_b = judge.get("A2_baseline_pt", {})
-    pt_car_val = car.get("A2_baseline_pt")
+    pt_scores    = scores.get("A2_baseline_pt", {})
+    pt_judge_b   = judge.get("A2_baseline_pt", {})
+    pt_judge_v2_b= judge_v2.get("A2_baseline_pt", {})
+    pt_car_val   = car.get("A2_baseline_pt")
 
     it_scores_all = _load_scores(a1_dir / "scores.csv")
     it_b = it_scores_all.get("A1_baseline", {})
-    it_judge_b = _load_judge(a1_dir / "llm_judge_scores.jsonl").get("A1_baseline", {})
-    it_car_val = _load_coherent_from_samples(a1_dir / "sample_outputs.jsonl", "GOV-CONV").get("A1_baseline")
+    it_judge_b  = _load_judge(a1_dir / "llm_judge_scores.jsonl").get("A1_baseline", {})
+    it_judge_v2_b = _load_judge_v2(a1_dir / "llm_judge_v2_scores.jsonl").get("A1_baseline", {})
+    it_car_val  = _load_coherent_from_samples(a1_dir / "sample_outputs.jsonl", "GOV-CONV").get("A1_baseline")
 
     # Sweep
     seen: set[str] = set()
@@ -325,23 +394,39 @@ def plot_A2(a2_dir: Path, a1_dir: Path, out_path: Path) -> None:
     def gjudge(task):
         return [judge.get(c, {}).get(task) for c in conds]
 
+    def gjudge_v2(task):
+        return [judge_v2.get(c, {}).get(task) for c in conds]
+
     gov_baselines = {
-        "coherent_assistant_rate": (pt_car_val, it_car_val),
-        "structural_token_ratio":  (pt_scores.get("structural_token_ratio"), it_b.get("structural_token_ratio")),
-        "format_compliance":       (pt_scores.get("format_compliance"), it_b.get("format_compliance")),
+        "g1":                      (pt_judge_v2_b.get("g1"), it_judge_v2_b.get("g1")),
+        "g2":                      (pt_judge_v2_b.get("g2"), it_judge_v2_b.get("g2")),
+        "coherent_assistant_rate":  (pt_car_val, it_car_val),
+        "structural_token_ratio":   (pt_scores.get("structural_token_ratio"), it_b.get("structural_token_ratio")),
+        "format_compliance_v2":     (pt_scores.get("format_compliance_v2"), it_b.get("format_compliance_v2")),
+        "format_compliance":        (pt_scores.get("format_compliance"), it_b.get("format_compliance")),
     }
-    content_benches = ["mmlu_accuracy", "exp3_factual_em", "exp3_reasoning_em", "reasoning_em"]
-    safety_benches  = ["exp3_alignment_behavior", "alignment_behavior", "safety"]
+    content_benches = ["mmlu_forced_choice", "mmlu_accuracy", "exp3_factual_em",
+                       "exp3_reasoning_em", "reasoning_em"]
+    safety_benches  = ["s1", "s2", "exp3_alignment_behavior", "alignment_behavior", "safety"]
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle("A2: PT model — Corrective Direction Injection (β sweep, 0 = no injection)",
                  fontsize=12, fontweight="bold")
 
-    gov_series = {
-        "coherent_assistant_rate": gcar(),
-        "structural_token_ratio":  gs("structural_token_ratio"),
-        "format_compliance":       gs("format_compliance"),
-    }
+    gov_series: dict = {}
+    g1_vals = gjudge_v2("g1")
+    g2_vals = gjudge_v2("g2")
+    if any(y is not None for y in g1_vals):
+        gov_series["g1"] = g1_vals
+    if any(y is not None for y in g2_vals):
+        gov_series["g2"] = g2_vals
+    gov_series["structural_token_ratio"] = gs("structural_token_ratio")
+    for b in ("format_compliance_v2", "format_compliance"):
+        ys = gs(b)
+        if any(y is not None for y in ys):
+            gov_series[b] = ys; break
+    if "g1" not in gov_series:
+        gov_series["coherent_assistant_rate"] = gcar()
     _plot_panel(axes[0], xs, gov_series, gov_baselines,
                 "Governance (PT→IT with β)",
                 "β (injection magnitude)", baseline_x=0.0)
@@ -350,22 +435,26 @@ def plot_A2(a2_dir: Path, a1_dir: Path, out_path: Path) -> None:
     for b in content_benches:
         ys = gs(b)
         if any(y is not None for y in ys):
-            content_series[b] = ys
+            content_series[b] = ys; break  # first available
     content_baselines = {b: (pt_scores.get(b), it_b.get(b)) for b in content_benches}
     _plot_panel(axes[1], xs, content_series, content_baselines,
                 "Content", "β", baseline_x=0.0)
 
     safety_series = {}
+    all_blines = dict(gov_baselines)
     for b in safety_benches:
-        ys = gjudge("safety") if b == "safety" else gs(b)
+        if b in ("s1", "s2"):
+            ys = gjudge_v2(b)
+            all_blines[b] = (pt_judge_v2_b.get(b), it_judge_v2_b.get(b))
+        elif b == "safety":
+            ys = gjudge("safety")
+            all_blines[b] = (pt_judge_b.get("safety"), it_judge_b.get("safety"))
+        else:
+            ys = gs(b)
+            all_blines[b] = (pt_scores.get(b), it_b.get(b))
         if any(y is not None for y in ys):
             safety_series[b] = ys
-    safety_baselines = {
-        b: (pt_judge_b.get("safety") if b == "safety" else pt_scores.get(b),
-            it_judge_b.get("safety") if b == "safety" else it_b.get(b))
-        for b in safety_benches
-    }
-    _plot_panel(axes[2], xs, safety_series, safety_baselines,
+    _plot_panel(axes[2], xs, safety_series, all_blines,
                 "Safety / Alignment", "β", baseline_x=0.0)
 
     plt.tight_layout()
