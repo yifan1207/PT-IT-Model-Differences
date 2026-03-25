@@ -37,12 +37,10 @@ from src.poc.shared.model import load_model
 
 _DISK_WARN_GB = 5.0
 _DISK_STOP_GB = 2.0
-# v2 benchmarks (drop turn_structure, coherent_assistant_rate, format_compliance, mmlu_accuracy)
-_GOV_BENCHMARKS = {
-    "structural_token_ratio",
-    # Legacy (kept for backward compat with v1 dataset runs)
-    "turn_structure", "format_compliance", "mmlu_accuracy", "coherent_assistant_rate",
-}
+# Active v2 governance benchmark (shared-generation pass, all records)
+_GOV_BENCHMARKS = {"structural_token_ratio"}
+# Legacy v1 benchmarks still dispatchable but not in any default config list
+_LEGACY_GOV_BENCHMARKS = {"turn_structure", "format_compliance", "mmlu_accuracy", "coherent_assistant_rate"}
 _MMLU_FC_BENCHMARK = "mmlu_forced_choice"        # special forced-choice generation
 _EXP5_BENCHMARKS = {"factual_em": "exp3_factual_em", "reasoning_em": "exp3_reasoning_em",
                      "alignment_behavior": "exp3_alignment_behavior"}
@@ -318,8 +316,8 @@ def _score_benchmark(
         return score_format_compliance_v2(records, outputs)
     if benchmark == "mmlu_forced_choice":
         return score_mmlu_forced_choice(records, outputs)
-    # v1 governance scorers (legacy + structural_token_ratio)
-    if benchmark in _GOV_BENCHMARKS:
+    # v1/v2 governance scorers dispatched through evaluate_governance_benchmark
+    if benchmark in _GOV_BENCHMARKS or benchmark in _LEGACY_GOV_BENCHMARKS:
         return evaluate_governance_benchmark(benchmark, records, outputs)
     # Map exp6 benchmark names to exp5 names
     exp5_name = _EXP5_BENCHMARKS.get(benchmark, benchmark)
@@ -354,7 +352,7 @@ def _run_condition_A(
     score_rows: list[dict] = []
 
     # Pre-generate outputs for all-records benchmarks once
-    _ALL_RECORDS_BENCHMARKS = {"structural_token_ratio", "turn_structure", "coherent_assistant_rate"}
+    _ALL_RECORDS_BENCHMARKS = _GOV_BENCHMARKS | _LEGACY_GOV_BENCHMARKS  # all use full-records shared generation
     all_records_benchmarks_todo = [b for b in cfg.benchmarks
                                    if b in _ALL_RECORDS_BENCHMARKS and b not in done_benchmarks]
     cached_all_outputs: list[GeneratedSample6] | None = None
@@ -461,7 +459,7 @@ def _run_condition_B(
     real_token_mask = loaded.real_token_mask
     score_rows: list[dict] = []
 
-    _ALL_RECORDS_BENCHMARKS = {"structural_token_ratio", "turn_structure", "coherent_assistant_rate"}
+    _ALL_RECORDS_BENCHMARKS = _GOV_BENCHMARKS | _LEGACY_GOV_BENCHMARKS  # all use full-records shared generation
     all_records_benchmarks_todo = [b for b in cfg.benchmarks
                                    if b in _ALL_RECORDS_BENCHMARKS and b not in done_benchmarks]
     cached_all_outputs: list[GeneratedSample6] | None = None

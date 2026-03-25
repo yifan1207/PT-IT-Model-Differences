@@ -115,6 +115,17 @@ _MD_HEADER_RE = re.compile(r"^#{1,4}\s+\S", re.MULTILINE)
 _QA_PAIR_RE = re.compile(r"\bQuestion\s*:.*?\bAnswer\s*:", re.DOTALL | re.IGNORECASE)
 _CODE_BLOCK_RE = re.compile(r"```")
 _COLON_LABEL_RE = re.compile(r"^\s*\w[\w\s]*:\s+\S", re.MULTILINE)  # "Key: value" patterns
+_TEMPLATE_BULLET_RE = re.compile(
+    r"^\s*[-*•]\s+(?:"
+    r"this\s+is\s+(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|"
+    r"seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
+    r"|text\s+for\s+bullet"
+    r"|bullet\s+point\s+\d"
+    r"|(?:another\s+)?example\s+bullet"
+    r"|xyz|abc|opq"
+    r")",
+    re.IGNORECASE,
+)
 
 
 def _count_turn_structures(text: str) -> int:
@@ -226,19 +237,6 @@ def _check_format_compliance(text: str, prompt: str) -> float | None:
 
     if ctype == "bullet_list":
         # Require ≥2 content bullets (≥5 words, not template-completion lines).
-        # PT text-completion produces template fillers like "* This is the Nth point."
-        # or "* Text for bullet 3" by continuing the example shown in the prompt.
-        _TEMPLATE_BULLET_RE = re.compile(
-            r"^\s*[-*•]\s+(?:"
-            r"this\s+is\s+(?:the\s+)?(?:first|second|third|fourth|fifth|sixth|"
-            r"seventh|eighth|ninth|tenth|\d+(?:st|nd|rd|th)?)\s+"
-            r"|text\s+for\s+bullet"
-            r"|bullet\s+point\s+\d"
-            r"|(?:another\s+)?example\s+bullet"
-            r"|xyz|abc|opq"
-            r")",
-            re.IGNORECASE,
-        )
         content_bullets = [
             ln for ln in text.splitlines()
             if re.match(r"^\s*[-*•]\s+\S", ln)
@@ -328,21 +326,18 @@ def score_turn_structure(
 def score_format_compliance(
     records: list[dict], outputs: list[GeneratedSample6]
 ) -> BenchmarkResult:
-    """Binary compliance score for explicit format instructions (IFEval-style).
+    """Binary compliance score for explicit format instructions (legacy v1 scorer).
 
-    Detects the format constraint directly from the prompt text — e.g. "use JSON",
-    "at least 200 words", "use bullet points", "do not use the word X".
-    This is more reliable than the pre-assigned expected_format metadata, which
-    was incorrectly set for most IFEval records in our dataset.
-
-    Constraint types checked: json, bullet_list, markdown, numbered_list, code_block,
-    table, word_count_min/max/exact, starts_with, forbidden.
-
-    Expected: IT ~55-65%, PT ~5-15% (IT follows explicit instructions, PT ignores them).
-    This is the primary IFEval-style format governance benchmark.
+    DEPRECATED: Use score_format_compliance_v2 from governance_v2.py instead.
+    That scorer uses compliance_criteria dicts (not regex on prompt text) and
+    covers N=193 scoreable records vs ~65 here.
     """
+    rec_by_id = {r["id"]: r for r in records}
     scores = []
-    for rec, out in zip(records, outputs):
+    for out in outputs:
+        rec = rec_by_id.get(out.record_id)
+        if rec is None:
+            continue
         prompt = rec.get("formats", {}).get("B", "") or rec.get("prompt", "")
         result = _check_format_compliance(out.generated_text, prompt)
         if result is not None:
@@ -355,24 +350,25 @@ def score_format_compliance(
 def score_mmlu_accuracy(
     records: list[dict], outputs: list[GeneratedSample6]
 ) -> BenchmarkResult:
-    """Multiple-choice accuracy on MMLU questions.
+    """Multiple-choice accuracy on MMLU questions (legacy v1 scorer).
 
-    Checks whether the generated text contains the correct answer letter (A/B/C/D).
-    Only evaluates records that have an 'expected_answer' field (MMLU records).
+    DEPRECATED: Use score_mmlu_forced_choice from governance_v2.py instead.
+    This scorer uses regex extraction on free-form generation which inflates
+    accuracy via spurious letter matches in verbose responses.
     """
+    rec_by_id = {r["id"]: r for r in records}
     scores = []
-    for rec, out in zip(records, outputs):
+    for out in outputs:
+        rec = rec_by_id.get(out.record_id)
+        if rec is None:
+            continue
         expected = rec.get("expected_answer", "").strip().upper()
         if not expected or expected not in "ABCD":
             continue
         text = out.generated_text.strip().upper()
-        # Match the letter at start, after "answer:", or as standalone
-        import re
-        found = re.search(r'\b([ABCD])\b', text[:50])  # check first 50 chars
+        found = re.search(r'\b([ABCD])\b', text[:50])
         if not found:
             found = re.search(r'(?:ANSWER\s*[:\-]?\s*)([ABCD])', text[:200])
-        if not found:
-            found = re.search(r'\b([ABCD])\b', text[:200])
         predicted = found.group(1) if found else ""
         scores.append(float(predicted == expected))
     if not scores:
