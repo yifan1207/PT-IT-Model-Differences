@@ -239,5 +239,17 @@ results/exp6/**
 !results/exp6/merged_A2_pt/*.png
 !results/exp6/merged_A2_pt/plots/
 !results/exp6/merged_A2_pt/plots/**
+!results/exp6/merged_A1_it_v4/
+!results/exp6/merged_A1_it_v4/plots/
+!results/exp6/merged_A1_it_v4/plots/**
+!results/exp6/merged_A1_early_it_v4/
+!results/exp6/merged_A1_early_it_v4/plots/
+!results/exp6/merged_A1_early_it_v4/plots/**
+!results/exp6/merged_A1_mid_it_v4/
+!results/exp6/merged_A1_mid_it_v4/plots/
+!results/exp6/merged_A1_mid_it_v4/plots/**
+!results/exp6/merged_A2_pt_v4/
+!results/exp6/merged_A2_pt_v4/plots/
+!results/exp6/merged_A2_pt_v4/plots/**
 !results/exp6/plots_B/
 !results/exp6/plots_B/**
