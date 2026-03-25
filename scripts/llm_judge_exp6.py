@@ -123,12 +123,12 @@ def score_outputs(
         for line in open(out_path):
             try:
                 r = json.loads(line)
-                # Only skip entries that were successfully scored (score >= 0)
-                if r.get("score", -1) >= 0:
-                    done_keys.add((r["condition"], r["record_id"], r["task"]))
+                done_keys.add((r["condition"], r["record_id"], r["task"]))
             except Exception:
                 pass
     print(f"Already scored: {len(done_keys)} entries")
+    # Note: failed entries (score=-1) are treated as done to prevent ballooning.
+    # Use --overwrite to delete the output file and retry everything from scratch.
 
     def _infer_category(record_id: str, rec: dict | None) -> str:
         """Get category from dataset record, or infer from record_id prefix."""
