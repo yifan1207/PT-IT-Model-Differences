@@ -3,7 +3,7 @@
 Usage (Approach A):
     python src/poc/exp6/run.py \\
         --experiment A1 --variant it --device cuda:0 \\
-        --corrective-direction-path results/exp5/precompute_it/precompute/corrective_directions.npz \\
+        --corrective-direction-path results/exp5/precompute_v2/precompute/corrective_directions.npz \\
         --worker-index 0 --n-workers 8
 
 Usage (Approach B):
@@ -17,8 +17,10 @@ Usage (Approach B):
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import shutil
+import subprocess
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -83,17 +85,36 @@ def _read_jsonl(path: Path) -> list[dict]:
 # ── Condition generators ──────────────────────────────────────────────────────
 
 def _A1_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
-    """A1: Remove corrective direction from IT — α sweep."""
-    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
+    """A1: Remove corrective direction from IT — α sweep + random-direction control.
+
+    α sweep: 1.0=identity, 0=full removal, <0=amplification, >1=over-suppression.
+    Random control: same perturbation magnitude but random unit vector at corrective
+    layers — shows the governance effect is direction-specific, not just noise injection.
+    """
+    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
+    CTRL_BETAS   = [0.0, 1.0, 3.0]   # injection magnitudes for direction-specificity controls
+    CORR_LAYERS  = list(range(cfg.proposal_boundary, cfg.n_layers))   # layers 20-33
+
     specs = [("A1_baseline", replace(cfg, method="none", directional_alpha=1.0))]
+
+    # Main α sweep: remove corrective direction at corrective layers
     for alpha in ALPHA_VALUES:
-        name = f"A1_alpha_{alpha:g}"
-        specs.append((name, replace(cfg,
+        specs.append((f"A1_alpha_{alpha:g}", replace(cfg,
             method="directional_remove",
-            ablation_layers=list(range(cfg.proposal_boundary, cfg.n_layers)),
+            ablation_layers=CORR_LAYERS,
             directional_alpha=alpha,
         )))
-    return specs  # 14 conditions
+
+    # Control: random unit vector injection — same layers, same magnitude, random direction
+    # Expected: no governance effect → confirms the effect is direction-specific
+    for beta in CTRL_BETAS:
+        specs.append((f"A1_ctrl_random_b{beta:g}", replace(cfg,
+            method="directional_random",
+            ablation_layers=CORR_LAYERS,
+            directional_beta=beta,
+        )))
+
+    return specs  # 1 + 14 + 3 = 18 conditions
 
 
 def _A2_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
@@ -240,14 +261,14 @@ def _B5_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
 
 
 def _A1_early_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
-    """A1_early: Remove corrective direction from IT at early layers (0–7) — α sweep.
+    """A1_early: Remove corrective direction from IT at early layers (1–11) — α sweep.
 
     Layer-specificity ablation: same direction and α sweep as A1, but applied to
     content/encoding layers instead of the corrective stage (20–33).
     Expected: little or no effect on governance metrics → confirms the corrective stage
     is the mechanistic locus of structural steering.
     """
-    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
+    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
     EARLY_LAYERS = list(range(1, 12))  # layers 1–11
     specs = [("A1early_baseline", replace(cfg, method="none", directional_alpha=1.0))]
     for alpha in ALPHA_VALUES:
@@ -256,17 +277,17 @@ def _A1_early_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
             ablation_layers=EARLY_LAYERS,
             directional_alpha=alpha,
         )))
-    return specs  # 14 conditions
+    return specs  # 15 conditions
 
 
 def _A1_mid_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
-    """A1_mid: Remove corrective direction from IT at mid layers (8–19) — α sweep.
+    """A1_mid: Remove corrective direction from IT at mid layers (12–19) — α sweep.
 
     Layer-specificity ablation: same as A1_early but applied to the pre-corrective
     middle layers.  Together with A1_early and A1 (20–33), sweeps the full depth of
     the network to isolate where the direction has causal governance leverage.
     """
-    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
+    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
     MID_LAYERS = list(range(12, 20))   # layers 12–19
     specs = [("A1mid_baseline", replace(cfg, method="none", directional_alpha=1.0))]
     for alpha in ALPHA_VALUES:
@@ -275,7 +296,44 @@ def _A1_mid_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
             ablation_layers=MID_LAYERS,
             directional_alpha=alpha,
         )))
-    return specs  # 14 conditions
+    return specs  # 15 conditions
+
+
+def _A5a_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """Exp5A rerun (progressive skip): zero MLP+attention at layers [start..33].
+
+    8 conditions: skip_from_33, skip_from_32, ..., skip_from_20.
+    No direction vectors used — raw layer removal identical to Exp5's 'skip' method.
+    Rerun with eval_dataset_v2 + v2 benchmark suite for comparable numbers.
+    Applied to IT model — measures governance degradation as more corrective layers removed.
+    """
+    specs = [("A5a_baseline", replace(cfg, method="none"))]
+    for start in range(33, 19, -1):   # 33, 32, ..., 20  (8 conditions)
+        skip_layers = list(range(start, cfg.n_layers))
+        specs.append((f"A5a_skip_from_{start}", replace(cfg,
+            method="progressive_skip",
+            ablation_layers=skip_layers,
+        )))
+    return specs  # 1 + 8 = 9 conditions
+
+
+def _A5b_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """Exp5B rerun (α-sweep): remove corrective direction at layers 20-33, α ∈ {-1..2}.
+
+    7 conditions matching the original Exp5B α values.
+    Rerun with v2 precomputed direction + eval_dataset_v2 + v2 benchmarks.
+    Applied to IT model — bridges Exp5B and the denser A1 sweep.
+    """
+    ALPHA_VALUES = [-1.0, -0.5, 0.0, 0.5, 1.0, 1.5, 2.0]
+    CORR_LAYERS  = list(range(cfg.proposal_boundary, cfg.n_layers))   # layers 20-33
+    specs = [("A5b_baseline", replace(cfg, method="none", directional_alpha=1.0))]
+    for alpha in ALPHA_VALUES:
+        specs.append((f"A5b_alpha_{alpha:g}", replace(cfg,
+            method="directional_remove",
+            ablation_layers=CORR_LAYERS,
+            directional_alpha=alpha,
+        )))
+    return specs  # 1 + 7 = 8 conditions
 
 
 def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
@@ -284,6 +342,8 @@ def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
         case "A1_early": return _A1_early_conditions(cfg)
         case "A1_mid": return _A1_mid_conditions(cfg)
         case "A2": return _A2_conditions(cfg)
+        case "A5a": return _A5a_conditions(cfg)
+        case "A5b": return _A5b_conditions(cfg)
         case "B1": return _B1_conditions(cfg)
         case "B2": return _B2_conditions(cfg)
         case "B3": return _B3_conditions(cfg)
@@ -373,6 +433,16 @@ def _run_condition_A(
             if done_so_far % 100 < BATCH_SIZE or done_so_far == len(records):
                 _check_disk()
                 print(f"[exp6] {name}/all_records: {done_so_far}/{len(records)} done", flush=True)
+
+        # Save logit-lens top-1 data if collected (Step 4: commitment delay analysis)
+        if cfg.collect_logit_lens and cached_all_outputs and cached_all_outputs[0].logit_lens_top1 is not None:
+            ll_path = samples_jsonl.parent / f"logit_lens_top1_{name}.npz"
+            ll_payload = {}
+            for o in cached_all_outputs:
+                if o.logit_lens_top1 is not None:
+                    ll_payload[o.record_id] = np.array(o.logit_lens_top1, dtype=np.int16)
+            np.savez_compressed(ll_path, **ll_payload)
+            print(f"[exp6] {name}: saved logit-lens top-1 → {ll_path} ({len(ll_payload)} records)", flush=True)
 
     for benchmark in cfg.benchmarks:
         if benchmark in done_benchmarks:
@@ -629,7 +699,7 @@ def _load_B_hooks_config(cfg: Exp6Config, loaded: Any) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run exp6 steering experiments.")
-    p.add_argument("--experiment", choices=["A1", "A1_early", "A1_mid", "A2", "B1", "B2", "B3", "B4", "B5"], required=True)
+    p.add_argument("--experiment", choices=["A1", "A1_early", "A1_mid", "A2", "A5a", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
     p.add_argument("--variant", choices=["pt", "it"], default="it")
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
     p.add_argument("--device", default="cuda")
@@ -640,7 +710,7 @@ def main() -> None:
     p.add_argument("--n-workers", type=int, default=1)
 
     # A-experiment paths
-    p.add_argument("--corrective-direction-path", default="results/exp5/precompute_it/precompute/corrective_directions.npz")
+    p.add_argument("--corrective-direction-path", default="results/exp5/precompute_v2/precompute/corrective_directions.npz")
     p.add_argument("--content-direction-path", default="results/exp6/precompute/content_direction_aggregate.npz")
 
     # B-experiment paths
@@ -652,6 +722,9 @@ def main() -> None:
     p.add_argument("--beta", type=float, default=0.0)
     p.add_argument("--feature-layer-range",
                    choices=["all", "early_20_25", "mid_26_29", "late_30_33"], default="all")
+    p.add_argument("--collect-logit-lens", action="store_true", default=False,
+                   help="Capture top-1 predicted token per decoder layer per generated step "
+                        "(Step 4: commitment delay analysis). Saved to logit_lens_top1.npz. ~20%% overhead.")
 
     args = p.parse_args()
 
@@ -679,11 +752,27 @@ def main() -> None:
         directional_beta=args.beta,
         feature_layer_range=args.feature_layer_range,
         skip_transcoders=(not is_B),
+        collect_logit_lens=args.collect_logit_lens,
     )
 
     ensure_dir(cfg.run_dir)
     ensure_dir(cfg.plots_dir)
-    save_json(cfg.run_dir / "run_config.json", cfg.to_dict())
+
+    # Augment run_config with reproducibility metadata
+    try:
+        git_hash = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+    except Exception:
+        git_hash = "unknown"
+    run_config_dict = {
+        **cfg.to_dict(),
+        "git_hash": git_hash,
+        "timestamp_utc": datetime.datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "worker_index": args.worker_index,
+        "n_workers": args.n_workers,
+    }
+    save_json(cfg.run_dir / "run_config.json", run_config_dict)
 
     scores_jsonl = cfg.run_dir / "scores.jsonl"
     samples_jsonl = cfg.run_dir / "sample_outputs.jsonl"
@@ -695,6 +784,8 @@ def main() -> None:
 
     _check_disk()
     records = load_dataset_records(cfg.dataset_path, prompt_format=cfg.prompt_format)
+    if cfg.n_eval_examples and len(records) > cfg.n_eval_examples:
+        records = records[:cfg.n_eval_examples]
     loaded = load_model(cfg)
 
     condition_specs = _condition_specs(cfg)

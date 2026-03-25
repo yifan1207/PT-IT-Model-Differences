@@ -88,32 +88,41 @@ merge_and_judge() {
 }
 
 run_experiment() {
-    local exp=$1 variant=$2 gpu0=$3 gpu1=$4 run_name=$5 corr_path=$6
-    echo "=== $run_name: launching 2 workers on GPU $gpu0,$gpu1 ==="
-    if [[ "$DRY_RUN" == "1" ]]; then
-        run_worker "$exp" "$variant" "$gpu0" 0 2 "$run_name" "$corr_path"
-        run_worker "$exp" "$variant" "$gpu1" 1 2 "$run_name" "$corr_path"
-        merge_and_judge "$run_name" "$exp" "$variant" 2
-        return
+    local exp=$1 variant=$2 gpu_start=$3 nw=$4 run_name=$5 corr_path=$6
+    echo "=== $run_name: $nw workers on GPU ${gpu_start}-$((gpu_start+nw-1)) ==="
+
+    local pids=()
+    for ((i=0; i<nw; i++)); do
+        local gpu=$((gpu_start + i))
+        if [[ "$DRY_RUN" == "1" ]]; then
+            run_worker "$exp" "$variant" "$gpu" "$i" "$nw" "$run_name" "$corr_path"
+        else
+            run_worker "$exp" "$variant" "$gpu" "$i" "$nw" "$run_name" "$corr_path" &
+            pids+=($!)
+        fi
+    done
+
+    if [[ "$DRY_RUN" == "0" ]]; then
+        for i in "${!pids[@]}"; do
+            wait "${pids[$i]}" || {
+                echo "ERROR: $run_name w${i} failed (see $LOG_DIR/${run_name}_w${i}.log)"
+                exit 1
+            }
+        done
     fi
-    run_worker "$exp" "$variant" "$gpu0" 0 2 "$run_name" "$corr_path" &
-    PID0=$!
-    run_worker "$exp" "$variant" "$gpu1" 1 2 "$run_name" "$corr_path" &
-    PID1=$!
-    wait "$PID0" || { echo "ERROR: $run_name w0 failed (see $LOG_DIR/${run_name}_w0.log)"; exit 1; }
-    wait "$PID1" || { echo "ERROR: $run_name w1 failed (see $LOG_DIR/${run_name}_w1.log)"; exit 1; }
-    merge_and_judge "$run_name" "$exp" "$variant" 2
+
+    merge_and_judge "$run_name" "$exp" "$variant" "$nw"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
 [[ "$DRY_RUN" == "1" ]] && echo "=== DRY RUN ===" || echo "=== Starting exp6 A-experiments v4 ==="
 
 # Each experiment uses its own direction vector for the correct layer group.
-#                     exp        var  g0 g1  run_name            direction_path
-run_experiment        A1         it   0  1   "A1_it_v4"          "$CORR_DIR"  &
-run_experiment        A1_early   it   2  3   "A1_early_it_v4"    "$EARLY_DIR" &
-run_experiment        A1_mid     it   4  5   "A1_mid_it_v4"      "$MID_DIR"   &
-run_experiment        A2         pt   6  7   "A2_pt_v4"          "$CORR_DIR"  &
+#                     exp        var  gpu_start  nw  run_name            direction_path
+run_experiment        A1         it   0          2   "A1_it_v4"          "$CORR_DIR"  &
+run_experiment        A1_early   it   2          2   "A1_early_it_v4"    "$EARLY_DIR" &
+run_experiment        A1_mid     it   4          2   "A1_mid_it_v4"      "$MID_DIR"   &
+run_experiment        A2         pt   6          2   "A2_pt_v4"          "$CORR_DIR"  &
 
 wait
 echo "=== ALL DONE ==="

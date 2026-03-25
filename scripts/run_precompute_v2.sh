@@ -81,5 +81,9 @@ echo "  results/exp5/precompute_v2/precompute/corrective_directions.npz"
 echo "  (contains layers 1-33: early=1-11, mid=12-19, corrective=20-33)"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-echo "[$(date +%T)] ═══ Launching A-experiments v4 ═══"
+echo "[$(date +%T)] ═══ Launching A-experiments v4 (A1/A1_early/A1_mid/A2) ═══"
 bash scripts/run_exp6_A_v4.sh
+
+# ═══════════════════════════════════════════════════════════════════════════════
+echo "[$(date +%T)] ═══ Launching Exp5A/5B rerun (progressive skip + α-sweep) ═══"
+bash scripts/run_exp5ab_rerun.sh

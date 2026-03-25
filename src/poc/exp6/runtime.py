@@ -38,6 +38,9 @@ class GeneratedSample6:
     generated_text: str
     generated_tokens: list[dict]
     category: str              # GOV-FORMAT | GOV-CONV | ... for stratified analysis
+    # logit_lens_top1: shape [n_generated_tokens, n_layers] — top-1 predicted token at
+    # each decoder layer per generated step.  None unless cfg.collect_logit_lens=True.
+    logit_lens_top1: list[list[int]] | None = None
 
 
 # ── Prompt preparation ────────────────────────────────────────────────────────
@@ -97,9 +100,18 @@ def generate_records_A_batch(
 
     results: list[GeneratedSample6] = []
 
+    # Logit-lens setup: top-1 predicted token at each decoder layer per generated step.
+    # final_norm + lm_head applied to each layer's residual stream output.
+    do_logit_lens = getattr(cfg, "collect_logit_lens", False)
+    if do_logit_lens:
+        ll_norm    = model_raw.language_model.model.norm
+        ll_lm_head = model_raw.language_model.lm_head
+        n_layers   = cfg.n_layers   # 34 for Gemma-3-4b
+
     try:
         for batch_start in range(0, len(records), batch_size):
             batch = records[batch_start: batch_start + batch_size]
+            B = len(batch)
 
             # Tokenize batch
             prompts = [r["formats"][cfg.prompt_format] for r in batch]
@@ -115,7 +127,27 @@ def generate_records_A_batch(
 
             attn_mask = (encoded != tokenizer.pad_token_id).long()
 
+            # Per-step logit-lens accumulator: ll_steps[li] = list of [B] top-1 tokens
+            ll_steps: dict[int, list] = {li: [] for li in range(n_layers)} if do_logit_lens else {}
+
+            def make_ll_hook(li: int):
+                def hook(mod, inp, out):
+                    # out is a tuple; out[0] is the hidden state [B, seq_len, D]
+                    hidden = out[0] if isinstance(out, tuple) else out
+                    if hidden.shape[1] != 1:   # skip prefill
+                        return
+                    with torch.no_grad():
+                        normed  = ll_norm(hidden[:, 0, :])           # [B, D]
+                        top1    = ll_lm_head(normed).argmax(dim=-1)  # [B]
+                        ll_steps[li].append(top1.cpu().tolist())
+                return hook
+
             handles = intervention.register_hooks(model_raw, cfg)
+            ll_handles = (
+                [model_raw.language_model.layers[li].register_forward_hook(make_ll_hook(li))
+                 for li in range(n_layers)]
+                if do_logit_lens else []
+            )
             try:
                 with torch.no_grad():
                     out_ids = model_raw.generate(
@@ -131,6 +163,8 @@ def generate_records_A_batch(
             finally:
                 for h in handles:
                     h.remove()
+                for h in ll_handles:
+                    h.remove()
 
             prompt_len = encoded.shape[1]
             for i, rec in enumerate(batch):
@@ -140,12 +174,23 @@ def generate_records_A_batch(
                 ]
                 gen_tokens = [{"token_id": tid, "token_str": tokenizer.decode([tid])} for tid in new_ids]
                 text = tokenizer.decode(new_ids, skip_special_tokens=True)
+
+                # Logit-lens: reorganise ll_steps into [n_generated_tokens, n_layers]
+                logit_lens_top1 = None
+                if do_logit_lens and ll_steps[0]:
+                    n_steps = len(ll_steps[0])
+                    logit_lens_top1 = [
+                        [ll_steps[li][step][i] for li in range(n_layers)]
+                        for step in range(n_steps)
+                    ]
+
                 results.append(GeneratedSample6(
                     record_id=rec["id"],
                     prompt=rec["formats"][cfg.prompt_format],
                     generated_text=text,
                     generated_tokens=gen_tokens,
                     category=rec.get("category", ""),
+                    logit_lens_top1=logit_lens_top1,
                 ))
     finally:
         tokenizer.padding_side = orig_padding_side

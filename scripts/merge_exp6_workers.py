@@ -74,16 +74,30 @@ def main() -> None:
         all_samples.extend(samples)
         print(f"  {src_dir.name}: {len(scores)} score rows, {len(samples)} samples", flush=True)
 
-    # Deduplicate on (condition, benchmark)
-    seen: set[tuple[str, str]] = set()
-    deduped_scores: list[dict] = []
+    # Merge scores across workers: weighted average by n for each (condition, benchmark).
+    # Each worker processes a record slice and produces a partial score; picking just one
+    # worker would discard (N-1)/N of the data. Weighted average gives the correct
+    # full-dataset estimate.
+    groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for row in all_scores:
-        key = (row["condition"], row["benchmark"])
-        if key not in seen:
-            seen.add(key)
-            deduped_scores.append(row)
+        groups[(row["condition"], row["benchmark"])].append(row)
 
-    print(f"Total: {len(all_scores)} rows → {len(deduped_scores)} after dedup", flush=True)
+    deduped_scores: list[dict] = []
+    for (cond, bench), rows in sorted(groups.items()):
+        if len(rows) == 1:
+            deduped_scores.append(rows[0])
+            continue
+        valid = [r for r in rows
+                 if r.get("value") is not None and r.get("n") is not None and r["n"] > 0]
+        if not valid:
+            deduped_scores.append(rows[0])
+            continue
+        total_n   = sum(r["n"] for r in valid)
+        avg_value = sum(r["value"] * r["n"] for r in valid) / total_n
+        deduped_scores.append({**valid[0], "value": avg_value, "n": total_n})
+
+    print(f"Total: {len(all_scores)} raw rows → {len(deduped_scores)} conditions after "
+          f"weighted merge across {len(source_dirs)} workers", flush=True)
 
     # Write merged files
     _write_jsonl(merged_dir / "scores.jsonl", deduped_scores)

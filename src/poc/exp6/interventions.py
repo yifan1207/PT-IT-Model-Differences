@@ -121,6 +121,8 @@ class Exp6InterventionSpec:
         out_of_range = sorted(i for i in self.layers if not (0 <= i < n_layers))
         if out_of_range:
             raise ValueError(f"Intervention layer indices out of range [0, {n_layers}): {out_of_range}")
+        if self.method == "progressive_skip":
+            return   # no direction vectors needed
         if self.method in ("directional_remove", "directional_add"):
             missing = sorted(i for i in self.layers if i not in self.corrective_directions)
             if missing:
@@ -187,6 +189,14 @@ class Exp6InterventionSpec:
             )
             return
 
+        if self.method == "progressive_skip":
+            # progressive_skip uses register_hooks (attn + MLP), not apply_in_trace.
+            # This branch should never be reached in normal usage.
+            raise ValueError(
+                "progressive_skip must be applied via register_hooks(), not apply_in_trace(). "
+                "Use generate_records_A_batch() which calls register_hooks() automatically."
+            )
+
         raise ValueError(f"Unknown A-experiment method: {self.method!r}")
 
 
@@ -201,6 +211,32 @@ class Exp6InterventionSpec:
             return []
 
         handles = []
+
+        # ── Progressive skip: zero MLP + attention outputs → layer acts as identity ──
+        if self.method == "progressive_skip":
+            for layer_idx in self.layers:
+                mlp_mod  = model_raw.language_model.layers[layer_idx].mlp
+                attn_mod = model_raw.language_model.layers[layer_idx].self_attn
+
+                def make_zero_mlp_hook():
+                    def hook(mod: Any, inp: tuple, out: torch.Tensor) -> torch.Tensor:
+                        return torch.zeros_like(out)
+                    return hook
+
+                def make_zero_attn_hook():
+                    def hook(mod: Any, inp: tuple, out: Any) -> Any:
+                        # Attention returns a tuple (hidden_states, [attn_weights], past_kv)
+                        # Zero the hidden_states (first element) only.
+                        if isinstance(out, tuple):
+                            return (torch.zeros_like(out[0]),) + out[1:]
+                        return torch.zeros_like(out)
+                    return hook
+
+                handles.append(mlp_mod.register_forward_hook(make_zero_mlp_hook()))
+                handles.append(attn_mod.register_forward_hook(make_zero_attn_hook()))
+            return handles
+
+        # ── Directional methods: hook MLP only ────────────────────────────────────
         for layer_idx in self.layers:
             mlp_mod = model_raw.language_model.layers[layer_idx].mlp
 
@@ -259,6 +295,10 @@ def build_intervention(cfg) -> Exp6InterventionSpec:
     """
     if cfg.method in ("feature_clamp", "wdec_inject", "none"):
         return Exp6InterventionSpec(method="none")
+
+    # Progressive skip requires no direction vectors — just layer indices.
+    if cfg.method == "progressive_skip":
+        return Exp6InterventionSpec(method="progressive_skip", layers=cfg.ablation_layers)
 
     corrective_dirs = load_directions_from_npz(cfg.corrective_direction_path, cfg.device)
     content_dirs = load_directions_from_npz(cfg.content_direction_path, cfg.device)

@@ -12,6 +12,7 @@ SteeringMethod = Literal[
     "directional_random",   # Control: inject a random unit vector
     "directional_rotated",  # Control: inject a 90°-rotated corrective direction
     "content_direction",    # Control: inject the content-layer IT-PT direction
+    "progressive_skip",     # A5a: zero MLP+attention outputs at ablation_layers (no direction needed)
     "feature_clamp",        # B1: clamp governance features at γ × mean_activation
     "wdec_inject",          # B2: inject W_dec-projected governance direction
 ]
@@ -72,6 +73,12 @@ class Exp6Config:
 
     # Random direction seeds (one per layer, for reproducibility)
     random_direction_seed: int = 42
+
+    # Logit-lens collection (Step 4: commitment delay analysis)
+    # When True, hooks decoder layer outputs during generation to compute top-1
+    # predicted token at each layer per generated step.  Saved to logit_lens_top1.npz
+    # alongside sample_outputs.jsonl.  Adds ~20% overhead — disable for fast sweeps.
+    collect_logit_lens: bool = False
 
     # ── Feature-steering parameters (Approach B) ──────────────────────────
     skip_transcoders: bool = True    # False for B experiments (adds ~11 GB)
