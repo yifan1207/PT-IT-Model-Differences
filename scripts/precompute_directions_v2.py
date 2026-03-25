@@ -268,7 +268,7 @@ def _run_llm_judge_g1(rows: list[dict], judge_workers: int = 16) -> dict[str, di
         return {}
 
     client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
-    model  = "google/gemini-2.5-flash-preview"
+    model  = "google/gemini-2.5-flash"
 
     tasks = []
     for row in rows:

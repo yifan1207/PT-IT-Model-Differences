@@ -479,8 +479,8 @@ def plot_A1_v5(a1_dir: Path, a1_early_dir: Path, a1_mid_dir: Path, out_path: Pat
 
     LAYER_SETS = [
         ("A1",       a1_dir,       "Corrective 20-33", "#e74c3c", "-",  "o"),
-        ("A1_early", a1_early_dir, "Early 0-7",        "#3498db", "--", "s"),
-        ("A1_mid",   a1_mid_dir,   "Mid 8-19",         "#2ecc71", ":",  "^"),
+        ("A1_early", a1_early_dir, "Early 1-11",       "#3498db", "--", "s"),
+        ("A1_mid",   a1_mid_dir,   "Mid 12-19",        "#2ecc71", ":",  "^"),
     ]
     # condition prefix and alpha parser per experiment
     def _get_alpha(cond: str, prefix: str) -> float | None:
@@ -493,10 +493,9 @@ def plot_A1_v5(a1_dir: Path, a1_early_dir: Path, a1_mid_dir: Path, out_path: Pat
             return None
 
     BENCHMARKS = [
-        ("coherent_assistant_rate", "Coherent Asst Rate", "Governance"),
+        ("format_compliance_v2",    "Format Compliance v2", "Governance"),
         ("structural_token_ratio",  "Structural Token Ratio", "Governance"),
-        ("format_compliance",       "Format Compliance", "Governance"),
-        ("mmlu_accuracy",           "MMLU Accuracy", "Content"),
+        ("mmlu_forced_choice",      "MMLU Forced Choice", "Content"),
         ("exp3_reasoning_em",       "Reasoning EM", "Content"),
         ("exp3_alignment_behavior", "Alignment Behavior", "Safety"),
     ]
@@ -545,7 +544,7 @@ def plot_A1_v5(a1_dir: Path, a1_early_dir: Path, a1_mid_dir: Path, out_path: Pat
 
     fig.suptitle(
         "A1 v5: Layer-Specificity — Same α Sweep Applied at 3 Layer Ranges\n"
-        "Red=Corrective(20-33)  Blue=Early(0-7)  Green=Mid(8-19)  "
+        "Red=Corrective(20-33)  Blue=Early(1-11)  Green=Mid(12-19)  "
         "Dashed=baseline; α<0 injects corrective direction (amplification)",
         fontsize=11, fontweight="bold"
     )

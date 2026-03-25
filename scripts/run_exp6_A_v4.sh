@@ -31,7 +31,7 @@ CORR_DIR="results/exp5/precompute_v2/precompute/corrective_directions.npz"
 EARLY_DIR="$CORR_DIR"
 MID_DIR="$CORR_DIR"
 CONTENT_DIR="results/exp6/precompute/content_direction_aggregate.npz"
-JUDGE_MODEL="google/gemini-2.5-flash-preview"
+JUDGE_MODEL="google/gemini-2.5-flash"
 LOG_DIR="logs/exp6_A_v4"
 
 mkdir -p "$LOG_DIR"

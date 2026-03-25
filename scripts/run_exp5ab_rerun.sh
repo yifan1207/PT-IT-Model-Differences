@@ -29,7 +29,7 @@ for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=1; done
 DATASET="data/eval_dataset_v2.jsonl"
 N_EVAL=1400
 CORR_DIR="results/exp5/precompute_v2/precompute/corrective_directions.npz"
-JUDGE_MODEL="google/gemini-2.5-flash-preview"
+JUDGE_MODEL="google/gemini-2.5-flash"
 LOG_DIR="logs/exp5ab_rerun"
 NW=4   # workers per experiment — uses all 8 GPUs (4 per experiment)
 
