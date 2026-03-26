@@ -117,6 +117,31 @@ def _A1_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     return specs  # 1 + 14 + 3 = 18 conditions
 
 
+def _A1_notmpl_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A1_notmpl: Identical α-sweep as A1 but with apply_chat_template=False.
+
+    Tests whether the governance dose-response is weight-intrinsic or template-gated.
+    If the same dose-response appears without the chat template, the effect is driven
+    by the model weights at corrective layers, not by template-induced processing modes.
+
+    Expected:
+    - Weight-intrinsic: similar dose-response to A1 → strong mechanistic claim
+    - Template-gated:   flat metrics across α → framing adjustment needed
+    """
+    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
+    CORR_LAYERS  = list(range(cfg.proposal_boundary, cfg.n_layers))   # layers 20-33
+    specs = [("A1notmpl_baseline", replace(cfg, method="none", directional_alpha=1.0,
+                                           apply_chat_template=False))]
+    for alpha in ALPHA_VALUES:
+        specs.append((f"A1notmpl_alpha_{alpha:g}", replace(cfg,
+            method="directional_remove",
+            ablation_layers=CORR_LAYERS,
+            directional_alpha=alpha,
+            apply_chat_template=False,
+        )))
+    return specs  # 1 + 14 = 15 conditions
+
+
 def _A2_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     """A2: Inject corrective direction into PT — β sweep + controls."""
     BETA_VALUES = [-5.0, -3.0, -2.0, -1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0]
@@ -299,6 +324,53 @@ def _A1_mid_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     return specs  # 15 conditions
 
 
+def _A5a_early_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A5a_early: Progressive skip at early layers (1–11).
+
+    Layer-specificity control for A5a: same progressive-skip method but applied
+    to the early encoding range (layers 1–11) instead of the corrective range (20–33).
+    Skip starts from end of range (layer 11) and progressively includes more layers
+    going backward to layer 1.
+
+    Expected: content/reasoning metrics degrade as more early layers are skipped,
+    but governance metrics should NOT show the format-before-coherence dissociation
+    seen in A5a — confirming corrective-layer specificity of governance steering.
+
+    11 conditions + 1 baseline = 12 total.
+    """
+    specs = [("A5aearly_baseline", replace(cfg, method="none"))]
+    for start in range(11, 0, -1):   # 11, 10, ..., 1
+        skip_layers = list(range(start, 12))   # [start..11]
+        specs.append((f"A5aearly_skip_from_{start}", replace(cfg,
+            method="progressive_skip",
+            ablation_layers=skip_layers,
+        )))
+    return specs  # 1 + 11 = 12 conditions
+
+
+def _A5a_mid_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A5a_mid: Progressive skip at mid layers (12–19).
+
+    Layer-specificity control for A5a: same progressive-skip method applied to
+    the mid pre-corrective range (layers 12–19).
+    Skip starts from end of range (layer 19) and progressively includes more layers
+    going backward to layer 12.
+
+    Expected: similar to A5a_early — degradation in content but not the selective
+    governance drop seen in corrective-layer skipping (A5a).
+
+    8 conditions + 1 baseline = 9 total.
+    """
+    specs = [("A5amid_baseline", replace(cfg, method="none"))]
+    for start in range(19, 11, -1):   # 19, 18, ..., 12
+        skip_layers = list(range(start, 20))   # [start..19]
+        specs.append((f"A5amid_skip_from_{start}", replace(cfg,
+            method="progressive_skip",
+            ablation_layers=skip_layers,
+        )))
+    return specs  # 1 + 8 = 9 conditions
+
+
 def _A5a_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     """Exp5A rerun (progressive skip): zero MLP+attention at layers [start..33].
 
@@ -315,6 +387,25 @@ def _A5a_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
             ablation_layers=skip_layers,
         )))
     return specs  # 1 + 8 = 9 conditions
+
+
+def _A5a_notmpl_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A5a_notmpl: Progressive skip at corrective layers (20-33), apply_chat_template=False.
+
+    Paired with A5a to test whether corrective-layer specialization persists without
+    the chat template. If layers 31-33 still show the format-before-coherence
+    dissociation without template, that is strong evidence for weight-intrinsic
+    layer specialization independent of template-induced processing modes.
+    """
+    specs = [("A5anotmpl_baseline", replace(cfg, method="none", apply_chat_template=False))]
+    for start in range(33, 19, -1):   # 33, 32, ..., 20  (14 conditions)
+        skip_layers = list(range(start, cfg.n_layers))
+        specs.append((f"A5anotmpl_skip_from_{start}", replace(cfg,
+            method="progressive_skip",
+            ablation_layers=skip_layers,
+            apply_chat_template=False,
+        )))
+    return specs  # 1 + 14 = 15 conditions
 
 
 def _A5b_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
@@ -366,11 +457,15 @@ def _A1_rand_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
 def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     match cfg.experiment:
         case "A1": return _A1_conditions(cfg)
+        case "A1_notmpl": return _A1_notmpl_conditions(cfg)
         case "A1_early": return _A1_early_conditions(cfg)
         case "A1_mid": return _A1_mid_conditions(cfg)
         case "A1_rand": return _A1_rand_conditions(cfg)
         case "A2": return _A2_conditions(cfg)
         case "A5a": return _A5a_conditions(cfg)
+        case "A5a_early": return _A5a_early_conditions(cfg)
+        case "A5a_mid": return _A5a_mid_conditions(cfg)
+        case "A5a_notmpl": return _A5a_notmpl_conditions(cfg)
         case "A5b": return _A5b_conditions(cfg)
         case "B1": return _B1_conditions(cfg)
         case "B2": return _B2_conditions(cfg)
@@ -727,7 +822,7 @@ def _load_B_hooks_config(cfg: Exp6Config, loaded: Any) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run exp6 steering experiments.")
-    p.add_argument("--experiment", choices=["A1", "A1_early", "A1_mid", "A1_rand", "A2", "A5a", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
+    p.add_argument("--experiment", choices=["A1", "A1_notmpl", "A1_early", "A1_mid", "A1_rand", "A2", "A5a", "A5a_early", "A5a_mid", "A5a_notmpl", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
     p.add_argument("--variant", choices=["pt", "it"], default="it")
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
     p.add_argument("--device", default="cuda")

@@ -27,9 +27,16 @@ def main() -> None:
                              "pt uses raw text completion; it applies the Gemma chat template.")
     parser.add_argument("--gpus", type=int, default=None,
                         help="Number of GPUs (overrides Exp2Config.n_gpus)")
+    parser.add_argument("--no-chat-template", action="store_true", default=False,
+                        help="Disable chat template for IT model (ablation: tests whether "
+                             "δ-cosine patterns are weight-intrinsic or template-gated). "
+                             "Output written to a separate _notmpl directory.")
     args = parser.parse_args()
 
     cfg = Exp2Config(model_variant=args.variant)
+    if args.no_chat_template:
+        import dataclasses
+        cfg = dataclasses.replace(cfg, apply_chat_template=False)
     print(cfg)
     if args.gpus is not None:
         cfg.n_gpus = args.gpus

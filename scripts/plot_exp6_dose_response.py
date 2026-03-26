@@ -228,7 +228,8 @@ def _plot_panel(ax, xs, series: dict[str, list[float | None]], baselines: dict[s
 
 # ── A1 ────────────────────────────────────────────────────────────────────────
 
-def plot_A1(a1_dir: Path, a2_dir: Path, out_path: Path) -> None:
+def plot_A1(a1_dir: Path, a2_dir: Path, out_path: Path,
+            a1_notmpl_dir: Path | None = None) -> None:
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
@@ -341,6 +342,66 @@ def plot_A1(a1_dir: Path, a2_dir: Path, out_path: Path) -> None:
     _plot_panel(axes[2], xs, safety_series, gov_baselines,
                 "Safety / Alignment",
                 "α", baseline_x=1.0)
+
+    # ── Optional: overlay IT-notmpl series on each panel ─────────────────────
+    if a1_notmpl_dir is not None:
+        nt_scores  = _load_scores(a1_notmpl_dir / "scores.csv")
+        nt_judge_v2 = _load_judge_v2(a1_notmpl_dir / "llm_judge_v2_scores.jsonl")
+        nt_sweep = sorted(
+            {(a, c) for c in nt_scores for a in [_A1notmpl_alpha(c)] if a is not None},
+            key=lambda t: t[0],
+        )
+        if nt_sweep:
+            nt_xs    = [a for a, _ in nt_sweep]
+            nt_conds = [c for _, c in nt_sweep]
+            NOTMPL_COLOR = "#e67e22"   # orange
+
+            def _nt_gs(bench):
+                return [nt_scores.get(c, {}).get(bench) for c in nt_conds]
+            def _nt_gv2(task):
+                return [nt_judge_v2.get(c, {}).get(task) for c in nt_conds]
+
+            # Panel 0: Governance
+            for bench, getter in [("g1", lambda: _nt_gv2("g1")),
+                                   ("g2", lambda: _nt_gv2("g2")),
+                                   ("structural_token_ratio", lambda: _nt_gs("structural_token_ratio")),
+                                   ("format_compliance_v2",   lambda: _nt_gs("format_compliance_v2"))]:
+                ys = getter()
+                if any(y is not None for y in ys):
+                    clean = [(x, y) for x, y in zip(nt_xs, ys) if y is not None]
+                    if clean:
+                        cx, cy = zip(*clean)
+                        axes[0].plot(cx, cy, marker="s", markersize=3, color=NOTMPL_COLOR,
+                                     linestyle="--", linewidth=1.5,
+                                     label=f"{_LABELS.get(bench, bench)} (no-tmpl)")
+
+            # Panel 1: Content — first available metric
+            for bench in ["mmlu_forced_choice", "mmlu_accuracy", "exp3_reasoning_em"]:
+                ys = _nt_gs(bench)
+                if any(y is not None for y in ys):
+                    clean = [(x, y) for x, y in zip(nt_xs, ys) if y is not None]
+                    if clean:
+                        cx, cy = zip(*clean)
+                        axes[1].plot(cx, cy, marker="s", markersize=3, color=NOTMPL_COLOR,
+                                     linestyle="--", linewidth=1.5,
+                                     label=f"{_LABELS.get(bench, bench)} (no-tmpl)")
+                    break
+
+            # Panel 2: Safety
+            for bench, getter in [("s1", lambda: _nt_gv2("s1")),
+                                   ("s2", lambda: _nt_gv2("s2")),
+                                   ("exp3_alignment_behavior", lambda: _nt_gs("exp3_alignment_behavior"))]:
+                ys = getter()
+                if any(y is not None for y in ys):
+                    clean = [(x, y) for x, y in zip(nt_xs, ys) if y is not None]
+                    if clean:
+                        cx, cy = zip(*clean)
+                        axes[2].plot(cx, cy, marker="s", markersize=3, color=NOTMPL_COLOR,
+                                     linestyle="--", linewidth=1.5,
+                                     label=f"{_LABELS.get(bench, bench)} (no-tmpl)")
+
+            for ax in axes:
+                ax.legend(fontsize=7, loc="best")
 
     plt.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -557,6 +618,24 @@ def plot_A1_v5(a1_dir: Path, a1_early_dir: Path, a1_mid_dir: Path, out_path: Pat
 
 # ── A5b: IT corrective direction α-sweep (rerun with v2 eval) ─────────────────
 
+def _A1notmpl_alpha(cond: str) -> float | None:
+    if not cond.startswith("A1notmpl_alpha_"):
+        return None
+    try:
+        return float(cond[len("A1notmpl_alpha_"):])
+    except ValueError:
+        return None
+
+
+def _A5anotmpl_skip(cond: str) -> int | None:
+    if not cond.startswith("A5anotmpl_skip_from_"):
+        return None
+    try:
+        return int(cond[len("A5anotmpl_skip_from_"):])
+    except ValueError:
+        return None
+
+
 def _A5b_alpha(cond: str) -> float | None:
     if not cond.startswith("A5b_alpha_"):
         return None
@@ -571,6 +650,24 @@ def _A5a_skip(cond: str) -> int | None:
         return None
     try:
         return int(cond[len("A5a_skip_from_"):])
+    except ValueError:
+        return None
+
+def _A5aearly_skip(cond: str) -> int | None:
+    if not cond.startswith("A5aearly_skip_from_"):
+        return None
+    try:
+        return int(cond[len("A5aearly_skip_from_"):])
+    except ValueError:
+        return None
+
+def _A5amid_skip(cond: str) -> int | None:
+    if not cond.startswith("A5amid_skip_from_"):
+        return None
+    try:
+        return int(cond[len("A5amid_skip_from_"):])
+    except ValueError:
+        return None
     except ValueError:
         return None
 
@@ -748,6 +845,329 @@ def plot_A5a(a5a_dir: Path, out_path: Path, pt_dir: Path | None = None) -> None:
     print(f"A5a plot saved → {out_path}")
 
 
+def plot_A1_notmpl_vs_pt(a1_notmpl_dir: Path, a2_dir: Path, out_path: Path) -> None:
+    """IT no-template α-sweep vs PT baseline.
+
+    Same structure as plot_A1() but IT-notmpl sweep is the primary series.
+    Answers: 'Without the chat template, does IT still outperform PT on governance?'
+    If yes → weight-intrinsic. If no → template-gated.
+    """
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    scores   = _load_scores(a1_notmpl_dir / "scores.csv")
+    judge_v2 = _load_judge_v2(a1_notmpl_dir / "llm_judge_v2_scores.jsonl")
+
+    pt_scores   = _load_scores(a2_dir / "scores.csv").get("A2_baseline_pt", {})
+    pt_judge_v2 = _load_judge_v2(a2_dir / "llm_judge_v2_scores.jsonl").get("A2_baseline_pt", {})
+
+    sweep = sorted(
+        {(a, c) for c in scores for a in [_A1notmpl_alpha(c)] if a is not None},
+        key=lambda t: t[0],
+    )
+    if not sweep:
+        print("No A1_notmpl sweep conditions found"); return
+    xs    = [a for a, _ in sweep]
+    conds = [c for _, c in sweep]
+
+    it_b    = scores.get("A1notmpl_baseline", {})
+    it_j_v2 = judge_v2.get("A1notmpl_baseline", {})
+
+    def gs(bench): return [scores.get(c, {}).get(bench) for c in conds]
+    def gv2(task): return [judge_v2.get(c, {}).get(task) for c in conds]
+
+    baselines = {
+        "g1":                     (pt_judge_v2.get("g1"),                it_j_v2.get("g1")),
+        "g2":                     (pt_judge_v2.get("g2"),                it_j_v2.get("g2")),
+        "structural_token_ratio": (pt_scores.get("structural_token_ratio"), it_b.get("structural_token_ratio")),
+        "format_compliance_v2":   (pt_scores.get("format_compliance_v2"),   it_b.get("format_compliance_v2")),
+        "mmlu_forced_choice":     (pt_scores.get("mmlu_forced_choice"),     it_b.get("mmlu_forced_choice")),
+        "exp3_reasoning_em":      (pt_scores.get("exp3_reasoning_em"),      it_b.get("exp3_reasoning_em")),
+        "s1": (pt_judge_v2.get("s1"), it_j_v2.get("s1")),
+        "s2": (pt_judge_v2.get("s2"), it_j_v2.get("s2")),
+        "exp3_alignment_behavior":(pt_scores.get("exp3_alignment_behavior"), it_b.get("exp3_alignment_behavior")),
+    }
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle(
+        "A1_notmpl: IT no-template vs PT — Template-Gate Test (α sweep, 1.0 = baseline)\n"
+        "Orange=IT no-template sweep  |  dotted/dash-dot = PT/IT baselines",
+        fontsize=11, fontweight="bold",
+    )
+
+    gov_series: dict = {}
+    for task in ("g1", "g2"):
+        ys = gv2(task)
+        if any(y is not None for y in ys): gov_series[task] = ys
+    gov_series["structural_token_ratio"] = gs("structural_token_ratio")
+    for b in ("format_compliance_v2", "format_compliance"):
+        ys = gs(b)
+        if any(y is not None for y in ys): gov_series[b] = ys; break
+    _plot_panel(axes[0], xs, gov_series, baselines, "Governance (IT ≫ PT?)",
+                "α (correction strength)", baseline_x=1.0)
+
+    content_series: dict = {}
+    for b in ["mmlu_forced_choice", "mmlu_accuracy", "exp3_reasoning_em"]:
+        ys = gs(b)
+        if any(y is not None for y in ys): content_series[b] = ys; break
+    _plot_panel(axes[1], xs, content_series, baselines, "Content (should be stable)",
+                "α", baseline_x=1.0)
+
+    safety_series: dict = {}
+    for task in ("s1", "s2"):
+        ys = gv2(task)
+        if any(y is not None for y in ys): safety_series[task] = ys
+    for b in ("exp3_alignment_behavior", "alignment_behavior"):
+        ys = gs(b)
+        if any(y is not None for y in ys): safety_series[b] = ys; break
+    _plot_panel(axes[2], xs, safety_series, baselines, "Safety / Alignment",
+                "α", baseline_x=1.0)
+
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"A1_notmpl_vs_pt plot saved → {out_path}")
+
+
+def plot_A5a_notmpl(a5a_dir: Path, a5a_notmpl_dir: Path, out_path: Path) -> None:
+    """Overlay A5a (with template) vs A5a_notmpl (no template) progressive skip.
+
+    Tests whether corrective-layer specialization persists without chat template.
+    X-axis: first skipped layer (higher = fewer layers skipped = closer to baseline).
+    Two series per panel: green solid = with template, orange dashed = no template.
+    """
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    sc_t  = _load_scores(a5a_dir / "scores.csv")
+    jv_t  = _load_judge_v2(a5a_dir / "llm_judge_v2_scores.jsonl")
+    sc_nt = _load_scores(a5a_notmpl_dir / "scores.csv")
+    jv_nt = _load_judge_v2(a5a_notmpl_dir / "llm_judge_v2_scores.jsonl")
+
+    def _sweep(sc, parser, prefix):
+        pairs = sorted(
+            {(k, c) for c in sc for k in [parser(c)] if k is not None},
+            key=lambda t: t[0],
+        )
+        return [k for k, _ in pairs], [c for _, c in pairs]
+
+    xs_t,  conds_t  = _sweep(sc_t,  _A5a_skip,      "A5a_skip_from_")
+    xs_nt, conds_nt = _sweep(sc_nt, _A5anotmpl_skip, "A5anotmpl_skip_from_")
+
+    if not xs_t and not xs_nt:
+        print("No A5a_notmpl sweep conditions found"); return
+
+    b_t  = sc_t.get("A5a_baseline",      {})
+    b_nt = sc_nt.get("A5anotmpl_baseline", {})
+    jb_t  = jv_t.get("A5a_baseline",      {})
+    jb_nt = jv_nt.get("A5anotmpl_baseline", {})
+
+    TMPL_COLOR  = "#2ecc71"   # green
+    NOTMPL_COLOR = "#e67e22"  # orange
+
+    def _draw(ax, xs, sc, jv, conds, color, ls, suffix):
+        for bench, use_judge in [("g1", True), ("g2", True),
+                                  ("structural_token_ratio", False),
+                                  ("format_compliance_v2", False)]:
+            if use_judge:
+                ys = [jv.get(c, {}).get(bench) for c in conds]
+            else:
+                ys = [sc.get(c, {}).get(bench) for c in conds]
+            if not any(y is not None for y in ys): continue
+            clean = [(x, y) for x, y in zip(xs, ys) if y is not None]
+            if clean:
+                cx, cy = zip(*clean)
+                ax.plot(cx, cy, marker="o", markersize=4, color=color, linestyle=ls,
+                        linewidth=1.5, label=f"{_LABELS.get(bench, bench)} {suffix}")
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle(
+        "A5a Progressive Skip — Template vs No-Template  [v2 eval]\n"
+        "x=first skipped layer; higher x = fewer layers skipped = closer to baseline\n"
+        "Green=with template  |  Orange dashed=no template",
+        fontsize=10, fontweight="bold",
+    )
+
+    PANELS = [
+        ("Governance", [("g1", True), ("g2", True),
+                        ("structural_token_ratio", False), ("format_compliance_v2", False)]),
+        ("Content (should be stable)", [("mmlu_forced_choice", False), ("exp3_reasoning_em", False)]),
+        ("Safety / Alignment",         [("s1", True), ("s2", True),
+                                        ("exp3_alignment_behavior", False)]),
+    ]
+    for ax, (title, benches) in zip(axes, PANELS):
+        for bench, use_judge in benches:
+            for xs, sc, jv, conds, color, ls, sfx in [
+                (xs_t,  sc_t,  jv_t,  conds_t,  TMPL_COLOR,   "-",  "(tmpl)"),
+                (xs_nt, sc_nt, jv_nt, conds_nt, NOTMPL_COLOR, "--", "(no-tmpl)"),
+            ]:
+                if not xs: continue
+                ys = ([jv.get(c, {}).get(bench) for c in conds] if use_judge
+                      else [sc.get(c, {}).get(bench) for c in conds])
+                if not any(y is not None for y in ys): continue
+                clean = [(x, y) for x, y in zip(xs, ys) if y is not None]
+                if not clean: continue
+                cx, cy = zip(*clean)
+                ax.plot(cx, cy, marker="o", markersize=4, color=color, linestyle=ls,
+                        linewidth=1.5, label=f"{_LABELS.get(bench, bench)} {sfx}")
+
+        # Baseline reference lines
+        ax.axvline(x=34.0, color="gray", linestyle="--", alpha=0.4, label="baseline")
+        ax.set_xlabel("First skipped layer (34=baseline)")
+        ax.set_ylabel("Score (0-1)")
+        ax.set_title(title)
+        ax.set_ylim(-0.05, 1.05)
+        ax.legend(fontsize=7, loc="best")
+        ax.grid(True, alpha=0.25)
+
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"A5a_notmpl plot saved → {out_path}")
+
+
+def plot_A5a_layerspec(
+    a5a_early_dir: Path,
+    a5a_mid_dir: Path,
+    a5a_corr_dir: Path,
+    out_path: Path,
+) -> None:
+    """Three-way progressive-skip layer specificity comparison.
+
+    Overlays Early (1–11), Mid (12–19), and Corrective (20–33) progressive-skip
+    sweeps on the same axes.  X-axis = number of layers skipped from the end of
+    each range (0 = baseline, max = full range), normalising across range sizes.
+
+    Expected:
+    - Governance panel: only Corrective skip degrades G1/G2/STR.
+    - Content panel: Early and Mid skip degrade MMLU/reasoning.
+    - Safety: minimal effect across all three ranges.
+    """
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    def _load(d: Path):
+        return _load_scores(d / "scores.csv"), _load_judge_v2(d / "llm_judge_v2_scores.jsonl")
+
+    sc_e, jv_e = _load(a5a_early_dir)
+    sc_m, jv_m = _load(a5a_mid_dir)
+    sc_c, jv_c = _load(a5a_corr_dir)
+
+    # Build (n_skipped, cond) pairs for each range
+    # n_skipped = range_end - first_skipped_layer + 1
+    def _sweep_early():
+        pairs = sorted(
+            {(12 - k, c) for c in sc_e for k in [_A5aearly_skip(c)] if k is not None},
+            key=lambda t: t[0],
+        )
+        return [n for n, _ in pairs], [c for _, c in pairs]
+
+    def _sweep_mid():
+        pairs = sorted(
+            {(20 - k, c) for c in sc_m for k in [_A5amid_skip(c)] if k is not None},
+            key=lambda t: t[0],
+        )
+        return [n for n, _ in pairs], [c for _, c in pairs]
+
+    def _sweep_corr():
+        pairs = sorted(
+            {(34 - k, c) for c in sc_c for k in [_A5a_skip(c)] if k is not None},
+            key=lambda t: t[0],
+        )
+        return [n for n, _ in pairs], [c for _, c in pairs]
+
+    xs_e, conds_e = _sweep_early()
+    xs_m, conds_m = _sweep_mid()
+    xs_c, conds_c = _sweep_corr()
+
+    if not (xs_e or xs_m or xs_c):
+        print("No A5a_layerspec sweep conditions found"); return
+
+    # Baselines (use corrective IT baseline as reference)
+    b_e = sc_e.get("A5aearly_baseline", {})
+    b_m = sc_m.get("A5amid_baseline", {})
+    b_c = sc_c.get("A5a_baseline", {})
+    jb_e = jv_e.get("A5aearly_baseline", {})
+    jb_m = jv_m.get("A5amid_baseline", {})
+    jb_c = jv_c.get("A5a_baseline", {})
+
+    COLORS = {
+        "early":      "#e74c3c",   # red
+        "mid":        "#f39c12",   # orange
+        "corrective": "#2ecc71",   # green
+    }
+    LABELS = {
+        "early":      "Early (layers 1–11)",
+        "mid":        "Mid (layers 12–19)",
+        "corrective": "Corrective (layers 20–33)",
+    }
+
+    def _series(sc, jv, conds, bench, use_judge=False):
+        if use_judge:
+            return [jv.get(c, {}).get(bench) for c in conds]
+        return [sc.get(c, {}).get(bench) for c in conds]
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig.suptitle(
+        "Progressive Skip — Layer Specificity  [v2 eval]\n"
+        "x = number of layers skipped from end of range  (0 = baseline, higher = more ablation)",
+        fontsize=11, fontweight="bold",
+    )
+
+    PANELS = [
+        # (title, [(bench, label, use_judge)])
+        ("Governance", [
+            ("g1",                    "G1 governance quality (LLM judge, /5)", True),
+            ("g2",                    "G2 register quality (LLM judge, /5)",   True),
+            ("structural_token_ratio","structural_token_ratio",                 False),
+            ("format_compliance_v2",  "format_compliance_v2",                  False),
+        ]),
+        ("Content (should be stable for corrective)", [
+            ("mmlu_forced_choice",    "mmlu_forced_choice",    False),
+            ("exp3_reasoning_em",     "exp3_reasoning_em",     False),
+        ]),
+        ("Safety / Alignment", [
+            ("s1",                     "S1 safety refuse rate (LLM judge)", True),
+            ("s2",                     "S2 false-refusal rate (LLM judge)", True),
+            ("exp3_alignment_behavior","alignment_behavior",                 False),
+        ]),
+    ]
+
+    LINESTYLES = {"early": "-", "mid": "--", "corrective": ":"}
+
+    for ax, (title, benches) in zip(axes, PANELS):
+        for bench, label, use_judge in benches:
+            for rng, (sc, jv, conds, xs) in [
+                ("early",      (sc_e, jv_e, conds_e, xs_e)),
+                ("mid",        (sc_m, jv_m, conds_m, xs_m)),
+                ("corrective", (sc_c, jv_c, conds_c, xs_c)),
+            ]:
+                ys = _series(sc, jv, conds, bench, use_judge)
+                if not any(y is not None for y in ys):
+                    continue
+                ys_clean = [y if y is not None else float("nan") for y in ys]
+                # Only label once per range (first bench that has data)
+                lbl = f"{LABELS[rng]}" if bench == benches[0][0] else "_nolegend_"
+                ax.plot(xs, ys_clean, color=COLORS[rng], linestyle=LINESTYLES[rng],
+                        marker="o", markersize=4, linewidth=2, label=lbl)
+
+        ax.set_xlabel("# layers skipped (from end of range)")
+        ax.set_ylabel("Score (0-1)")
+        ax.set_title(title)
+        ax.set_ylim(-0.05, 1.05)
+        ax.axvline(x=0, color="gray", linestyle="--", alpha=0.4, label="baseline (0 skipped)")
+        ax.legend(fontsize=8, loc="best")
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"A5a_layerspec plot saved → {out_path}")
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def plot_A1_rand(a1_dir: Path, a1_rand_dir: Path, out_path: Path) -> None:
@@ -861,28 +1281,40 @@ def plot_A1_rand(a1_dir: Path, a1_rand_dir: Path, out_path: Path) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--experiment", choices=["A1", "A2", "both", "A1v5", "A1rand", "A5a", "A5b", "A5"], default="both")
+    p.add_argument("--experiment", choices=["A1", "A2", "both", "A1v5", "A1rand", "A1_notmpl", "A5a", "A5a_notmpl", "A5b", "A5", "A5a_layerspec"], default="both")
     p.add_argument("--a1-dir",      default="results/exp6/merged_A1_it")
     p.add_argument("--a2-dir",      default="results/exp6/merged_A2_pt")
     p.add_argument("--a1-early-dir", default="results/exp6/merged_A1_early_it")
     p.add_argument("--a1-mid-dir",   default="results/exp6/merged_A1_mid_it")
     p.add_argument("--a1-rand-dir",  default="results/exp6/merged_A1_rand_it_v1")
-    p.add_argument("--a5a-dir",     default="results/exp6/merged_A5a_it_v1")
+    p.add_argument("--a5a-dir",          default="results/exp6/merged_A5a_it_v1")
+    p.add_argument("--a5a-early-dir",    default="results/exp6/merged_A5a_early_it_v1")
+    p.add_argument("--a5a-mid-dir",      default="results/exp6/merged_A5a_mid_it_v1")
+    p.add_argument("--a5a-notmpl-dir",   default="results/exp6/merged_A5a_notmpl_it_v1")
+    p.add_argument("--a1-notmpl-dir",    default="results/exp6/merged_A1_notmpl_it_v1")
     p.add_argument("--a5b-dir",     default="results/exp6/merged_A5b_it_v1")
     p.add_argument("--pt-dir",      default="results/exp6/merged_A2_pt_v4")
     args = p.parse_args()
 
-    a1       = Path(args.a1_dir)
-    a2       = Path(args.a2_dir)
-    a1_early = Path(args.a1_early_dir)
-    a1_mid   = Path(args.a1_mid_dir)
-    a1_rand  = Path(args.a1_rand_dir)
-    a5a      = Path(args.a5a_dir)
-    a5b      = Path(args.a5b_dir)
-    pt       = Path(args.pt_dir) if args.pt_dir else None
+    a1          = Path(args.a1_dir)
+    a2          = Path(args.a2_dir)
+    a1_early    = Path(args.a1_early_dir)
+    a1_mid      = Path(args.a1_mid_dir)
+    a1_rand     = Path(args.a1_rand_dir)
+    a1_notmpl   = Path(args.a1_notmpl_dir)
+    a5a         = Path(args.a5a_dir)
+    a5a_early   = Path(args.a5a_early_dir)
+    a5a_mid     = Path(args.a5a_mid_dir)
+    a5a_notmpl  = Path(args.a5a_notmpl_dir)
+    a5b         = Path(args.a5b_dir)
+    pt          = Path(args.pt_dir) if args.pt_dir else None
+
+    # Pass notmpl dir to plot_A1 only if the merged dir actually has scores
+    _a1_notmpl_overlay = a1_notmpl if (a1_notmpl / "scores.csv").exists() else None
 
     if args.experiment in ("A1", "both"):
-        plot_A1(a1, a2, a1 / "plots" / "A1_dose_response_v5.png")
+        plot_A1(a1, a2, a1 / "plots" / "A1_dose_response_v5.png",
+                a1_notmpl_dir=_a1_notmpl_overlay)
     if args.experiment in ("A2", "both"):
         plot_A2(a2, a1, a2 / "plots" / "A2_dose_response_v5.png")
     if args.experiment in ("A1v5", "both", "A1"):
@@ -893,6 +1325,14 @@ def main() -> None:
         plot_A5b(a5b, a5b / "plots" / "A5b_dose_response.png", pt_dir=pt)
     if args.experiment in ("A5a", "A5"):
         plot_A5a(a5a, a5a / "plots" / "A5a_progressive_skip.png", pt_dir=pt)
+    if args.experiment == "A1_notmpl":
+        plot_A1_notmpl_vs_pt(a1_notmpl, a2, a1_notmpl / "plots" / "A1_notmpl_vs_pt.png")
+    if args.experiment == "A5a_notmpl":
+        out = Path("results/exp6/plots_notmpl") / "A5a_notmpl_vs_template.png"
+        plot_A5a_notmpl(a5a, a5a_notmpl, out)
+    if args.experiment == "A5a_layerspec":
+        out = Path("results/exp6/plots_layerspec") / "A5a_layer_specificity.png"
+        plot_A5a_layerspec(a5a_early, a5a_mid, a5a, out)
 
 
 if __name__ == "__main__":

@@ -97,8 +97,8 @@ def collect_prompt(
     device = W_U.device
 
     # ── tokenise prompt ───────────────────────────────────────────────────────
-    if cfg.is_instruction_tuned:
-        # IT model requires the Gemma chat template.
+    if cfg.apply_chat_template:
+        # IT model with chat template (default).
         # Raw completion-style prompts ("The capital of France is") don't work well
         # as bare user messages for an instruction-tuned model. We wrap them with a
         # brief instruction so the model treats it as a sentence-completion task.
@@ -112,7 +112,7 @@ def collect_prompt(
             add_generation_prompt=True,   # appends <start_of_turn>model\n
         ).to(device)
     else:
-        # PT model: plain text, tokenizer adds BOS automatically.
+        # PT model or IT-no-template ablation: plain text, tokenizer adds BOS automatically.
         current_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
 
     # ── stop tokens ───────────────────────────────────────────────────────────

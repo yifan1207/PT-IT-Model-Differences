@@ -60,6 +60,11 @@ class Exp2Config:
     # ── data collection flags ────────────────────────────────────────
     collect_attribution: bool = False
 
+    # When False, IT model receives raw tokenized prompts (no chat template).
+    # Ablation control: tests whether δ-cosine patterns are weight-intrinsic
+    # or activated by the chat template wrapping.
+    apply_chat_template: bool = True
+
     # ── output paths (derived in __post_init__) ──────────────────────
     output_path: str = field(init=False)
     plot_path:   str = field(init=False)
@@ -76,7 +81,8 @@ class Exp2Config:
     @property
     def run_dir(self) -> str:
         variant = self.transcoder_variant.replace("width_", "")
-        return f"results/exp2/{self.model_variant}_{variant}_t{self.max_gen_tokens}"
+        suffix = "_notmpl" if not self.apply_chat_template else ""
+        return f"results/exp2/{self.model_variant}_{variant}_t{self.max_gen_tokens}{suffix}"
 
     @property
     def is_instruction_tuned(self) -> bool:
