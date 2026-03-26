@@ -206,13 +206,13 @@ def _plot_panel(ax, xs, series: dict[str, list[float | None]], baselines: dict[s
             pt_val, it_val = baselines[bench]
             x_right = max(xs) + (max(xs) - min(xs)) * 0.01 if len(xs) > 1 else baseline_x
             if pt_val is not None:
-                ax.axhline(pt_val, color=color, linestyle=":", linewidth=1.2, alpha=0.6,
+                ax.axhline(pt_val, color=color, linestyle=":", linewidth=1.8, alpha=0.8,
                            label=f"{label} PT={pt_val:.2f}")
                 ax.annotate(f"PT {pt_val:.2f}", xy=(x_right, pt_val),
-                            fontsize=6, color=color, alpha=0.8, va="center",
-                            ha="left", clip_on=True)
+                            fontsize=6, color=color, alpha=0.9, va="center",
+                            ha="left", clip_on=True, fontweight="bold")
             if it_val is not None:
-                ax.axhline(it_val, color=color, linestyle="-.", linewidth=1.2, alpha=0.6,
+                ax.axhline(it_val, color=color, linestyle="-.", linewidth=1.6, alpha=0.7,
                            label=f"{label} IT={it_val:.2f}")
                 ax.annotate(f"IT {it_val:.2f}", xy=(x_right, it_val),
                             fontsize=6, color=color, alpha=0.8, va="center",
@@ -224,6 +224,27 @@ def _plot_panel(ax, xs, series: dict[str, list[float | None]], baselines: dict[s
     ax.legend(fontsize=7, loc="best")
     ax.set_ylim(-0.05, 1.1)
     ax.grid(True, alpha=0.25)
+
+
+def _add_alpha_emphasis(axes, xs) -> None:
+    """Shade α=0 and α=-1 columns to highlight 'returns to PT quality' regime."""
+    x_min, x_max = min(xs), max(xs)
+    half = (x_max - x_min) / len(xs) * 0.4  # half-width of each band
+    for ax in axes:
+        ylim = ax.get_ylim()
+        y_top = ylim[1] * 0.98
+        # α=0: full direction removal
+        if x_min <= 0 <= x_max:
+            ax.axvspan(0 - half, 0 + half, alpha=0.10, color="#e74c3c", zorder=0)
+            ax.axvline(0, color="#e74c3c", linestyle="--", linewidth=1.4, alpha=0.55, zorder=1)
+            ax.text(0, y_top, "α=0\n(ablated)", ha="center", va="top",
+                    fontsize=7, color="#c0392b", fontweight="bold")
+        # α=-1: over-removal, empirically returns to PT level
+        if x_min <= -1 <= x_max:
+            ax.axvspan(-1 - half, -1 + half, alpha=0.10, color="#8e44ad", zorder=0)
+            ax.axvline(-1, color="#8e44ad", linestyle="--", linewidth=1.4, alpha=0.55, zorder=1)
+            ax.text(-1, y_top, "α=−1\n(≈PT level)", ha="center", va="top",
+                    fontsize=7, color="#6c3483", fontweight="bold")
 
 
 # ── A1 ────────────────────────────────────────────────────────────────────────
@@ -403,6 +424,7 @@ def plot_A1(a1_dir: Path, a2_dir: Path, out_path: Path,
             for ax in axes:
                 ax.legend(fontsize=7, loc="best")
 
+    _add_alpha_emphasis(axes, xs)
     plt.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
@@ -890,8 +912,8 @@ def plot_A1_notmpl_vs_pt(a1_notmpl_dir: Path, a2_dir: Path, out_path: Path) -> N
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle(
-        "A1_notmpl: IT no-template vs PT — Template-Gate Test (α sweep, 1.0 = baseline)\n"
-        "Orange=IT no-template sweep  |  dotted/dash-dot = PT/IT baselines",
+        "A1_notmpl: IT no-template α sweep — Template-Gate Test (1.0 = baseline)\n"
+        "Colored lines = IT no-template sweep  |  dotted = PT baseline  |  dash-dot = IT-with-template baseline",
         fontsize=11, fontweight="bold",
     )
 
@@ -923,11 +945,137 @@ def plot_A1_notmpl_vs_pt(a1_notmpl_dir: Path, a2_dir: Path, out_path: Path) -> N
     _plot_panel(axes[2], xs, safety_series, baselines, "Safety / Alignment",
                 "α", baseline_x=1.0)
 
+    _add_alpha_emphasis(axes, xs)
     plt.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
     plt.close()
     print(f"A1_notmpl_vs_pt plot saved → {out_path}")
+
+
+def plot_A1_combined(a1_dir: Path, a1_notmpl_dir: Path, a2_dir: Path, out_path: Path) -> None:
+    """Side-by-side overlay of A1 (with template) and A1_notmpl (no template).
+
+    Same color per metric; solid = with-template, dashed = no-template.
+    Lets you directly compare whether removing the chat template changes the dose-response shape.
+    """
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    scores    = _load_scores(a1_dir / "scores.csv")
+    judge_v2  = _load_judge_v2(a1_dir / "llm_judge_v2_scores.jsonl")
+    nt_scores = _load_scores(a1_notmpl_dir / "scores.csv")
+    nt_j_v2   = _load_judge_v2(a1_notmpl_dir / "llm_judge_v2_scores.jsonl")
+
+    pt_scores   = _load_scores(a2_dir / "scores.csv").get("A2_baseline_pt", {})
+    pt_judge_v2 = _load_judge_v2(a2_dir / "llm_judge_v2_scores.jsonl").get("A2_baseline_pt", {})
+
+    sweep = sorted(
+        {(a, c) for c in scores for a in [_alpha(c)] if a is not None},
+        key=lambda t: t[0],
+    )
+    nt_sweep = sorted(
+        {(a, c) for c in nt_scores for a in [_A1notmpl_alpha(c)] if a is not None},
+        key=lambda t: t[0],
+    )
+    if not sweep or not nt_sweep:
+        print("Missing sweep data for A1_combined"); return
+
+    xs    = [a for a, _ in sweep]
+    conds = [c for _, c in sweep]
+    nt_xs    = [a for a, _ in nt_sweep]
+    nt_conds = [c for _, c in nt_sweep]
+
+    it_b    = scores.get("A1_baseline", {})
+    it_j_v2_b = judge_v2.get("A1_baseline", {})
+    nt_b    = nt_scores.get("A1notmpl_baseline", {})
+    nt_j_b  = nt_j_v2.get("A1notmpl_baseline", {})
+
+    # metric → (color, label)
+    METRICS = [
+        ("g1",                     "#2166ac", "G1 governance quality"),
+        ("g2",                     "#4dac26", "G2 register compliance"),
+        ("structural_token_ratio", "#d6604d", "structural_token_ratio"),
+        ("format_compliance_v2",   "#762a83", "format_compliance_v2"),
+    ]
+    CONTENT_METRICS = [("mmlu_forced_choice", "#b35806", "mmlu_forced_choice")]
+    SAFETY_METRICS  = [
+        ("s1",                    "#1a9850", "S1 safety refuse rate"),
+        ("s2",                    "#d73027", "S2 false-refusal rate"),
+        ("exp3_alignment_behavior","#636363","alignment_behavior"),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(21, 6))
+    fig.suptitle(
+        "A1: With-template vs No-template — Direct Comparison (α sweep, 1.0 = baseline)\n"
+        "Solid = IT with chat template  |  Dashed = IT no chat template  |  Dotted = PT baseline",
+        fontsize=11, fontweight="bold",
+    )
+
+    def _plot_metric(ax, xs_t, conds_t, sc_t, jv_t, xs_nt, conds_nt, sc_nt, jv_nt,
+                     key, color, label, pt_val, it_val, nt_val):
+        def _get(sc, jv, clist, k):
+            if k in ("g1", "g2", "s1", "s2"):
+                return [jv.get(c, {}).get(k) for c in clist]
+            return [sc.get(c, {}).get(k) for c in clist]
+
+        ys    = _get(sc_t, jv_t, conds_t, key)
+        ys_nt = _get(sc_nt, jv_nt, conds_nt, key)
+
+        if any(y is not None for y in ys):
+            clean = [(x, y) for x, y in zip(xs_t, ys) if y is not None]
+            if clean:
+                cx, cy = zip(*clean)
+                ax.plot(cx, cy, marker="o", markersize=4, color=color, linewidth=1.8,
+                        linestyle="-", label=f"{label} (with-tmpl)")
+        if any(y is not None for y in ys_nt):
+            clean = [(x, y) for x, y in zip(xs_nt, ys_nt) if y is not None]
+            if clean:
+                cx, cy = zip(*clean)
+                ax.plot(cx, cy, marker="s", markersize=4, color=color, linewidth=1.8,
+                        linestyle="--", label=f"{label} (no-tmpl)")
+        if pt_val is not None:
+            ax.axhline(pt_val, color=color, linestyle=":", linewidth=1.0, alpha=0.7)
+        if it_val is not None:
+            ax.axvline(x=1.0, color="grey", linestyle=":", linewidth=0.8, alpha=0.5)
+
+    for key, color, label in METRICS:
+        pt_v  = pt_judge_v2.get(key) if key in ("g1","g2") else pt_scores.get(key)
+        it_v  = it_j_v2_b.get(key)   if key in ("g1","g2") else it_b.get(key)
+        nt_v  = nt_j_b.get(key)      if key in ("g1","g2") else nt_b.get(key)
+        _plot_metric(axes[0], xs, conds, scores, judge_v2,
+                     nt_xs, nt_conds, nt_scores, nt_j_v2,
+                     key, color, label, pt_v, it_v, nt_v)
+    axes[0].axvline(x=1.0, color="grey", linestyle=":", linewidth=0.8, alpha=0.5)
+    axes[0].set_title("Governance"); axes[0].set_xlabel("α (correction strength)")
+    axes[0].set_ylabel("Score (0-1)"); axes[0].legend(fontsize=7); axes[0].set_ylim(0, 1.05)
+
+    for key, color, label in CONTENT_METRICS:
+        pt_v = pt_scores.get(key); it_v = it_b.get(key); nt_v = nt_b.get(key)
+        _plot_metric(axes[1], xs, conds, scores, judge_v2,
+                     nt_xs, nt_conds, nt_scores, nt_j_v2,
+                     key, color, label, pt_v, it_v, nt_v)
+    axes[1].axvline(x=1.0, color="grey", linestyle=":", linewidth=0.8, alpha=0.5)
+    axes[1].set_title("Content (should be stable)"); axes[1].set_xlabel("α")
+    axes[1].legend(fontsize=7); axes[1].set_ylim(0, 1.05)
+
+    for key, color, label in SAFETY_METRICS:
+        pt_v  = pt_judge_v2.get(key) if key in ("s1","s2") else pt_scores.get(key)
+        it_v  = it_j_v2_b.get(key)   if key in ("s1","s2") else it_b.get(key)
+        nt_v  = nt_j_b.get(key)      if key in ("s1","s2") else nt_b.get(key)
+        _plot_metric(axes[2], xs, conds, scores, judge_v2,
+                     nt_xs, nt_conds, nt_scores, nt_j_v2,
+                     key, color, label, pt_v, it_v, nt_v)
+    axes[2].axvline(x=1.0, color="grey", linestyle=":", linewidth=0.8, alpha=0.5)
+    axes[2].set_title("Safety / Alignment"); axes[2].set_xlabel("α")
+    axes[2].legend(fontsize=7); axes[2].set_ylim(0, 1.05)
+
+    _add_alpha_emphasis(axes, xs)
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"A1_combined plot saved → {out_path}")
 
 
 def plot_A5a_notmpl(a5a_dir: Path, a5a_notmpl_dir: Path, out_path: Path) -> None:
@@ -1311,11 +1459,11 @@ def plot_A1_rand(a1_dir: Path, a1_rand_dir: Path, out_path: Path) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--experiment", choices=["A1", "A2", "both", "A1v5", "A1rand", "A1_notmpl", "A5a", "A5a_notmpl", "A5b", "A5", "A5a_layerspec"], default="both")
+    p.add_argument("--experiment", choices=["A1", "A2", "both", "A1v5", "A1rand", "A1_notmpl", "A1_combined", "A5a", "A5a_notmpl", "A5b", "A5", "A5a_layerspec"], default="both")
     p.add_argument("--a1-dir",      default="results/exp6/merged_A1_it")
     p.add_argument("--a2-dir",      default="results/exp6/merged_A2_pt")
-    p.add_argument("--a1-early-dir", default="results/exp6/merged_A1_early_it")
-    p.add_argument("--a1-mid-dir",   default="results/exp6/merged_A1_mid_it")
+    p.add_argument("--a1-early-dir", default="results/exp6/merged_A1_early_it_v4")
+    p.add_argument("--a1-mid-dir",   default="results/exp6/merged_A1_mid_it_v4")
     p.add_argument("--a1-rand-dir",  default="results/exp6/merged_A1_rand_it_v1")
     p.add_argument("--a5a-dir",          default="results/exp6/merged_A5a_it_v1")
     p.add_argument("--a5a-early-dir",    default="results/exp6/merged_A5a_early_it_v1")
@@ -1357,6 +1505,8 @@ def main() -> None:
         plot_A5a(a5a, a5a / "plots" / "A5a_progressive_skip.png", pt_dir=pt)
     if args.experiment == "A1_notmpl":
         plot_A1_notmpl_vs_pt(a1_notmpl, a2, a1_notmpl / "plots" / "A1_notmpl_vs_pt.png")
+    if args.experiment == "A1_combined":
+        plot_A1_combined(a1, a1_notmpl, a2, a1_notmpl / "plots" / "A1_combined_tmpl_vs_notmpl.png")
     if args.experiment == "A5a_notmpl":
         out = Path("results/exp6/plots_notmpl") / "A5a_notmpl_vs_template.png"
         plot_A5a_notmpl(a5a, a5a_notmpl, out)
