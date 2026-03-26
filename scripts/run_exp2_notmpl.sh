@@ -14,8 +14,15 @@
 set -euo pipefail
 
 echo "=== exp2 IT no-template ablation ==="
-echo "[$(date +%T)] Starting collection (--variant it --no-chat-template)..."
 
+TMPL_RESULTS="results/exp2/it_16k_l0_big_affine_t512/exp2_results.json"
+if [ ! -f "$TMPL_RESULTS" ]; then
+    echo "[$(date +%T)] With-template results missing. Running collection (--variant it)..."
+    uv run python -m src.poc.exp2.run --variant it
+    echo "[$(date +%T)] With-template collection done."
+fi
+
+echo "[$(date +%T)] Starting collection (--variant it --no-chat-template)..."
 uv run python -m src.poc.exp2.run --variant it --no-chat-template
 
 echo "[$(date +%T)] Collection done. Running comparison plots..."

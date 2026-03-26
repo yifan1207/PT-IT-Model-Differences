@@ -27,7 +27,7 @@ for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=1; done
 # ── Config ────────────────────────────────────────────────────────────────────
 DATASET="data/eval_dataset_v2.jsonl"
 N_EVAL=1400
-CORR_DIR="results/exp6/precompute/precompute_v2/corrective_directions.npz"
+CORR_DIR="results/exp5/precompute_v2/precompute/corrective_directions.npz"
 CONTENT_DIR="results/exp6/precompute/content_direction_aggregate.npz"
 JUDGE_MODEL="google/gemini-2.5-flash"
 NW=8

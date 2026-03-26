@@ -258,3 +258,8 @@ results/exp6/**
 !results/exp6/merged_A5b_it_v1/
 !results/exp6/merged_A5b_it_v1/plots/
 !results/exp6/merged_A5b_it_v1/plots/**
+!results/exp6/merged_A1_rand_it_v1/
+!results/exp6/merged_A1_rand_it_v1/plots/
+!results/exp6/merged_A1_rand_it_v1/plots/**
+!results/exp6/plots_layerspec/
+!results/exp6/plots_layerspec/**

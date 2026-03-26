@@ -1093,52 +1093,58 @@ def plot_A5a_layerspec(
     jb_m = jv_m.get("A5amid_baseline", {})
     jb_c = jv_c.get("A5a_baseline", {})
 
-    COLORS = {
-        "early":      "#e74c3c",   # red
-        "mid":        "#f39c12",   # orange
-        "corrective": "#2ecc71",   # green
+    # Color = benchmark (track one metric across all layer ranges)
+    # Linestyle + marker = layer range (the comparison of interest)
+    RANGE_STYLE = {
+        "early":      dict(linestyle=":",  marker="^", linewidth=1.8, markersize=6),
+        "mid":        dict(linestyle="--", marker="s", linewidth=2.0, markersize=6),
+        "corrective": dict(linestyle="-",  marker="o", linewidth=2.5, markersize=7),
     }
-    LABELS = {
+    RANGE_LABELS = {
         "early":      "Early (layers 1–11)",
         "mid":        "Mid (layers 12–19)",
         "corrective": "Corrective (layers 20–33)",
     }
+
+    PANELS = [
+        # (title, [(bench, short_label, use_judge, color)])
+        ("Governance", [
+            ("g1",                    "G1 gov. quality",   True,  "#1565C0"),  # dark blue
+            ("g2",                    "G2 register qual.", True,  "#6A1B9A"),  # purple
+            ("structural_token_ratio","struct_token_ratio", False, "#E65100"),  # deep orange
+            ("format_compliance_v2",  "format_compliance", False, "#00695C"),  # teal
+        ]),
+        ("Content (should be stable for corrective)", [
+            ("mmlu_forced_choice",    "MMLU",         False, "#1565C0"),  # blue
+            ("exp3_reasoning_em",     "reasoning_em", False, "#B71C1C"),  # dark red
+        ]),
+        ("Safety / Alignment", [
+            ("s1",                     "S1 safety refuse", True,  "#1565C0"),  # blue
+            ("s2",                     "S2 false-refusal", True,  "#B71C1C"),  # dark red
+            ("exp3_alignment_behavior","alignment_behav.", False, "#2E7D32"),  # dark green
+        ]),
+    ]
+
+    import matplotlib.lines as mlines
 
     def _series(sc, jv, conds, bench, use_judge=False):
         if use_judge:
             return [jv.get(c, {}).get(bench) for c in conds]
         return [sc.get(c, {}).get(bench) for c in conds]
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(22, 6))
     fig.suptitle(
         "Progressive Skip — Layer Specificity  [v2 eval]\n"
-        "x = number of layers skipped from end of range  (0 = baseline, higher = more ablation)",
-        fontsize=11, fontweight="bold",
+        "x = number of layers skipped from end of range  (0 = baseline, higher = more ablation)\n"
+        "Color = benchmark  |  Linestyle + Marker = layer range"
+        "  ( ─●  corrective  · · ▲  early  - -■  mid )",
+        fontsize=10, fontweight="bold",
     )
 
-    PANELS = [
-        # (title, [(bench, label, use_judge)])
-        ("Governance", [
-            ("g1",                    "G1 governance quality (LLM judge, /5)", True),
-            ("g2",                    "G2 register quality (LLM judge, /5)",   True),
-            ("structural_token_ratio","structural_token_ratio",                 False),
-            ("format_compliance_v2",  "format_compliance_v2",                  False),
-        ]),
-        ("Content (should be stable for corrective)", [
-            ("mmlu_forced_choice",    "mmlu_forced_choice",    False),
-            ("exp3_reasoning_em",     "exp3_reasoning_em",     False),
-        ]),
-        ("Safety / Alignment", [
-            ("s1",                     "S1 safety refuse rate (LLM judge)", True),
-            ("s2",                     "S2 false-refusal rate (LLM judge)", True),
-            ("exp3_alignment_behavior","alignment_behavior",                 False),
-        ]),
-    ]
-
-    LINESTYLES = {"early": "-", "mid": "--", "corrective": ":"}
-
     for ax, (title, benches) in zip(axes, PANELS):
-        for bench, label, use_judge in benches:
+        bench_handles = []
+        for bench, short_label, use_judge, color in benches:
+            plotted_any = False
             for rng, (sc, jv, conds, xs) in [
                 ("early",      (sc_e, jv_e, conds_e, xs_e)),
                 ("mid",        (sc_m, jv_m, conds_m, xs_m)),
@@ -1148,20 +1154,44 @@ def plot_A5a_layerspec(
                 if not any(y is not None for y in ys):
                     continue
                 ys_clean = [y if y is not None else float("nan") for y in ys]
-                # Only label once per range (first bench that has data)
-                lbl = f"{LABELS[rng]}" if bench == benches[0][0] else "_nolegend_"
-                ax.plot(xs, ys_clean, color=COLORS[rng], linestyle=LINESTYLES[rng],
-                        marker="o", markersize=4, linewidth=2, label=lbl)
+                ax.plot(xs, ys_clean, color=color, **RANGE_STYLE[rng],
+                        alpha=0.85, label="_nolegend_")
+                plotted_any = True
+            if plotted_any:
+                bench_handles.append(
+                    mlines.Line2D([], [], color=color, linestyle="-",
+                                  linewidth=2, label=short_label)
+                )
 
-        ax.set_xlabel("# layers skipped (from end of range)")
-        ax.set_ylabel("Score (0-1)")
-        ax.set_title(title)
+        # Legend 1: benchmarks (color-coded solid lines, upper right)
+        leg1 = ax.legend(handles=bench_handles, fontsize=8, loc="upper right",
+                         title="Benchmark", title_fontsize=8,
+                         framealpha=0.9, edgecolor="0.7")
+        ax.add_artist(leg1)
+
+        # Legend 2: layer ranges (linestyle+marker, lower left)
+        range_handles = [
+            mlines.Line2D([], [], color="black", label=RANGE_LABELS[r],
+                          **RANGE_STYLE[r])
+            for r in ("corrective", "mid", "early")
+        ]
+        range_handles.append(
+            mlines.Line2D([], [], color="gray", linestyle="--", linewidth=1,
+                          alpha=0.6, label="baseline (0 skipped)")
+        )
+        ax.legend(handles=range_handles, fontsize=8, loc="lower left",
+                  title="Layer range", title_fontsize=8,
+                  framealpha=0.9, edgecolor="0.7")
+
+        ax.axvline(x=0, color="gray", linestyle="--", alpha=0.4, linewidth=1)
+        ax.set_xlabel("# layers skipped (from end of range)", fontsize=9)
+        ax.set_ylabel("Score (0–1)", fontsize=9)
+        ax.set_title(title, fontsize=10, fontweight="bold")
         ax.set_ylim(-0.05, 1.05)
-        ax.axvline(x=0, color="gray", linestyle="--", alpha=0.4, label="baseline (0 skipped)")
-        ax.legend(fontsize=8, loc="best")
-        ax.grid(True, alpha=0.3)
+        ax.grid(True, alpha=0.25)
+        ax.tick_params(labelsize=8)
 
-    plt.tight_layout()
+    plt.tight_layout(rect=[0, 0, 1, 0.93])
     out_path.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
     plt.close()

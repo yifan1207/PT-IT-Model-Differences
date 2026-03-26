@@ -18,7 +18,8 @@ The current paper-facing story has two linked threads:
 
 2. **Output governance as a corrective stage**
    - Late IT layers appear to regulate structure, formatting, discourse style, and conversational output form.
-   - Exp5 and Exp6 test this causally through ablation and steering.
+   - Exp5 established the need for a late-stage corrective story, but large phase ablations were often too destructive.
+   - Exp6 is the more targeted causal follow-up: instead of removing whole phases, it steers specific corrective directions and feature sets.
 
 The most relevant design notes for the current direction are:
 
@@ -33,7 +34,7 @@ The most relevant design notes for the current direction are:
 | `exp3` | Where do PT and IT differ during generation? | layerwise trace metrics, feature populations, mind-change / KL plots |
 | `exp4` | Is there a sharp cross-layer population transition? | adjacent-layer continuity, attention entropy, ID profiles |
 | `exp5` | Can content / format / corrective phases be causally separated? | ablation sweeps, progressive skip, benchmark heatmaps |
-| `exp6` | Can the corrective stage be steered directly? | direction steering, feature clamping, governance control plots |
+| `exp6` | Can the corrective stage be steered directly? | corrective-direction steering, feature clamping, governance control plots |
 
 ## Key Figures
 
@@ -43,17 +44,17 @@ The most relevant design notes for the current direction are:
 
 This figure is the cleanest high-level view of the cross-layer population shift hypothesis: adjacent-layer continuity drops around the dip, and the dip region is treated as a real computational boundary rather than a smooth drift.
 
-### Exp5: progressive corrective-stage ablation
+### Exp6 A1: remove the corrective direction from IT
 
-![Exp5 progressive skip](results/exp5/merged_progressive_it/plots/progressive_skip.png)
+![Exp6 A1 dose response](results/exp6/merged_A1_it/plots/A1_dose_response_v5.png)
 
-This is the main causal Exp5 plot currently kept in git. It shows how benchmark behavior changes as more of the corrective stage is removed.
+This is the current headline causal figure. It tests whether the late corrective direction in IT can be removed smoothly rather than by deleting whole layers. The central question is whether governance and structure degrade before general capability collapses.
 
-### Exp6: governance-direction steering
+### Exp6 A5a: progressive skip inside the corrective stage
 
-![Exp6 B2 steering](results/exp6/plots_B/B2_wdec_inject.png)
+![Exp6 A5a progressive skip](results/exp6/merged_A5a_it_v1/plots/A5a_progressive_skip.png)
 
-Exp6 asks whether the late corrective stage can be steered directly. The B-series plots test direction injection, control feature sets, and layer specificity for governance-related behavior.
+This is the cleaner successor to the older exp5-style progressive skip view. It asks how much of the late corrective stage is actually needed, and whether the effect looks gradual or cliff-like as more of the stage is removed.
 
 ## Repository Layout
 
@@ -101,6 +102,8 @@ Three-phase ablation experiments:
 - progressive skip / directional sweeps
 - benchmark evaluation and checkpoint metric summaries
 
+This experiment family is important for the historical arc of the project: it established the corrective-stage framing, but it also showed that broad phase ablations can be too destructive. That is one of the reasons Exp6 became central.
+
 ### `src/poc/exp6`
 
 Steering experiments:
@@ -109,6 +112,8 @@ Steering experiments:
 - feature clamping
 - control feature comparisons
 - layer-specific governance interventions
+
+If you want the current strongest causal story in the repo, start here after reading the hypothesis note.
 
 ## Quick Start
 
@@ -154,13 +159,13 @@ uv run python tools/test_audit.py
 
 ## How To Use The Code
 
-### If you want to reproduce the paper-style analyses
+### If you want to reproduce the current paper-style analyses
 
 1. Generate or load the PT/IT trace artifacts in `results/exp3`.
 2. Regenerate exp3 plots.
 3. Use exp4 to quantify the transition around the dip.
-4. Use exp5 for causal ablation.
-5. Use exp6 for steering after ablation has identified the likely corrective stage.
+4. Use exp5 to understand the broad phase-ablation results and their failure modes.
+5. Use exp6 for the main causal tests of the corrective stage.
 
 ### If you are new to the repo
 
@@ -168,8 +173,8 @@ Best reading order:
 
 1. [docs/phase_transition_hypothesis_and_experiments.md](docs/phase_transition_hypothesis_and_experiments.md)
 2. [docs/exp6-steering-design.md](docs/exp6-steering-design.md)
-3. [src/poc/exp3](src/poc/exp3)
-4. [src/poc/exp4](src/poc/exp4)
+3. [src/poc/exp4](src/poc/exp4)
+4. [src/poc/exp3](src/poc/exp3)
 5. [src/poc/exp5](src/poc/exp5)
 6. [src/poc/exp6](src/poc/exp6)
 
@@ -179,6 +184,8 @@ Tracked result plots are intentionally selective. At the moment, the most stable
 
 - `results/exp4/plots`
 - `results/exp5/merged_progressive_it/plots`
+- `results/exp6/merged_A1_it/plots`
+- `results/exp6/merged_A5a_it_v1/plots`
 - `results/exp6/plots_B`
 
 Most large intermediate result artifacts remain ignored.
