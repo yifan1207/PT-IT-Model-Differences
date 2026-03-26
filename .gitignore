@@ -223,11 +223,10 @@ results/exp4/**
 !results/exp4/**/plots/
 !results/exp4/**/plots/**
 !results/exp5/
-!results/exp5/**/
 results/exp5/**
-!results/exp5/*/
-!results/exp5/**/plots/
-!results/exp5/**/plots/**
+!results/exp5/merged_progressive_it/
+!results/exp5/merged_progressive_it/plots/
+!results/exp5/merged_progressive_it/plots/**
 !results/exp6/
 !results/exp6/**/
 results/exp6/**
