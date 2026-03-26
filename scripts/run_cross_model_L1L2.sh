@@ -20,7 +20,7 @@ set -euo pipefail
 MODELS=("gemma3_4b" "llama31_8b" "qwen3_4b" "mistral_7b" "deepseek_v2_lite" "olmo2_7b")
 DATASET="data/eval_dataset_v2.jsonl"
 NW=8
-MAX_NEW_TOKENS=256
+MAX_NEW_TOKENS=512
 DRY_RUN=0
 
 # Parse args

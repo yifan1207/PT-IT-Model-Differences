@@ -2,23 +2,51 @@
 L9: Attention entropy divergence (IT − PT per layer).
 
 Single forward pass per prompt with output_attentions=True and
-attn_implementation="eager" (required to materialize [B, H, T, T] matrices).
+attn_implementation="eager" (plan §4.L9 Step 1).
 
 For each layer ℓ and head h, computes:
-  H(ℓ, h) = -Σ_k attn[h, -1, k] * log(attn[h, -1, k] + ε)
+  H(ℓ, h) = -Σ_k attn[h, last_token, k] * log(attn[h, last_token, k] + ε)
 
-Expected result: max(IT − PT entropy) at ~1/3 depth (phase boundary).
+Expected finding: max(IT − PT mean entropy) at ~1/3 depth (phase boundary).
 
-Reuses: _attn_entropy() logic from src/poc/exp4/collect.py
+═══ Key design decisions ═════════════════════════════════════════════════
+  • NO CHAT TEMPLATE — same raw text for PT and IT (plan §4.L9 Step 1).
+  • attn_implementation="eager" is mandatory — Flash/SDPA do not return
+    attention weight matrices.
+  • 8-GPU parallel workers + merge, same pattern as L1L2 / L8.
+  • Output is per-prompt JSONL (plan §4.L9 Step 7), not aggregated JSON.
+    Aggregation (mean/SEM) is computed at merge time.
+  • Sliding-window normalisation flag stored in output so downstream
+    plots can normalise by log(effective_context_length) for fair
+    cross-model comparison (plan §4.L9 note on Gemma/Mistral).
 
-Notes on sliding window attention (Gemma 3 local layers, Mistral):
-  - Entropy is bounded by log(window_size) instead of log(T)
-  - Normalize by log(effective_context) for fair cross-model comparison
+═══ Output ═══════════════════════════════════════════════════════════════
+  results/cross_model/{model}/{variant}/
+    L9_w{worker}.jsonl      per-worker, one JSON line per prompt
+    L9_results.jsonl        merged per-prompt results
+    L9_summary.json         aggregated mean/SEM across prompts
 
-Output: results/cross_model/{model}/{variant}/L9_attn_entropy.json
-  {"model": str, "variant": str, "n_prompts": int,
-   "mean_entropy": [[float]*n_heads]*n_layers,  # mean over prompts
-   "sem_entropy":  [[float]*n_heads]*n_layers}
+  Per-prompt JSON line (plan §4.L9 Step 7):
+    {
+      "prompt_id": str,
+      "model":     str,
+      "variant":   str,
+      "n_layers":  int,
+      "n_heads":   int,
+      "seq_len":   int,
+      "attn_entropy": [[float * n_heads] * n_layers]
+    }
+
+  Summary JSON:
+    {
+      "model": str, "variant": str, "n_prompts": int,
+      "n_layers": int, "n_heads": int,
+      "global_attn_layers":   [int],
+      "is_sliding_window":    bool,
+      "sliding_window_size":  int | null,
+      "mean_entropy":  [[float * n_heads] * n_layers],
+      "sem_entropy":   [[float * n_heads] * n_layers]
+    }
 """
 from __future__ import annotations
 
@@ -29,153 +57,244 @@ from pathlib import Path
 
 import torch
 import numpy as np
-from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from src.poc.cross_model.config import get_spec, MODEL_REGISTRY, model_id_for_variant
 from src.poc.cross_model.adapters import get_adapter
+from src.poc.cross_model.utils import (
+    load_model_and_tokenizer,
+    load_dataset,
+    get_raw_prompt,
+    read_done_ids,
+    merge_worker_jsonls,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# ── entropy helper (matches exp4/collect.py) ──────────────────────────────────
 
 def _attn_entropy(attn_row: torch.Tensor) -> float:
-    """Entropy of one attention distribution over key positions.
-    attn_row: [T_k] — already post-softmax probabilities.
-    Returns entropy in nats.
+    """Shannon entropy (nats) of one post-softmax attention distribution.
+    attn_row: [T_k] — clamped to ≥ 0 to handle fp noise in local-attn layers.
     """
     probs = attn_row.clamp(min=0.0)
     return float(-(probs * torch.log(probs + 1e-12)).sum().item())
 
 
-# ── collection ────────────────────────────────────────────────────────────────
+# ── per-prompt collection ─────────────────────────────────────────────────────
 
-def collect_attn_entropy(
-    records: list[dict],
+def collect_prompt_L9(
+    raw_prompt: str,
+    prompt_id: str,
     model,
     tokenizer,
-    adapter,
     spec,
     device: torch.device,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Forward pass with output_attentions=True; compute per-head entropy at last token.
+) -> dict | None:
+    """Single forward pass with output_attentions=True.
 
-    Returns:
-      mean_entropy: [n_layers, n_heads] float32
-      sem_entropy:  [n_layers, n_heads] float32
+    Returns dict for JSON serialisation, or None on failure.
     """
+    input_ids = tokenizer.encode(raw_prompt, return_tensors="pt").to(device)
+    seq_len   = int(input_ids.shape[1])
+
+    try:
+        with torch.no_grad():
+            out = model(input_ids, output_attentions=True)
+    except Exception as e:
+        log.warning("Forward pass failed for %s: %s", prompt_id, e)
+        return None
+
+    if out.attentions is None:
+        log.warning("output_attentions=None for %s — model may not support eager attn.", prompt_id)
+        return None
+
     n_layers = spec.n_layers
-    n_heads = spec.n_heads
+    n_heads  = spec.n_heads
 
-    # accum[n_prompts, n_layers, n_heads]
-    all_entropy: list[np.ndarray] = []
-
-    for i, rec in enumerate(records):
-        formats = rec.get("formats", {})
-        prompt_text = formats.get("B") or formats.get("A") or rec.get("prompt", "")
-        input_ids = tokenizer.encode(prompt_text, return_tensors="pt").to(device)
-
-        try:
-            with torch.no_grad():
-                out = model(input_ids, output_attentions=True)
-        except Exception as e:
-            log.warning("Forward pass failed for prompt %d: %s", i, e)
+    entropy_mat: list[list[float]] = []
+    for ℓ, attn in enumerate(out.attentions):
+        if attn is None or ℓ >= n_layers:
+            entropy_mat.append([float("nan")] * n_heads)
             continue
+        # attn: [1, n_heads_q, T, T] — query rows for last token
+        attn_row = attn[0, :, -1, :]       # [n_heads_q, T_k]
+        n_h_actual = attn_row.shape[0]
+        row: list[float] = []
+        for h in range(n_heads):
+            if h < n_h_actual:
+                row.append(_attn_entropy(attn_row[h]))
+            else:
+                row.append(float("nan"))
+        entropy_mat.append(row)
 
-        if out.attentions is None:
-            log.warning("output_attentions returned None — model may not support eager attn.")
-            break
+    return {
+        "prompt_id":    prompt_id,
+        "model":        spec.name,
+        "variant":      "?",         # filled in by worker
+        "n_layers":     n_layers,
+        "n_heads":      n_heads,
+        "seq_len":      seq_len,
+        "attn_entropy": entropy_mat,
+    }
 
-        entropy_mat = np.full((n_layers, n_heads), float("nan"), dtype=np.float32)
-        for ℓ, attn in enumerate(out.attentions):
-            if attn is None:
+
+# ── worker ────────────────────────────────────────────────────────────────────
+
+def run_worker(
+    model_name: str,
+    variant: str,
+    dataset_path: str,
+    out_dir: str,
+    device_str: str,
+    worker_index: int,
+    n_workers: int,
+    n_eval_examples: int | None,
+) -> None:
+    """Single-GPU worker: collect attention entropy for this worker's slice."""
+    spec    = get_spec(model_name)
+    device  = torch.device(device_str)
+
+    model_id = model_id_for_variant(spec, variant)
+    # MUST use eager attention to materialise [B, H, T, T] matrices
+    model, tokenizer = load_model_and_tokenizer(model_id, device_str, eager_attn=True)
+
+    records = load_dataset(
+        dataset_path,
+        worker_index=worker_index,
+        n_workers=n_workers,
+        n_examples=n_eval_examples,
+    )
+
+    out_path = Path(out_dir) / f"L9_w{worker_index}.jsonl"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    done_ids = read_done_ids(out_path)
+
+    if done_ids:
+        log.info("[w%d] Resuming: %d/%d already done", worker_index, len(done_ids), len(records))
+
+    with open(out_path, "a") as fout:
+        for i, rec in enumerate(records):
+            pid = rec.get("id", f"rec_{worker_index}_{i}")
+            if pid in done_ids:
                 continue
-            # attn: [1, n_heads_q, T, T] — use last-token query row
-            n_h = attn.shape[1]
-            attn_row = attn[0, :, -1, :]  # [n_heads_q, T_k]
-            for h in range(min(n_h, n_heads)):
-                entropy_mat[ℓ, h] = _attn_entropy(attn_row[h])
 
-        all_entropy.append(entropy_mat)
+            result = collect_prompt_L9(
+                raw_prompt=get_raw_prompt(rec),
+                prompt_id=pid,
+                model=model,
+                tokenizer=tokenizer,
+                spec=spec,
+                device=device,
+            )
+            if result is None:
+                continue
 
-        if (i + 1) % 100 == 0:
-            log.info("  %d/%d prompts", i + 1, len(records))
+            result["variant"] = variant
+            fout.write(json.dumps(result) + "\n")
+            fout.flush()
 
-    if not all_entropy:
-        log.error("No entropy data collected.")
-        mean_entropy = np.full((n_layers, n_heads), float("nan"), dtype=np.float32)
-        sem_entropy  = np.full((n_layers, n_heads), float("nan"), dtype=np.float32)
-        return mean_entropy, sem_entropy
+            if (i + 1) % 100 == 0:
+                log.info("[w%d] %d/%d prompts done", worker_index, i + 1, len(records))
 
-    stack = np.stack(all_entropy, axis=0)  # [N, n_layers, n_heads]
-    mean_entropy = np.nanmean(stack, axis=0)
-    sem_entropy  = np.nanstd(stack, axis=0) / np.sqrt(np.sum(~np.isnan(stack), axis=0).clip(min=1))
-    return mean_entropy, sem_entropy
+    log.info("[w%d] Done → %s", worker_index, out_path)
+
+
+# ── merge + aggregate ─────────────────────────────────────────────────────────
+
+def merge_and_aggregate(
+    out_dir: Path,
+    model_name: str,
+    variant: str,
+    n_workers: int,
+) -> None:
+    """Merge per-worker JSONL files and compute mean/SEM entropy summary."""
+    spec = get_spec(model_name)
+
+    all_records = merge_worker_jsonls(
+        out_dir, n_workers,
+        worker_prefix="L9",
+        merged_name="L9_results.jsonl",
+    )
+    if not all_records:
+        log.warning("No records found — skipping summary.")
+        return
+
+    n_layers = spec.n_layers
+    n_heads  = spec.n_heads
+
+    # Stack entropy matrices: shape [N, n_layers, n_heads]
+    stack: list[np.ndarray] = []
+    for rec in all_records:
+        mat = rec.get("attn_entropy", [])
+        if len(mat) == n_layers:
+            stack.append(np.array(mat, dtype=np.float32))
+
+    if not stack:
+        log.warning("No valid entropy matrices found.")
+        return
+
+    arr = np.stack(stack, axis=0)          # [N, n_layers, n_heads]
+    mean_ent = np.nanmean(arr, axis=0)     # [n_layers, n_heads]
+    n_valid  = np.sum(~np.isnan(arr), axis=0).clip(min=1)
+    sem_ent  = np.nanstd(arr, axis=0) / np.sqrt(n_valid)
+
+    summary = {
+        "model":               model_name,
+        "variant":             variant,
+        "n_prompts":           len(stack),
+        "n_layers":            n_layers,
+        "n_heads":             n_heads,
+        "global_attn_layers":  sorted(spec.global_attn_layers),
+        "is_sliding_window":   spec.is_sliding_window,
+        "sliding_window_size": spec.sliding_window_size,
+        "mean_entropy":        mean_ent.tolist(),
+        "sem_entropy":         sem_ent.tolist(),
+    }
+
+    summary_path = out_dir / "L9_summary.json"
+    with open(summary_path, "w") as f:
+        json.dump(summary, f, indent=2)
+    log.info("L9 summary (%d prompts) saved → %s", len(stack), summary_path)
 
 
 # ── entry point ───────────────────────────────────────────────────────────────
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="L9: Attention entropy divergence.")
-    parser.add_argument("--model", required=True, choices=list(MODEL_REGISTRY))
-    parser.add_argument("--variant", required=True, choices=["pt", "it"])
-    parser.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
+    parser.add_argument("--model",           required=True, choices=list(MODEL_REGISTRY))
+    parser.add_argument("--variant",         required=True, choices=["pt", "it"])
+    parser.add_argument("--dataset",         default="data/eval_dataset_v2.jsonl")
     parser.add_argument("--n-eval-examples", type=int, default=None)
-    parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--out-dir", default=None)
+    parser.add_argument("--device",          default="cuda:0")
+    parser.add_argument("--worker-index",    type=int, default=0)
+    parser.add_argument("--n-workers",       type=int, default=1)
+    parser.add_argument("--out-dir",         default=None)
+    parser.add_argument(
+        "--merge-only", action="store_true",
+        help="Skip collection; merge JSONL files and compute summary.",
+    )
     args = parser.parse_args()
 
-    spec = get_spec(args.model)
-    adapter = get_adapter(args.model)
-    model_id = model_id_for_variant(spec, args.variant)
-
+    spec    = get_spec(args.model)
     out_dir = Path(args.out_dir) if args.out_dir else spec.result_dir / args.variant
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "L9_attn_entropy.json"
 
-    if out_path.exists():
-        log.info("Output already exists: %s — skipping.", out_path)
+    if args.merge_only:
+        merge_and_aggregate(out_dir, args.model, args.variant, args.n_workers)
         return
 
-    log.info("=== L9 attention entropy: %s %s ===", spec.name, args.variant)
-
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    device = torch.device(args.device)
-    # MUST use eager attention to materialize attention weight matrices
-    model = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        torch_dtype=torch.bfloat16,
-        device_map=args.device,
-        attn_implementation="eager",
-        trust_remote_code=True,
+    run_worker(
+        model_name=args.model,
+        variant=args.variant,
+        dataset_path=args.dataset,
+        out_dir=str(out_dir),
+        device_str=args.device,
+        worker_index=args.worker_index,
+        n_workers=args.n_workers,
+        n_eval_examples=args.n_eval_examples,
     )
-    model.eval()
-
-    with open(args.dataset) as f:
-        records = [json.loads(line) for line in f if line.strip()]
-    if args.n_eval_examples:
-        records = records[:args.n_eval_examples]
-
-    log.info("Collecting attention entropy for %d prompts...", len(records))
-    mean_entropy, sem_entropy = collect_attn_entropy(records, model, tokenizer, adapter, spec, device)
-
-    result = {
-        "model": spec.name,
-        "variant": args.variant,
-        "n_prompts": len(records),
-        "n_layers": spec.n_layers,
-        "n_heads": spec.n_heads,
-        "global_attn_layers": sorted(spec.global_attn_layers),
-        "is_sliding_window": spec.is_sliding_window,
-        "sliding_window_size": spec.sliding_window_size,
-        "mean_entropy": mean_entropy.tolist(),
-        "sem_entropy": sem_entropy.tolist(),
-    }
-
-    with open(out_path, "w") as f:
-        json.dump(result, f, indent=2)
-    log.info("Saved → %s", out_path)
 
 
 if __name__ == "__main__":
