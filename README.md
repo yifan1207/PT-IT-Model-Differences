@@ -1,65 +1,140 @@
 # Structural Semantic Features
 
-Research code for probing phase structure, feature populations, and ablation behavior in Gemma 3 PT vs IT models.
+Mechanistic interpretability research code for studying how instruction tuning restructures the computational pipeline of Gemma 3.
 
-## What This Repo Contains
+This repo centers on a concrete claim:
 
-This repository is organized around a series of proof-of-concept experiments under `src/poc/`:
+> pretrained and instruction-tuned models share much of the same early and mid-layer computation, but instruction tuning installs a late corrective/output-governance stage and sharpens a representational phase transition around the first third of the network.
 
-- `exp3`: PT vs IT generation-trace analysis, feature populations, and token/word-level behavior.
-- `exp4`: adjacent-layer continuity, attention, intrinsic-dimension, and label-style analyses.
-- `exp5`: intervention and ablation experiments over content, format, and corrective phases.
-- `exp6`: newer governance / structural-feature experiments and dataset-building utilities.
-- `shared`: reusable model loading, collection, and configuration components used across experiments.
+The codebase is organized around a sequence of experiments that test that claim from several angles: observational tracing, cross-layer feature turnover, causal ablation, and steering.
 
-The codebase is not a packaged library. It is an experiment repo with:
+## Research Focus
 
-- Python modules in `src/`
-- runnable helper scripts in `scripts/`
-- datasets in `data/`
-- generated outputs in `results/`
-- supporting documentation in `docs/`
+The current paper-facing story has two linked threads:
+
+1. **Phase transition / pipeline restructuring**
+   - PT and IT appear to differ less by wholesale rewriting of the whole model and more by a sharp computational boundary plus late corrective processing.
+   - The main empirical signatures are layerwise feature-population shifts, adjacent-layer continuity breaks, altered attention/entropy trajectories, and a distinct late-stage output-shaping regime.
+
+2. **Output governance as a corrective stage**
+   - Late IT layers appear to regulate structure, formatting, discourse style, and conversational output form.
+   - Exp5 and Exp6 test this causally through ablation and steering.
+
+The most relevant design notes for the current direction are:
+
+- [Phase-transition hypothesis and experiment plan](docs/phase_transition_hypothesis_and_experiments.md)
+- [Exp6 steering design](docs/exp6-steering-design.md)
+- [Research notes v2](docs/research-notes-v2.md)
+
+## At A Glance
+
+| Experiment | Question | Main Output |
+| --- | --- | --- |
+| `exp3` | Where do PT and IT differ during generation? | layerwise trace metrics, feature populations, mind-change / KL plots |
+| `exp4` | Is there a sharp cross-layer population transition? | adjacent-layer continuity, attention entropy, ID profiles |
+| `exp5` | Can content / format / corrective phases be causally separated? | ablation sweeps, progressive skip, benchmark heatmaps |
+| `exp6` | Can the corrective stage be steered directly? | direction steering, feature clamping, governance control plots |
+
+## Key Figures
+
+### Exp4: Adjacent-layer continuity around the dip
+
+![Exp4 adjacent-layer continuity](results/exp4/plots/plot1_jaccard_curve.png)
+
+This figure is the cleanest high-level view of the cross-layer population shift hypothesis: adjacent-layer continuity drops around the dip, and the dip region is treated as a real computational boundary rather than a smooth drift.
+
+### Exp5: progressive corrective-stage ablation
+
+![Exp5 progressive skip](results/exp5/merged_progressive_it/plots/progressive_skip.png)
+
+This is the main causal Exp5 plot currently kept in git. It shows how benchmark behavior changes as more of the corrective stage is removed.
+
+### Exp6: governance-direction steering
+
+![Exp6 B2 steering](results/exp6/plots_B/B2_wdec_inject.png)
+
+Exp6 asks whether the late corrective stage can be steered directly. The B-series plots test direction injection, control feature sets, and layer specificity for governance-related behavior.
 
 ## Repository Layout
 
 ```text
 .
-├── data/           # experiment datasets and prompt sets
-├── docs/           # research notes, issue writeups, and longer documentation
-├── logs/           # local run logs
-├── results/        # experiment outputs, figures, and merged runs
-├── scripts/        # orchestration and utility scripts
-├── tools/          # one-off local utilities and audit helpers
-├── src/            # experiment code
-├── main.py         # minimal entry stub
-├── pyproject.toml  # dependencies / project metadata
+├── data/     # datasets and prompt collections used by the experiments
+├── docs/     # paper notes, experiment plans, and issue writeups
+├── logs/     # local run logs
+├── results/  # generated outputs, merged runs, and tracked figures
+├── scripts/  # orchestration, merging, plotting, and utility scripts
+├── tools/    # local audit and one-off helper scripts
+├── src/      # experiment code and shared runtime components
 └── README.md
 ```
+
+## Repo Guide
+
+### `src/poc/shared`
+
+Reusable loading, collection, and plotting helpers used across experiments. If you want to understand how model execution or tracing is wired, start here.
+
+### `src/poc/exp3`
+
+Generation-trace analysis for PT vs IT:
+
+- emergence / KL / logit-lens behavior
+- word-level token stratification
+- feature-population analysis
+- mind-change and candidate-reshuffling analyses
+
+### `src/poc/exp4`
+
+Cross-layer transition analysis:
+
+- adjacent-layer continuity
+- attention entropy
+- intrinsic-dimension profiling
+- feature-label distribution around the dip
+
+### `src/poc/exp5`
+
+Three-phase ablation experiments:
+
+- content, format, and corrective phase interventions
+- progressive skip / directional sweeps
+- benchmark evaluation and checkpoint metric summaries
+
+### `src/poc/exp6`
+
+Steering experiments:
+
+- corrective direction addition/removal
+- feature clamping
+- control feature comparisons
+- layer-specific governance interventions
 
 ## Quick Start
 
 ### Environment
 
-This repo uses `uv` and Python `>=3.13`.
+The repo uses `uv` with Python `>=3.13`.
 
 ```bash
 uv sync
 ```
 
-Some experiments also require:
+Most collection runs also need:
 
 - Hugging Face access for gated Gemma checkpoints
-- GPU execution for collection runs
-- local auth for any Google Cloud Storage upload/download scripts
+- GPU execution
+- local credentials if you use the GCS upload/download utilities
 
-### Common Commands
+### Common entrypoints
 
-Run an experiment entrypoint:
+Run core experiments:
 
 ```bash
 uv run python -m src.poc.exp3.run
 uv run python -m src.poc.exp4.run
 uv run python -m src.poc.exp5.run
+uv run python -m src.poc.exp6.run --help
 ```
 
 Regenerate plots:
@@ -67,6 +142,7 @@ Regenerate plots:
 ```bash
 uv run python -m src.poc.exp3.run_plots --variant it
 uv run python -m src.poc.exp4.run_plots
+uv run python scripts/plot_exp6_B.py
 ```
 
 Run tests:
@@ -76,30 +152,56 @@ uv run pytest
 uv run python tools/test_audit.py
 ```
 
+## How To Use The Code
+
+### If you want to reproduce the paper-style analyses
+
+1. Generate or load the PT/IT trace artifacts in `results/exp3`.
+2. Regenerate exp3 plots.
+3. Use exp4 to quantify the transition around the dip.
+4. Use exp5 for causal ablation.
+5. Use exp6 for steering after ablation has identified the likely corrective stage.
+
+### If you are new to the repo
+
+Best reading order:
+
+1. [docs/phase_transition_hypothesis_and_experiments.md](docs/phase_transition_hypothesis_and_experiments.md)
+2. [docs/exp6-steering-design.md](docs/exp6-steering-design.md)
+3. [src/poc/exp3](src/poc/exp3)
+4. [src/poc/exp4](src/poc/exp4)
+5. [src/poc/exp5](src/poc/exp5)
+6. [src/poc/exp6](src/poc/exp6)
+
+### If you only need the current finalized figure folders
+
+Tracked result plots are intentionally selective. At the moment, the most stable git-tracked figure folders are:
+
+- `results/exp4/plots`
+- `results/exp5/merged_progressive_it/plots`
+- `results/exp6/plots_B`
+
+Most large intermediate result artifacts remain ignored.
+
 ## Documentation
 
-Longer-form notes and issue writeups live under `docs/`:
+Project notes and design documents live in [docs](docs/README.md):
 
-- [POC pipeline notes](docs/poc-pipeline-notes.md)
-- [Research notes v2](docs/research-notes-v2.md)
-- [Circuit tracer nnsight issue](docs/circuit-tracer-nnsight-issue.md)
-- [Exp6 steering design](docs/exp6-steering-design.md)
+- [phase_transition_hypothesis_and_experiments.md](docs/phase_transition_hypothesis_and_experiments.md)
+- [exp6-steering-design.md](docs/exp6-steering-design.md)
+- [exp3_plan.md](docs/exp3_plan.md)
+- [EVAL_REDESIGN_v1.md](docs/EVAL_REDESIGN_v1.md)
+- [poc-pipeline-notes.md](docs/poc-pipeline-notes.md)
+- [research-notes-v2.md](docs/research-notes-v2.md)
+- [circuit-tracer-nnsight-issue.md](docs/circuit-tracer-nnsight-issue.md)
 
-## Results And Artifacts
-
-This repo intentionally keeps most large result artifacts out of git. In general:
-
-- plots under selected experiment folders may be tracked
-- large `.json`, `.jsonl`, and `.npz` run artifacts are usually ignored
-- logs are local working artifacts and should not be treated as canonical outputs
-
-## Notes On Repo Conventions
+## Working Conventions
 
 - `src/` is the source of truth for experiment code.
-- `scripts/` is for orchestration and helper utilities, not core logic.
-- `docs/` holds design notes and longer markdown documents so the repo root stays readable.
-- `results/` reflects local experiment state and may contain partially merged or in-progress runs.
+- `scripts/` is for orchestration and postprocessing, not core model logic.
+- `results/` reflects local experiment state and is only partially tracked.
+- `docs/` contains the evolving research narrative and experiment plans.
 
 ## License
 
-This project is released under the [MIT License](LICENSE).
+Released under the [MIT License](LICENSE).
