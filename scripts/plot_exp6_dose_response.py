@@ -19,6 +19,11 @@ from collections import defaultdict
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from src.poc.exp6.pca_analysis import (
+    PCAArtifactsUnavailableError,
+    compute_and_plot_pca_analysis,
+)
+
 
 # ── Coherent assistant rate (computed on-the-fly from sample_outputs.jsonl) ──
 
@@ -430,6 +435,28 @@ def plot_A1(a1_dir: Path, a2_dir: Path, out_path: Path,
     plt.savefig(str(out_path), dpi=150, bbox_inches="tight")
     plt.close()
     print(f"A1 plot saved → {out_path}")
+
+
+def plot_A1_pca(a1_dir: Path, repo_root: Path) -> None:
+    """Post-hoc PCA on exact per-record IT-PT difference vectors.
+
+    This intentionally skips when only aggregate artifacts are available. It does
+    not approximate PCA from layer sums or normalized mean directions.
+    """
+    mean_direction_path = repo_root / "results" / "exp5" / "precompute_v2" / "precompute" / "corrective_directions.npz"
+    out_json = a1_dir / "pca_layer_stats.json"
+    out_plot = a1_dir / "plots" / "A1_pca_low_rank.png"
+    try:
+        json_path, plot_path = compute_and_plot_pca_analysis(
+            base_dir=repo_root,
+            out_json_path=out_json,
+            out_plot_path=out_plot,
+            mean_direction_path=mean_direction_path,
+        )
+        print(f"A1 PCA stats saved → {json_path}")
+        print(f"A1 PCA plot saved → {plot_path}")
+    except PCAArtifactsUnavailableError as exc:
+        print(f"A1 PCA skipped — {exc}")
 
 
 # ── A2 ────────────────────────────────────────────────────────────────────────
@@ -1458,6 +1485,7 @@ def plot_A1_rand(a1_dir: Path, a1_rand_dir: Path, out_path: Path) -> None:
 
 
 def main() -> None:
+    repo_root = Path(__file__).resolve().parent.parent
     p = argparse.ArgumentParser()
     p.add_argument("--experiment", choices=["A1", "A2", "both", "A1v5", "A1rand", "A1_notmpl", "A1_combined", "A5a", "A5a_notmpl", "A5b", "A5", "A5a_layerspec"], default="both")
     p.add_argument("--a1-dir",      default="results/exp6/merged_A1_it")
@@ -1493,6 +1521,7 @@ def main() -> None:
     if args.experiment in ("A1", "both"):
         plot_A1(a1, a2, a1 / "plots" / "A1_dose_response_v5.png",
                 a1_notmpl_dir=_a1_notmpl_overlay)
+        plot_A1_pca(a1, repo_root)
     if args.experiment in ("A2", "both"):
         plot_A2(a2, a1, a2 / "plots" / "A2_dose_response_v5.png")
     if args.experiment in ("A1v5", "both", "A1"):

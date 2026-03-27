@@ -208,6 +208,10 @@ __marimo__/
 
 # results
 results/*
+!results/cross_model/
+results/cross_model/*
+!results/cross_model/plots/
+!results/cross_model/plots/**
 !results/exp2/
 !results/exp2/**/
 results/exp2/**/exp2_results.json

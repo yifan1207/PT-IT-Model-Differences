@@ -143,9 +143,9 @@ def plot_L1_summary(models: list[str]) -> None:
 # ── L3: weight diff ───────────────────────────────────────────────────────────
 
 def plot_L3_weight_diff(models: list[str]) -> None:
-    """Per-model per-layer RMS weight diff, decomposed into attn/mlp/norm."""
+    """Per-model per-layer RMS weight diff: MLP vs Attention lines (exp3 plot8 style)."""
     n = len(models)
-    fig, axes = plt.subplots(n, 1, figsize=(12, 2.5 * n), sharex=False)
+    fig, axes = plt.subplots(n, 1, figsize=(12, 2.8 * n), sharex=False)
     if n == 1:
         axes = [axes]
 
@@ -154,30 +154,38 @@ def plot_L3_weight_diff(models: list[str]) -> None:
         data = _load_weight_diff(model_name)
         if data is None:
             ax.text(0.5, 0.5, f"{model_name}: no data", transform=ax.transAxes, ha="center")
+            ax.set_xlim(0, 1); ax.set_ylim(0, 1)
             continue
 
         layers = np.arange(spec.n_layers)
         delta_attn = np.array(data.get("delta_attn", [0] * spec.n_layers))
         delta_mlp  = np.array(data.get("delta_mlp",  [0] * spec.n_layers))
-        delta_norm = np.array(data.get("delta_norm", [0] * spec.n_layers))
 
-        # Stacked bar
-        ax.bar(layers, delta_attn, label="Attention", color="#1565C0", alpha=0.8)
-        ax.bar(layers, delta_mlp,  bottom=delta_attn, label="MLP", color="#E65100", alpha=0.8)
-        ax.bar(layers, delta_norm, bottom=delta_attn + delta_mlp, label="Norm", color="#9E9E9E", alpha=0.8)
+        # Normalise by each component's mean so all models share the same y scale
+        attn_norm = delta_attn / (delta_attn.mean() + 1e-12)
+        mlp_norm  = delta_mlp  / (delta_mlp.mean()  + 1e-12)
 
-        # Shade corrective region
+        # Line plots matching exp3 style
+        ax.plot(layers, mlp_norm,  color="#E65100", lw=2, label="MLP", zorder=3)
+        ax.plot(layers, attn_norm, color="#1565C0", lw=2, label="Attention", zorder=3)
+        ax.fill_between(layers, mlp_norm,  alpha=0.15, color="#E65100")
+        ax.fill_between(layers, attn_norm, alpha=0.15, color="#1565C0")
+        ax.axhline(1.0, color="black", lw=0.8, ls=":", alpha=0.5)  # mean reference line
+
+        # Phase boundary and corrective region shading
         onset = spec.corrective_onset
-        ax.axvspan(onset - 0.5, spec.n_layers - 0.5, color="green", alpha=0.08, label="Corrective region")
-        ax.axvspan(spec.phase_boundary - 0.5, spec.phase_boundary + 0.5, color="red", alpha=0.15, label="Phase boundary")
+        ax.axvspan(onset - 0.5, spec.n_layers - 0.5, color="#2E7D32", alpha=0.07, label="Corrective region")
+        ax.axvline(spec.phase_boundary, color="#B71C1C", lw=1.2, ls="--", alpha=0.7, label="Phase boundary")
 
-        ax.set_title(f"{MODEL_LABELS[model_name]}", fontsize=10)
-        ax.set_ylabel("RMS diff")
-        ax.set_xlabel("Layer")
+        ax.set_title(MODEL_LABELS[model_name], fontsize=10, fontweight="bold")
+        ax.set_ylabel("Relative weight shift\n(normalised to mean=1)", fontsize=8)
+        ax.set_xlabel("Transformer layer", fontsize=8)
+        ax.set_xlim(-0.5, spec.n_layers - 0.5)
+        ax.tick_params(labelsize=8)
         if ax is axes[0]:
-            ax.legend(fontsize=7, ncol=4)
+            ax.legend(fontsize=8, ncol=3, loc="upper left")
 
-    fig.suptitle("L3: Per-Layer Weight Change Localization (PT → IT)", fontsize=12, y=1.01)
+    fig.suptitle("L3: Per-Layer Weight Change Localization (PT → IT)", fontsize=13, fontweight="bold", y=1.01)
     fig.tight_layout()
 
     PLOT_DIR.mkdir(parents=True, exist_ok=True)
