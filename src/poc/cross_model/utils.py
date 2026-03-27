@@ -138,11 +138,12 @@ def merge_worker_jsonls(
             with open(worker_path) as fin:
                 for line in fin:
                     if line.strip():
-                        fout.write(line)
                         try:
-                            all_records.append(json.loads(line))
+                            rec = json.loads(line)
+                            fout.write(line)
+                            all_records.append(rec)
                         except json.JSONDecodeError:
-                            pass
+                            log.warning("Skipping corrupt JSON line in %s", worker_path)
 
     log.info("Merged %d records → %s", len(all_records), merged_path)
     return all_records

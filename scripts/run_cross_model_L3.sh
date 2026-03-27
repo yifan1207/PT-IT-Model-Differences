@@ -12,6 +12,10 @@
 
 set -euo pipefail
 
+# ── Model cache on large disk (/mnt/storage, 13 TB free) ──────────────────────
+export HF_HOME=/mnt/storage/yifan/hf_cache
+export HF_TOKEN=${HF_TOKEN:-$(cat /mnt/storage/yifan/hf_cache/token 2>/dev/null || true)}
+
 MODELS=("gemma3_4b" "llama31_8b" "qwen3_4b" "mistral_7b" "deepseek_v2_lite" "olmo2_7b")
 
 # Allow overriding via positional args

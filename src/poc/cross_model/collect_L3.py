@@ -76,10 +76,36 @@ def _rms_diff(sd_pt: dict, sd_it: dict, keys: list[str]) -> float:
     return math.sqrt(total_sq / total_n) if total_n > 0 else 0.0
 
 
-def _layer_keys(sd: dict, layer_idx: int) -> list[str]:
+def _detect_layer_prefix(sd: dict) -> str:
+    """Auto-detect the state dict prefix for transformer layers (e.g. 'model.layers.').
+
+    Searches for keys ending in '.layers.0.<param>' that belong to the text backbone,
+    excluding vision encoder layers (which contain 'vision' in the prefix).
+    """
+    candidates = [
+        "model.layers.",                        # standard HF (Llama, Mistral, Qwen, OLMo2, DeepSeek)
+        "language_model.model.layers.",         # bare safetensors key (Gemma3)
+        "model.language_model.model.layers.",   # state_dict via PyTorch (Gemma3ForConditionalGeneration)
+        "model.model.language_model.layers.",   # alternative Gemma3 nesting
+        "transformer.h.",                       # GPT-2 style
+    ]
+    for cand in candidates:
+        # Must NOT contain 'vision' to exclude SigLIP encoder layers
+        if any(k.startswith(f"{cand}0.") and "vision" not in cand for k in sd):
+            return cand
+    # Fallback: scan all keys for '.layers.0.' pattern outside vision towers
+    for k in sd:
+        if ".layers.0." in k and "vision" not in k:
+            # Extract prefix up to and including "layers."
+            idx = k.index(".layers.0.")
+            prefix = k[:idx + len(".layers.")]
+            return prefix
+    raise ValueError(f"Cannot detect layer prefix. Sample keys: {list(sd.keys())[:5]}")
+
+
+def _layer_keys(sd: dict, layer_idx: int, prefix: str = "model.layers.") -> list[str]:
     """All parameter keys belonging to transformer layer layer_idx."""
-    prefix = f"model.layers.{layer_idx}."
-    return [k for k in sd if k.startswith(prefix)]
+    return [k for k in sd if k.startswith(f"{prefix}{layer_idx}.")]
 
 
 def _filter_keys(keys: list[str], *substrings: str) -> list[str]:
@@ -93,14 +119,14 @@ def compute_weight_diff(spec: ModelSpec, dtype: torch.dtype = torch.float32) -> 
     """Load PT and IT state dicts on CPU; return per-layer RMS diff dict."""
     log.info("Loading PT state dict: %s", spec.pt_id)
     pt_model = AutoModelForCausalLM.from_pretrained(
-        spec.pt_id, torch_dtype=dtype, device_map="cpu", trust_remote_code=True,
+        spec.pt_id, dtype=dtype, device_map="cpu", trust_remote_code=True,
     )
     pt_sd = pt_model.state_dict()
     del pt_model
 
     log.info("Loading IT state dict: %s", spec.it_id)
     it_model = AutoModelForCausalLM.from_pretrained(
-        spec.it_id, torch_dtype=dtype, device_map="cpu", trust_remote_code=True,
+        spec.it_id, dtype=dtype, device_map="cpu", trust_remote_code=True,
     )
     it_sd = it_model.state_dict()
     del it_model
@@ -122,8 +148,11 @@ def compute_weight_diff(spec: ModelSpec, dtype: torch.dtype = torch.float32) -> 
         result["delta_shared_expert"]  = []
         result["delta_routed_experts"] = []
 
+    layer_prefix = _detect_layer_prefix(pt_sd)
+    log.info("Detected layer prefix: %r", layer_prefix)
+
     for layer_idx in range(spec.n_layers):
-        all_keys  = _layer_keys(pt_sd, layer_idx)
+        all_keys  = _layer_keys(pt_sd, layer_idx, layer_prefix)
         attn_keys = _filter_keys(all_keys, "self_attn", "attention")
         mlp_keys  = _filter_keys(all_keys, ".mlp.", "expert", "router", "gate")
         norm_keys = _filter_keys(all_keys, "layernorm", "layer_norm", ".norm.")
@@ -149,9 +178,11 @@ def compute_weight_diff(spec: ModelSpec, dtype: torch.dtype = torch.float32) -> 
         pt_sd, it_sd,
         [k for k in pt_sd if "embed_tokens" in k],
     )
+    # Final norm key: replace '.layers.' suffix with '.norm.' from the layer prefix base
+    norm_base = layer_prefix.replace("layers.", "")  # e.g. "model." or "language_model.model."
     result["delta_final_norm"] = _rms_diff(
         pt_sd, it_sd,
-        [k for k in pt_sd if k in {"model.norm.weight", "model.norm.bias"}],
+        [k for k in pt_sd if k.startswith(norm_base + "norm") and "layers." not in k],
     )
     result["delta_lm_head"] = _rms_diff(
         pt_sd, it_sd,

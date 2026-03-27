@@ -86,6 +86,12 @@ run_variant() {
         --merge-only --n-workers "$NW" \
         >> "$log_dir/merge.log" 2>&1
     echo "[$(date +%T)] Done $model $variant"
+    # Remove per-worker JSONL files after successful merge to save disk space
+    local out_dir="results/cross_model/$model/$variant"
+    if [[ -f "$out_dir/L1L2_results.jsonl" ]]; then
+        rm -f "$out_dir"/L1L2_w*.jsonl
+        echo "[$(date +%T)] Cleaned worker files for $model $variant"
+    fi
 }
 
 for model in "${MODELS[@]}"; do
