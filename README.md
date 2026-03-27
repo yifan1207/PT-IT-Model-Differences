@@ -1,4 +1,4 @@
-# Structural Semantic Features
+# PT–IT Transformer Differences
 
 Mechanistic interpretability research code for studying how instruction tuning restructures the computational pipeline of Gemma 3.
 
