@@ -23,8 +23,11 @@ echo "=== L3 weight diff: ${MODELS[*]} ==="
 
 for model in "${MODELS[@]}"; do
     echo "[$(date +%T)] $model ..."
-    uv run python -m src.poc.cross_model.collect_L3 --model "$model"
-    echo "[$(date +%T)] Done $model → results/cross_model/$model/weight_diff.json"
+    if uv run python -m src.poc.cross_model.collect_L3 --model "$model"; then
+        echo "[$(date +%T)] Done $model → results/cross_model/$model/weight_diff.json"
+    else
+        echo "WARN: $model FAILED (model inaccessible?) — skipping"
+    fi
 done
 
 echo "=== L3 complete ==="

@@ -93,18 +93,22 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         n_layers=27,
         d_model=2048,
         n_heads=16,
-        n_kv_heads=2,
+        # MLA: num_key_value_heads=16 in config.json (same as query heads).
+        # KV compression is done via kv_lora_rank=512 latent space, not GQA.
+        n_kv_heads=16,
         global_attn_layers=frozenset(range(27)),
         is_moe=True,
     ),
     "olmo2_7b": ModelSpec(
         name="olmo2_7b",
-        pt_id="allenai/OLMo-2-0325-7B",
-        it_id="allenai/OLMo-2-0325-7B-Instruct",
+        # OLMo 2 7B was released 2024-11 (1124).  There is no 0325-7B variant.
+        pt_id="allenai/OLMo-2-1124-7B",
+        it_id="allenai/OLMo-2-1124-7B-Instruct",
         n_layers=32,
         d_model=4096,
         n_heads=32,
-        n_kv_heads=8,
+        # OLMo 2 7B uses standard MHA (n_kv_heads == n_heads), not GQA.
+        n_kv_heads=32,
         global_attn_layers=frozenset(range(32)),
     ),
 }

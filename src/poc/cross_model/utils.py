@@ -39,7 +39,7 @@ def load_model_and_tokenizer(
         (model, tokenizer) both ready for inference.
     """
     kwargs: dict = {
-        "torch_dtype": dtype,
+        "dtype": dtype,
         "device_map": str(device),
         "trust_remote_code": True,
     }

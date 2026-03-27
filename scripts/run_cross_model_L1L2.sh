@@ -17,6 +17,11 @@
 
 set -euo pipefail
 
+# ── Model cache on large disk (/mnt/storage, 13 TB free) ──────────────────────
+# Prevents HF model downloads from filling the 439 GB boot disk.
+export HF_HOME=/mnt/storage/yifan/hf_cache
+export HF_TOKEN=${HF_TOKEN:-$(cat /mnt/storage/yifan/hf_cache/token 2>/dev/null || true)}
+
 MODELS=("gemma3_4b" "llama31_8b" "qwen3_4b" "mistral_7b" "deepseek_v2_lite" "olmo2_7b")
 DATASET="data/eval_dataset_v2.jsonl"
 NW=8
@@ -66,12 +71,14 @@ run_variant() {
     done
 
     # Wait for all workers
+    local failed=0
     for i in "${!pids[@]}"; do
         wait "${pids[$i]}" || {
             echo "ERROR: $model $variant worker $i failed (see $log_dir/w${i}.log)"
-            exit 1
+            failed=1
         }
     done
+    [[ "$failed" == "1" ]] && return 1
 
     echo "[$(date +%T)] Workers done. Merging $model $variant ..."
     uv run python -m src.poc.cross_model.collect_L1L2 \
@@ -82,8 +89,8 @@ run_variant() {
 }
 
 for model in "${MODELS[@]}"; do
-    run_variant "$model" pt
-    run_variant "$model" it
+    run_variant "$model" pt || echo "WARN: $model pt FAILED (model inaccessible?) — skipping"
+    run_variant "$model" it || echo "WARN: $model it FAILED (model inaccessible?) — skipping"
 done
 
 echo "=== L1+L2 complete ==="

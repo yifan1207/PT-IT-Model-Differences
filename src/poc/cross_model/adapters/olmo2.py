@@ -1,8 +1,10 @@
-"""Adapter for OLMo 2 7B (allenai/OLMo-2-0325-7B / -Instruct).
+"""Adapter for OLMo 2 7B (allenai/OLMo-2-1124-7B / -Instruct).
 
-OLMo 2 uses a non-standard internal architecture (no pre-norm, post-norm after
-each sublayer). However, the standard HF CausalLM interface is the same:
+OLMo 2 7B was released 2024-11 (model ID suffix "1124").
+Architecture: standard decoder-only transformer with post-norm (RMSNorm after
+each sub-layer, unlike typical pre-norm). Standard HF CausalLM interface:
   model.model.layers[i] returns (hidden_states, ...)
+Uses full MHA (n_kv_heads == n_heads == 32), not GQA.
 
 OLMo is fully open: weights + data + training recipe (Tülu 3 IT via DPO).
 This makes it the most reproducible model in the study.

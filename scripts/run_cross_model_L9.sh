@@ -67,12 +67,14 @@ run_variant() {
     done
 
     # Wait for all workers
+    local failed=0
     for i in "${!pids[@]}"; do
         wait "${pids[$i]}" || {
             echo "ERROR: $model $variant worker $i failed (see $log_dir/w${i}.log)"
-            exit 1
+            failed=1
         }
     done
+    [[ "$failed" == "1" ]] && return 1
 
     echo "[$(date +%T)] Workers done. Merging and aggregating entropy for $model $variant ..."
     uv run python -m src.poc.cross_model.collect_L9 \
@@ -83,8 +85,8 @@ run_variant() {
 }
 
 for model in "${MODELS[@]}"; do
-    run_variant "$model" pt
-    run_variant "$model" it
+    run_variant "$model" pt || echo "WARN: $model pt FAILED (model inaccessible?) — skipping"
+    run_variant "$model" it || echo "WARN: $model it FAILED (model inaccessible?) — skipping"
 done
 
 echo "=== L9 complete ==="

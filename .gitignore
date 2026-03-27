@@ -269,3 +269,5 @@ results/exp6/**
 !results/exp6/merged_A5a_notmpl_it_v1/
 !results/exp6/merged_A5a_notmpl_it_v1/plots/
 !results/exp6/merged_A5a_notmpl_it_v1/plots/**
+!results/exp6/plots_notmpl/
+!results/exp6/plots_notmpl/**
