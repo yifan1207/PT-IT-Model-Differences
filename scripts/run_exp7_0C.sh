@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Exp7 0C: Projection-Magnitude-Matched Random Direction Control
-# Runs A1_rand_matched experiment: removes a random direction from IT activations
-# at corrective layers (20-33), but scales the perturbation to match the per-token
-# projection magnitude of the corrective direction. This is a fair like-for-like
-# comparison that eliminates the projection-magnitude confound in A1_rand.
+# Runs two experiments:
+#   1. A1_rand_matched: single seed (42), full alpha sweep (15 conditions)
+#   2. A1_rand_matched_multiseed: 5 seeds, reduced alpha sweep (26 conditions)
 #
-# Expected: governance metrics flat across all α → effect is direction-specific.
+# Expected: governance metrics flat across all alpha -> effect is direction-specific.
+# Multi-seed: mean +/- std across 5 seeds should show tight CIs around flat lines.
 #
 # Usage:
 #   bash scripts/run_exp7_0C.sh
@@ -26,52 +26,101 @@ if [[ ! -f "$CORR_DIR" ]]; then
 fi
 
 OUTPUT_BASE="results/exp7/0C"
-RUN_NAME="A1_rand_matched_it_v1"
 NW=8
 
 mkdir -p logs/exp7 "$OUTPUT_BASE"
 
-echo "=== Exp7 0C: Magnitude-matched random direction control (${NW} GPUs) ==="
-pids=()
-for i in $(seq 0 $((NW-1))); do
-    echo "[0C] launching worker $i on cuda:$i"
-    uv run python -m src.poc.exp6.run \
-        --experiment A1_rand_matched \
-        --variant it \
-        --worker-index "$i" --n-workers "$NW" \
-        --device "cuda:${i}" \
-        --run-name "${RUN_NAME}_w${i}" \
-        --output-base "$OUTPUT_BASE" \
-        --corrective-direction-path "$CORR_DIR" \
-        "${EXTRA_ARGS[@]}" \
-        > logs/exp7/0C_w${i}.log 2>&1 &
-    pids+=($!)
-done
+run_0c_experiment() {
+    local EXPERIMENT=$1
+    local RUN_NAME=$2
 
-echo "[0C] waiting for workers..."
-failed=0
-for pid in "${pids[@]}"; do
-    if ! wait "$pid"; then
-        echo "[0C] ERROR: worker $pid failed"
-        failed=1
+    echo ""
+    echo "=== [0C] ${EXPERIMENT}: ${RUN_NAME} (${NW} GPUs) ==="
+    pids=()
+    for i in $(seq 0 $((NW-1))); do
+        uv run python -m src.poc.exp6.run \
+            --experiment "$EXPERIMENT" \
+            --variant it \
+            --worker-index "$i" --n-workers "$NW" \
+            --device "cuda:${i}" \
+            --run-name "${RUN_NAME}_w${i}" \
+            --output-base "$OUTPUT_BASE" \
+            --corrective-direction-path "$CORR_DIR" \
+            "${EXTRA_ARGS[@]}" \
+            > logs/exp7/0C_${RUN_NAME}_w${i}.log 2>&1 &
+        pids+=($!)
+    done
+
+    failed=0
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then echo "[0C] worker failed for $RUN_NAME"; failed=1; fi
+    done
+    if [[ "$failed" -ne 0 ]]; then
+        echo "[0C] Check logs/exp7/0C_${RUN_NAME}_w*.log"
+        exit 1
     fi
-done
-if [[ "$failed" -ne 0 ]]; then
-    echo "[0C] Some workers failed. Check logs/exp7/0C_w*.log"
-    exit 1
-fi
 
-echo "=== [0C] Merging worker results... ==="
-src_dirs=()
-for i in $(seq 0 $((NW-1))); do src_dirs+=("${OUTPUT_BASE}/${RUN_NAME}_w${i}"); done
+    src_dirs=()
+    for i in $(seq 0 $((NW-1))); do src_dirs+=("${OUTPUT_BASE}/${RUN_NAME}_w${i}"); done
+    uv run python scripts/merge_exp6_workers.py \
+        --experiment "$EXPERIMENT" --variant it --n-workers "$NW" \
+        --merged-name "merged_${RUN_NAME}" --output-base "$OUTPUT_BASE" \
+        --source-dirs "${src_dirs[@]}"
+}
 
-uv run python scripts/merge_exp6_workers.py \
-    --experiment A1_rand_matched \
-    --variant it \
-    --n-workers "$NW" \
-    --merged-name "merged_${RUN_NAME}" \
-    --output-base "$OUTPUT_BASE" \
-    --source-dirs "${src_dirs[@]}"
+# Step 1: Single-seed full sweep
+run_0c_experiment A1_rand_matched A1_rand_matched_it_v1
 
-echo "=== [0C] Done. Results in ${OUTPUT_BASE}/merged_${RUN_NAME}/ ==="
-echo "Check: governance metrics flat across α values in scores.jsonl"
+# Step 2: Multi-seed reduced sweep
+run_0c_experiment A1_rand_matched_multiseed A1_rand_multiseed_it_v1
+
+# Step 3: Report scale factor distribution
+echo ""
+echo "=== [0C] Generating scale factor distribution report ==="
+uv run python -c "
+import json, numpy as np
+from pathlib import Path
+
+# Collect scale factor stats from worker logs
+scale_factors = []
+for log_path in sorted(Path('logs/exp7').glob('0C_A1_rand_matched_it_v1_w*.log')):
+    text = log_path.read_text()
+    # Scale factors are logged by the interventions module
+    # Parse from any diagnostics output
+
+# If we have the module-level accumulator, use it
+try:
+    from src.poc.exp6.interventions import get_and_clear_scale_factor_log
+    factors = get_and_clear_scale_factor_log()
+    if factors:
+        arr = np.array(factors)
+        report = {
+            'n_samples': len(arr),
+            'mean': float(arr.mean()),
+            'median': float(np.median(arr)),
+            'std': float(arr.std()),
+            'p5': float(np.percentile(arr, 5)),
+            'p25': float(np.percentile(arr, 25)),
+            'p75': float(np.percentile(arr, 75)),
+            'p95': float(np.percentile(arr, 95)),
+            'max': float(arr.max()),
+            'pct_above_100': float((arr > 100).mean() * 100),
+            'expected_sqrt_d': float(np.sqrt(2560)),
+        }
+        out_path = Path('results/exp7/0C/scale_factor_distribution.json')
+        out_path.write_text(json.dumps(report, indent=2))
+        print(f'Scale factor distribution:')
+        print(f'  mean={report[\"mean\"]:.1f}, median={report[\"median\"]:.1f}')
+        print(f'  p5={report[\"p5\"]:.1f}, p95={report[\"p95\"]:.1f}, max={report[\"max\"]:.1f}')
+        print(f'  % above 100x: {report[\"pct_above_100\"]:.1f}%')
+        print(f'  Expected sqrt(d): {report[\"expected_sqrt_d\"]:.1f}')
+except Exception as e:
+    print(f'Scale factor report skipped: {e}')
+" 2>&1
+
+echo ""
+echo "=== [0C] Done ==="
+echo "Results:"
+echo "  ${OUTPUT_BASE}/merged_A1_rand_matched_it_v1/   — single seed"
+echo "  ${OUTPUT_BASE}/merged_A1_rand_multiseed_it_v1/ — 5 seeds"
+echo "  ${OUTPUT_BASE}/scale_factor_distribution.json  — per-token scale stats"

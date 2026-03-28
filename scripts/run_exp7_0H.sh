@@ -78,6 +78,8 @@ fi
 HELD_OUT_N=$(python3 -c "import json; print(len(json.load(open('results/exp7/0H/held_out_800_ids.json'))))")
 echo "[0H] held-out records: $HELD_OUT_N"
 
+HELD_OUT_IDS="results/exp7/0H/held_out_800_ids.json"
+
 run_a1_held_out() {
     local RUN_NAME=$1
     local DIR_PATH=$2
@@ -93,6 +95,7 @@ run_a1_held_out() {
             --run-name "${RUN_NAME}_w${i}" \
             --output-base "results/exp7/0H" \
             --corrective-direction-path "$DIR_PATH" \
+            --eval-record-ids "$HELD_OUT_IDS" \
             "${EXTRA_EVAL_ARGS[@]}" \
             > logs/exp7/0H_${RUN_NAME}_w${i}.log 2>&1 &
         pids+=($!)

@@ -318,6 +318,58 @@ def extract_subset_acts(subset_ids: list[str], merged_path: Path | None = None) 
     return result
 
 
+def verify_against_canonical() -> None:
+    """Verify that directions derived from unified acts match the canonical precompute_v2 direction.
+
+    The unified collection stores per-record means; precompute_v2 stored aggregate sums.
+    They should produce the same direction vector (up to numerical precision).
+    Computes: direction from selected-600 via unified acts → cosine vs canonical.
+    """
+    canonical_path = Path("results/exp5/precompute_v2/precompute/corrective_directions.npz")
+    selected_path = SELECTED_JSON
+
+    if not canonical_path.exists():
+        print("[verify] canonical corrective_directions.npz not found, skipping.", flush=True)
+        return
+    if not selected_path.exists():
+        print("[verify] selected.json not found, skipping.", flush=True)
+        return
+
+    merged_path = OUTPUT_DIR / "merged.npz"
+    if not merged_path.exists():
+        print("[verify] merged.npz not found, skipping.", flush=True)
+        return
+
+    selected_ids = json.loads(selected_path.read_text())
+    acts = extract_subset_acts(selected_ids)
+    canonical = dict(np.load(str(canonical_path)))
+
+    print("[verify] Comparing unified-derived direction vs canonical (selected-600):", flush=True)
+    for li in ALL_LAYERS:
+        key = f"layer_{li}"
+        if key not in canonical:
+            continue
+        it_mean = acts[f"it_acts_{li}"].mean(axis=0).astype(np.float64)
+        pt_mean = acts[f"pt_acts_{li}"].mean(axis=0).astype(np.float64)
+        unified_dir = it_mean - pt_mean
+        unified_dir = unified_dir / (np.linalg.norm(unified_dir) + 1e-12)
+
+        canon_dir = canonical[key].astype(np.float64)
+        canon_dir = canon_dir / (np.linalg.norm(canon_dir) + 1e-12)
+
+        cosine = float(np.dot(unified_dir, canon_dir))
+        status = "OK" if cosine > 0.99 else "WARN" if cosine > 0.90 else "FAIL"
+        if li >= 20 or status != "OK":  # only print corrective layers or issues
+            print(f"  layer {li:2d}: cosine = {cosine:.6f}  [{status}]", flush=True)
+
+    print(
+        "[verify] Note: small deviations are expected because unified collection stores "
+        "per-record means (mean of k-step means) while precompute_v2 stored raw sums "
+        "(sum of all individual step activations). The direction should still be > 0.99.",
+        flush=True,
+    )
+
+
 def main() -> None:
     p = argparse.ArgumentParser(
         description="Unified per-record MLP activation collector (Exp7 0A+0H combined)"
@@ -329,9 +381,13 @@ def main() -> None:
                    help="Cap number of records per worker (for quick tests)")
     p.add_argument("--merge-only", action="store_true",
                    help="Merge existing worker NPZ files into merged.npz (no inference)")
+    p.add_argument("--verify", action="store_true",
+                   help="Verify unified acts match canonical precompute_v2 direction")
     args = p.parse_args()
 
-    if args.merge_only:
+    if args.verify:
+        verify_against_canonical()
+    elif args.merge_only:
         merge_workers(args.n_workers)
     else:
         run_worker(args.worker_index, args.n_workers, args.device, args.n_records)

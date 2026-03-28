@@ -7,14 +7,17 @@ from typing import Literal
 
 SteeringMethod = Literal[
     "none",
-    "directional_remove",   # A1: h' = h - (1-α) * proj(h, v̂)  — remove corrective dir from IT
-    "directional_add",      # A2: h' = h + β * d * ‖h‖           — inject direction into PT
-    "directional_random",   # Control: inject a random unit vector
-    "directional_rotated",  # Control: inject a 90°-rotated corrective direction
-    "content_direction",    # Control: inject the content-layer IT-PT direction
-    "progressive_skip",     # A5a: zero MLP+attention outputs at ablation_layers (no direction needed)
-    "feature_clamp",        # B1: clamp governance features at γ × mean_activation
-    "wdec_inject",          # B2: inject W_dec-projected governance direction
+    "directional_remove",           # A1: h' = h - (1-α) * proj(h, v̂)  — remove corrective dir from IT
+    "directional_add",              # A2: h' = h + β * d * ‖h‖           — inject direction into PT
+    "directional_random",           # Control: inject a random unit vector
+    "directional_rotated",          # Control: inject a 90°-rotated corrective direction
+    "content_direction",            # Control: inject the content-layer IT-PT direction
+    "directional_random_matched",   # 0C: magnitude-matched random direction removal
+    "directional_remove_residual",  # 0I: projection removal on residual stream (full layer output)
+    "directional_remove_attn",      # 0I: projection removal on attention output
+    "progressive_skip",             # A5a: zero MLP+attention outputs at ablation_layers (no direction needed)
+    "feature_clamp",                # B1: clamp governance features at γ × mean_activation
+    "wdec_inject",                  # B2: inject W_dec-projected governance direction
 ]
 
 FeatureLayerRange = Literal["all", "early_20_25", "mid_26_29", "late_30_33"]

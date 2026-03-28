@@ -482,6 +482,28 @@ def _A1_rand_matched_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]
     return specs  # 1 + 14 = 15 conditions
 
 
+def _A1_rand_matched_multiseed_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A1_rand_matched_multiseed: Multi-seed random direction control (Exp7 0C robustness).
+
+    Runs the magnitude-matched random control with 5 different random seeds at a reduced
+    alpha sweep (alpha=0 is the strongest test). Reports mean +/- std across seeds.
+    """
+    SEEDS = [42, 137, 271, 503, 719]
+    ALPHA_VALUES = [2.0, 1.0, 0.5, 0.0, -1.0]  # reduced sweep
+    CORR_LAYERS = list(range(cfg.proposal_boundary, cfg.n_layers))
+
+    specs = [("A1randms_baseline", replace(cfg, method="none", directional_alpha=1.0))]
+    for seed in SEEDS:
+        for alpha in ALPHA_VALUES:
+            specs.append((f"A1randms_s{seed}_alpha_{alpha:g}", replace(cfg,
+                method="directional_random_matched",
+                ablation_layers=CORR_LAYERS,
+                directional_alpha=alpha,
+                random_direction_seed=seed,
+            )))
+    return specs  # 1 + 5*5 = 26 conditions
+
+
 def _A1_formula_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     """A1_formula: Intervention formula sensitivity analysis (Exp7 0I).
 
@@ -516,6 +538,28 @@ def _A1_formula_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     return specs  # 4 × 6 = 24 conditions
 
 
+def _A1_single_layer_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A1_single_layer: Per-layer importance sweep (Exp7 0F).
+
+    Tests each corrective layer individually at alpha=0 (full removal) to identify
+    which specific layers carry the most governance signal. This connects to 0J
+    (tuned-lens commitment onset): the most important single layers should cluster
+    near the commitment onset boundary.
+
+    Produces 1 baseline + 14 single-layer conditions (layers 20-33).
+    """
+    CORR_LAYERS = list(range(cfg.proposal_boundary, cfg.n_layers))  # layers 20-33
+
+    specs = [("A1single_baseline", replace(cfg, method="none", directional_alpha=1.0))]
+    for layer in CORR_LAYERS:
+        specs.append((f"A1single_layer_{layer}", replace(cfg,
+            method="directional_remove",
+            ablation_layers=[layer],
+            directional_alpha=0.0,  # full removal
+        )))
+    return specs  # 1 + 14 = 15 conditions
+
+
 def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     match cfg.experiment:
         case "A1": return _A1_conditions(cfg)
@@ -524,7 +568,9 @@ def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
         case "A1_mid": return _A1_mid_conditions(cfg)
         case "A1_rand": return _A1_rand_conditions(cfg)
         case "A1_rand_matched": return _A1_rand_matched_conditions(cfg)
+        case "A1_rand_matched_multiseed": return _A1_rand_matched_multiseed_conditions(cfg)
         case "A1_formula": return _A1_formula_conditions(cfg)
+        case "A1_single_layer": return _A1_single_layer_conditions(cfg)
         case "A2": return _A2_conditions(cfg)
         case "A5a": return _A5a_conditions(cfg)
         case "A5a_early": return _A5a_early_conditions(cfg)
@@ -886,7 +932,7 @@ def _load_B_hooks_config(cfg: Exp6Config, loaded: Any) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run exp6 steering experiments.")
-    p.add_argument("--experiment", choices=["A1", "A1_notmpl", "A1_early", "A1_mid", "A1_rand", "A1_rand_matched", "A1_formula", "A2", "A5a", "A5a_early", "A5a_mid", "A5a_notmpl", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
+    p.add_argument("--experiment", choices=["A1", "A1_notmpl", "A1_early", "A1_mid", "A1_rand", "A1_rand_matched", "A1_rand_matched_multiseed", "A1_formula", "A1_single_layer", "A2", "A5a", "A5a_early", "A5a_mid", "A5a_notmpl", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
     p.add_argument("--variant", choices=["pt", "it"], default="it")
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
     p.add_argument("--device", default="cuda")
@@ -922,6 +968,10 @@ def main() -> None:
     p.add_argument("--n-layers", type=int, default=None,
                    help="Override cfg.n_layers (default 34). Sets the last layer index+1. "
                         "E.g. --n-layers 32 for layers 20-31 (proposal_boundary=20).")
+    p.add_argument("--eval-record-ids", default=None,
+                   help="Path to JSON file with list of record IDs to evaluate on. "
+                        "Only records whose 'record_id' is in this list will be used. "
+                        "Used by 0H to restrict evaluation to held-out-800 records.")
 
     args = p.parse_args()
 
@@ -984,6 +1034,13 @@ def main() -> None:
 
     _check_disk()
     records = load_dataset_records(cfg.dataset_path, prompt_format=cfg.prompt_format)
+
+    # Filter to specific record IDs if provided (used by 0H held-out evaluation)
+    if args.eval_record_ids:
+        allowed_ids = set(json.loads(Path(args.eval_record_ids).read_text()))
+        records = [r for r in records if r.get("record_id") in allowed_ids]
+        print(f"[exp6] filtered to {len(records)} records from {args.eval_record_ids}", flush=True)
+
     if cfg.n_eval_examples and len(records) > cfg.n_eval_examples:
         records = records[:cfg.n_eval_examples]
     loaded = load_model(cfg)

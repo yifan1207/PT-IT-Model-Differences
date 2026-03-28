@@ -67,6 +67,17 @@ def _random_unit_vector(d_model: int, seed: int, layer_idx: int) -> torch.Tensor
     return v / (v.norm() + 1e-12)
 
 
+_SCALE_FACTOR_LOG: list[float] = []  # module-level accumulator for 0C diagnostics
+
+
+def get_and_clear_scale_factor_log() -> list[float]:
+    """Return accumulated scale factors and clear the log. Used by 0C for diagnostics."""
+    global _SCALE_FACTOR_LOG
+    out = list(_SCALE_FACTOR_LOG)
+    _SCALE_FACTOR_LOG.clear()
+    return out
+
+
 def _project_remove_magnitude_matched(
     mlp_out: torch.Tensor,
     corr_direction: torch.Tensor,
@@ -76,12 +87,14 @@ def _project_remove_magnitude_matched(
     """Remove random direction with identical per-token perturbation magnitude as corrective.
 
     Addresses the projection-magnitude confound (Exp7 0C): in d=2560 a random unit
-    vector has expected projection |h·d̂_rand| ≈ ‖h‖/√2560, ~50× smaller than the
-    corrective direction. This function scales the random removal so the perturbation
-    vector ‖Δh‖ is equal in magnitude to what the corrective removal would produce.
+    vector has expected projection |h . d_rand| ~ ||h||/sqrt(2560), ~50x smaller than
+    the corrective direction. This function scales the random removal so the perturbation
+    vector ||delta_h|| is equal in magnitude to what the corrective removal would produce.
 
-    Per token:  scale = |h · d̂_corr| / max(|h · d̂_rand|, ε)
-                h' = h - (1-α) · scale · (h · d̂_rand) · d̂_rand
+    Per token:  scale = |h . d_corr| / max(|h . d_rand|, eps)
+                h' = h - (1-alpha) * scale * (h . d_rand) * d_rand
+
+    Scale factors are logged to _SCALE_FACTOR_LOG for diagnostics (0C report).
 
     Args:
         mlp_out:        [..., d_model] MLP output tensor.
@@ -98,6 +111,10 @@ def _project_remove_magnitude_matched(
     p_corr = (flat * corr_direction).sum(dim=-1, keepdim=True).abs()   # [B*T, 1]
     p_rand = (flat * rand_direction).sum(dim=-1, keepdim=True).abs().clamp(min=1e-8)
     scale = p_corr / p_rand                                             # [B*T, 1]
+
+    # Log scale factors for diagnostics (sample to avoid memory bloat)
+    if len(_SCALE_FACTOR_LOG) < 50000:
+        _SCALE_FACTOR_LOG.extend(scale.squeeze(-1).detach().cpu().tolist()[:100])
 
     proj = (flat * rand_direction).sum(dim=-1, keepdim=True) * rand_direction  # [B*T, d]
     out_flat = flat - (1 - alpha) * scale * proj
@@ -310,6 +327,10 @@ class Exp6InterventionSpec:
                     def hook(mod: Any, inp: tuple, out: Any) -> Any:
                         # Layer output is a tuple; first element is the hidden state
                         hidden = out[0] if isinstance(out, tuple) else out
+                        assert hidden.ndim == 3 and hidden.shape[-1] == self.corrective_directions[li].shape[0], (
+                            f"Residual hook layer {li}: expected [..., {self.corrective_directions[li].shape[0]}], "
+                            f"got {hidden.shape}. Check that the layer module returns (hidden_states, ...) tuple."
+                        )
                         with torch.no_grad():
                             modified = directional_ablate_tensor(
                                 hidden, self.corrective_directions[li], self.alpha
@@ -331,6 +352,10 @@ class Exp6InterventionSpec:
                     def hook(mod: Any, inp: tuple, out: Any) -> Any:
                         # Attention output: (hidden_states, [attn_weights], past_kv)
                         hidden = out[0] if isinstance(out, tuple) else out
+                        assert hidden.ndim == 3 and hidden.shape[-1] == self.corrective_directions[li].shape[0], (
+                            f"Attention hook layer {li}: expected [..., {self.corrective_directions[li].shape[0]}], "
+                            f"got {hidden.shape}. Gemma 3 self_attn returns (hidden_states, attn_weights, past_kv)."
+                        )
                         with torch.no_grad():
                             modified = directional_ablate_tensor(
                                 hidden, self.corrective_directions[li], self.alpha

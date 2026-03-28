@@ -3,8 +3,20 @@
 0A mode: Loads merged per-record MLP activations from collect_per_record_acts.py,
 computes bootstrap stability of the corrective direction.
 
+Reports stability separately for three layer groups:
+  - Early (1–11): content/proposal layers
+  - Mid (12–19): transition layers
+  - Corrective (20–33): steering-relevant layers
+
+0A-OOD mode: Compute direction from 600 out-of-distribution prompts (not from the
+1,400 calibration set) and compare cosine to canonical. Tests whether the direction
+is overfit to the calibration prompt distribution.
+
 0B (--matched-mode): Compares canonical (free-running) direction to direction
 computed from matched token sequences (PT forced to follow IT's tokens).
+Supports two sub-modes:
+  (a) governance-selected 600 — isolates token confound only
+  (b) random 600 — tests both token confound AND prompt generalization
 
 Usage:
 
@@ -39,8 +51,19 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 ALL_LAYERS = list(range(1, 34))
-# Subset sizes for convergence curve
-CONVERGENCE_SIZES = [100, 200, 300, 400, 500, 600]
+# Layer groups (matching precompute_directions_v2.py Phase 4 split)
+EARLY_LAYERS = list(range(1, 12))     # 1-11
+MID_LAYERS = list(range(12, 20))      # 12-19
+CORRECTIVE_LAYERS = list(range(20, 34))  # 20-33
+
+LAYER_GROUPS = {
+    "early": EARLY_LAYERS,
+    "mid": MID_LAYERS,
+    "corrective": CORRECTIVE_LAYERS,
+}
+
+# Subset sizes for convergence curve (extends to 1000/1400 when data available)
+CONVERGENCE_SIZES = [100, 200, 300, 400, 500, 600, 1000, 1400]
 CONVERGENCE_DRAWS = 20   # random draws per subset size
 
 
@@ -56,7 +79,7 @@ def _cosine(a: np.ndarray, b: np.ndarray) -> float:
 def _load_acts(acts_dir: Path) -> tuple[np.ndarray, dict[int, np.ndarray], dict[int, np.ndarray]]:
     """Load merged.npz from acts_dir. Returns (record_ids, it_acts, pt_acts).
 
-    it_acts[layer] = float32 [n_records, D_MODEL]
+    it_acts[layer] = float64 [n_records, D_MODEL]
     """
     merged = acts_dir / "merged.npz"
     with np.load(merged, allow_pickle=True) as d:
@@ -72,6 +95,16 @@ def _load_canonical(npz_path: Path) -> dict[int, np.ndarray]:
         return {int(k.split("_", 1)[1]): d[k].astype(np.float64) for k in d.files if k.startswith("layer_")}
 
 
+def _group_summary(layer_results: dict[int, dict], group_layers: list[int], metric_key: str) -> dict:
+    """Compute mean/min/std of a metric across a layer group."""
+    vals = [layer_results[li][metric_key] for li in group_layers
+            if li in layer_results and not np.isnan(layer_results[li].get(metric_key, float("nan")))]
+    if not vals:
+        return {"mean": float("nan"), "min": float("nan"), "std": float("nan")}
+    arr = np.array(vals)
+    return {"mean": float(arr.mean()), "min": float(arr.min()), "std": float(arr.std())}
+
+
 def run_bootstrap(
     it_acts: dict[int, np.ndarray],
     pt_acts: dict[int, np.ndarray],
@@ -81,7 +114,7 @@ def run_bootstrap(
 ) -> dict:
     """Run bootstrap direction stability analysis.
 
-    Returns dict with per-layer stats and convergence curves.
+    Returns dict with per-layer stats, convergence curves, and layer-group summaries.
     """
     rng = np.random.default_rng(seed)
     n_records = next(iter(it_acts.values())).shape[0]
@@ -144,16 +177,28 @@ def run_bootstrap(
             }
         convergence[li] = layer_conv
 
-    # ── Summary aggregates ────────────────────────────────────────────────────
-    corrective_layers = list(range(20, 34))
-    all_pairwise = [layer_results[li]["pairwise_cosine_mean"] for li in corrective_layers if li in layer_results]
-    all_canonical = [layer_results[li]["canonical_cosine_mean"] for li in corrective_layers if li in layer_results]
+    # ── Layer-group summaries ────────────────────────────────────────────────
+    group_summaries: dict[str, dict] = {}
+    for group_name, group_layers in LAYER_GROUPS.items():
+        group_summaries[group_name] = {
+            "pairwise_cosine": _group_summary(layer_results, group_layers, "pairwise_cosine_mean"),
+            "canonical_cosine": _group_summary(layer_results, group_layers, "canonical_cosine_mean"),
+        }
 
+    # ── Summary aggregates ────────────────────────────────────────────────────
     summary = {
-        "pairwise_cosine_mean_corrective": float(np.mean(all_pairwise)),
-        "pairwise_cosine_min_corrective": float(np.min(all_pairwise)),
-        "canonical_cosine_mean_corrective": float(np.mean(all_canonical)),
-        "canonical_cosine_min_corrective": float(np.min(all_canonical)),
+        # Per-group means (the key addition for the paper)
+        "corrective_mean_cosine": group_summaries["corrective"]["pairwise_cosine"]["mean"],
+        "mid_mean_cosine": group_summaries["mid"]["pairwise_cosine"]["mean"],
+        "early_mean_cosine": group_summaries["early"]["pairwise_cosine"]["mean"],
+        "corrective_canonical_cosine": group_summaries["corrective"]["canonical_cosine"]["mean"],
+        "mid_canonical_cosine": group_summaries["mid"]["canonical_cosine"]["mean"],
+        "early_canonical_cosine": group_summaries["early"]["canonical_cosine"]["mean"],
+        # Legacy aggregate stats
+        "pairwise_cosine_mean_corrective": group_summaries["corrective"]["pairwise_cosine"]["mean"],
+        "pairwise_cosine_min_corrective": group_summaries["corrective"]["pairwise_cosine"]["min"],
+        "canonical_cosine_mean_corrective": group_summaries["corrective"]["canonical_cosine"]["mean"],
+        "canonical_cosine_min_corrective": group_summaries["corrective"]["canonical_cosine"]["min"],
         "n_records": n_records,
         "n_bootstrap": n_bootstrap,
         "seed": seed,
@@ -162,6 +207,7 @@ def run_bootstrap(
 
     return {
         "summary": summary,
+        "layer_group_summaries": group_summaries,
         "per_layer": layer_results,
         "convergence": {str(li): {str(s): v for s, v in conv.items()} for li, conv in convergence.items()},
     }
@@ -171,12 +217,13 @@ def run_matched_comparison(
     it_acts: dict[int, np.ndarray],
     pt_forced_acts: dict[int, np.ndarray],
     canonical: dict[int, np.ndarray],
+    mode_label: str = "governance_selected",
 ) -> dict:
     """Compare canonical (free-running) direction to matched-token direction.
 
     matched_direction[L] = normalize(mean_IT_free[L] - mean_PT_forced[L])
 
-    Returns per-layer cosine(matched, canonical).
+    Returns per-layer cosine(matched, canonical) with layer-group flagging.
     """
     results: dict[str, dict] = {}
 
@@ -195,11 +242,40 @@ def run_matched_comparison(
 
         results[str(li)] = res
 
-    # Summary over corrective layers
-    corrective = [float(results[str(li)]["cosine_matched_vs_canonical"]) for li in range(20, 34)]
+    # Per-group summaries with corrective vs early flagging
+    group_cosines: dict[str, dict] = {}
+    for group_name, group_layers in LAYER_GROUPS.items():
+        cosines = [float(results[str(li)]["cosine_matched_vs_canonical"])
+                   for li in group_layers if str(li) in results
+                   and not np.isnan(results[str(li)]["cosine_matched_vs_canonical"])]
+        if cosines:
+            arr = np.array(cosines)
+            group_cosines[group_name] = {
+                "mean": float(arr.mean()),
+                "min": float(arr.min()),
+                "std": float(arr.std()),
+            }
+        else:
+            group_cosines[group_name] = {"mean": float("nan"), "min": float("nan"), "std": float("nan")}
+
+    # Flag if corrective layers have lower cosine than early layers
+    corr_mean = group_cosines["corrective"]["mean"]
+    early_mean = group_cosines["early"]["mean"]
+    drop_at_corrective = early_mean - corr_mean if not np.isnan(corr_mean) and not np.isnan(early_mean) else float("nan")
+
     summary = {
-        "cosine_matched_vs_canonical_mean_corrective": float(np.nanmean(corrective)),
-        "cosine_matched_vs_canonical_min_corrective": float(np.nanmin(corrective)),
+        "mode": mode_label,
+        "cosine_matched_vs_canonical_mean_corrective": corr_mean,
+        "cosine_matched_vs_canonical_min_corrective": group_cosines["corrective"]["min"],
+        "cosine_by_group": group_cosines,
+        "corrective_vs_early_drop": drop_at_corrective,
+        "corrective_drop_flag": (
+            "SIGNIFICANT: cosine drops at corrective layers — token confound is relevant for steering"
+            if not np.isnan(drop_at_corrective) and drop_at_corrective > 0.05
+            else "MINIMAL: cosine stable across layers — token confound is not layer-specific"
+            if not np.isnan(drop_at_corrective)
+            else "UNKNOWN"
+        ),
         "n_matched_records": min(
             next(iter(it_acts.values())).shape[0],
             next(iter(pt_forced_acts.values())).shape[0],
@@ -207,6 +283,48 @@ def run_matched_comparison(
     }
 
     return {"summary": summary, "per_layer": results}
+
+
+def run_ood_direction_test(
+    ood_acts_dir: Path,
+    canonical: dict[int, np.ndarray],
+) -> dict:
+    """Compute direction from OOD prompts and compare to canonical.
+
+    Tests whether the corrective direction generalises beyond the calibration set.
+    Uses 600 out-of-distribution prompts (e.g. TriviaQA/ARC) not in eval_dataset_v2.
+    """
+    _, ood_it, ood_pt = _load_acts(ood_acts_dir)
+    n_records = next(iter(ood_it.values())).shape[0]
+
+    per_layer: dict[str, dict] = {}
+    for li in ALL_LAYERS:
+        ood_dir = _normalize(ood_it[li].mean(axis=0) - ood_pt[li].mean(axis=0))
+        cos = _cosine(ood_dir, canonical[li]) if li in canonical else float("nan")
+        per_layer[str(li)] = {"cosine_ood_vs_canonical": cos}
+
+    # Group summaries
+    group_cosines: dict[str, dict] = {}
+    for group_name, group_layers in LAYER_GROUPS.items():
+        cosines = [per_layer[str(li)]["cosine_ood_vs_canonical"]
+                   for li in group_layers if str(li) in per_layer
+                   and not np.isnan(per_layer[str(li)]["cosine_ood_vs_canonical"])]
+        if cosines:
+            arr = np.array(cosines)
+            group_cosines[group_name] = {"mean": float(arr.mean()), "min": float(arr.min())}
+
+    summary = {
+        "n_ood_records": n_records,
+        "cosine_by_group": group_cosines,
+        "corrective_mean": group_cosines.get("corrective", {}).get("mean", float("nan")),
+        "interpretation": (
+            "direction generalises to OOD prompts (cosine > 0.90)"
+            if group_cosines.get("corrective", {}).get("mean", 0) > 0.90
+            else "direction may be overfit to calibration set (cosine < 0.90)"
+        ),
+    }
+
+    return {"summary": summary, "per_layer": per_layer}
 
 
 def main() -> None:
@@ -221,6 +339,10 @@ def main() -> None:
     p.add_argument("--output-dir", required=True)
     p.add_argument("--matched-mode", action="store_true",
                    help="Run matched-token comparison (0B) instead of bootstrap (0A)")
+    p.add_argument("--matched-label", default="governance_selected",
+                   help="Label for matched mode: 'governance_selected' or 'random_600'")
+    p.add_argument("--ood-acts-dir", default=None,
+                   help="Path to OOD acts dir for out-of-distribution direction test (0A)")
     args = p.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -234,13 +356,17 @@ def main() -> None:
         _, pt_forced_acts, _ = _load_acts(Path(args.pt_forced_acts_dir))
         # pt_forced_acts has "it_acts" keys but these are actually PT-on-IT activations
         # force_decode_acts.py saves them under "it_acts_{L}" for the forced model
-        results = run_matched_comparison(it_acts, pt_forced_acts, canonical)
-        out_path = output_dir / "matched_cosines.json"
+        results = run_matched_comparison(it_acts, pt_forced_acts, canonical, args.matched_label)
+        out_path = output_dir / f"matched_cosines_{args.matched_label}.json"
         with open(out_path, "w") as f:
             json.dump(results, f, indent=2)
+
+        s = results["summary"]
         print(
-            f"[0B] matched direction cosine (corrective layers 20-33): "
-            f"{results['summary']['cosine_matched_vs_canonical_mean_corrective']:.4f}",
+            f"[0B] Matched direction cosine ({args.matched_label}):\n"
+            f"  Corrective (20-33): mean={s['cosine_matched_vs_canonical_mean_corrective']:.4f}\n"
+            f"  Drop vs early: {s['corrective_vs_early_drop']:.4f}\n"
+            f"  Flag: {s['corrective_drop_flag']}",
             flush=True,
         )
         print(f"[0B] saved → {out_path}", flush=True)
@@ -255,15 +381,33 @@ def main() -> None:
             json.dump(results, f, indent=2)
 
         s = results["summary"]
+        gs = results["layer_group_summaries"]
         print(
-            f"[0A] Bootstrap stability (corrective layers 20-33):\n"
-            f"  Pairwise cosine: mean={s['pairwise_cosine_mean_corrective']:.4f}  "
-            f"min={s['pairwise_cosine_min_corrective']:.4f}\n"
-            f"  Canonical cosine: mean={s['canonical_cosine_mean_corrective']:.4f}  "
-            f"min={s['canonical_cosine_min_corrective']:.4f}",
+            f"[0A] Bootstrap stability by layer group:\n"
+            f"  Early    (1-11):  pairwise={gs['early']['pairwise_cosine']['mean']:.4f}  "
+            f"canonical={gs['early']['canonical_cosine']['mean']:.4f}\n"
+            f"  Mid      (12-19): pairwise={gs['mid']['pairwise_cosine']['mean']:.4f}  "
+            f"canonical={gs['mid']['canonical_cosine']['mean']:.4f}\n"
+            f"  Corrective (20-33): pairwise={gs['corrective']['pairwise_cosine']['mean']:.4f}  "
+            f"canonical={gs['corrective']['canonical_cosine']['mean']:.4f}",
             flush=True,
         )
         print(f"[0A] saved → {out_path}", flush=True)
+
+        # OOD direction test if provided
+        if args.ood_acts_dir:
+            ood_results = run_ood_direction_test(Path(args.ood_acts_dir), canonical)
+            ood_path = output_dir / "ood_direction_cosine.json"
+            with open(ood_path, "w") as f:
+                json.dump(ood_results, f, indent=2)
+            ood_s = ood_results["summary"]
+            print(
+                f"[0A-OOD] Direction from {ood_s['n_ood_records']} OOD prompts:\n"
+                f"  Corrective cosine to canonical: {ood_s['corrective_mean']:.4f}\n"
+                f"  {ood_s['interpretation']}",
+                flush=True,
+            )
+            print(f"[0A-OOD] saved → {ood_path}", flush=True)
 
 
 if __name__ == "__main__":

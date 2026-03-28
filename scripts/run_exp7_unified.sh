@@ -103,6 +103,10 @@ if run_phase 1; then
         uv run python -m src.poc.exp7.collect_unified_acts --merge-only --n-workers "$NW"
     fi
 
+    # Verify unified acts match canonical precompute_v2 direction
+    echo "[Phase 1b+] Verifying unified acts against canonical direction..."
+    uv run python -m src.poc.exp7.collect_unified_acts --verify
+
     # 0G probe training can run in parallel on two GPUs while collection happens
     # (If GPUs are shared, run after collection completes)
     echo "[Phase 1c] Starting 0G tuned-lens probe training (cuda:0 and cuda:1)..."
@@ -213,8 +217,9 @@ if run_phase 4; then
     echo "[Phase 4c] 0H: A1 on held-out 800 (random + bottom directions)..."
     RAND_NPZ="results/exp7/0H/random_directions.npz"
     BOTTOM_NPZ="results/exp7/0H/bottom_directions.npz"
+    HELD_OUT_IDS="results/exp7/0H/held_out_800_ids.json"
 
-    # Run with random direction
+    # Run with random direction (restricted to held-out 800 records)
     if [[ -f "$RAND_NPZ" ]]; then
         pids=()
         for i in $(seq 0 $((NW-1))); do
@@ -223,6 +228,7 @@ if run_phase 4; then
                 --worker-index "$i" --n-workers "$NW" --device "cuda:${i}" \
                 --run-name "A1_it_random_dir_w${i}" --output-base "results/exp7/0H" \
                 --corrective-direction-path "$RAND_NPZ" \
+                --eval-record-ids "$HELD_OUT_IDS" \
                 $N_EVAL_ARG > logs/exp7/0H_rand_w${i}.log 2>&1 &
             pids+=($!)
         done
@@ -234,7 +240,7 @@ if run_phase 4; then
             --source-dirs "${src_dirs[@]}"
     fi
 
-    # Run with bottom direction
+    # Run with bottom direction (restricted to held-out 800 records)
     if [[ -f "$BOTTOM_NPZ" ]]; then
         pids=()
         for i in $(seq 0 $((NW-1))); do
@@ -243,6 +249,7 @@ if run_phase 4; then
                 --worker-index "$i" --n-workers "$NW" --device "cuda:${i}" \
                 --run-name "A1_it_bottom_dir_w${i}" --output-base "results/exp7/0H" \
                 --corrective-direction-path "$BOTTOM_NPZ" \
+                --eval-record-ids "$HELD_OUT_IDS" \
                 $N_EVAL_ARG > logs/exp7/0H_bottom_w${i}.log 2>&1 &
             pids+=($!)
         done

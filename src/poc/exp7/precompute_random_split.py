@@ -233,6 +233,73 @@ def run_worker(
     print(f"[0H w{worker_index}] saved → {out_path}", flush=True)
 
 
+def compare_direction_cosines(output_dir: Path) -> dict:
+    """Compare random-600 and bottom-600 directions against the canonical governance-600 direction.
+
+    Reports per-layer cosine similarity. If cosine > 0.95, governance selection is unnecessary.
+    If cosine < 0.80, the governance-selected direction is meaningfully different.
+    """
+    canonical_path = Path("results/exp5/precompute_v2/precompute/corrective_directions.npz")
+    random_path = output_dir / "random_directions.npz"
+    bottom_path = output_dir / "bottom_directions.npz"
+
+    if not canonical_path.exists() or not random_path.exists():
+        print("[0H] Cannot compare: missing canonical or random directions.", flush=True)
+        return {}
+
+    canonical = dict(np.load(str(canonical_path)))
+    random_dirs = dict(np.load(str(random_path)))
+    bottom_dirs = dict(np.load(str(bottom_path))) if bottom_path.exists() else {}
+
+    results: dict = {"random_vs_governance": {}, "bottom_vs_governance": {}}
+
+    for li in ALL_LAYERS:
+        key = f"layer_{li}"
+        if key not in canonical:
+            continue
+
+        c = canonical[key].astype(np.float64)
+        c = c / (np.linalg.norm(c) + 1e-12)
+
+        if key in random_dirs:
+            r = random_dirs[key].astype(np.float64)
+            r = r / (np.linalg.norm(r) + 1e-12)
+            results["random_vs_governance"][str(li)] = float(np.dot(c, r))
+
+        if key in bottom_dirs:
+            b = bottom_dirs[key].astype(np.float64)
+            b = b / (np.linalg.norm(b) + 1e-12)
+            results["bottom_vs_governance"][str(li)] = float(np.dot(c, b))
+
+    # Summary stats for corrective layers (20-33)
+    corr_cosines = [results["random_vs_governance"].get(str(li), 0.0)
+                    for li in range(20, 34) if str(li) in results["random_vs_governance"]]
+    if corr_cosines:
+        results["random_vs_governance_corrective_mean"] = float(np.mean(corr_cosines))
+        results["random_vs_governance_corrective_min"] = float(np.min(corr_cosines))
+        interpretation = (
+            "governance selection unnecessary (cosine > 0.95)"
+            if np.mean(corr_cosines) > 0.95
+            else "governance selection matters (cosine < 0.80)"
+            if np.mean(corr_cosines) < 0.80
+            else "moderate difference — governance selection has some effect"
+        )
+        results["interpretation"] = interpretation
+
+    out_path = output_dir / "direction_cosine_comparison.json"
+    import json as _json
+    out_path.write_text(_json.dumps(results, indent=2))
+    print(f"[0H] Direction cosine comparison → {out_path}", flush=True)
+    if corr_cosines:
+        print(
+            f"[0H] Random vs governance (corrective layers 20-33): "
+            f"mean={np.mean(corr_cosines):.4f}, min={np.min(corr_cosines):.4f}",
+            flush=True,
+        )
+        print(f"[0H] {results.get('interpretation', '')}", flush=True)
+    return results
+
+
 def compute_directions(output_dir: Path, acts_dir: Path) -> None:
     """Merge worker files and compute random + bottom directions."""
     # Gather per-split sums
@@ -285,6 +352,9 @@ def compute_directions(output_dir: Path, acts_dir: Path) -> None:
         npz_path = output_dir / f"{split_name}_directions.npz"
         np.savez_compressed(str(npz_path), **payload)
         print(f"[0H] {split_name} directions → {npz_path}", flush=True)
+
+    # Compare random and bottom directions against canonical governance direction
+    compare_direction_cosines(output_dir)
 
 
 def main() -> None:

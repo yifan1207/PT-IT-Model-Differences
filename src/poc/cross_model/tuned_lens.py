@@ -1,0 +1,998 @@
+"""Cross-model tuned-lens probes and commitment delay replication (0G).
+
+Extends the tuned-lens methodology (Belrose et al., 2023) across all 6 model
+families using the cross-model adapter infrastructure. Trains per-layer affine
+probes T_ℓ(h) = W_ℓ h + b_ℓ that map each layer's residual stream to the
+final layer's space, giving a more faithful readout than raw logit lens.
+
+Training:
+  - Prefill-based on C4 validation (single forward pass, all token positions)
+  - 60,000 tokens per model variant
+  - KL divergence loss: KL(softmax(lm_head(norm(probe(h_ℓ)))) ‖ softmax(lm_head(norm(h_L))))
+  - Identity init + zero bias, Adam lr=1e-3, cosine LR with 5% warmup, 5000 steps
+
+Evaluation:
+  - Autoregressive generation matching collect_L1L2.py methodology
+  - Same dataset (eval_dataset_v2.jsonl), same generation params
+  - KL-based commitment at thresholds [0.05, 0.1, 0.2]
+  - Top-1 commitment (no-flip-back)
+  - Enables direct per-token comparison with raw logit-lens results
+
+Transfer test:
+  - PT probes on IT activations vs IT probes on IT activations
+  - High transfer = shared representational geometry
+
+Usage:
+  # Train probes for one model+variant
+  uv run python -m src.poc.cross_model.tuned_lens \\
+      --model gemma3_4b --variant pt --device cuda:0
+
+  # Evaluate commitment (requires trained probes)
+  uv run python -m src.poc.cross_model.tuned_lens \\
+      --model gemma3_4b --variant pt --eval-only --device cuda:0
+
+  # Transfer test (requires both PT and IT probes)
+  uv run python -m src.poc.cross_model.tuned_lens \\
+      --model gemma3_4b --transfer-test --device cuda:0
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import math
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from src.poc.cross_model.config import (
+    MODEL_REGISTRY,
+    get_spec,
+    model_id_for_variant,
+)
+from src.poc.cross_model.adapters import get_adapter
+from src.poc.cross_model.utils import (
+    load_model_and_tokenizer,
+    load_dataset,
+    get_raw_prompt,
+    read_done_ids,
+)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger(__name__)
+
+# Belrose et al. KL commitment thresholds (nats)
+KL_THRESHOLDS = [0.05, 0.1, 0.2]
+
+
+# ── Probe definition ────────────────────────────────────────────────────────
+
+class TunedLensProbe(nn.Module):
+    """Per-layer affine probe: T_ℓ(h) = W h + b.
+
+    Identity + zero-bias initialisation (Belrose et al. warm start).
+    """
+
+    def __init__(self, d_model: int) -> None:
+        super().__init__()
+        self.linear = nn.Linear(d_model, d_model, bias=True)
+        nn.init.eye_(self.linear.weight)
+        nn.init.zeros_(self.linear.bias)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        return self.linear(h)
+
+
+# ── LR schedule ─────────────────────────────────────────────────────────────
+
+def _cosine_lr_with_warmup(
+    optimizer, step: int, n_steps: int, warmup_steps: int, base_lr: float
+) -> None:
+    """Cosine annealing with linear warmup (Belrose et al. schedule)."""
+    if step < warmup_steps:
+        lr = base_lr * (step + 1) / warmup_steps
+    else:
+        progress = (step - warmup_steps) / max(1, n_steps - warmup_steps)
+        lr = base_lr * 0.5 * (1 + math.cos(math.pi * progress))
+    for pg in optimizer.param_groups:
+        pg["lr"] = lr
+
+
+# ── Training data: C4 validation (prefill-based) ───────────────────────────
+
+def load_training_texts(
+    n_tokens_target: int = 60000,
+    max_seq_len: int = 512,
+    seed: int = 42,
+) -> list[str]:
+    """Load raw text from C4 validation split for probe training.
+
+    Uses HuggingFace datasets streaming to avoid downloading the full dataset.
+    Falls back to wikitext if C4 is unavailable.
+
+    Returns a list of text strings, estimated to contain >= n_tokens_target
+    tokens total (using ~4 chars/token heuristic for selection, actual
+    tokenisation happens later).
+    """
+    chars_target = n_tokens_target * 4  # rough 4 chars/token heuristic
+    max_chars = max_seq_len * 4
+
+    texts: list[str] = []
+    total_chars = 0
+
+    try:
+        from datasets import load_dataset as hf_load_dataset
+
+        log.info("Loading C4 validation split (streaming)...")
+        ds = hf_load_dataset(
+            "allenai/c4", "en", split="validation", streaming=True,
+            trust_remote_code=True,
+        )
+        for example in ds:
+            text = example.get("text", "")
+            if len(text) < 50:  # skip very short texts
+                continue
+            if len(text) > max_chars:
+                text = text[:max_chars]
+            texts.append(text)
+            total_chars += len(text)
+            if total_chars >= chars_target:
+                break
+
+    except Exception as e:
+        log.warning("C4 load failed (%s), falling back to wikitext...", e)
+        try:
+            from datasets import load_dataset as hf_load_dataset
+
+            ds = hf_load_dataset("Salesforce/wikitext", "wikitext-103-raw-v1",
+                                 split="validation", trust_remote_code=True)
+            for example in ds:
+                text = example.get("text", "")
+                if len(text) < 50:
+                    continue
+                if len(text) > max_chars:
+                    text = text[:max_chars]
+                texts.append(text)
+                total_chars += len(text)
+                if total_chars >= chars_target:
+                    break
+        except Exception as e2:
+            raise RuntimeError(f"Cannot load C4 or wikitext: {e2}") from e2
+
+    log.info(
+        "Loaded %d texts (~%dk chars, ~%dk estimated tokens)",
+        len(texts), total_chars // 1000, total_chars // 4000,
+    )
+    return texts
+
+
+# ── Prefill-based hidden state collection ───────────────────────────────────
+
+@torch.no_grad()
+def collect_hidden_states_prefill(
+    model: nn.Module,
+    tokenizer,
+    adapter,
+    spec,
+    texts: list[str],
+    device: torch.device,
+    max_seq_len: int = 512,
+) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
+    """Collect per-layer residual stream hidden states via single forward passes.
+
+    For each text, runs a single forward pass (no generation) and captures
+    the residual stream at all layers for all non-first token positions
+    (skip position 0 to avoid BOS artifacts).
+
+    Returns:
+        hidden_by_layer: {layer_idx: [N_total_tokens, d_model] float32 on CPU}
+        final_hidden:    [N_total_tokens, d_model] float32 on CPU
+    """
+    n_layers = spec.n_layers
+    multi_gpu = spec.multi_gpu
+
+    hidden_by_layer: dict[int, list[torch.Tensor]] = {i: [] for i in range(n_layers)}
+    final_hidden_list: list[torch.Tensor] = []
+
+    layer_modules = adapter.layers(model)
+
+    # We capture all positions in a single forward pass per text
+    captured: dict[int, torch.Tensor] = {}
+
+    def make_hook(layer_idx: int):
+        def hook(module, inp, output):
+            h = adapter.residual_from_output(output)
+            # h: [1, seq_len, d_model] — capture all positions
+            if multi_gpu:
+                captured[layer_idx] = h[0].float().cpu()
+            else:
+                captured[layer_idx] = h[0].float().cpu()
+        return hook
+
+    handles = [
+        layer_modules[i].register_forward_hook(make_hook(i))
+        for i in range(n_layers)
+    ]
+
+    gen_device = model.device if multi_gpu else device
+
+    try:
+        for ti, text in enumerate(texts):
+            captured.clear()
+
+            input_ids = tokenizer.encode(
+                text, return_tensors="pt",
+                max_length=max_seq_len, truncation=True,
+            ).to(gen_device)
+
+            if input_ids.shape[1] < 2:
+                continue
+
+            model(input_ids)  # single forward pass, no generation
+
+            # Extract all positions except position 0 (skip BOS)
+            for layer_idx in range(n_layers):
+                if layer_idx in captured:
+                    # captured[layer_idx]: [seq_len, d_model]
+                    h = captured[layer_idx][1:]  # skip pos 0
+                    hidden_by_layer[layer_idx].append(h)
+
+            # Final layer = last layer's captured output
+            if n_layers - 1 in captured:
+                final_hidden_list.append(captured[n_layers - 1][1:])
+
+            if (ti + 1) % 100 == 0:
+                n_tokens_so_far = sum(h.shape[0] for h in final_hidden_list)
+                log.info("[prefill] %d/%d texts, %d tokens so far",
+                         ti + 1, len(texts), n_tokens_so_far)
+    finally:
+        for h in handles:
+            h.remove()
+
+    # Stack into single tensors
+    result: dict[int, torch.Tensor] = {}
+    for layer_idx in range(n_layers):
+        if hidden_by_layer[layer_idx]:
+            result[layer_idx] = torch.cat(hidden_by_layer[layer_idx], dim=0)
+
+    final_hidden = (
+        torch.cat(final_hidden_list, dim=0)
+        if final_hidden_list
+        else torch.zeros(0, spec.d_model)
+    )
+
+    n_tokens = final_hidden.shape[0]
+    log.info("Collected %d tokens across %d texts", n_tokens, len(texts))
+    return result, final_hidden
+
+
+# ── Probe training ──────────────────────────────────────────────────────────
+
+def train_probes(
+    model: nn.Module,
+    tokenizer,
+    adapter,
+    spec,
+    train_texts: list[str],
+    val_texts: list[str],
+    device: torch.device,
+    output_dir: Path,
+    n_steps: int = 5000,
+    lr: float = 1e-3,
+    batch_size: int = 64,
+    warmup_frac: float = 0.05,
+    max_seq_len: int = 512,
+) -> dict:
+    """Train tuned-lens probes for all layers using prefill-based collection.
+
+    Returns training summary dict with per-layer train/val losses and agreement.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    n_layers = spec.n_layers
+    d_model = spec.d_model
+
+    # Check for already-trained probes (resumable)
+    existing = set()
+    for p in output_dir.glob("probe_layer_*.pt"):
+        try:
+            existing.add(int(p.stem.split("_")[-1]))
+        except ValueError:
+            pass
+    if len(existing) == n_layers:
+        log.info("All %d probes already exist, skipping training.", n_layers)
+        summary_path = output_dir / "training_summary.json"
+        if summary_path.exists():
+            return json.loads(summary_path.read_text())
+        return {}
+
+    # Access final_norm and lm_head via adapter
+    final_norm_mod = adapter.final_norm(model)
+    lm_head_mod = adapter.lm_head(model)
+
+    # For multi-GPU: these modules may live on different devices
+    if spec.multi_gpu:
+        compute_device = next(final_norm_mod.parameters()).device
+    else:
+        compute_device = device
+
+    # ── Collect training hidden states (prefill-based) ──
+    log.info("Collecting training hidden states from %d texts...", len(train_texts))
+    train_hidden, train_final = collect_hidden_states_prefill(
+        model, tokenizer, adapter, spec, train_texts, device, max_seq_len,
+    )
+    n_train_tokens = train_final.shape[0]
+    log.info("Training set: %d token activations.", n_train_tokens)
+
+    # ── Collect validation hidden states ──
+    log.info("Collecting validation hidden states from %d texts...", len(val_texts))
+    val_hidden, val_final = collect_hidden_states_prefill(
+        model, tokenizer, adapter, spec, val_texts, device, max_seq_len,
+    )
+    n_val_tokens = val_final.shape[0]
+    log.info("Validation set: %d token activations.", n_val_tokens)
+
+    if n_train_tokens < batch_size:
+        log.warning("Only %d tokens < batch_size=%d, adjusting.", n_train_tokens, batch_size)
+        batch_size = max(1, n_train_tokens // 2)
+
+    warmup_steps = int(n_steps * warmup_frac)
+    rng = torch.Generator()
+    rng.manual_seed(42)
+    training_summary: dict = {}
+
+    mem_gb = n_layers * n_train_tokens * d_model * 4 / 1e9
+    log.info("Estimated CPU RAM for hidden states: %.1f GB (train)", mem_gb)
+
+    for layer_idx in range(n_layers):
+        if layer_idx in existing:
+            log.info("  layer %d: already trained, skipping.", layer_idx)
+            train_hidden.pop(layer_idx, None)
+            val_hidden.pop(layer_idx, None)
+            continue
+
+        if layer_idx not in train_hidden:
+            log.info("  layer %d: no training activations, skipping.", layer_idx)
+            continue
+
+        layer_train = train_hidden[layer_idx]
+        n_t = min(layer_train.shape[0], n_train_tokens)
+        if n_t == 0:
+            train_hidden.pop(layer_idx, None)
+            continue
+
+        probe = TunedLensProbe(d_model).to(compute_device)
+        optimizer = torch.optim.Adam(probe.parameters(), lr=lr)
+
+        best_val_loss = float("inf")
+        best_state = None
+        train_losses: list[tuple[int, float]] = []
+        val_losses: list[tuple[int, float]] = []
+
+        for step in range(n_steps):
+            _cosine_lr_with_warmup(optimizer, step, n_steps, warmup_steps, lr)
+
+            # Random mini-batch
+            idx = torch.randperm(n_t, generator=rng)[:batch_size]
+            h = layer_train[idx].to(compute_device)
+
+            # Compute target log_probs on-the-fly from final-layer hidden states
+            with torch.no_grad():
+                h_final = train_final[idx].to(compute_device)
+                target_logits = lm_head_mod(final_norm_mod(h_final))
+                target = F.log_softmax(target_logits, dim=-1)
+                del h_final, target_logits
+
+            # Forward: probe → final_norm → lm_head
+            pred_logits = lm_head_mod(final_norm_mod(probe(h)))
+            log_pred = F.log_softmax(pred_logits, dim=-1)
+            loss = F.kl_div(log_pred, target, reduction="batchmean", log_target=True)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            # Validation every 500 steps
+            if (step + 1) % 500 == 0 and n_val_tokens > 0 and layer_idx in val_hidden:
+                with torch.no_grad():
+                    val_h = val_hidden[layer_idx]
+                    n_v = min(val_h.shape[0], n_val_tokens)
+                    eval_n = min(n_v, 4096)
+                    v_idx = torch.randperm(n_v, generator=rng)[:eval_n]
+                    v_h = val_h[v_idx].to(compute_device)
+                    v_final = val_final[v_idx].to(compute_device)
+                    v_target = F.log_softmax(
+                        lm_head_mod(final_norm_mod(v_final)), dim=-1,
+                    )
+                    del v_final
+                    v_pred = F.log_softmax(
+                        lm_head_mod(final_norm_mod(probe(v_h))), dim=-1,
+                    )
+                    v_loss = F.kl_div(
+                        v_pred, v_target, reduction="batchmean", log_target=True,
+                    )
+                    val_loss_val = v_loss.item()
+                    val_losses.append((step + 1, val_loss_val))
+
+                    if val_loss_val < best_val_loss:
+                        best_val_loss = val_loss_val
+                        best_state = {
+                            k: v.clone() for k, v in probe.state_dict().items()
+                        }
+
+                train_losses.append((step + 1, loss.item()))
+
+        # Use best validation model
+        if best_state is not None:
+            probe.load_state_dict(best_state)
+
+        probe_path = output_dir / f"probe_layer_{layer_idx}.pt"
+        torch.save(probe.state_dict(), probe_path)
+
+        # Quick eval: raw vs tuned top-1 agreement
+        with torch.no_grad():
+            eval_n = min(n_t, 2048)
+            h_eval = layer_train[:eval_n].to(compute_device)
+            f_eval = train_final[:eval_n].to(compute_device)
+            final_top1 = lm_head_mod(final_norm_mod(f_eval)).argmax(dim=-1)
+            del f_eval
+
+            top1_raw = lm_head_mod(final_norm_mod(h_eval)).argmax(dim=-1)
+            top1_tuned = lm_head_mod(final_norm_mod(probe(h_eval))).argmax(dim=-1)
+
+            raw_agree = (top1_raw == final_top1).float().mean().item()
+            tuned_agree = (top1_tuned == final_top1).float().mean().item()
+
+        if tuned_agree < raw_agree:
+            log.warning(
+                "  layer %d: tuned_agree (%.3f) < raw_agree (%.3f) — "
+                "probe may be undertrained!",
+                layer_idx, tuned_agree, raw_agree,
+            )
+
+        layer_summary = {
+            "train_loss_final": train_losses[-1][1] if train_losses else float("nan"),
+            "val_loss_best": best_val_loss if best_val_loss < float("inf") else float("nan"),
+            "raw_top1_agree": raw_agree,
+            "tuned_top1_agree": tuned_agree,
+        }
+        training_summary[str(layer_idx)] = layer_summary
+
+        log.info(
+            "  layer %2d: val_loss=%.4f  raw_agree=%.3f → tuned_agree=%.3f",
+            layer_idx, best_val_loss, raw_agree, tuned_agree,
+        )
+
+        # Free memory
+        del layer_train, probe
+        train_hidden.pop(layer_idx, None)
+        val_hidden.pop(layer_idx, None)
+        torch.cuda.empty_cache()
+
+    # Save training summary
+    summary_path = output_dir / "training_summary.json"
+    with open(summary_path, "w") as f:
+        json.dump(training_summary, f, indent=2)
+    log.info("Training complete. Probes + summary → %s", output_dir)
+    return training_summary
+
+
+# ── Probe loading ───────────────────────────────────────────────────────────
+
+def _load_probes(
+    probe_dir: Path, d_model: int, device: torch.device,
+) -> dict[int, TunedLensProbe]:
+    """Load trained probes from a directory."""
+    probes: dict[int, TunedLensProbe] = {}
+    for probe_path in sorted(probe_dir.glob("probe_layer_*.pt")):
+        try:
+            layer_idx = int(probe_path.stem.split("_")[-1])
+        except ValueError:
+            continue
+        probe = TunedLensProbe(d_model).to(device)
+        probe.load_state_dict(
+            torch.load(probe_path, map_location=device, weights_only=True)
+        )
+        probe.eval()
+        probes[layer_idx] = probe
+    return probes
+
+
+# ── Commitment helpers ──────────────────────────────────────────────────────
+
+def _commitment_from_kl(
+    kl_row: list[float], threshold: float,
+) -> int:
+    """Earliest layer where KL < threshold and stays below for all subsequent layers."""
+    n = len(kl_row)
+    for i in range(n):
+        if kl_row[i] < threshold and all(kl_row[j] < threshold for j in range(i, n)):
+            return i
+    return n - 1
+
+
+def _commitment_from_top1(top1_by_layer: list[int]) -> int:
+    """Earliest layer where top-1 matches final and stays matched (no-flip-back)."""
+    n = len(top1_by_layer)
+    final_top1 = top1_by_layer[-1]
+    for i in range(n):
+        if top1_by_layer[i] == final_top1 and all(
+            top1_by_layer[j] == final_top1 for j in range(i, n)
+        ):
+            return i
+    return n - 1
+
+
+# ── Commitment evaluation (autoregressive, matching collect_L1L2.py) ──────
+
+@torch.no_grad()
+def eval_commitment(
+    model: nn.Module,
+    tokenizer,
+    adapter,
+    spec,
+    probes: dict[int, TunedLensProbe],
+    records: list[dict],
+    device: torch.device,
+    output_path: Path,
+    max_new_tokens: int = 512,
+) -> dict:
+    """Evaluate commitment using autoregressive generation with hooks.
+
+    For each generation step × layer:
+      - Raw logit-lens: normed = final_norm(h_ℓ) → logits = normed @ W_U → argmax
+      - Tuned: h_tuned = probe_ℓ(h_ℓ) → normed = final_norm(h_tuned) → logits → argmax
+      - KL(tuned_ℓ ‖ final) for KL-based commitment
+
+    Output JSONL with per-prompt commitment layers at multiple thresholds.
+    """
+    n_layers = spec.n_layers
+    multi_gpu = spec.multi_gpu
+
+    final_norm_mod = adapter.final_norm(model)
+    lm_head_weight = adapter.lm_head(model).weight.detach().float()  # [vocab, d_model]
+    W_U = lm_head_weight.T  # [d_model, vocab]
+
+    if multi_gpu:
+        compute_device = next(final_norm_mod.parameters()).device
+    else:
+        compute_device = device
+
+    # Move W_U to compute device
+    W_U = W_U.to(compute_device)
+
+    # Move probes to compute device
+    for probe in probes.values():
+        probe.to(compute_device)
+
+    layer_modules = adapter.layers(model)
+    stop_ids = list(adapter.stop_token_ids(tokenizer))
+
+    # Resume support
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    done_ids = read_done_ids(output_path)
+    if done_ids:
+        log.info("Resuming: %d/%d already done", len(done_ids), len(records))
+
+    # Aggregated stats
+    all_commitment_raw: list[list[int]] = []
+    all_commitment_tuned: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
+    all_commitment_top1_tuned: list[list[int]] = []
+    n_prompts_done = 0
+
+    with open(output_path, "a") as fout:
+        for ri, rec in enumerate(records):
+            pid = rec.get("id", f"rec_{ri}")
+            if pid in done_ids:
+                continue
+
+            raw_prompt = get_raw_prompt(rec)
+
+            # Per-step accumulators
+            step_commitment_raw: list[int] = []
+            step_commitment_tuned: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
+            step_commitment_top1_tuned: list[int] = []
+
+            step_buf: list[torch.Tensor | None] = [None] * n_layers
+
+            def _process_step() -> None:
+                """Process one generation step: compute commitment metrics."""
+                # Get final-layer distribution
+                h_final = step_buf[n_layers - 1]
+                if h_final is None:
+                    return
+                h_final_d = h_final.float().to(compute_device)
+                normed_final = final_norm_mod(h_final_d.unsqueeze(0).unsqueeze(0)).squeeze()
+                logits_final = normed_final @ W_U
+                final_top1 = int(logits_final.argmax().item())
+                log_p_final = F.log_softmax(logits_final, dim=-1)
+
+                # Per-layer raw top-1 and tuned KL + top-1
+                raw_top1_row: list[int] = []
+                tuned_top1_row: list[int] = []
+                kl_row: list[float] = []
+
+                for li in range(n_layers):
+                    h = step_buf[li]
+                    if h is None:
+                        raw_top1_row.append(-1)
+                        tuned_top1_row.append(-1)
+                        kl_row.append(float("inf"))
+                        continue
+
+                    h_d = h.float().to(compute_device)
+
+                    # Raw logit-lens
+                    normed_raw = final_norm_mod(h_d.unsqueeze(0).unsqueeze(0)).squeeze()
+                    raw_logits = normed_raw @ W_U
+                    raw_top1_row.append(int(raw_logits.argmax().item()))
+
+                    # Tuned lens
+                    if li in probes:
+                        h_tuned = probes[li](h_d.unsqueeze(0)).squeeze(0)
+                    else:
+                        h_tuned = h_d  # no probe for this layer
+                    normed_tuned = final_norm_mod(h_tuned.unsqueeze(0).unsqueeze(0)).squeeze()
+                    tuned_logits = normed_tuned @ W_U
+                    tuned_top1_row.append(int(tuned_logits.argmax().item()))
+
+                    # KL(final ‖ tuned_lens)
+                    log_q = F.log_softmax(tuned_logits, dim=-1)
+                    kl = F.kl_div(
+                        log_q, log_p_final, reduction="sum", log_target=True,
+                    ).item()
+                    kl_row.append(max(kl, 0.0))
+
+                # Raw commitment (no-flip-back top-1)
+                step_commitment_raw.append(_commitment_from_top1(raw_top1_row))
+
+                # Tuned KL commitment at each threshold
+                for thresh in KL_THRESHOLDS:
+                    step_commitment_tuned[thresh].append(
+                        _commitment_from_kl(kl_row, thresh)
+                    )
+
+                # Tuned top-1 commitment
+                step_commitment_top1_tuned.append(
+                    _commitment_from_top1(tuned_top1_row)
+                )
+
+            def make_hook(layer_idx: int):
+                def hook(module, inp, output):
+                    h = adapter.residual_from_output(output)
+                    if h.shape[1] != 1:
+                        return  # skip prefill
+                    vec = h[0, 0, :].cpu()
+                    step_buf[layer_idx] = vec
+                    if layer_idx == n_layers - 1:
+                        _process_step()
+                return hook
+
+            handles = [
+                layer_modules[i].register_forward_hook(make_hook(i))
+                for i in range(n_layers)
+            ]
+
+            gen_device = model.device if multi_gpu else device
+            input_ids = tokenizer.encode(raw_prompt, return_tensors="pt").to(gen_device)
+
+            try:
+                model.generate(
+                    input_ids,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    temperature=1.0,
+                    eos_token_id=stop_ids or None,
+                )
+            except Exception as e:
+                log.warning("Prompt %s failed: %s", pid, e)
+            finally:
+                for hh in handles:
+                    hh.remove()
+
+            n_steps = len(step_commitment_raw)
+            if n_steps == 0:
+                continue
+
+            result = {
+                "prompt_id": pid,
+                "model": spec.name,
+                "variant": "?",  # filled by caller
+                "n_steps": n_steps,
+                "commitment_layer_raw": step_commitment_raw,
+            }
+            for thresh in KL_THRESHOLDS:
+                key = f"commitment_layer_tuned_{thresh}"
+                result[key] = step_commitment_tuned[thresh]
+            result["commitment_layer_top1_tuned"] = step_commitment_top1_tuned
+
+            fout.write(json.dumps(result) + "\n")
+            fout.flush()
+
+            all_commitment_raw.append(step_commitment_raw)
+            for thresh in KL_THRESHOLDS:
+                all_commitment_tuned[thresh].append(step_commitment_tuned[thresh])
+            all_commitment_top1_tuned.append(step_commitment_top1_tuned)
+
+            n_prompts_done += 1
+            if n_prompts_done % 50 == 0:
+                log.info("[eval] %d/%d prompts done", n_prompts_done, len(records))
+
+    # Compute summary statistics
+    def _flatten_median(nested: list[list[int]]) -> float:
+        flat = [v for row in nested for v in row]
+        return float(np.median(flat)) if flat else float("nan")
+
+    summary = {
+        "model": spec.name,
+        "n_prompts": n_prompts_done + len(done_ids),
+        "n_layers": n_layers,
+        "median_commitment_raw": _flatten_median(all_commitment_raw),
+    }
+    for thresh in KL_THRESHOLDS:
+        summary[f"median_commitment_tuned_{thresh}"] = _flatten_median(
+            all_commitment_tuned[thresh]
+        )
+    summary["median_commitment_top1_tuned"] = _flatten_median(all_commitment_top1_tuned)
+
+    return summary
+
+
+# ── Transfer test ───────────────────────────────────────────────────────────
+
+@torch.no_grad()
+def run_transfer_test(
+    model: nn.Module,
+    tokenizer,
+    adapter,
+    spec,
+    pt_probes: dict[int, TunedLensProbe],
+    it_probes: dict[int, TunedLensProbe],
+    device: torch.device,
+    val_texts: list[str],
+    max_seq_len: int = 512,
+) -> dict:
+    """Evaluate PT probes on IT activations vs IT probes on IT activations.
+
+    Computes per-layer validation KL for both probe sets on the same
+    hidden states. High transfer (similar KL) = shared geometry.
+    """
+    n_layers = spec.n_layers
+    d_model = spec.d_model
+
+    final_norm_mod = adapter.final_norm(model)
+    lm_head_mod = adapter.lm_head(model)
+
+    if spec.multi_gpu:
+        compute_device = next(final_norm_mod.parameters()).device
+    else:
+        compute_device = device
+
+    # Collect hidden states from IT model
+    log.info("Collecting IT hidden states for transfer test (%d texts)...", len(val_texts))
+    hidden_by_layer, final_hidden = collect_hidden_states_prefill(
+        model, tokenizer, adapter, spec, val_texts, device, max_seq_len,
+    )
+    n_tokens = final_hidden.shape[0]
+    log.info("Transfer test: %d tokens collected.", n_tokens)
+
+    eval_n = min(n_tokens, 4096)
+    results: dict = {"n_tokens": n_tokens, "per_layer": {}}
+
+    for layer_idx in range(n_layers):
+        if layer_idx not in hidden_by_layer:
+            continue
+
+        h = hidden_by_layer[layer_idx][:eval_n].to(compute_device)
+        h_final = final_hidden[:eval_n].to(compute_device)
+
+        # Target distribution from final layer
+        target = F.log_softmax(lm_head_mod(final_norm_mod(h_final)), dim=-1)
+
+        layer_result: dict = {}
+
+        # IT probes (matched)
+        if layer_idx in it_probes:
+            h_it = it_probes[layer_idx](h)
+            pred_it = F.log_softmax(lm_head_mod(final_norm_mod(h_it)), dim=-1)
+            kl_it = F.kl_div(pred_it, target, reduction="batchmean", log_target=True).item()
+            layer_result["it_probe_kl"] = kl_it
+
+        # PT probes (transfer)
+        if layer_idx in pt_probes:
+            h_pt = pt_probes[layer_idx](h)
+            pred_pt = F.log_softmax(lm_head_mod(final_norm_mod(h_pt)), dim=-1)
+            kl_pt = F.kl_div(pred_pt, target, reduction="batchmean", log_target=True).item()
+            layer_result["pt_probe_kl"] = kl_pt
+
+        # Raw (no probe)
+        pred_raw = F.log_softmax(lm_head_mod(final_norm_mod(h)), dim=-1)
+        kl_raw = F.kl_div(pred_raw, target, reduction="batchmean", log_target=True).item()
+        layer_result["raw_kl"] = kl_raw
+
+        # Transfer ratio
+        if "pt_probe_kl" in layer_result and "it_probe_kl" in layer_result:
+            it_kl = layer_result["it_probe_kl"]
+            pt_kl = layer_result["pt_probe_kl"]
+            if it_kl > 1e-8:
+                layer_result["transfer_ratio"] = pt_kl / it_kl
+            else:
+                layer_result["transfer_ratio"] = 1.0
+
+        results["per_layer"][str(layer_idx)] = layer_result
+
+        del h, h_final
+        torch.cuda.empty_cache()
+
+    # Summary: mean transfer ratio across layers
+    ratios = [
+        v["transfer_ratio"]
+        for v in results["per_layer"].values()
+        if "transfer_ratio" in v
+    ]
+    if ratios:
+        results["mean_transfer_ratio"] = float(np.mean(ratios))
+        results["transfer_ok"] = all(r < 2.0 for r in ratios)
+        log.info(
+            "Transfer test: mean ratio = %.2f (ok=%s)",
+            results["mean_transfer_ratio"], results["transfer_ok"],
+        )
+
+    return results
+
+
+# ── CLI entry point ─────────────────────────────────────────────────────────
+
+def main() -> None:
+    p = argparse.ArgumentParser(
+        description="Cross-model tuned-lens probes (0G)",
+    )
+    p.add_argument("--model", required=True, choices=list(MODEL_REGISTRY))
+    p.add_argument("--variant", choices=["pt", "it"])
+    p.add_argument("--device", default="cuda:0")
+    p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
+
+    # Training args
+    p.add_argument("--n-tokens", type=int, default=60000,
+                   help="Target token count for probe training (default: 60000)")
+    p.add_argument("--n-steps", type=int, default=5000,
+                   help="Training steps per layer")
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--max-seq-len", type=int, default=512)
+
+    # Eval args
+    p.add_argument("--eval-only", action="store_true",
+                   help="Skip training, evaluate commitment with existing probes")
+    p.add_argument("--n-eval-examples", type=int, default=None,
+                   help="Cap number of evaluation examples")
+    p.add_argument("--max-new-tokens", type=int, default=512)
+
+    # Transfer test
+    p.add_argument("--transfer-test", action="store_true",
+                   help="Run PT-probes-on-IT transfer test")
+
+    args = p.parse_args()
+    spec = get_spec(args.model)
+    adapter = get_adapter(args.model)
+    device = torch.device(args.device)
+
+    base_dir = spec.result_dir / "tuned_lens"
+
+    if args.transfer_test:
+        # Load IT model + both probe sets
+        it_model_id = model_id_for_variant(spec, "it")
+        model, tokenizer = load_model_and_tokenizer(
+            it_model_id, args.device, multi_gpu=spec.multi_gpu,
+        )
+
+        pt_probe_dir = base_dir / "pt"
+        it_probe_dir = base_dir / "it"
+
+        if spec.multi_gpu:
+            probe_device = next(adapter.final_norm(model).parameters()).device
+        else:
+            probe_device = device
+
+        pt_probes = _load_probes(pt_probe_dir, spec.d_model, probe_device)
+        it_probes = _load_probes(it_probe_dir, spec.d_model, probe_device)
+
+        log.info("Loaded %d PT probes, %d IT probes.", len(pt_probes), len(it_probes))
+
+        # Load a small set of texts for transfer validation
+        val_texts = load_training_texts(n_tokens_target=10000, max_seq_len=args.max_seq_len)
+
+        transfer_results = run_transfer_test(
+            model, tokenizer, adapter, spec,
+            pt_probes, it_probes, device, val_texts,
+            max_seq_len=args.max_seq_len,
+        )
+
+        out_path = base_dir / "commitment" / "transfer_test.json"
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(out_path, "w") as f:
+            json.dump(transfer_results, f, indent=2)
+        log.info("Transfer test results → %s", out_path)
+
+        del model
+        torch.cuda.empty_cache()
+        return
+
+    if not args.variant:
+        p.error("--variant required for training or eval mode")
+
+    if args.eval_only:
+        # Load model + probes, run commitment evaluation
+        model_id = model_id_for_variant(spec, args.variant)
+        model, tokenizer = load_model_and_tokenizer(
+            model_id, args.device, multi_gpu=spec.multi_gpu,
+        )
+
+        probe_dir = base_dir / args.variant
+        if spec.multi_gpu:
+            probe_device = next(adapter.final_norm(model).parameters()).device
+        else:
+            probe_device = device
+        probes = _load_probes(probe_dir, spec.d_model, probe_device)
+        log.info("Loaded %d probes from %s.", len(probes), probe_dir)
+
+        records = load_dataset(
+            args.dataset, n_examples=args.n_eval_examples,
+        )
+
+        out_path = base_dir / "commitment" / f"tuned_lens_commitment_{args.variant}.jsonl"
+        summary = eval_commitment(
+            model, tokenizer, adapter, spec, probes, records, device,
+            output_path=out_path,
+            max_new_tokens=args.max_new_tokens,
+        )
+
+        # Save summary
+        summary["variant"] = args.variant
+        summary_path = base_dir / "commitment" / f"summary_{args.variant}.json"
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(summary_path, "w") as f:
+            json.dump(summary, f, indent=2)
+        log.info("Eval summary → %s", summary_path)
+
+        del model
+        torch.cuda.empty_cache()
+        return
+
+    # ── Training mode ───────────────────────────────────────────────────────
+    model_id = model_id_for_variant(spec, args.variant)
+    model, tokenizer = load_model_and_tokenizer(
+        model_id, args.device, multi_gpu=spec.multi_gpu,
+    )
+
+    # Load training texts from C4
+    all_texts = load_training_texts(
+        n_tokens_target=args.n_tokens, max_seq_len=args.max_seq_len,
+    )
+
+    # 80/20 train/val split
+    split_idx = int(len(all_texts) * 0.8)
+    train_texts = all_texts[:split_idx]
+    val_texts = all_texts[split_idx:]
+
+    log.info(
+        "Training %s probes for %s: %d train + %d val texts (%d steps/layer)",
+        args.variant, args.model, len(train_texts), len(val_texts), args.n_steps,
+    )
+
+    output_dir = base_dir / args.variant
+    train_probes(
+        model, tokenizer, adapter, spec,
+        train_texts, val_texts, device, output_dir,
+        n_steps=args.n_steps, lr=args.lr, batch_size=args.batch_size,
+        max_seq_len=args.max_seq_len,
+    )
+
+    del model
+    torch.cuda.empty_cache()
+
+
+if __name__ == "__main__":
+    main()
