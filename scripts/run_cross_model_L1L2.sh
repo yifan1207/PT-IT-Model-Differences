@@ -23,10 +23,16 @@ export HF_HOME=/mnt/storage/yifan/hf_cache
 export HF_TOKEN=${HF_TOKEN:-$(cat /mnt/storage/yifan/hf_cache/token 2>/dev/null || true)}
 
 MODELS=("gemma3_4b" "llama31_8b" "qwen3_4b" "mistral_7b" "deepseek_v2_lite" "olmo2_7b")
-DATASET="data/eval_dataset_v2.jsonl"
+DATASET="data/exp3_dataset.jsonl"
 NW=8
 MAX_NEW_TOKENS=512
 DRY_RUN=0
+
+# DeepSeek-V2-Lite uses ~31GB weights but needs multi-GPU for generation+hooks headroom.
+# It runs as a single worker with device_map="sequential" across all 8 GPUs.
+# Fewer tokens since commitment is visible within ~50 steps and KV cache grows fast.
+DEEPSEEK_MAX_NEW_TOKENS=64
+export PYTORCH_ALLOC_CONF=expandable_segments:True
 
 # Parse args
 while [[ $# -gt 0 ]]; do
@@ -45,6 +51,39 @@ run_variant() {
     local log_dir="logs/cross_model/L1L2_${model}_${variant}"
     mkdir -p "$log_dir"
 
+    # DeepSeek: single worker, all 8 GPUs via device_map="sequential", fewer tokens
+    if [[ "$model" == "deepseek_v2_lite" ]]; then
+        local tokens=$DEEPSEEK_MAX_NEW_TOKENS
+        echo "=== $model $variant: 1 worker across all GPUs (multi-GPU, max_new_tokens=$tokens) ==="
+        if [[ "$DRY_RUN" == "1" ]]; then
+            echo "[dry] uv run python -m src.poc.cross_model.collect_L1L2 --model $model --variant $variant --device cuda:0 --worker-index 0 --n-workers 1 --max-new-tokens $tokens"
+            echo "[dry] merge: uv run python -m src.poc.cross_model.collect_L1L2 --model $model --variant $variant --merge-only --n-workers 1"
+            return
+        fi
+        uv run python -m src.poc.cross_model.collect_L1L2 \
+            --model "$model" \
+            --variant "$variant" \
+            --dataset "$DATASET" \
+            --device "cuda:0" \
+            --worker-index 0 \
+            --n-workers 1 \
+            --max-new-tokens "$tokens" \
+            > "$log_dir/w0.log" 2>&1 || { echo "ERROR: $model $variant worker failed (see $log_dir/w0.log)"; return 1; }
+        echo "[$(date +%T)] Worker done. Merging $model $variant ..."
+        uv run python -m src.poc.cross_model.collect_L1L2 \
+            --model "$model" --variant "$variant" \
+            --merge-only --n-workers 1 \
+            >> "$log_dir/merge.log" 2>&1
+        echo "[$(date +%T)] Done $model $variant"
+        local out_dir="results/cross_model/$model/$variant"
+        if [[ -s "$out_dir/L1L2_results.jsonl" ]]; then
+            rm -f "$out_dir"/L1L2_w*.jsonl
+            echo "[$(date +%T)] Cleaned worker files for $model $variant"
+        fi
+        return
+    fi
+
+    # Standard path: 8 parallel workers, one per GPU
     echo "=== $model $variant: $NW workers on GPU 0-$((NW-1)) ==="
 
     if [[ "$DRY_RUN" == "1" ]]; then
@@ -86,7 +125,6 @@ run_variant() {
         --merge-only --n-workers "$NW" \
         >> "$log_dir/merge.log" 2>&1
     echo "[$(date +%T)] Done $model $variant"
-    # Remove per-worker JSONL files after successful merge to save disk space
     local out_dir="results/cross_model/$model/$variant"
     if [[ -f "$out_dir/L1L2_results.jsonl" ]]; then
         rm -f "$out_dir"/L1L2_w*.jsonl

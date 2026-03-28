@@ -16,6 +16,26 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 log = logging.getLogger(__name__)
 
 
+# ── DynamicCache compatibility (transformers ≥4.38) ───────────────────────────
+# DeepSeek-V2 uses internal cache attributes that were removed/renamed.
+# Patch once at import time so all collectors benefit without code duplication.
+def _patch_dynamic_cache() -> None:
+    try:
+        from transformers.cache_utils import DynamicCache as _DC
+        if not hasattr(_DC, "seen_tokens"):
+            _DC.seen_tokens = property(lambda self: self.get_seq_length())
+        if not hasattr(_DC, "get_usable_length"):
+            _DC.get_usable_length = lambda self, new_seq_length, layer_idx=0: self.get_seq_length(layer_idx)
+        if not hasattr(_DC, "get_max_length"):
+            _DC.get_max_length = lambda self: None
+    except Exception:
+        pass
+
+
+_patch_dynamic_cache()
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 # ── model loading ──────────────────────────────────────────────────────────────
 
 def load_model_and_tokenizer(
@@ -24,29 +44,41 @@ def load_model_and_tokenizer(
     *,
     eager_attn: bool = False,
     dtype: torch.dtype = torch.bfloat16,
+    multi_gpu: bool = False,
 ) -> tuple:
     """Load a HuggingFace CausalLM and its tokenizer.
 
     Args:
         model_id:    HuggingFace model identifier.
         device:      Target device string or torch.device (e.g. "cuda:0").
+                     Ignored when multi_gpu=True.
         eager_attn:  If True, load with attn_implementation="eager" (required for
-                     output_attentions=True in L9).  Flash/SDPA attention does NOT
-                     return attention weight matrices.
+                     output_attentions=True in L9 and for DeepSeek V2 MLA).
         dtype:       Weight dtype (default: bfloat16 — matches exp2/exp6 setup).
+        multi_gpu:   If True, spread the model across all visible GPUs using
+                     device_map="sequential" (for models too large for one GPU).
+                     Each GPU gets at most 72 GB to leave room for KV cache.
 
     Returns:
         (model, tokenizer) both ready for inference.
     """
     kwargs: dict = {
-        "dtype": dtype,
-        "device_map": str(device),
+        "torch_dtype": dtype,
         "trust_remote_code": True,
     }
-    if eager_attn:
-        kwargs["attn_implementation"] = "eager"
 
-    log.info("Loading model %s on %s (eager_attn=%s)", model_id, device, eager_attn)
+    if multi_gpu:
+        n_gpus = torch.cuda.device_count()
+        kwargs["device_map"] = "sequential"
+        kwargs["max_memory"] = {i: "72GB" for i in range(n_gpus)}
+        kwargs["attn_implementation"] = "eager"  # required for DeepSeek MLA
+        log.info("Loading model %s across %d GPUs (sequential device_map)", model_id, n_gpus)
+    else:
+        kwargs["device_map"] = str(device)
+        if eager_attn:
+            kwargs["attn_implementation"] = "eager"
+        log.info("Loading model %s on %s (eager_attn=%s)", model_id, device, eager_attn)
+
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(model_id, **kwargs)
     model.eval()

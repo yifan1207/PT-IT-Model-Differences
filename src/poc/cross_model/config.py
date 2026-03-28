@@ -25,6 +25,7 @@ class ModelSpec:
     is_moe: bool = False
     is_sliding_window: bool = False
     sliding_window_size: int | None = None
+    multi_gpu: bool = False   # True → load with device_map="sequential" across all GPUs
 
     @property
     def result_dir(self) -> Path:
@@ -98,6 +99,7 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         n_kv_heads=16,
         global_attn_layers=frozenset(range(27)),
         is_moe=True,
+        multi_gpu=True,  # ~31 GB weights; single 80 GB GPU has no room for generation+hooks
     ),
     "olmo2_7b": ModelSpec(
         name="olmo2_7b",

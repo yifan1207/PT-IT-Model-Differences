@@ -98,11 +98,14 @@ def collect_prompt_L1L2(
     """
     n_layers = spec.n_layers
 
-    # W_U: [d_model, vocab_size] float32 — extracted once, stays on model device.
-    # model.lm_head.weight has shape [vocab_size, d_model]; transposing gives W_U.
-    # Works for both tied and untied embeddings (tied: same tensor, still correct).
+    # W_U: [d_model, vocab_size] float32 — extracted once.
+    # For multi-GPU, lm_head and final_norm may be on different devices from the
+    # step_buf tensors (which are on CPU). Move both to CPU so logit-lens works.
     final_norm_mod = adapter.final_norm(model)
     W_U = model.lm_head.weight.detach().float().T  # [d_model, vocab_size]
+    if spec.multi_gpu:
+        final_norm_mod = final_norm_mod.cpu()
+        W_U = W_U.cpu()
 
     # ── per-step accumulators (Python lists of scalars — small) ──────────────
     all_delta_cosine:       list[list[float]] = []
@@ -110,9 +113,10 @@ def collect_prompt_L1L2(
     all_logit_lens_top1:    list[list[int]]   = []
     all_commitment_layer:   list[int]         = []
 
-    # GPU step buffer: holds bfloat16 residuals for the current generation step.
-    # Layer ℓ's residual is written by hook ℓ; commitment + δ-cosine are computed
-    # by hook n_layers-1 (the "step-complete" trigger) — all on GPU.
+    # Step buffer: holds residuals for the current generation step.
+    # With multi_gpu=True, tensors land on different CUDA devices, so we move
+    # them to CPU immediately in the hook to avoid cross-device operations.
+    multi_gpu = spec.multi_gpu
     step_buf: list[torch.Tensor | None] = [None] * n_layers
 
     def _process_step() -> None:
@@ -177,7 +181,10 @@ def collect_prompt_L1L2(
             # Generation step: h.shape = [1, 1, d] (KV-cache enabled by default).
             if h.shape[1] != 1:
                 return
-            step_buf[layer_idx] = h[0, 0, :]  # [d_model], stays on GPU in bfloat16
+            vec = h[0, 0, :]  # [d_model]
+            # For multi-GPU models, each layer lives on a different device.
+            # Move to CPU immediately so _process_step() works on uniform tensors.
+            step_buf[layer_idx] = vec.cpu() if multi_gpu else vec
 
             # On the last layer, all residuals for this step are ready → process.
             if layer_idx == n_layers - 1:
@@ -189,7 +196,9 @@ def collect_prompt_L1L2(
     # ── greedy generation — no template, deterministic ────────────────────────
     # Both PT and IT use identical raw tokenisation (no chat template).
     # Plan §4.L1: "No templates for PT or IT. Raw text, identical tokenisation."
-    input_ids = tokenizer.encode(raw_prompt, return_tensors="pt").to(device)
+    # For multi-GPU (device_map), use model.device (first shard); HF handles the rest.
+    gen_device = model.device if multi_gpu else device
+    input_ids = tokenizer.encode(raw_prompt, return_tensors="pt").to(gen_device)
     stop_ids  = list(adapter.stop_token_ids(tokenizer))
 
     with torch.no_grad():
@@ -240,7 +249,7 @@ def run_worker(
     device  = torch.device(device_str)
 
     model_id = model_id_for_variant(spec, variant)
-    model, tokenizer = load_model_and_tokenizer(model_id, device_str)
+    model, tokenizer = load_model_and_tokenizer(model_id, device_str, multi_gpu=spec.multi_gpu)
 
     records = load_dataset(
         dataset_path,
