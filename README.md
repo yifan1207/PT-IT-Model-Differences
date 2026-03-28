@@ -1,9 +1,6 @@
 # Instruction Tuning Delays Prediction Commitment
 
 <p align="center">
-  <img alt="NeurIPS 2026" src="https://img.shields.io/badge/NeurIPS-2026-7B2FBE?style=flat-square">
-  <img alt="Models" src="https://img.shields.io/badge/6%20architectures-2E8B57?style=flat-square">
-  <img alt="Primary model" src="https://img.shields.io/badge/primary%20model-Gemma%203%204B-FF8C42?style=flat-square">
   <img alt="Python" src="https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white">
 </p>
 
