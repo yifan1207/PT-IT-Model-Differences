@@ -205,14 +205,29 @@ def run_worker(
         print(f"[OOD w{worker_index}] already exists, skipping.", flush=True)
         return
 
-    # Build or load OOD prompts
-    prompts_path = OUTPUT_DIR / "ood_prompts.json"
-    if prompts_path.exists():
-        all_prompts_meta = json.loads(prompts_path.read_text())
-        # Need full prompts — rebuild
+    # Build or load OOD prompts — worker 0 builds, others wait to avoid race condition
+    prompts_path = OUTPUT_DIR / "ood_prompts_full.json"
+    lock_path = OUTPUT_DIR / ".ood_build.lock"
+
+    if worker_index == 0:
+        # Worker 0 builds prompts and saves full version for other workers
         all_prompts = _build_ood_prompts()
+        prompts_path.write_text(json.dumps(
+            [{"record_id": p["record_id"], "prompt": p["prompt"]} for p in all_prompts],
+        ))
+        # Signal that prompts are ready
+        lock_path.write_text("done")
     else:
-        all_prompts = _build_ood_prompts()
+        # Non-zero workers wait for worker 0 to finish building
+        import time
+        for _ in range(300):  # wait up to 5 minutes
+            if lock_path.exists():
+                break
+            time.sleep(1)
+        if not prompts_path.exists():
+            print(f"[OOD w{worker_index}] ERROR: prompts not built by worker 0", flush=True)
+            return
+        all_prompts = json.loads(prompts_path.read_text())
 
     # Worker's slice
     my_prompts = all_prompts[worker_index::n_workers]

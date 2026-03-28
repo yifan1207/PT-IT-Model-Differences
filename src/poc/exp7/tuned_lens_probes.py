@@ -107,11 +107,16 @@ def collect_hidden_states(
     prompts: list[str],
     device: str,
     max_new_tokens: int = 80,
+    max_seq_len: int = 512,
 ) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
     """Collect per-layer RESIDUAL STREAM hidden states and final-layer hidden states.
 
     Hooks on model_raw.language_model.layers[li] (full layer output = residual stream),
     NOT on layers[li].mlp. This is the correct hook point for tuned-lens (Belrose et al.).
+
+    Collects hidden states at ALL token positions via prefill forward passes
+    (Belrose et al. train on all positions, not just autoregressive steps).
+    Position 0 (BOS) is skipped to avoid BOS artifacts.
 
     Returns:
         hidden_by_layer: {layer → [n_tokens, D_MODEL] float32 on CPU}
@@ -120,48 +125,55 @@ def collect_hidden_states(
     hidden_by_layer: dict[int, list[torch.Tensor]] = {li: [] for li in ALL_LAYERS}
     final_layer_acts: list[torch.Tensor] = []
 
+    # Prefill-based: capture ALL positions in a single forward pass per text
+    captured: dict[int, torch.Tensor] = {}
+
     def make_hook(li: int):
         def hook(mod, inp, out):
-            # Layer output is a tuple (hidden_states, ...) for transformer blocks
             h = out[0] if isinstance(out, tuple) else out
-            if h.shape[1] == 1:  # generated step (skip prefill)
-                vec = h[0, 0, :].float().cpu()
-                hidden_by_layer[li].append(vec)
-                if li == ALL_LAYERS[-1]:
-                    final_layer_acts.append(vec)
+            # Capture all positions, detach + CPU
+            captured[li] = h[0].detach().float().cpu()
         return hook
 
-    # Hook on FULL LAYER (residual stream), not .mlp
     handles = [
         model_raw.language_model.layers[li].register_forward_hook(make_hook(li))
         for li in ALL_LAYERS
     ]
 
-    for pi, prompt in enumerate(prompts):
-        try:
-            input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
-            model_raw.generate(
-                input_ids,
-                max_new_tokens=max_new_tokens,
-                do_sample=False,
-                eos_token_id=tokenizer.eos_token_id,
-                pad_token_id=tokenizer.pad_token_id,
-                use_cache=True,
-            )
-        except Exception as e:
-            print(f"  Warning: generation failed for prompt {pi} — {e}", flush=True)
+    try:
+        for pi, prompt in enumerate(prompts):
+            captured.clear()
+            try:
+                input_ids = tokenizer.encode(
+                    prompt, return_tensors="pt",
+                    max_length=max_seq_len, truncation=True,
+                ).to(device)
+                if input_ids.shape[1] < 2:
+                    continue
+                model_raw(input_ids)  # single forward pass, no generation
+            except Exception as e:
+                print(f"  Warning: forward pass failed for prompt {pi} — {e}", flush=True)
+                continue
 
-        if (pi + 1) % 100 == 0:
-            print(f"  [collect] {pi+1}/{len(prompts)} prompts done", flush=True)
+            # Extract all positions except position 0 (skip BOS)
+            for li in ALL_LAYERS:
+                if li in captured:
+                    hidden_by_layer[li].append(captured[li][1:])
+                    if li == ALL_LAYERS[-1]:
+                        final_layer_acts.append(captured[li][1:])
 
-    for h in handles:
-        h.remove()
+            if (pi + 1) % 100 == 0:
+                n_tokens_so_far = sum(h.shape[0] for h in final_layer_acts)
+                print(f"  [collect] {pi+1}/{len(prompts)} texts, {n_tokens_so_far} tokens", flush=True)
+    finally:
+        for h in handles:
+            h.remove()
 
     result: dict[int, torch.Tensor] = {}
     for li in ALL_LAYERS:
         if hidden_by_layer[li]:
-            result[li] = torch.stack(hidden_by_layer[li])
-    final_hidden = torch.stack(final_layer_acts) if final_layer_acts else torch.zeros(0, D_MODEL)
+            result[li] = torch.cat(hidden_by_layer[li], dim=0)
+    final_hidden = torch.cat(final_layer_acts, dim=0) if final_layer_acts else torch.zeros(0, D_MODEL)
     return result, final_hidden
 
 
@@ -250,7 +262,7 @@ def train_probes(
             continue
 
         probe = TunedLensProbe(D_MODEL).to(device)
-        optimizer = torch.optim.Adam(probe.parameters(), lr=lr)
+        optimizer = torch.optim.Adam(probe.parameters(), lr=lr, weight_decay=1e-3)
 
         best_val_loss = float("inf")
         best_state = None
@@ -280,6 +292,7 @@ def train_probes(
 
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(probe.parameters(), 1.0)
             optimizer.step()
 
             # Validation every 500 steps
@@ -452,7 +465,7 @@ def eval_commitment(
             def hook(mod, inp, out):
                 h = out[0] if isinstance(out, tuple) else out
                 if h.shape[1] == 1:
-                    step_hidden[li].append(h[0, 0, :].float().cpu())
+                    step_hidden[li].append(h[0, 0, :].detach().float().cpu())
             return hook
 
         # Hook on FULL LAYER (residual stream)
@@ -703,8 +716,8 @@ def main() -> None:
     p.add_argument("--variant", choices=["pt", "it"], help="Model variant for training")
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--output-dir", default="results/exp7/0G/probes/")
-    p.add_argument("--n-train", type=int, default=2000,
-                   help="Number of training prompts (default: 2000)")
+    p.add_argument("--n-train", type=int, default=10000,
+                   help="Number of training texts (default: 10000, ~1M+ tokens with prefill)")
     p.add_argument("--n-steps", type=int, default=5000, help="Training steps per layer")
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--batch-size", type=int, default=64)
@@ -729,23 +742,40 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
 
-    # Load all prompts from gen_merged.jsonl
-    all_prompts: list[str] = []
-    with open(WORK_DIR / "gen_merged.jsonl") as f:
-        for line in f:
-            r = json.loads(line)
-            all_prompts.append(r["prompt"])
+    # Load training texts from C4 validation (diverse corpus, Belrose et al. standard)
+    # Fallback to gen_merged.jsonl if C4 unavailable
+    from src.poc.cross_model.tuned_lens import load_training_texts
+    try:
+        all_texts = load_training_texts(
+            n_tokens_target=args.n_train * 100,  # ~100 tokens per text avg
+            max_seq_len=512,
+        )
+        if len(all_texts) < args.n_train:
+            print(f"[0G] C4 returned {len(all_texts)} texts, padding from gen_merged.jsonl...", flush=True)
+            with open(WORK_DIR / "gen_merged.jsonl") as f:
+                for line in f:
+                    r = json.loads(line)
+                    all_texts.append(r["prompt"])
+                    if len(all_texts) >= args.n_train:
+                        break
+    except Exception as e:
+        print(f"[0G] C4 load failed ({e}), falling back to gen_merged.jsonl...", flush=True)
+        all_texts = []
+        with open(WORK_DIR / "gen_merged.jsonl") as f:
+            for line in f:
+                r = json.loads(line)
+                all_texts.append(r["prompt"])
 
-    # Take up to n_train prompts, then split 80/20 for train/val
-    n_total = min(args.n_train, len(all_prompts))
-    prompts = all_prompts[:n_total]
+    # Take up to n_train texts, then split 80/20 for train/val
+    n_total = min(args.n_train, len(all_texts))
+    prompts = all_texts[:n_total]
     split_idx = int(n_total * 0.8)
     train_prompts = prompts[:split_idx]
     val_prompts = prompts[split_idx:]
 
     print(
         f"[0G] Training {args.variant} probes: {len(train_prompts)} train + "
-        f"{len(val_prompts)} val prompts ({args.n_steps} steps/layer)...",
+        f"{len(val_prompts)} val texts ({args.n_steps} steps/layer)...",
         flush=True,
     )
 

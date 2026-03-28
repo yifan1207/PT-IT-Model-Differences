@@ -103,10 +103,12 @@ def _force_decode_acts(
         prompt_ids = tokenizer.encode(row["prompt"], return_tensors="pt").to(device)
 
         step_acts: dict[int, list[torch.Tensor]] = {li: [] for li in ALL_LAYERS}
+        collecting = False  # only collect during forced-decode steps, not prefill
 
         def make_hook(li: int):
             def hook(mod, inp, out):
-                step_acts[li].append(out[0, -1, :].float().cpu())
+                if collecting:
+                    step_acts[li].append(out[0, -1, :].float().cpu())
             return hook
 
         handles = [
@@ -114,11 +116,19 @@ def _force_decode_acts(
             for li in ALL_LAYERS
         ]
         try:
+            # Use KV cache to avoid quadratic recomputation:
+            # First pass: process prompt and cache key/values (hooks fire but collecting=False)
+            with torch.no_grad():
+                out = model_raw(prompt_ids, use_cache=True)
+                past_kv = out.past_key_values
+
+            # Then step through forced tokens one at a time (O(K*(P+K)) not O(K*(P+K)^2))
+            collecting = True
             for t in range(len(gen_ids)):
-                forced = torch.tensor([gen_ids[:t + 1]], dtype=torch.long, device=device)
-                input_ids = torch.cat([prompt_ids, forced], dim=1)
+                tok = torch.tensor([[gen_ids[t]]], dtype=torch.long, device=device)
                 with torch.no_grad():
-                    model_raw(input_ids)
+                    out = model_raw(tok, past_key_values=past_kv, use_cache=True)
+                    past_kv = out.past_key_values
         finally:
             for h in handles:
                 h.remove()

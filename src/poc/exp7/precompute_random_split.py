@@ -157,13 +157,22 @@ def run_worker(
 
     print(f"[0H w{worker_index}/{n_workers}] {len(my_rows)} records on {device}", flush=True)
 
-    def collect_sums(model_raw, tokenizer, rows_subset):
-        sums = {li: np.zeros(D_MODEL, dtype=np.float64) for li in ALL_LAYERS}
-        counts = {li: 0 for li in ALL_LAYERS}
+    def collect_sums(model_raw, tokenizer, rows_subset, in_random, in_bottom):
+        """Collect per-subset MLP activation sums.
+
+        Accumulates separate sums for random-600 and bottom-600 records
+        based on the boolean masks, so compute_directions can merge correctly.
+        """
+        sums_r = {li: np.zeros(D_MODEL, dtype=np.float64) for li in ALL_LAYERS}
+        counts_r = {li: 0 for li in ALL_LAYERS}
+        sums_b = {li: np.zeros(D_MODEL, dtype=np.float64) for li in ALL_LAYERS}
+        counts_b = {li: 0 for li in ALL_LAYERS}
         for idx, row in enumerate(rows_subset):
             k = min(len(row["it_gen_ids"]), len(row["pt_gen_ids"]), MAX_GEN)
             if k == 0:
                 continue
+            is_r = in_random[idx]
+            is_b = in_bottom[idx]
             gen_acts: dict[int, list] = {li: [] for li in ALL_LAYERS}
 
             def make_hook(li: int):
@@ -191,43 +200,59 @@ def run_worker(
             for li in ALL_LAYERS:
                 if gen_acts[li]:
                     stacked = torch.stack(gen_acts[li])
-                    sums[li] += stacked.sum(dim=0).numpy().astype(np.float64)
-                    counts[li] += stacked.shape[0]
-        return sums, counts
+                    rec_sum = stacked.sum(dim=0).numpy().astype(np.float64)
+                    rec_count = stacked.shape[0]
+                    if is_r:
+                        sums_r[li] += rec_sum
+                        counts_r[li] += rec_count
+                    if is_b:
+                        sums_b[li] += rec_sum
+                        counts_b[li] += rec_count
+        return sums_r, counts_r, sums_b, counts_b
 
-    # IT activations
+    # Precompute subset membership masks for this worker's records
+    random_set = set(random_600)
+    bottom_set = set(bottom_600)
+    in_random = np.array([rid in random_set for rid in my_ids], dtype=bool)
+    in_bottom = np.array([rid in bottom_set for rid in my_ids], dtype=bool)
+
+    # IT activations — accumulate separate sums per subset
     it_cfg = Exp5Config(
         experiment="baseline", model_variant="it", model_id="",
         run_name=f"exp7_0H_it_w{worker_index}", device=device, skip_transcoders=True,
     )
     it_loaded = load_model(it_cfg)
-    it_sums, it_counts = collect_sums(_get_raw(it_loaded), it_loaded.tokenizer, my_rows)
+    it_sums_r, it_counts_r, it_sums_b, it_counts_b = collect_sums(
+        _get_raw(it_loaded), it_loaded.tokenizer, my_rows, in_random, in_bottom,
+    )
     del it_loaded; torch.cuda.empty_cache()
 
-    # PT activations
+    # PT activations — accumulate separate sums per subset
     pt_cfg = Exp5Config(
         experiment="baseline", model_variant="pt", model_id="",
         run_name=f"exp7_0H_pt_w{worker_index}", device=device, skip_transcoders=True,
     )
     pt_loaded = load_model(pt_cfg)
-    pt_sums, pt_counts = collect_sums(_get_raw(pt_loaded), pt_loaded.tokenizer, my_rows)
+    pt_sums_r, pt_counts_r, pt_sums_b, pt_counts_b = collect_sums(
+        _get_raw(pt_loaded), pt_loaded.tokenizer, my_rows, in_random, in_bottom,
+    )
     del pt_loaded; torch.cuda.empty_cache()
 
-    # Also store record IDs and their membership
-    record_ids = np.array(my_ids, dtype=object)
-    in_random = np.array([rid in set(random_600) for rid in my_ids], dtype=bool)
-    in_bottom = np.array([rid in set(bottom_600) for rid in my_ids], dtype=bool)
-
     payload: dict = {
-        "record_ids": record_ids,
+        "record_ids": np.array(my_ids, dtype=object),
         "in_random_600": in_random,
         "in_bottom_600": in_bottom,
     }
     for li in ALL_LAYERS:
-        payload[f"it_sum_{li}"] = it_sums[li].astype(np.float32)
-        payload[f"pt_sum_{li}"] = pt_sums[li].astype(np.float32)
-        payload[f"it_count_{li}"] = np.array(it_counts[li], dtype=np.int64)
-        payload[f"pt_count_{li}"] = np.array(pt_counts[li], dtype=np.int64)
+        # Per-subset sums for correct direction computation
+        payload[f"it_sum_r_{li}"] = it_sums_r[li].astype(np.float32)
+        payload[f"pt_sum_r_{li}"] = pt_sums_r[li].astype(np.float32)
+        payload[f"it_count_r_{li}"] = np.array(it_counts_r[li], dtype=np.int64)
+        payload[f"pt_count_r_{li}"] = np.array(pt_counts_r[li], dtype=np.int64)
+        payload[f"it_sum_b_{li}"] = it_sums_b[li].astype(np.float32)
+        payload[f"pt_sum_b_{li}"] = pt_sums_b[li].astype(np.float32)
+        payload[f"it_count_b_{li}"] = np.array(it_counts_b[li], dtype=np.int64)
+        payload[f"pt_count_b_{li}"] = np.array(pt_counts_b[li], dtype=np.int64)
 
     np.savez_compressed(str(out_path), **payload)
     print(f"[0H w{worker_index}] saved → {out_path}", flush=True)
@@ -301,8 +326,11 @@ def compare_direction_cosines(output_dir: Path) -> dict:
 
 
 def compute_directions(output_dir: Path, acts_dir: Path) -> None:
-    """Merge worker files and compute random + bottom directions."""
-    # Gather per-split sums
+    """Merge worker files and compute random + bottom directions.
+
+    Workers now store per-subset sums (it_sum_r_{li}, it_sum_b_{li}, etc.),
+    so we just accumulate across workers — no proportional scaling needed.
+    """
     it_sums_r = {li: np.zeros(D_MODEL, np.float64) for li in ALL_LAYERS}
     pt_sums_r = {li: np.zeros(D_MODEL, np.float64) for li in ALL_LAYERS}
     it_counts_r = {li: 0 for li in ALL_LAYERS}
@@ -315,26 +343,15 @@ def compute_directions(output_dir: Path, acts_dir: Path) -> None:
 
     for wp in sorted(acts_dir.glob("w*.npz")):
         with np.load(wp, allow_pickle=True) as d:
-            in_r = d["in_random_600"]
-            in_b = d["in_bottom_600"]
             for li in ALL_LAYERS:
-                it_s = d[f"it_sum_{li}"].astype(np.float64)
-                pt_s = d[f"pt_sum_{li}"].astype(np.float64)
-                it_c = int(d[f"it_count_{li}"])
-                pt_c = int(d[f"pt_count_{li}"])
-                # Proportional split (sum for random vs bottom can overlap if record is in both)
-                # For simplicity: use full sums for each split subset
-                n_rec = len(in_r)
-                r_frac = in_r.sum() / max(n_rec, 1)
-                b_frac = in_b.sum() / max(n_rec, 1)
-                it_sums_r[li] += it_s * r_frac
-                pt_sums_r[li] += pt_s * r_frac
-                it_counts_r[li] += int(it_c * r_frac)
-                pt_counts_r[li] += int(pt_c * r_frac)
-                it_sums_b[li] += it_s * b_frac
-                pt_sums_b[li] += pt_s * b_frac
-                it_counts_b[li] += int(it_c * b_frac)
-                pt_counts_b[li] += int(pt_c * b_frac)
+                it_sums_r[li] += d[f"it_sum_r_{li}"].astype(np.float64)
+                pt_sums_r[li] += d[f"pt_sum_r_{li}"].astype(np.float64)
+                it_counts_r[li] += int(d[f"it_count_r_{li}"])
+                pt_counts_r[li] += int(d[f"pt_count_r_{li}"])
+                it_sums_b[li] += d[f"it_sum_b_{li}"].astype(np.float64)
+                pt_sums_b[li] += d[f"pt_sum_b_{li}"].astype(np.float64)
+                it_counts_b[li] += int(d[f"it_count_b_{li}"])
+                pt_counts_b[li] += int(d[f"pt_count_b_{li}"])
 
     # Compute and save directions
     for split_name, it_sums, pt_sums, it_counts, pt_counts in [

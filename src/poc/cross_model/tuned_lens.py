@@ -7,7 +7,7 @@ final layer's space, giving a more faithful readout than raw logit lens.
 
 Training:
   - Prefill-based on C4 validation (single forward pass, all token positions)
-  - 60,000 tokens per model variant
+  - 100,000 tokens per model variant (Belrose et al. use ~65M; see load_training_texts docstring)
   - KL divergence loss: KL(softmax(lm_head(norm(probe(h_ℓ)))) ‖ softmax(lm_head(norm(h_L))))
   - Identity init + zero bias, Adam lr=1e-3, cosine LR with 5% warmup, 5000 steps
 
@@ -104,19 +104,29 @@ def _cosine_lr_with_warmup(
 # ── Training data: C4 validation (prefill-based) ───────────────────────────
 
 def load_training_texts(
-    n_tokens_target: int = 60000,
+    n_tokens_target: int = 100_000,
     max_seq_len: int = 512,
     seed: int = 42,
 ) -> list[str]:
     """Load raw text from C4 validation split for probe training.
 
     Uses HuggingFace datasets streaming to avoid downloading the full dataset.
-    Falls back to wikitext if C4 is unavailable.
+    Falls back to wikitext if C4 is unavailable. Texts are shuffled with a
+    fixed seed for reproducibility so that 80/20 train/val splits are IID.
+
+    Note on data volume: Belrose et al. (2023) use ~65M tokens (SGD, 250 steps
+    of 262k tokens each). We use fewer tokens (~100k) with more optimiser steps
+    (Adam, 5000 steps × batch 64) because: (1) identity init provides a strong
+    warm start, reducing data needs; (2) full hidden-state collection is memory-
+    bound (~50 GB CPU RAM at 100k tokens for d=4096 × 32 layers); (3) we
+    validate probe quality (tuned_agree > raw_agree) as an empirical check.
 
     Returns a list of text strings, estimated to contain >= n_tokens_target
     tokens total (using ~4 chars/token heuristic for selection, actual
     tokenisation happens later).
     """
+    import random
+
     chars_target = n_tokens_target * 4  # rough 4 chars/token heuristic
     max_chars = max_seq_len * 4
 
@@ -162,6 +172,9 @@ def load_training_texts(
         except Exception as e2:
             raise RuntimeError(f"Cannot load C4 or wikitext: {e2}") from e2
 
+    # Shuffle for IID train/val split (C4 validation is ordered by source)
+    random.Random(seed).shuffle(texts)
+
     log.info(
         "Loaded %d texts (~%dk chars, ~%dk estimated tokens)",
         len(texts), total_chars // 1000, total_chars // 4000,
@@ -205,11 +218,8 @@ def collect_hidden_states_prefill(
     def make_hook(layer_idx: int):
         def hook(module, inp, output):
             h = adapter.residual_from_output(output)
-            # h: [1, seq_len, d_model] — capture all positions
-            if multi_gpu:
-                captured[layer_idx] = h[0].float().cpu()
-            else:
-                captured[layer_idx] = h[0].float().cpu()
+            # h: [1, seq_len, d_model] — capture all positions, detach + CPU
+            captured[layer_idx] = h[0].detach().float().cpu()
         return hook
 
     handles = [
@@ -364,12 +374,15 @@ def train_probes(
             continue
 
         probe = TunedLensProbe(d_model).to(compute_device)
-        optimizer = torch.optim.Adam(probe.parameters(), lr=lr)
+        optimizer = torch.optim.Adam(probe.parameters(), lr=lr, weight_decay=1e-3)
 
         best_val_loss = float("inf")
         best_state = None
+        patience_counter = 0
+        patience_limit = 5  # stop if no improvement for 5 consecutive val checks (2500 steps)
         train_losses: list[tuple[int, float]] = []
         val_losses: list[tuple[int, float]] = []
+        final_step = n_steps
 
         for step in range(n_steps):
             _cosine_lr_with_warmup(optimizer, step, n_steps, warmup_steps, lr)
@@ -392,9 +405,12 @@ def train_probes(
 
             optimizer.zero_grad()
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(probe.parameters(), 1.0)
             optimizer.step()
 
-            # Validation every 500 steps
+            train_losses.append((step + 1, loss.item()))
+
+            # Validation every 500 steps + early stopping
             if (step + 1) % 500 == 0 and n_val_tokens > 0 and layer_idx in val_hidden:
                 with torch.no_grad():
                     val_h = val_hidden[layer_idx]
@@ -421,8 +437,18 @@ def train_probes(
                         best_state = {
                             k: v.clone() for k, v in probe.state_dict().items()
                         }
+                        patience_counter = 0
+                    else:
+                        patience_counter += 1
 
-                train_losses.append((step + 1, loss.item()))
+                # Early stopping: no improvement for patience_limit val checks
+                if patience_counter >= patience_limit and step >= warmup_steps:
+                    final_step = step + 1
+                    log.info(
+                        "  layer %d: early stop at step %d (no val improvement for %d checks)",
+                        layer_idx, final_step, patience_limit,
+                    )
+                    break
 
         # Use best validation model
         if best_state is not None:
@@ -455,6 +481,8 @@ def train_probes(
         layer_summary = {
             "train_loss_final": train_losses[-1][1] if train_losses else float("nan"),
             "val_loss_best": best_val_loss if best_val_loss < float("inf") else float("nan"),
+            "steps_used": final_step,
+            "early_stopped": final_step < n_steps,
             "raw_top1_agree": raw_agree,
             "tuned_top1_agree": tuned_agree,
         }
@@ -537,6 +565,7 @@ def eval_commitment(
     records: list[dict],
     device: torch.device,
     output_path: Path,
+    variant: str = "?",
     max_new_tokens: int = 512,
 ) -> dict:
     """Evaluate commitment using autoregressive generation with hooks.
@@ -664,7 +693,7 @@ def eval_commitment(
                     h = adapter.residual_from_output(output)
                     if h.shape[1] != 1:
                         return  # skip prefill
-                    vec = h[0, 0, :].cpu()
+                    vec = h[0, 0, :].detach().cpu()
                     step_buf[layer_idx] = vec
                     if layer_idx == n_layers - 1:
                         _process_step()
@@ -685,6 +714,7 @@ def eval_commitment(
                     do_sample=False,
                     temperature=1.0,
                     eos_token_id=stop_ids or None,
+                    pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
                 )
             except Exception as e:
                 log.warning("Prompt %s failed: %s", pid, e)
@@ -699,7 +729,7 @@ def eval_commitment(
             result = {
                 "prompt_id": pid,
                 "model": spec.name,
-                "variant": "?",  # filled by caller
+                "variant": variant,
                 "n_steps": n_steps,
                 "commitment_layer_raw": step_commitment_raw,
             }
@@ -855,8 +885,8 @@ def main() -> None:
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
 
     # Training args
-    p.add_argument("--n-tokens", type=int, default=60000,
-                   help="Target token count for probe training (default: 60000)")
+    p.add_argument("--n-tokens", type=int, default=100000,
+                   help="Target token count for probe training (default: 100000)")
     p.add_argument("--n-steps", type=int, default=5000,
                    help="Training steps per layer")
     p.add_argument("--lr", type=float, default=1e-3)
@@ -946,6 +976,7 @@ def main() -> None:
         summary = eval_commitment(
             model, tokenizer, adapter, spec, probes, records, device,
             output_path=out_path,
+            variant=args.variant,
             max_new_tokens=args.max_new_tokens,
         )
 
