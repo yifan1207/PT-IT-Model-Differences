@@ -522,6 +522,195 @@ def main() -> None:
 
     log.info("All plots saved to %s", PLOT_DIR)
 
+    log.info("Exporting plot data...")
+    export_plot_data(models)
+    log.info("Data exported to %s", PLOT_DIR / "data")
+
+
+def export_plot_data(models: list[str]) -> None:
+    """Export all numerical data behind the plots to CSV files in plots/data/."""
+    import csv
+
+    data_dir = PLOT_DIR / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── L1: mean δ-cosine per layer per model/variant ────────────────────────
+    l1_rows = []
+    for model_name in models:
+        spec = get_spec(model_name)
+        depth = np.linspace(0, 1, spec.n_layers)
+        for variant in ("pt", "it"):
+            mc = _load_mean_cosine(model_name, variant)
+            if mc is None:
+                continue
+            for layer_idx, (d, v) in enumerate(zip(depth, mc)):
+                l1_rows.append({
+                    "model": model_name,
+                    "model_label": MODEL_LABELS[model_name],
+                    "variant": variant,
+                    "layer": layer_idx,
+                    "n_layers": spec.n_layers,
+                    "normalized_depth": round(float(d), 4),
+                    "mean_delta_cosine": round(float(v), 6),
+                })
+    if l1_rows:
+        with open(data_dir / "L1_mean_delta_cosine.csv", "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=l1_rows[0].keys())
+            w.writeheader(); w.writerows(l1_rows)
+        log.info("  L1 → %d rows", len(l1_rows))
+
+    # ── L3: weight diff per layer per model ──────────────────────────────────
+    l3_rows = []
+    for model_name in models:
+        spec = get_spec(model_name)
+        data = _load_weight_diff(model_name)
+        if data is None:
+            continue
+        delta_attn = np.array(data.get("delta_attn", []))
+        delta_mlp  = np.array(data.get("delta_mlp",  []))
+        if delta_attn.size == 0:
+            continue
+        attn_norm = delta_attn / (delta_attn.mean() + 1e-12)
+        mlp_norm  = delta_mlp  / (delta_mlp.mean()  + 1e-12)
+        depth = np.linspace(0, 1, spec.n_layers)
+        for layer_idx in range(spec.n_layers):
+            l3_rows.append({
+                "model": model_name,
+                "model_label": MODEL_LABELS[model_name],
+                "layer": layer_idx,
+                "n_layers": spec.n_layers,
+                "normalized_depth": round(float(depth[layer_idx]), 4),
+                "delta_attn_raw": round(float(delta_attn[layer_idx]), 6),
+                "delta_mlp_raw":  round(float(delta_mlp[layer_idx]),  6),
+                "delta_attn_norm": round(float(attn_norm[layer_idx]), 6),
+                "delta_mlp_norm":  round(float(mlp_norm[layer_idx]),  6),
+                "phase_boundary_layer": spec.phase_boundary,
+                "corrective_onset_layer": spec.corrective_onset,
+            })
+    if l3_rows:
+        with open(data_dir / "L3_weight_diff.csv", "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=l3_rows[0].keys())
+            w.writeheader(); w.writerows(l3_rows)
+        log.info("  L3 → %d rows", len(l3_rows))
+
+    # ── L8: intrinsic dimensionality per layer per model/variant ─────────────
+    l8_rows = []
+    for model_name in models:
+        spec = get_spec(model_name)
+        depth = np.linspace(0, 1, spec.n_layers)
+        for variant in ("pt", "it"):
+            prof = _load_id_profile(model_name, variant)
+            if prof is None:
+                continue
+            id_vals  = prof.get("intrinsic_dim", [])
+            ci_low   = prof.get("intrinsic_dim_ci_low",  [None] * len(id_vals))
+            ci_high  = prof.get("intrinsic_dim_ci_high", [None] * len(id_vals))
+            for layer_idx, (d, v, lo, hi) in enumerate(zip(depth, id_vals, ci_low, ci_high)):
+                l8_rows.append({
+                    "model": model_name,
+                    "model_label": MODEL_LABELS[model_name],
+                    "variant": variant,
+                    "layer": layer_idx,
+                    "n_layers": spec.n_layers,
+                    "normalized_depth": round(float(d), 4),
+                    "intrinsic_dim": round(float(v), 4) if v is not None else "",
+                    "ci_low":  round(float(lo), 4) if lo is not None else "",
+                    "ci_high": round(float(hi), 4) if hi is not None else "",
+                })
+    if l8_rows:
+        with open(data_dir / "L8_intrinsic_dim.csv", "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=l8_rows[0].keys())
+            w.writeheader(); w.writerows(l8_rows)
+        log.info("  L8 → %d rows", len(l8_rows))
+
+    # ── L9: attention entropy divergence (IT-PT) per layer per model ─────────
+    l9_rows = []
+    for model_name in models:
+        spec = get_spec(model_name)
+        depth = np.linspace(0, 1, spec.n_layers)
+        pt_data = _load_attn_entropy(model_name, "pt")
+        it_data = _load_attn_entropy(model_name, "it")
+        if pt_data is None or it_data is None:
+            continue
+        pt_layer = np.nanmean(np.array(pt_data["mean_entropy"]), axis=1)
+        it_layer = np.nanmean(np.array(it_data["mean_entropy"]), axis=1)
+        divergence = it_layer - pt_layer
+        pt_sem = np.nanmean(np.array(pt_data.get("sem_entropy", [[0]] * spec.n_layers)), axis=1)
+        it_sem = np.nanmean(np.array(it_data.get("sem_entropy", [[0]] * spec.n_layers)), axis=1)
+        for layer_idx, d in enumerate(depth):
+            l9_rows.append({
+                "model": model_name,
+                "model_label": MODEL_LABELS[model_name],
+                "layer": layer_idx,
+                "n_layers": spec.n_layers,
+                "normalized_depth": round(float(d), 4),
+                "pt_mean_entropy_nats": round(float(pt_layer[layer_idx]), 6),
+                "it_mean_entropy_nats": round(float(it_layer[layer_idx]), 6),
+                "it_minus_pt_entropy":  round(float(divergence[layer_idx]), 6),
+                "pt_sem": round(float(pt_sem[layer_idx]), 6),
+                "it_sem": round(float(it_sem[layer_idx]), 6),
+            })
+    if l9_rows:
+        with open(data_dir / "L9_attn_entropy.csv", "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=l9_rows[0].keys())
+            w.writeheader(); w.writerows(l9_rows)
+        log.info("  L9 → %d rows", len(l9_rows))
+
+    # ── summary: key scalar stats per model ──────────────────────────────────
+    summary_rows = []
+    for model_name in models:
+        spec = get_spec(model_name)
+        row: dict = {"model": model_name, "model_label": MODEL_LABELS[model_name],
+                     "n_layers": spec.n_layers, "phase_boundary_layer": spec.phase_boundary,
+                     "corrective_onset_layer": spec.corrective_onset}
+
+        # L3: max MLP change layer
+        data = _load_weight_diff(model_name)
+        if data:
+            dm = np.array(data.get("delta_mlp", []))
+            da = np.array(data.get("delta_attn", []))
+            if dm.size:
+                row["L3_max_mlp_change_layer"] = int(np.argmax(dm))
+                row["L3_max_attn_change_layer"] = int(np.argmax(da))
+                row["L3_corrective_mlp_mean_norm"] = round(
+                    float(dm[spec.corrective_onset:].mean() / (dm.mean() + 1e-12)), 4)
+
+        # L8: min ID layer for IT
+        prof = _load_id_profile(model_name, "it")
+        if prof:
+            id_vals = np.array(prof.get("intrinsic_dim", []))
+            if id_vals.size:
+                row["L8_min_id_layer_it"] = int(np.argmin(id_vals))
+                row["L8_min_id_value_it"] = round(float(id_vals.min()), 2)
+                row["L8_normalized_min_id_depth"] = round(float(np.argmin(id_vals) / spec.n_layers), 3)
+
+        # L9: max divergence layer
+        pt_data = _load_attn_entropy(model_name, "pt")
+        it_data = _load_attn_entropy(model_name, "it")
+        if pt_data and it_data:
+            div = (np.nanmean(np.array(it_data["mean_entropy"]), axis=1) -
+                   np.nanmean(np.array(pt_data["mean_entropy"]), axis=1))
+            row["L9_max_div_layer"] = int(np.argmax(np.abs(div)))
+            row["L9_max_div_value"] = round(float(div[np.argmax(np.abs(div))]), 4)
+            row["L9_normalized_max_div_depth"] = round(float(np.argmax(np.abs(div)) / spec.n_layers), 3)
+            row["L9_mean_div_corrective_region"] = round(
+                float(div[spec.corrective_onset:].mean()), 4)
+
+        summary_rows.append(row)
+
+    if summary_rows:
+        all_keys: list[str] = []
+        for r in summary_rows:
+            for k in r:
+                if k not in all_keys:
+                    all_keys.append(k)
+        with open(data_dir / "summary_stats.csv", "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=all_keys, extrasaction="ignore")
+            w.writeheader()
+            for r in summary_rows:
+                w.writerow({k: r.get(k, "") for k in all_keys})
+        log.info("  summary → %d models", len(summary_rows))
+
 
 if __name__ == "__main__":
     main()

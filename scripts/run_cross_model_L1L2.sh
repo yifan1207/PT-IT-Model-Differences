@@ -51,40 +51,12 @@ run_variant() {
     local log_dir="logs/cross_model/L1L2_${model}_${variant}"
     mkdir -p "$log_dir"
 
-    # DeepSeek: single worker, all 8 GPUs via device_map="sequential", fewer tokens
-    if [[ "$model" == "deepseek_v2_lite" ]]; then
-        local tokens=$DEEPSEEK_MAX_NEW_TOKENS
-        echo "=== $model $variant: 1 worker across all GPUs (multi-GPU, max_new_tokens=$tokens) ==="
-        if [[ "$DRY_RUN" == "1" ]]; then
-            echo "[dry] uv run python -m src.poc.cross_model.collect_L1L2 --model $model --variant $variant --device cuda:0 --worker-index 0 --n-workers 1 --max-new-tokens $tokens"
-            echo "[dry] merge: uv run python -m src.poc.cross_model.collect_L1L2 --model $model --variant $variant --merge-only --n-workers 1"
-            return
-        fi
-        uv run python -m src.poc.cross_model.collect_L1L2 \
-            --model "$model" \
-            --variant "$variant" \
-            --dataset "$DATASET" \
-            --device "cuda:0" \
-            --worker-index 0 \
-            --n-workers 1 \
-            --max-new-tokens "$tokens" \
-            > "$log_dir/w0.log" 2>&1 || { echo "ERROR: $model $variant worker failed (see $log_dir/w0.log)"; return 1; }
-        echo "[$(date +%T)] Worker done. Merging $model $variant ..."
-        uv run python -m src.poc.cross_model.collect_L1L2 \
-            --model "$model" --variant "$variant" \
-            --merge-only --n-workers 1 \
-            >> "$log_dir/merge.log" 2>&1
-        echo "[$(date +%T)] Done $model $variant"
-        local out_dir="results/cross_model/$model/$variant"
-        if [[ -s "$out_dir/L1L2_results.jsonl" ]]; then
-            rm -f "$out_dir"/L1L2_w*.jsonl
-            echo "[$(date +%T)] Cleaned worker files for $model $variant"
-        fi
-        return
-    fi
+    # All models: 8 parallel workers, one per GPU.
+    # DeepSeek uses max_new_tokens=64 (fits in 1 GPU at 64 tokens; 512 tokens OOMs).
+    local tokens=$MAX_NEW_TOKENS
+    [[ "$model" == "deepseek_v2_lite" ]] && tokens=$DEEPSEEK_MAX_NEW_TOKENS
 
-    # Standard path: 8 parallel workers, one per GPU
-    echo "=== $model $variant: $NW workers on GPU 0-$((NW-1)) ==="
+    echo "=== $model $variant: $NW workers on GPU 0-$((NW-1)) (max_new_tokens=$tokens) ==="
 
     if [[ "$DRY_RUN" == "1" ]]; then
         for ((i=0; i<NW; i++)); do
@@ -104,7 +76,7 @@ run_variant() {
             --device "cuda:$i" \
             --worker-index "$i" \
             --n-workers "$NW" \
-            --max-new-tokens "$MAX_NEW_TOKENS" \
+            --max-new-tokens "$tokens" \
             > "$log_dir/w${i}.log" 2>&1 &
         pids+=($!)
     done

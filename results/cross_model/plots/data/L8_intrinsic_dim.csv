@@ -1,0 +1,387 @@
+model,model_label,variant,layer,n_layers,normalized_depth,intrinsic_dim,ci_low,ci_high
+gemma3_4b,Gemma 3 4B,pt,0,34,0.0,13.2619,nan,nan
+gemma3_4b,Gemma 3 4B,pt,1,34,0.0303,15.821,nan,nan
+gemma3_4b,Gemma 3 4B,pt,2,34,0.0606,13.755,nan,nan
+gemma3_4b,Gemma 3 4B,pt,3,34,0.0909,13.8823,nan,nan
+gemma3_4b,Gemma 3 4B,pt,4,34,0.1212,11.3018,nan,nan
+gemma3_4b,Gemma 3 4B,pt,5,34,0.1515,11.2721,nan,nan
+gemma3_4b,Gemma 3 4B,pt,6,34,0.1818,11.4379,nan,nan
+gemma3_4b,Gemma 3 4B,pt,7,34,0.2121,11.7537,nan,nan
+gemma3_4b,Gemma 3 4B,pt,8,34,0.2424,11.1928,nan,nan
+gemma3_4b,Gemma 3 4B,pt,9,34,0.2727,10.8311,nan,nan
+gemma3_4b,Gemma 3 4B,pt,10,34,0.303,11.2748,nan,nan
+gemma3_4b,Gemma 3 4B,pt,11,34,0.3333,10.7941,nan,nan
+gemma3_4b,Gemma 3 4B,pt,12,34,0.3636,11.2931,nan,nan
+gemma3_4b,Gemma 3 4B,pt,13,34,0.3939,11.4234,nan,nan
+gemma3_4b,Gemma 3 4B,pt,14,34,0.4242,11.5746,nan,nan
+gemma3_4b,Gemma 3 4B,pt,15,34,0.4545,12.2759,nan,nan
+gemma3_4b,Gemma 3 4B,pt,16,34,0.4848,12.053,nan,nan
+gemma3_4b,Gemma 3 4B,pt,17,34,0.5152,12.2234,nan,nan
+gemma3_4b,Gemma 3 4B,pt,18,34,0.5455,12.2682,nan,nan
+gemma3_4b,Gemma 3 4B,pt,19,34,0.5758,11.6456,nan,nan
+gemma3_4b,Gemma 3 4B,pt,20,34,0.6061,11.5684,nan,nan
+gemma3_4b,Gemma 3 4B,pt,21,34,0.6364,12.6249,nan,nan
+gemma3_4b,Gemma 3 4B,pt,22,34,0.6667,13.0893,nan,nan
+gemma3_4b,Gemma 3 4B,pt,23,34,0.697,13.5715,nan,nan
+gemma3_4b,Gemma 3 4B,pt,24,34,0.7273,13.9548,nan,nan
+gemma3_4b,Gemma 3 4B,pt,25,34,0.7576,13.744,nan,nan
+gemma3_4b,Gemma 3 4B,pt,26,34,0.7879,14.9898,nan,nan
+gemma3_4b,Gemma 3 4B,pt,27,34,0.8182,14.8876,nan,nan
+gemma3_4b,Gemma 3 4B,pt,28,34,0.8485,15.2576,nan,nan
+gemma3_4b,Gemma 3 4B,pt,29,34,0.8788,17.0042,nan,nan
+gemma3_4b,Gemma 3 4B,pt,30,34,0.9091,17.7503,nan,nan
+gemma3_4b,Gemma 3 4B,pt,31,34,0.9394,17.7085,nan,nan
+gemma3_4b,Gemma 3 4B,pt,32,34,0.9697,17.8224,nan,nan
+gemma3_4b,Gemma 3 4B,pt,33,34,1.0,17.8713,nan,nan
+gemma3_4b,Gemma 3 4B,it,0,34,0.0,13.4651,nan,nan
+gemma3_4b,Gemma 3 4B,it,1,34,0.0303,15.5273,nan,nan
+gemma3_4b,Gemma 3 4B,it,2,34,0.0606,13.7094,nan,nan
+gemma3_4b,Gemma 3 4B,it,3,34,0.0909,13.2554,nan,nan
+gemma3_4b,Gemma 3 4B,it,4,34,0.1212,11.429,nan,nan
+gemma3_4b,Gemma 3 4B,it,5,34,0.1515,10.9394,nan,nan
+gemma3_4b,Gemma 3 4B,it,6,34,0.1818,12.0006,nan,nan
+gemma3_4b,Gemma 3 4B,it,7,34,0.2121,11.3298,nan,nan
+gemma3_4b,Gemma 3 4B,it,8,34,0.2424,11.4206,nan,nan
+gemma3_4b,Gemma 3 4B,it,9,34,0.2727,11.2117,nan,nan
+gemma3_4b,Gemma 3 4B,it,10,34,0.303,11.4139,nan,nan
+gemma3_4b,Gemma 3 4B,it,11,34,0.3333,11.1123,nan,nan
+gemma3_4b,Gemma 3 4B,it,12,34,0.3636,11.3752,nan,nan
+gemma3_4b,Gemma 3 4B,it,13,34,0.3939,11.9347,nan,nan
+gemma3_4b,Gemma 3 4B,it,14,34,0.4242,12.2516,nan,nan
+gemma3_4b,Gemma 3 4B,it,15,34,0.4545,13.1717,nan,nan
+gemma3_4b,Gemma 3 4B,it,16,34,0.4848,12.6539,nan,nan
+gemma3_4b,Gemma 3 4B,it,17,34,0.5152,12.8642,nan,nan
+gemma3_4b,Gemma 3 4B,it,18,34,0.5455,12.991,nan,nan
+gemma3_4b,Gemma 3 4B,it,19,34,0.5758,12.6096,nan,nan
+gemma3_4b,Gemma 3 4B,it,20,34,0.6061,13.1207,nan,nan
+gemma3_4b,Gemma 3 4B,it,21,34,0.6364,13.617,nan,nan
+gemma3_4b,Gemma 3 4B,it,22,34,0.6667,13.7324,nan,nan
+gemma3_4b,Gemma 3 4B,it,23,34,0.697,14.0645,nan,nan
+gemma3_4b,Gemma 3 4B,it,24,34,0.7273,14.5086,nan,nan
+gemma3_4b,Gemma 3 4B,it,25,34,0.7576,14.7707,nan,nan
+gemma3_4b,Gemma 3 4B,it,26,34,0.7879,15.5511,nan,nan
+gemma3_4b,Gemma 3 4B,it,27,34,0.8182,15.5908,nan,nan
+gemma3_4b,Gemma 3 4B,it,28,34,0.8485,15.8259,nan,nan
+gemma3_4b,Gemma 3 4B,it,29,34,0.8788,16.9802,nan,nan
+gemma3_4b,Gemma 3 4B,it,30,34,0.9091,17.9729,nan,nan
+gemma3_4b,Gemma 3 4B,it,31,34,0.9394,18.9025,nan,nan
+gemma3_4b,Gemma 3 4B,it,32,34,0.9697,19.2683,nan,nan
+gemma3_4b,Gemma 3 4B,it,33,34,1.0,19.1852,nan,nan
+llama31_8b,Llama 3.1 8B,pt,0,32,0.0,14.0926,nan,nan
+llama31_8b,Llama 3.1 8B,pt,1,32,0.0323,15.3129,nan,nan
+llama31_8b,Llama 3.1 8B,pt,2,32,0.0645,14.509,nan,nan
+llama31_8b,Llama 3.1 8B,pt,3,32,0.0968,14.1604,nan,nan
+llama31_8b,Llama 3.1 8B,pt,4,32,0.129,15.0703,nan,nan
+llama31_8b,Llama 3.1 8B,pt,5,32,0.1613,14.8908,nan,nan
+llama31_8b,Llama 3.1 8B,pt,6,32,0.1935,14.6937,nan,nan
+llama31_8b,Llama 3.1 8B,pt,7,32,0.2258,14.2802,nan,nan
+llama31_8b,Llama 3.1 8B,pt,8,32,0.2581,14.2381,nan,nan
+llama31_8b,Llama 3.1 8B,pt,9,32,0.2903,14.3181,nan,nan
+llama31_8b,Llama 3.1 8B,pt,10,32,0.3226,14.5711,nan,nan
+llama31_8b,Llama 3.1 8B,pt,11,32,0.3548,14.9863,nan,nan
+llama31_8b,Llama 3.1 8B,pt,12,32,0.3871,15.7851,nan,nan
+llama31_8b,Llama 3.1 8B,pt,13,32,0.4194,16.2376,nan,nan
+llama31_8b,Llama 3.1 8B,pt,14,32,0.4516,16.3505,nan,nan
+llama31_8b,Llama 3.1 8B,pt,15,32,0.4839,15.8448,nan,nan
+llama31_8b,Llama 3.1 8B,pt,16,32,0.5161,15.8254,nan,nan
+llama31_8b,Llama 3.1 8B,pt,17,32,0.5484,15.0652,nan,nan
+llama31_8b,Llama 3.1 8B,pt,18,32,0.5806,15.0331,nan,nan
+llama31_8b,Llama 3.1 8B,pt,19,32,0.6129,15.1852,nan,nan
+llama31_8b,Llama 3.1 8B,pt,20,32,0.6452,15.2936,nan,nan
+llama31_8b,Llama 3.1 8B,pt,21,32,0.6774,15.1473,nan,nan
+llama31_8b,Llama 3.1 8B,pt,22,32,0.7097,15.4949,nan,nan
+llama31_8b,Llama 3.1 8B,pt,23,32,0.7419,15.5584,nan,nan
+llama31_8b,Llama 3.1 8B,pt,24,32,0.7742,16.0936,nan,nan
+llama31_8b,Llama 3.1 8B,pt,25,32,0.8065,16.6168,nan,nan
+llama31_8b,Llama 3.1 8B,pt,26,32,0.8387,16.9648,nan,nan
+llama31_8b,Llama 3.1 8B,pt,27,32,0.871,17.2882,nan,nan
+llama31_8b,Llama 3.1 8B,pt,28,32,0.9032,17.5283,nan,nan
+llama31_8b,Llama 3.1 8B,pt,29,32,0.9355,17.3612,nan,nan
+llama31_8b,Llama 3.1 8B,pt,30,32,0.9677,17.6454,nan,nan
+llama31_8b,Llama 3.1 8B,pt,31,32,1.0,16.3584,nan,nan
+llama31_8b,Llama 3.1 8B,it,0,32,0.0,14.372,nan,nan
+llama31_8b,Llama 3.1 8B,it,1,32,0.0323,14.8143,nan,nan
+llama31_8b,Llama 3.1 8B,it,2,32,0.0645,13.5167,nan,nan
+llama31_8b,Llama 3.1 8B,it,3,32,0.0968,13.7574,nan,nan
+llama31_8b,Llama 3.1 8B,it,4,32,0.129,14.884,nan,nan
+llama31_8b,Llama 3.1 8B,it,5,32,0.1613,14.8451,nan,nan
+llama31_8b,Llama 3.1 8B,it,6,32,0.1935,14.4466,nan,nan
+llama31_8b,Llama 3.1 8B,it,7,32,0.2258,14.5773,nan,nan
+llama31_8b,Llama 3.1 8B,it,8,32,0.2581,14.4785,nan,nan
+llama31_8b,Llama 3.1 8B,it,9,32,0.2903,14.4789,nan,nan
+llama31_8b,Llama 3.1 8B,it,10,32,0.3226,14.7352,nan,nan
+llama31_8b,Llama 3.1 8B,it,11,32,0.3548,15.078,nan,nan
+llama31_8b,Llama 3.1 8B,it,12,32,0.3871,15.5159,nan,nan
+llama31_8b,Llama 3.1 8B,it,13,32,0.4194,15.2322,nan,nan
+llama31_8b,Llama 3.1 8B,it,14,32,0.4516,15.1388,nan,nan
+llama31_8b,Llama 3.1 8B,it,15,32,0.4839,14.558,nan,nan
+llama31_8b,Llama 3.1 8B,it,16,32,0.5161,14.1969,nan,nan
+llama31_8b,Llama 3.1 8B,it,17,32,0.5484,14.2576,nan,nan
+llama31_8b,Llama 3.1 8B,it,18,32,0.5806,14.0335,nan,nan
+llama31_8b,Llama 3.1 8B,it,19,32,0.6129,14.0877,nan,nan
+llama31_8b,Llama 3.1 8B,it,20,32,0.6452,14.1337,nan,nan
+llama31_8b,Llama 3.1 8B,it,21,32,0.6774,14.3139,nan,nan
+llama31_8b,Llama 3.1 8B,it,22,32,0.7097,14.5683,nan,nan
+llama31_8b,Llama 3.1 8B,it,23,32,0.7419,14.7278,nan,nan
+llama31_8b,Llama 3.1 8B,it,24,32,0.7742,15.4025,nan,nan
+llama31_8b,Llama 3.1 8B,it,25,32,0.8065,15.931,nan,nan
+llama31_8b,Llama 3.1 8B,it,26,32,0.8387,16.5731,nan,nan
+llama31_8b,Llama 3.1 8B,it,27,32,0.871,17.2251,nan,nan
+llama31_8b,Llama 3.1 8B,it,28,32,0.9032,17.9549,nan,nan
+llama31_8b,Llama 3.1 8B,it,29,32,0.9355,18.0678,nan,nan
+llama31_8b,Llama 3.1 8B,it,30,32,0.9677,18.5809,nan,nan
+llama31_8b,Llama 3.1 8B,it,31,32,1.0,17.823,nan,nan
+qwen3_4b,Qwen 3 4B,pt,0,36,0.0,15.3092,nan,nan
+qwen3_4b,Qwen 3 4B,pt,1,36,0.0286,15.1674,nan,nan
+qwen3_4b,Qwen 3 4B,pt,2,36,0.0571,13.0808,nan,nan
+qwen3_4b,Qwen 3 4B,pt,3,36,0.0857,13.8601,nan,nan
+qwen3_4b,Qwen 3 4B,pt,4,36,0.1143,13.6219,nan,nan
+qwen3_4b,Qwen 3 4B,pt,5,36,0.1429,13.0444,nan,nan
+qwen3_4b,Qwen 3 4B,pt,6,36,0.1714,13.1219,nan,nan
+qwen3_4b,Qwen 3 4B,pt,7,36,0.2,13.0811,nan,nan
+qwen3_4b,Qwen 3 4B,pt,8,36,0.2286,12.7145,nan,nan
+qwen3_4b,Qwen 3 4B,pt,9,36,0.2571,12.8321,nan,nan
+qwen3_4b,Qwen 3 4B,pt,10,36,0.2857,12.9554,nan,nan
+qwen3_4b,Qwen 3 4B,pt,11,36,0.3143,12.9237,nan,nan
+qwen3_4b,Qwen 3 4B,pt,12,36,0.3429,12.5083,nan,nan
+qwen3_4b,Qwen 3 4B,pt,13,36,0.3714,12.4391,nan,nan
+qwen3_4b,Qwen 3 4B,pt,14,36,0.4,12.4009,nan,nan
+qwen3_4b,Qwen 3 4B,pt,15,36,0.4286,12.4659,nan,nan
+qwen3_4b,Qwen 3 4B,pt,16,36,0.4571,12.6539,nan,nan
+qwen3_4b,Qwen 3 4B,pt,17,36,0.4857,13.0785,nan,nan
+qwen3_4b,Qwen 3 4B,pt,18,36,0.5143,13.2228,nan,nan
+qwen3_4b,Qwen 3 4B,pt,19,36,0.5429,13.5562,nan,nan
+qwen3_4b,Qwen 3 4B,pt,20,36,0.5714,13.8573,nan,nan
+qwen3_4b,Qwen 3 4B,pt,21,36,0.6,14.0008,nan,nan
+qwen3_4b,Qwen 3 4B,pt,22,36,0.6286,14.4619,nan,nan
+qwen3_4b,Qwen 3 4B,pt,23,36,0.6571,14.4209,nan,nan
+qwen3_4b,Qwen 3 4B,pt,24,36,0.6857,14.5191,nan,nan
+qwen3_4b,Qwen 3 4B,pt,25,36,0.7143,14.0742,nan,nan
+qwen3_4b,Qwen 3 4B,pt,26,36,0.7429,14.3738,nan,nan
+qwen3_4b,Qwen 3 4B,pt,27,36,0.7714,14.1796,nan,nan
+qwen3_4b,Qwen 3 4B,pt,28,36,0.8,13.9472,nan,nan
+qwen3_4b,Qwen 3 4B,pt,29,36,0.8286,14.1156,nan,nan
+qwen3_4b,Qwen 3 4B,pt,30,36,0.8571,13.837,nan,nan
+qwen3_4b,Qwen 3 4B,pt,31,36,0.8857,14.5394,nan,nan
+qwen3_4b,Qwen 3 4B,pt,32,36,0.9143,15.2044,nan,nan
+qwen3_4b,Qwen 3 4B,pt,33,36,0.9429,16.4653,nan,nan
+qwen3_4b,Qwen 3 4B,pt,34,36,0.9714,16.9016,nan,nan
+qwen3_4b,Qwen 3 4B,pt,35,36,1.0,16.35,nan,nan
+qwen3_4b,Qwen 3 4B,it,0,36,0.0,15.3771,nan,nan
+qwen3_4b,Qwen 3 4B,it,1,36,0.0286,15.5477,nan,nan
+qwen3_4b,Qwen 3 4B,it,2,36,0.0571,14.0519,nan,nan
+qwen3_4b,Qwen 3 4B,it,3,36,0.0857,14.8132,nan,nan
+qwen3_4b,Qwen 3 4B,it,4,36,0.1143,14.6969,nan,nan
+qwen3_4b,Qwen 3 4B,it,5,36,0.1429,14.1011,nan,nan
+qwen3_4b,Qwen 3 4B,it,6,36,0.1714,13.6436,nan,nan
+qwen3_4b,Qwen 3 4B,it,7,36,0.2,13.7574,nan,nan
+qwen3_4b,Qwen 3 4B,it,8,36,0.2286,13.7041,nan,nan
+qwen3_4b,Qwen 3 4B,it,9,36,0.2571,13.5979,nan,nan
+qwen3_4b,Qwen 3 4B,it,10,36,0.2857,13.7065,nan,nan
+qwen3_4b,Qwen 3 4B,it,11,36,0.3143,13.8127,nan,nan
+qwen3_4b,Qwen 3 4B,it,12,36,0.3429,13.6118,nan,nan
+qwen3_4b,Qwen 3 4B,it,13,36,0.3714,13.258,nan,nan
+qwen3_4b,Qwen 3 4B,it,14,36,0.4,13.3916,nan,nan
+qwen3_4b,Qwen 3 4B,it,15,36,0.4286,13.6846,nan,nan
+qwen3_4b,Qwen 3 4B,it,16,36,0.4571,14.174,nan,nan
+qwen3_4b,Qwen 3 4B,it,17,36,0.4857,14.3004,nan,nan
+qwen3_4b,Qwen 3 4B,it,18,36,0.5143,14.436,nan,nan
+qwen3_4b,Qwen 3 4B,it,19,36,0.5429,14.4184,nan,nan
+qwen3_4b,Qwen 3 4B,it,20,36,0.5714,13.9898,nan,nan
+qwen3_4b,Qwen 3 4B,it,21,36,0.6,14.1115,nan,nan
+qwen3_4b,Qwen 3 4B,it,22,36,0.6286,14.4166,nan,nan
+qwen3_4b,Qwen 3 4B,it,23,36,0.6571,13.9945,nan,nan
+qwen3_4b,Qwen 3 4B,it,24,36,0.6857,14.0693,nan,nan
+qwen3_4b,Qwen 3 4B,it,25,36,0.7143,13.8714,nan,nan
+qwen3_4b,Qwen 3 4B,it,26,36,0.7429,14.0478,nan,nan
+qwen3_4b,Qwen 3 4B,it,27,36,0.7714,14.1514,nan,nan
+qwen3_4b,Qwen 3 4B,it,28,36,0.8,14.0117,nan,nan
+qwen3_4b,Qwen 3 4B,it,29,36,0.8286,14.3655,nan,nan
+qwen3_4b,Qwen 3 4B,it,30,36,0.8571,14.3467,nan,nan
+qwen3_4b,Qwen 3 4B,it,31,36,0.8857,15.1338,nan,nan
+qwen3_4b,Qwen 3 4B,it,32,36,0.9143,16.0692,nan,nan
+qwen3_4b,Qwen 3 4B,it,33,36,0.9429,17.0139,nan,nan
+qwen3_4b,Qwen 3 4B,it,34,36,0.9714,17.822,nan,nan
+qwen3_4b,Qwen 3 4B,it,35,36,1.0,17.6876,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,0,32,0.0,13.282,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,1,32,0.0323,14.1697,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,2,32,0.0645,13.177,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,3,32,0.0968,15.2927,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,4,32,0.129,15.1014,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,5,32,0.1613,12.6175,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,6,32,0.1935,12.351,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,7,32,0.2258,12.336,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,8,32,0.2581,12.121,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,9,32,0.2903,12.4181,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,10,32,0.3226,12.909,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,11,32,0.3548,13.3467,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,12,32,0.3871,13.3047,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,13,32,0.4194,13.6627,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,14,32,0.4516,14.314,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,15,32,0.4839,14.832,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,16,32,0.5161,14.354,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,17,32,0.5484,14.5445,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,18,32,0.5806,14.9831,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,19,32,0.6129,15.6639,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,20,32,0.6452,15.7196,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,21,32,0.6774,16.132,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,22,32,0.7097,16.3179,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,23,32,0.7419,16.7509,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,24,32,0.7742,17.6457,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,25,32,0.8065,18.1113,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,26,32,0.8387,18.5948,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,27,32,0.871,18.6654,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,28,32,0.9032,19.0917,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,29,32,0.9355,19.5411,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,30,32,0.9677,19.8079,nan,nan
+mistral_7b,Mistral 7B v0.3,pt,31,32,1.0,19.9726,nan,nan
+mistral_7b,Mistral 7B v0.3,it,0,32,0.0,13.3057,nan,nan
+mistral_7b,Mistral 7B v0.3,it,1,32,0.0323,14.5177,nan,nan
+mistral_7b,Mistral 7B v0.3,it,2,32,0.0645,13.6971,nan,nan
+mistral_7b,Mistral 7B v0.3,it,3,32,0.0968,15.1217,nan,nan
+mistral_7b,Mistral 7B v0.3,it,4,32,0.129,14.8845,nan,nan
+mistral_7b,Mistral 7B v0.3,it,5,32,0.1613,12.5594,nan,nan
+mistral_7b,Mistral 7B v0.3,it,6,32,0.1935,12.4687,nan,nan
+mistral_7b,Mistral 7B v0.3,it,7,32,0.2258,12.1079,nan,nan
+mistral_7b,Mistral 7B v0.3,it,8,32,0.2581,12.276,nan,nan
+mistral_7b,Mistral 7B v0.3,it,9,32,0.2903,12.6922,nan,nan
+mistral_7b,Mistral 7B v0.3,it,10,32,0.3226,13.3073,nan,nan
+mistral_7b,Mistral 7B v0.3,it,11,32,0.3548,14.1682,nan,nan
+mistral_7b,Mistral 7B v0.3,it,12,32,0.3871,14.3489,nan,nan
+mistral_7b,Mistral 7B v0.3,it,13,32,0.4194,15.0216,nan,nan
+mistral_7b,Mistral 7B v0.3,it,14,32,0.4516,15.2424,nan,nan
+mistral_7b,Mistral 7B v0.3,it,15,32,0.4839,15.6937,nan,nan
+mistral_7b,Mistral 7B v0.3,it,16,32,0.5161,15.2305,nan,nan
+mistral_7b,Mistral 7B v0.3,it,17,32,0.5484,15.0513,nan,nan
+mistral_7b,Mistral 7B v0.3,it,18,32,0.5806,15.4439,nan,nan
+mistral_7b,Mistral 7B v0.3,it,19,32,0.6129,16.4584,nan,nan
+mistral_7b,Mistral 7B v0.3,it,20,32,0.6452,16.5302,nan,nan
+mistral_7b,Mistral 7B v0.3,it,21,32,0.6774,16.8598,nan,nan
+mistral_7b,Mistral 7B v0.3,it,22,32,0.7097,17.2439,nan,nan
+mistral_7b,Mistral 7B v0.3,it,23,32,0.7419,17.7078,nan,nan
+mistral_7b,Mistral 7B v0.3,it,24,32,0.7742,18.5233,nan,nan
+mistral_7b,Mistral 7B v0.3,it,25,32,0.8065,18.7433,nan,nan
+mistral_7b,Mistral 7B v0.3,it,26,32,0.8387,19.0119,nan,nan
+mistral_7b,Mistral 7B v0.3,it,27,32,0.871,19.4878,nan,nan
+mistral_7b,Mistral 7B v0.3,it,28,32,0.9032,19.9189,nan,nan
+mistral_7b,Mistral 7B v0.3,it,29,32,0.9355,20.3052,nan,nan
+mistral_7b,Mistral 7B v0.3,it,30,32,0.9677,20.6741,nan,nan
+mistral_7b,Mistral 7B v0.3,it,31,32,1.0,21.5762,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,0,27,0.0,13.378,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,1,27,0.0385,14.1554,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,2,27,0.0769,13.9818,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,3,27,0.1154,14.353,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,4,27,0.1538,14.5902,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,5,27,0.1923,14.8417,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,6,27,0.2308,15.5768,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,7,27,0.2692,15.0963,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,8,27,0.3077,14.6685,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,9,27,0.3462,15.4863,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,10,27,0.3846,14.5397,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,11,27,0.4231,14.5146,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,12,27,0.4615,14.7634,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,13,27,0.5,15.3492,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,14,27,0.5385,14.8148,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,15,27,0.5769,15.1619,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,16,27,0.6154,15.2799,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,17,27,0.6538,14.8744,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,18,27,0.6923,14.8132,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,19,27,0.7308,17.7539,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,20,27,0.7692,18.2831,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,21,27,0.8077,18.4764,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,22,27,0.8462,18.5433,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,23,27,0.8846,17.9421,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,24,27,0.9231,18.3821,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,25,27,0.9615,18.2758,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,26,27,1.0,17.7998,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,0,27,0.0,12.954,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,1,27,0.0385,13.7846,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,2,27,0.0769,14.0797,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,3,27,0.1154,15.6178,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,4,27,0.1538,15.7317,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,5,27,0.1923,15.4165,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,6,27,0.2308,16.5558,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,7,27,0.2692,16.5093,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,8,27,0.3077,16.5412,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,9,27,0.3462,17.3801,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,10,27,0.3846,16.1386,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,11,27,0.4231,17.277,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,12,27,0.4615,17.6434,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,13,27,0.5,18.3575,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,14,27,0.5385,17.7725,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,15,27,0.5769,18.1532,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,16,27,0.6154,18.1287,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,17,27,0.6538,17.9276,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,18,27,0.6923,17.6878,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,19,27,0.7308,20.0943,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,20,27,0.7692,21.3744,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,21,27,0.8077,21.8816,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,22,27,0.8462,22.6951,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,23,27,0.8846,22.1335,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,24,27,0.9231,22.548,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,25,27,0.9615,22.5042,nan,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,26,27,1.0,21.9252,nan,nan
+olmo2_7b,OLMo 2 7B,pt,0,32,0.0,14.0526,nan,nan
+olmo2_7b,OLMo 2 7B,pt,1,32,0.0323,15.8719,nan,nan
+olmo2_7b,OLMo 2 7B,pt,2,32,0.0645,16.3388,nan,nan
+olmo2_7b,OLMo 2 7B,pt,3,32,0.0968,17.4356,nan,nan
+olmo2_7b,OLMo 2 7B,pt,4,32,0.129,17.0001,nan,nan
+olmo2_7b,OLMo 2 7B,pt,5,32,0.1613,16.7783,nan,nan
+olmo2_7b,OLMo 2 7B,pt,6,32,0.1935,16.1961,nan,nan
+olmo2_7b,OLMo 2 7B,pt,7,32,0.2258,16.1485,nan,nan
+olmo2_7b,OLMo 2 7B,pt,8,32,0.2581,16.256,nan,nan
+olmo2_7b,OLMo 2 7B,pt,9,32,0.2903,15.8661,nan,nan
+olmo2_7b,OLMo 2 7B,pt,10,32,0.3226,15.7083,nan,nan
+olmo2_7b,OLMo 2 7B,pt,11,32,0.3548,15.3397,nan,nan
+olmo2_7b,OLMo 2 7B,pt,12,32,0.3871,15.2226,nan,nan
+olmo2_7b,OLMo 2 7B,pt,13,32,0.4194,15.8103,nan,nan
+olmo2_7b,OLMo 2 7B,pt,14,32,0.4516,16.3241,nan,nan
+olmo2_7b,OLMo 2 7B,pt,15,32,0.4839,15.7997,nan,nan
+olmo2_7b,OLMo 2 7B,pt,16,32,0.5161,15.8442,nan,nan
+olmo2_7b,OLMo 2 7B,pt,17,32,0.5484,16.2887,nan,nan
+olmo2_7b,OLMo 2 7B,pt,18,32,0.5806,15.3247,nan,nan
+olmo2_7b,OLMo 2 7B,pt,19,32,0.6129,15.9478,nan,nan
+olmo2_7b,OLMo 2 7B,pt,20,32,0.6452,15.7332,nan,nan
+olmo2_7b,OLMo 2 7B,pt,21,32,0.6774,15.6223,nan,nan
+olmo2_7b,OLMo 2 7B,pt,22,32,0.7097,16.5265,nan,nan
+olmo2_7b,OLMo 2 7B,pt,23,32,0.7419,17.0901,nan,nan
+olmo2_7b,OLMo 2 7B,pt,24,32,0.7742,18.3936,nan,nan
+olmo2_7b,OLMo 2 7B,pt,25,32,0.8065,19.3976,nan,nan
+olmo2_7b,OLMo 2 7B,pt,26,32,0.8387,20.212,nan,nan
+olmo2_7b,OLMo 2 7B,pt,27,32,0.871,21.1344,nan,nan
+olmo2_7b,OLMo 2 7B,pt,28,32,0.9032,21.9506,nan,nan
+olmo2_7b,OLMo 2 7B,pt,29,32,0.9355,21.9347,nan,nan
+olmo2_7b,OLMo 2 7B,pt,30,32,0.9677,21.5589,nan,nan
+olmo2_7b,OLMo 2 7B,pt,31,32,1.0,20.8533,nan,nan
+olmo2_7b,OLMo 2 7B,it,0,32,0.0,14.208,nan,nan
+olmo2_7b,OLMo 2 7B,it,1,32,0.0323,15.6938,nan,nan
+olmo2_7b,OLMo 2 7B,it,2,32,0.0645,16.7959,nan,nan
+olmo2_7b,OLMo 2 7B,it,3,32,0.0968,18.3138,nan,nan
+olmo2_7b,OLMo 2 7B,it,4,32,0.129,18.0814,nan,nan
+olmo2_7b,OLMo 2 7B,it,5,32,0.1613,17.9015,nan,nan
+olmo2_7b,OLMo 2 7B,it,6,32,0.1935,17.3173,nan,nan
+olmo2_7b,OLMo 2 7B,it,7,32,0.2258,17.316,nan,nan
+olmo2_7b,OLMo 2 7B,it,8,32,0.2581,17.4427,nan,nan
+olmo2_7b,OLMo 2 7B,it,9,32,0.2903,17.3788,nan,nan
+olmo2_7b,OLMo 2 7B,it,10,32,0.3226,17.1942,nan,nan
+olmo2_7b,OLMo 2 7B,it,11,32,0.3548,16.5071,nan,nan
+olmo2_7b,OLMo 2 7B,it,12,32,0.3871,16.5008,nan,nan
+olmo2_7b,OLMo 2 7B,it,13,32,0.4194,17.2354,nan,nan
+olmo2_7b,OLMo 2 7B,it,14,32,0.4516,17.4025,nan,nan
+olmo2_7b,OLMo 2 7B,it,15,32,0.4839,17.2396,nan,nan
+olmo2_7b,OLMo 2 7B,it,16,32,0.5161,17.4389,nan,nan
+olmo2_7b,OLMo 2 7B,it,17,32,0.5484,17.5289,nan,nan
+olmo2_7b,OLMo 2 7B,it,18,32,0.5806,16.867,nan,nan
+olmo2_7b,OLMo 2 7B,it,19,32,0.6129,17.2316,nan,nan
+olmo2_7b,OLMo 2 7B,it,20,32,0.6452,17.0922,nan,nan
+olmo2_7b,OLMo 2 7B,it,21,32,0.6774,17.3923,nan,nan
+olmo2_7b,OLMo 2 7B,it,22,32,0.7097,18.7087,nan,nan
+olmo2_7b,OLMo 2 7B,it,23,32,0.7419,19.4114,nan,nan
+olmo2_7b,OLMo 2 7B,it,24,32,0.7742,20.6218,nan,nan
+olmo2_7b,OLMo 2 7B,it,25,32,0.8065,21.7231,nan,nan
+olmo2_7b,OLMo 2 7B,it,26,32,0.8387,22.8357,nan,nan
+olmo2_7b,OLMo 2 7B,it,27,32,0.871,23.8218,nan,nan
+olmo2_7b,OLMo 2 7B,it,28,32,0.9032,25.1169,nan,nan
+olmo2_7b,OLMo 2 7B,it,29,32,0.9355,25.5033,nan,nan
+olmo2_7b,OLMo 2 7B,it,30,32,0.9677,25.6131,nan,nan
+olmo2_7b,OLMo 2 7B,it,31,32,1.0,25.5375,nan,nan

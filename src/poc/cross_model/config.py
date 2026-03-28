@@ -99,7 +99,9 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         n_kv_heads=16,
         global_attn_layers=frozenset(range(27)),
         is_moe=True,
-        multi_gpu=True,  # ~31 GB weights; single 80 GB GPU has no room for generation+hooks
+        # multi_gpu=False (default): fits on 1×80GB GPU at max_new_tokens=64.
+        # At 512 tokens the KV cache + activations push it over; 64 is sufficient
+        # to observe commitment behaviour (median commit at layer ~15 for MoE).
     ),
     "olmo2_7b": ModelSpec(
         name="olmo2_7b",

@@ -103,9 +103,9 @@ def collect_prompt_L1L2(
     # step_buf tensors (which are on CPU). Move both to CPU so logit-lens works.
     final_norm_mod = adapter.final_norm(model)
     W_U = model.lm_head.weight.detach().float().T  # [d_model, vocab_size]
-    if spec.multi_gpu:
-        final_norm_mod = final_norm_mod.cpu()
-        W_U = W_U.cpu()
+    # For multi-GPU: final_norm and lm_head live on the last GPU shard.
+    # We'll push step_buf tensors to that device for logit-lens computation.
+    logit_device = next(final_norm_mod.parameters()).device if spec.multi_gpu else None
 
     # ── per-step accumulators (Python lists of scalars — small) ──────────────
     all_delta_cosine:       list[list[float]] = []
@@ -148,7 +148,10 @@ def collect_prompt_L1L2(
                     row_top1.append(-1)
                     continue
                 # final_norm expects [..., d_model]; unsqueeze gives [1, 1, d_model]
-                normed = final_norm_mod(h.float().unsqueeze(0).unsqueeze(0)).squeeze()
+                h_f = h.float()
+                if logit_device is not None:
+                    h_f = h_f.to(logit_device)
+                normed = final_norm_mod(h_f.unsqueeze(0).unsqueeze(0)).squeeze()
                 logits = normed @ W_U  # [vocab_size]
                 top1   = int(logits.argmax().item())
                 probs  = torch.softmax(logits, dim=-1)
