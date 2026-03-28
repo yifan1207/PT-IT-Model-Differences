@@ -267,6 +267,60 @@ mistral_7b,Mistral 7B v0.3,it,28,32,0.9032,0.112408
 mistral_7b,Mistral 7B v0.3,it,29,32,0.9355,0.178311
 mistral_7b,Mistral 7B v0.3,it,30,32,0.9677,0.095289
 mistral_7b,Mistral 7B v0.3,it,31,32,1.0,-0.263942
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,0,27,0.0,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,1,27,0.0385,0.148868
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,2,27,0.0769,0.195195
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,3,27,0.1154,0.187305
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,4,27,0.1538,0.191537
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,5,27,0.1923,0.060266
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,6,27,0.2308,0.201872
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,7,27,0.2692,0.004844
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,8,27,0.3077,0.1165
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,9,27,0.3462,0.198636
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,10,27,0.3846,0.15327
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,11,27,0.4231,0.263078
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,12,27,0.4615,0.05798
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,13,27,0.5,0.09769
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,14,27,0.5385,0.307039
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,15,27,0.5769,0.248891
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,16,27,0.6154,0.31193
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,17,27,0.6538,0.302052
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,18,27,0.6923,0.327634
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,19,27,0.7308,0.19683
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,20,27,0.7692,0.354931
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,21,27,0.8077,0.198093
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,22,27,0.8462,0.339738
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,23,27,0.8846,0.50922
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,24,27,0.9231,0.550308
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,25,27,0.9615,0.63042
+deepseek_v2_lite,DeepSeek-V2-Lite,pt,26,27,1.0,0.33474
+deepseek_v2_lite,DeepSeek-V2-Lite,it,0,27,0.0,nan
+deepseek_v2_lite,DeepSeek-V2-Lite,it,1,27,0.0385,0.114239
+deepseek_v2_lite,DeepSeek-V2-Lite,it,2,27,0.0769,0.132443
+deepseek_v2_lite,DeepSeek-V2-Lite,it,3,27,0.1154,0.136551
+deepseek_v2_lite,DeepSeek-V2-Lite,it,4,27,0.1538,0.104452
+deepseek_v2_lite,DeepSeek-V2-Lite,it,5,27,0.1923,-0.031107
+deepseek_v2_lite,DeepSeek-V2-Lite,it,6,27,0.2308,0.078377
+deepseek_v2_lite,DeepSeek-V2-Lite,it,7,27,0.2692,-0.022303
+deepseek_v2_lite,DeepSeek-V2-Lite,it,8,27,0.3077,0.039384
+deepseek_v2_lite,DeepSeek-V2-Lite,it,9,27,0.3462,0.085622
+deepseek_v2_lite,DeepSeek-V2-Lite,it,10,27,0.3846,0.076005
+deepseek_v2_lite,DeepSeek-V2-Lite,it,11,27,0.4231,0.161649
+deepseek_v2_lite,DeepSeek-V2-Lite,it,12,27,0.4615,-0.013485
+deepseek_v2_lite,DeepSeek-V2-Lite,it,13,27,0.5,0.002889
+deepseek_v2_lite,DeepSeek-V2-Lite,it,14,27,0.5385,0.188401
+deepseek_v2_lite,DeepSeek-V2-Lite,it,15,27,0.5769,0.128936
+deepseek_v2_lite,DeepSeek-V2-Lite,it,16,27,0.6154,0.198739
+deepseek_v2_lite,DeepSeek-V2-Lite,it,17,27,0.6538,0.199674
+deepseek_v2_lite,DeepSeek-V2-Lite,it,18,27,0.6923,0.190331
+deepseek_v2_lite,DeepSeek-V2-Lite,it,19,27,0.7308,0.130917
+deepseek_v2_lite,DeepSeek-V2-Lite,it,20,27,0.7692,0.275416
+deepseek_v2_lite,DeepSeek-V2-Lite,it,21,27,0.8077,0.145264
+deepseek_v2_lite,DeepSeek-V2-Lite,it,22,27,0.8462,0.286707
+deepseek_v2_lite,DeepSeek-V2-Lite,it,23,27,0.8846,0.419982
+deepseek_v2_lite,DeepSeek-V2-Lite,it,24,27,0.9231,0.474945
+deepseek_v2_lite,DeepSeek-V2-Lite,it,25,27,0.9615,0.572665
+deepseek_v2_lite,DeepSeek-V2-Lite,it,26,27,1.0,-0.454598
 olmo2_7b,OLMo 2 7B,pt,0,32,0.0,nan
 olmo2_7b,OLMo 2 7B,pt,1,32,0.0323,-0.033274
 olmo2_7b,OLMo 2 7B,pt,2,32,0.0645,0.042398
