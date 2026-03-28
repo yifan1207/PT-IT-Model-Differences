@@ -67,6 +67,43 @@ def _random_unit_vector(d_model: int, seed: int, layer_idx: int) -> torch.Tensor
     return v / (v.norm() + 1e-12)
 
 
+def _project_remove_magnitude_matched(
+    mlp_out: torch.Tensor,
+    corr_direction: torch.Tensor,
+    rand_direction: torch.Tensor,
+    alpha: float,
+) -> torch.Tensor:
+    """Remove random direction with identical per-token perturbation magnitude as corrective.
+
+    Addresses the projection-magnitude confound (Exp7 0C): in d=2560 a random unit
+    vector has expected projection |h·d̂_rand| ≈ ‖h‖/√2560, ~50× smaller than the
+    corrective direction. This function scales the random removal so the perturbation
+    vector ‖Δh‖ is equal in magnitude to what the corrective removal would produce.
+
+    Per token:  scale = |h · d̂_corr| / max(|h · d̂_rand|, ε)
+                h' = h - (1-α) · scale · (h · d̂_rand) · d̂_rand
+
+    Args:
+        mlp_out:        [..., d_model] MLP output tensor.
+        corr_direction: [d_model] unit corrective direction.
+        rand_direction: [d_model] unit random direction.
+        alpha:          removal strength (1.0 = identity, 0.0 = full removal).
+    """
+    corr_direction = corr_direction.to(device=mlp_out.device, dtype=mlp_out.dtype)
+    rand_direction = rand_direction.to(device=mlp_out.device, dtype=mlp_out.dtype)
+    corr_direction = corr_direction / (corr_direction.norm() + 1e-12)
+    rand_direction = rand_direction / (rand_direction.norm() + 1e-12)
+
+    flat = mlp_out.reshape(-1, mlp_out.shape[-1])                      # [B*T, d]
+    p_corr = (flat * corr_direction).sum(dim=-1, keepdim=True).abs()   # [B*T, 1]
+    p_rand = (flat * rand_direction).sum(dim=-1, keepdim=True).abs().clamp(min=1e-8)
+    scale = p_corr / p_rand                                             # [B*T, 1]
+
+    proj = (flat * rand_direction).sum(dim=-1, keepdim=True) * rand_direction  # [B*T, d]
+    out_flat = flat - (1 - alpha) * scale * proj
+    return out_flat.reshape_as(mlp_out)
+
+
 def _rotated_direction(direction: torch.Tensor, seed: int, layer_idx: int) -> torch.Tensor:
     """Compute a unit vector orthogonal to `direction` in a random plane.
 
@@ -123,7 +160,11 @@ class Exp6InterventionSpec:
             raise ValueError(f"Intervention layer indices out of range [0, {n_layers}): {out_of_range}")
         if self.method == "progressive_skip":
             return   # no direction vectors needed
-        if self.method in ("directional_remove", "directional_add"):
+        if self.method in (
+            "directional_remove", "directional_add",
+            "directional_random_matched",
+            "directional_remove_residual", "directional_remove_attn",
+        ):
             missing = sorted(i for i in self.layers if i not in self.corrective_directions)
             if missing:
                 raise ValueError(f"Missing corrective directions for layers: {missing}")
@@ -189,6 +230,30 @@ class Exp6InterventionSpec:
             )
             return
 
+        if self.method == "directional_random_matched":
+            # Projection-magnitude-matched random direction removal (Exp7 0C).
+            d_model = target.shape[-1]
+            rdir = self._get_random_dir(layer_idx, d_model, target.device, target.dtype)
+            corr_dir = self.corrective_directions[layer_idx].to(device=target.device, dtype=target.dtype)
+            target[:] = _project_remove_magnitude_matched(target, corr_dir, rdir, self.alpha)
+            return
+
+        if self.method == "directional_remove_residual":
+            # Projection-removal applied to the full residual stream (Exp7 0I).
+            # NOTE: when method == "directional_remove_residual", this hook is registered
+            # on the full layer (not MLP), so 'target' is the post-layer residual.
+            target[:] = directional_ablate_tensor(
+                target, self.corrective_directions[layer_idx], self.alpha
+            )
+            return
+
+        if self.method == "directional_remove_attn":
+            # Projection-removal applied to attention output (Exp7 0I).
+            target[:] = directional_ablate_tensor(
+                target, self.corrective_directions[layer_idx], self.alpha
+            )
+            return
+
         if self.method == "progressive_skip":
             # progressive_skip uses register_hooks (attn + MLP), not apply_in_trace.
             # This branch should never be reached in normal usage.
@@ -236,6 +301,48 @@ class Exp6InterventionSpec:
                 handles.append(attn_mod.register_forward_hook(make_zero_attn_hook()))
             return handles
 
+        # ── Residual stream hook (Exp7 0I: directional_remove_residual) ─────────────
+        if self.method == "directional_remove_residual":
+            for layer_idx in self.layers:
+                layer_mod = model_raw.language_model.layers[layer_idx]
+
+                def make_residual_hook(li: int):
+                    def hook(mod: Any, inp: tuple, out: Any) -> Any:
+                        # Layer output is a tuple; first element is the hidden state
+                        hidden = out[0] if isinstance(out, tuple) else out
+                        with torch.no_grad():
+                            modified = directional_ablate_tensor(
+                                hidden, self.corrective_directions[li], self.alpha
+                            )
+                        if isinstance(out, tuple):
+                            return (modified,) + out[1:]
+                        return modified
+                    return hook
+
+                handles.append(layer_mod.register_forward_hook(make_residual_hook(layer_idx)))
+            return handles
+
+        # ── Attention output hook (Exp7 0I: directional_remove_attn) ─────────────
+        if self.method == "directional_remove_attn":
+            for layer_idx in self.layers:
+                attn_mod = model_raw.language_model.layers[layer_idx].self_attn
+
+                def make_attn_hook(li: int):
+                    def hook(mod: Any, inp: tuple, out: Any) -> Any:
+                        # Attention output: (hidden_states, [attn_weights], past_kv)
+                        hidden = out[0] if isinstance(out, tuple) else out
+                        with torch.no_grad():
+                            modified = directional_ablate_tensor(
+                                hidden, self.corrective_directions[li], self.alpha
+                            )
+                        if isinstance(out, tuple):
+                            return (modified,) + out[1:]
+                        return modified
+                    return hook
+
+                handles.append(attn_mod.register_forward_hook(make_attn_hook(layer_idx)))
+            return handles
+
         # ── Directional methods: hook MLP only ────────────────────────────────────
         for layer_idx in self.layers:
             mlp_mod = model_raw.language_model.layers[layer_idx].mlp
@@ -262,6 +369,11 @@ class Exp6InterventionSpec:
                             return directional_inject_tensor(
                                 out, self.content_directions[li], self.beta
                             )
+                        if self.method == "directional_random_matched":
+                            d_model = out.shape[-1]
+                            rdir = self._get_random_dir(li, d_model, out.device, out.dtype)
+                            corr_dir = self.corrective_directions[li].to(device=out.device, dtype=out.dtype)
+                            return _project_remove_magnitude_matched(out, corr_dir, rdir, self.alpha)
                     return out
                 return hook
 

@@ -454,6 +454,68 @@ def _A1_rand_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     return specs  # 1 + 14 = 15 conditions
 
 
+def _A1_rand_matched_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A1_rand_matched: Projection-magnitude-matched random direction control (Exp7 0C).
+
+    Addresses the projection-magnitude confound in A1_rand: a random unit vector in d=2560
+    has expected |⟨h, d̂_rand⟩| ≈ ‖h‖/√d ≈ 50× smaller than the corrective direction.
+    This function rescales the random projection to match the corrective projection
+    magnitude per token, giving a fair like-for-like comparison.
+
+    Uses method="directional_random_matched" which calls _project_remove_magnitude_matched()
+    in interventions.py. Same α-sweep as A1. Pass the canonical corrective_directions.npz
+    as --corrective-direction-path (used to compute magnitude for scaling).
+
+    Expected: flat metrics across all α → confirms governance effect is direction-specific,
+    not just a large-perturbation artifact.
+    """
+    ALPHA_VALUES = [5.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
+    CORR_LAYERS  = list(range(cfg.proposal_boundary, cfg.n_layers))   # layers 20-33
+
+    specs = [("A1randmatched_baseline", replace(cfg, method="none", directional_alpha=1.0))]
+    for alpha in ALPHA_VALUES:
+        specs.append((f"A1randmatched_alpha_{alpha:g}", replace(cfg,
+            method="directional_random_matched",
+            ablation_layers=CORR_LAYERS,
+            directional_alpha=alpha,
+        )))
+    return specs  # 1 + 14 = 15 conditions
+
+
+def _A1_formula_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
+    """A1_formula: Intervention formula sensitivity analysis (Exp7 0I).
+
+    Tests 4 intervention formula variants at the same 5 α values to confirm the
+    governance-content dissociation is robust to the choice of hook point and formula:
+      1. mlp_proj_remove      — current canonical (directional_remove on MLP output)
+      2. mlp_additive         — additive injection (directional_add, already exists)
+      3. residual_proj_remove — projection-removal on full residual stream
+      4. attn_proj_remove     — projection-removal on self_attn output only
+
+    Reduced α sweep (5 values) for speed. 4 × 6 = 24 conditions.
+    """
+    ALPHAS = [2.0, 1.5, 1.0, 0.5, 0.0]
+    CORR_LAYERS = list(range(cfg.proposal_boundary, cfg.n_layers))  # layers 20-33
+
+    METHODS: list[tuple[str, str]] = [
+        ("mlp_proj_remove",      "directional_remove"),           # canonical baseline
+        ("mlp_additive",         "directional_add"),               # additive (already exists)
+        ("residual_proj_remove", "directional_remove_residual"),   # full residual stream
+        ("attn_proj_remove",     "directional_remove_attn"),       # self_attn output only
+    ]
+
+    specs = []
+    for method_name, method_type in METHODS:
+        specs.append((f"A1formula_{method_name}_baseline", replace(cfg, method="none")))
+        for alpha in ALPHAS:
+            specs.append((f"A1formula_{method_name}_alpha_{alpha:g}", replace(cfg,
+                method=method_type,
+                ablation_layers=CORR_LAYERS,
+                directional_alpha=alpha,
+            )))
+    return specs  # 4 × 6 = 24 conditions
+
+
 def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     match cfg.experiment:
         case "A1": return _A1_conditions(cfg)
@@ -461,6 +523,8 @@ def _condition_specs(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
         case "A1_early": return _A1_early_conditions(cfg)
         case "A1_mid": return _A1_mid_conditions(cfg)
         case "A1_rand": return _A1_rand_conditions(cfg)
+        case "A1_rand_matched": return _A1_rand_matched_conditions(cfg)
+        case "A1_formula": return _A1_formula_conditions(cfg)
         case "A2": return _A2_conditions(cfg)
         case "A5a": return _A5a_conditions(cfg)
         case "A5a_early": return _A5a_early_conditions(cfg)
@@ -822,13 +886,16 @@ def _load_B_hooks_config(cfg: Exp6Config, loaded: Any) -> dict:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Run exp6 steering experiments.")
-    p.add_argument("--experiment", choices=["A1", "A1_notmpl", "A1_early", "A1_mid", "A1_rand", "A2", "A5a", "A5a_early", "A5a_mid", "A5a_notmpl", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
+    p.add_argument("--experiment", choices=["A1", "A1_notmpl", "A1_early", "A1_mid", "A1_rand", "A1_rand_matched", "A1_formula", "A2", "A5a", "A5a_early", "A5a_mid", "A5a_notmpl", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
     p.add_argument("--variant", choices=["pt", "it"], default="it")
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
     p.add_argument("--device", default="cuda")
     p.add_argument("--max-gen-tokens", type=int, default=200)
     p.add_argument("--n-eval-examples", type=int, default=1400)
     p.add_argument("--run-name", default="")
+    p.add_argument("--output-base", default="results/exp6",
+                   help="Base directory for run outputs (default: results/exp6). "
+                        "Use results/exp7/0C etc. for exp7 experiments.")
     p.add_argument("--worker-index", type=int, default=0)
     p.add_argument("--n-workers", type=int, default=1)
 
@@ -848,6 +915,13 @@ def main() -> None:
     p.add_argument("--collect-logit-lens", action="store_true", default=False,
                    help="Capture top-1 predicted token per decoder layer per generated step "
                         "(Step 4: commitment delay analysis). Saved to logit_lens_top1.npz. ~20%% overhead.")
+    # Layer range overrides (used by Exp7 0F layer-range sensitivity)
+    p.add_argument("--proposal-boundary", type=int, default=None,
+                   help="Override cfg.proposal_boundary (default 20). Sets the first corrective layer "
+                        "for A1/A2/A5a experiments. E.g. --proposal-boundary 18 for layers 18-33.")
+    p.add_argument("--n-layers", type=int, default=None,
+                   help="Override cfg.n_layers (default 34). Sets the last layer index+1. "
+                        "E.g. --n-layers 32 for layers 20-31 (proposal_boundary=20).")
 
     args = p.parse_args()
 
@@ -865,6 +939,7 @@ def main() -> None:
         max_gen_tokens=args.max_gen_tokens,
         n_eval_examples=args.n_eval_examples,
         run_name=run_name,
+        output_base=args.output_base,
         corrective_direction_path=args.corrective_direction_path,
         content_direction_path=args.content_direction_path,
         governance_features_path=args.governance_features_path,
@@ -876,6 +951,8 @@ def main() -> None:
         feature_layer_range=args.feature_layer_range,
         skip_transcoders=(not is_B),
         collect_logit_lens=args.collect_logit_lens,
+        **({"proposal_boundary": args.proposal_boundary} if args.proposal_boundary is not None else {}),
+        **({"n_layers": args.n_layers} if args.n_layers is not None else {}),
     )
 
     ensure_dir(cfg.run_dir)

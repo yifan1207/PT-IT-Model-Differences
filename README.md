@@ -145,20 +145,6 @@ PYTHONPATH=. uv run python scripts/plot_exp6_dose_response.py \
 
 ---
 
-## Citation
-
-```bibtex
-@inproceedings{anonymous2026commitment,
-  title     = {Instruction Tuning Delays Prediction Commitment:
-               Late-Layer Corrective Computation Across Transformer Families},
-  author    = {Anonymous},
-  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
-  year      = {2026}
-}
-```
-
----
-
 <details>
 <summary>Technical details & full experiment index</summary>
 
