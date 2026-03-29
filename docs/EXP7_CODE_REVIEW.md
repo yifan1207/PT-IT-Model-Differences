@@ -1,288 +1,287 @@
-# Exp7 Codebase Review — Consolidated Findings & Actionable Fixes
+# Exp7 Execution Plan Review v2 — Deep Dive on 0G + Full Pipeline
 
 **Date:** 2026-03-28
-**Scope:** All 11 Python files in `src/poc/exp7/`
-**Focus:** Literature alignment (especially tuned lens), rigor, correctness, performance
+**Scope:** Full execution plan + deep 0G SOTA analysis
+**Key correction:** Several issues from v1 review are already fixed in the codebase — this review reflects the actual code, not the summary.
 
 ---
 
-## Executive Summary
+## Critical Corrections from v1 Review
 
-The exp7 codebase is well-structured overall, with clean parallelization patterns, proper hook placement for direction extraction (MLP outputs), and solid statistical methods (BCa bootstrap, Cohen's d). However, three issues require immediate attention before running final experiments:
+Before diving in, three important corrections based on re-reading the actual code:
 
-1. **CRITICAL — Tuned lens training data ~100× too small** (160k tokens vs literature's 16.4M)
-2. **BUG — `precompute_random_split.py` direction computation uses proportional scaling instead of actual subset filtering**
-3. **PERFORMANCE — `force_decode_acts.py` lacks KV cache, causing quadratic compute**
+1. **`force_decode_acts.py` ALREADY uses KV cache.** Lines 94-105 correctly implement `use_cache=True` on the prefill pass and `past_key_values=past_kv` on subsequent steps. **No fix needed** — this was a stale finding from a prior version.
 
-Below is a per-file assessment followed by prioritized action items.
+2. **`exp7/tuned_lens_probes.py` already has many v1 fixes applied:**
+   - `n_train` default is now 10,000 (line 719), yielding ~1M+ tokens with prefill
+   - Prefill tokens ARE collected (the `shape[1]==1` filter was removed — see `collect_hidden_states()` which does a single forward pass and captures all positions except BOS)
+   - Weight decay = 1e-3 is present (line 265)
+   - Gradient clipping at 1.0 is present (line 295)
+   - C4 validation data loading with gen_merged.jsonl fallback
 
----
-
-## Per-File Assessments
-
-### 1. `tuned_lens_probes.py` (776 lines) — Exp 0G
-
-**Alignment with NEXT_STEPS_v12:** Partially aligned. Supports all 6 model families, has PT→IT transfer test, uses KL loss and identity init. But training data volume is far below literature standards.
-
-**What's correct (per Belrose et al., 2023):**
-- Probe architecture: `nn.Linear(d_model, d_model, bias=True)` with identity weight init, zero bias — matches Belrose exactly
-- Loss function: `F.kl_div(log_pred, target, reduction="batchmean", log_target=True)` — correct
-- Inference pipeline: `final_norm(probe(h))` → `lm_head(normed)` — correct sequencing
-- Hooks on full layer output (residual stream), not MLP — fixed from v1, now correct
-- Adam optimizer, lr=1e-3 — matches literature
-- Cosine annealing with warmup — good addition (Belrose used constant LR, but cosine is standard practice)
-- Train/val split (80/20) with best-model checkpointing — good addition
-- Cross-model probe transfer test (PT probes on IT, IT probes on PT) — exactly what 0G needs
-
-**CRITICAL issues:**
-
-**(a) Training data volume: ~100× too small**
-
-Current: `n_train=2000` prompts × ~80 generated tokens = ~160k tokens.
-Literature: Belrose et al. train on **16.4M tokens** from the Pile validation set, chunked at seq_len=2048. The `tuned-lens` package default is 50k chunks × 2048 = ~100M tokens.
-
-This matters because tuned lens probes need to learn a *per-layer affine transform* that maps intermediate representations to the final unembedding space. With only 160k tokens, the probe may overfit to the specific distribution of your 2000 prompts rather than learning the true layer-to-output mapping. This directly undermines the validity of commitment onset measurements.
-
-**Fix:** Increase to at minimum 10,000 prompts (yielding ~800k tokens with prefill included — see issue b). Ideally use 50,000+ prompts from a diverse corpus (e.g., C4, RedPajama, or the Pile validation set) to reach ~1M+ tokens. NEXT_STEPS_v12 already specifies "50,000+ tokens per variant" — the code should match this.
-
-**(b) Prefill tokens discarded — only generated tokens collected**
-
-Lines ~420-430 (the hook) filter with `if hidden.shape[1] == 1`, which only captures autoregressive generation steps (one token at a time). This discards ALL prefill positions where the model processes the prompt in parallel (shape[1] > 1).
-
-Belrose et al. train on **all token positions** — every position in every chunk contributes a training example. Discarding prefill means:
-- You lose ~90% of your already-small training data (prompts are ~50-100 tokens, generation is ~80)
-- The probe never sees how the model represents tokens it processes in parallel, only sequential generation
-- This creates a distributional mismatch between training and evaluation
-
-**Fix:** Remove the `shape[1] == 1` filter. Collect hidden states at ALL positions during both prefill and generation. Each position is an independent training example for the affine probe.
-
-**(c) No weight decay or gradient clipping**
-
-The Belrose implementation uses weight decay (1e-2 in some configurations). Without it, the identity-initialized probe weights can drift far from identity, potentially learning degenerate mappings. Gradient clipping (max_norm=1.0) is also standard practice for transformer training.
-
-**Fix:** Add `weight_decay=1e-2` to Adam optimizer and `torch.nn.utils.clip_grad_norm_(probe.parameters(), 1.0)` before optimizer step.
+3. **The PRIMARY 0G implementation is `src/poc/cross_model/tuned_lens.py`** (1,029 lines), NOT `exp7/tuned_lens_probes.py`. The cross-model version is what `run_cross_model_tuned_lens.sh` calls and what will actually run for all 6 families.
 
 ---
 
-### 2. `force_decode_acts.py` (294 lines) — Exp 0B
+## Deep Dive: 0G Tuned Lens — SOTA Alignment
 
-**Alignment with NEXT_STEPS_v12:** Well aligned. Supports both forward (PT on IT tokens) and reverse (IT on PT tokens) directions, governance and random record sets.
+### What Belrose et al. (2023) Actually Specifies
 
-**PERFORMANCE issue — No KV cache, quadratic compute:**
+| Aspect | Belrose et al. | Our Implementation | Gap |
+|--------|---------------|-------------------|-----|
+| **Optimizer** | SGD + Nesterov momentum | Adam (lr=1e-3, wd=1e-3) | **Divergent** — see below |
+| **Learning rate** | 1.0 (0.25 with final layer) | 1e-3 | **Divergent** — coupled with optimizer choice |
+| **LR schedule** | Linear decay → 0 over 250 steps | Cosine annealing + 5% warmup over 5000 steps | **Divergent** |
+| **Training steps** | 250 | 5000 | **Divergent** — 20× more steps |
+| **Gradient clipping** | norm = 1.0 | norm = 1.0 | ✅ Match |
+| **Loss** | KL divergence | KL divergence (batchmean, log_target) | ✅ Match |
+| **Initialization** | Identity + zero bias | Identity + zero bias | ✅ Match |
+| **Architecture** | Linear(d, d, bias=True) | Linear(d, d, bias=True) | ✅ Match |
+| **Hook point** | Residual stream (layer output) | Residual stream (layer output) | ✅ Match |
+| **Inference** | norm(probe(h)) → lm_head | norm(probe(h)) → lm_head | ✅ Match |
+| **Training data** | Pile validation (~16-33M tokens) | C4 validation (100k tokens default) | **~100-300× gap** |
+| **Token positions** | All positions in chunks | All positions (prefill-based) | ✅ Match |
+| **Validation** | Not mentioned | 80/20 split + early stopping | ✅ Better |
+| **Transfer test** | Shown for checkpoints | PT↔IT transfer | ✅ Novel |
 
-Lines 117-121:
+### Analysis of the Optimizer Divergence
+
+This is the most significant departure from Belrose. Their recipe is:
+
+```
+SGD + Nesterov momentum, lr=1.0, linear decay over 250 steps
+```
+
+Ours is:
+
+```
+Adam, lr=1e-3, cosine annealing + warmup over 5000 steps
+```
+
+**Is this defensible?** Yes, with proper justification:
+
+- Belrose's SGD+high-LR+fast-schedule is viable because the identity initialization means the probe starts very close to the optimum. SGD with momentum at lr=1.0 takes large steps that are fine when you're making small corrections to an identity map.
+- Adam at lr=1e-3 is more conservative but more robust. With 5000 steps, it has time to find equally good (potentially better) minima. The adaptive learning rates handle per-parameter scaling that SGD relies on manual tuning for.
+- The `tuned-lens` package on GitHub also supports Adam — it's not an uncommon choice.
+
+**Recommendation:** Keep Adam, but **add Belrose's SGD config as a CLI flag** (`--optimizer {adam,sgd_nesterov}`) so you can report results under both optimizers. If they agree → robustness confirmed. If they disagree → investigate which is better calibrated.
+
+### The Real Issue: Training Data Volume
+
+**This is the only remaining critical problem.**
+
+Belrose's 250 steps × batch_size × seq_len ≈ 16-33M training tokens. Our cross_model/tuned_lens.py collects 100k tokens and stores them in CPU RAM, then samples mini-batches from this pool for 5000 steps.
+
+With 100k tokens, batch_size=64, and 5000 steps: each token is seen ~3.2 times on average. This isn't catastrophic (it's a linear probe with strong identity prior), but it's nowhere near the diversity Belrose achieves.
+
+**The issue isn't overfitting per se — it's distributional coverage.** 100k tokens from C4 covers a narrow slice of the model's representational space. Belrose's 16M+ tokens spans a much broader distribution, ensuring the affine probe learns a generally valid transformation.
+
+**For a NeurIPS submission, the current 100k is risky.** A reviewer can legitimately ask: "How do you know your probes generalize beyond the 100k tokens they were trained on?"
+
+**Recommended fix for `cross_model/tuned_lens.py`:**
+
+Option A (preferred — streaming): Don't store all activations. Instead, stream batches:
 ```python
-for t in range(len(gen_ids)):
-    forced = torch.tensor([gen_ids[:t + 1]], dtype=torch.long, device=device)
-    input_ids = torch.cat([prompt_ids, forced], dim=1)
+for step in range(n_steps):
+    # Forward-pass a fresh batch of texts through the model
+    batch_texts = next(text_iterator)  # fresh C4 texts each step
     with torch.no_grad():
-        model_raw(input_ids)
+        h_layer, h_final = forward_batch(model, batch_texts, layer=li)
+    # Train probe on this fresh batch
+    loss = kl_loss(probe(h_layer), h_final)
+    ...
 ```
+This gives 5000 × 64 × ~100 tokens/text = ~32M tokens of diversity — matching Belrose.
 
-For each step t, the entire sequence (prompt + gen_ids[:t+1]) is re-processed from scratch. With prompt length P and generation length K, this is O(K × (P+K)²) attention operations instead of O(K × (P+K)) with KV cache. For P=50, K=80, that's ~50× slower than necessary.
+**GPU cost:** One extra forward pass per training step per layer. For 5000 steps × 33 layers = 165k forward passes. At ~50ms each on a 4B model = ~2.3 hours per variant. With 12 variants = ~28 GPU-hours. Manageable on 8 GPUs in ~4 hours.
 
-**Fix:** Use HuggingFace's `past_key_values` / `use_cache=True`:
+Option B (simpler — larger pool): Increase `--n-tokens` from 100k to 2M. Memory cost: 2M × 2560 × 4 × 33 layers ≈ 650 GB CPU RAM. **Not feasible.**
+
+Option C (compromise — large pool + subsampling): Collect 500k tokens (feasible at ~165 GB CPU RAM for 33 layers), sample from this pool. Each token seen 5000 × 64 / 400k ≈ 0.8 times. This provides 5× more diversity than current setup.
+
+**My recommendation: Option A (streaming) if the infrastructure supports it, Option C otherwise.** Either way, the cross_model shell script should pass `--n-tokens 500000` at minimum.
+
+### Multi-Threshold Commitment Evaluation
+
+The code evaluates at three KL thresholds: [0.05, 0.1, 0.2]. This is good — it maps directly to the 0J sensitivity analysis. But there's a subtlety:
+
+**The commitment metric uses a no-flip-back criterion:** the KL must stay below threshold for ALL subsequent layers. This is strict — a single noisy layer can push commitment arbitrarily late. Belrose reports a softer variant in some analyses.
+
+**Recommendation:** Also compute a "majority" commitment metric: earliest layer where KL < threshold for ≥90% of subsequent layers. Report both. If they agree → robust. If strict is much later → indicates noisy late layers, which is informative.
+
+### Transfer Test Design
+
+The cross_model implementation tests PT probes on IT activations with a transfer ratio threshold of 2.0. This is well-designed, but:
+
+**Missing condition:** IT probes on PT activations. The asymmetry matters — if IT probes fail on PT but PT probes work on IT, it suggests IT adds structure that PT lacks (consistent with the delayed commitment narrative). The exp7 version has this condition; make sure the cross_model version does too.
+
+**Also missing:** Probe performance vs. logit lens baseline per layer. Belrose's key result is that tuned lens substantially outperforms logit lens at early layers but converges at late layers. Reporting this per-layer delta for PT and IT separately would reveal whether IT's late layers are "harder to probe" (suggesting more complex computation).
+
+---
+
+## Execution Plan Review — Per-Experiment
+
+### Step 1: 0G (Cross-model tuned lens) — 8-10 hr estimate
+
+**Shell script:** `run_cross_model_tuned_lens.sh`
+
+**Current plan:**
+- Phase 1 (~2 hr): Train 12 probe sets, 100k tokens each
+- Phase 2 (~6-8 hr): Evaluate commitment on 1400 records × 512 tokens
+- Phase 3 (~20 min): Transfer tests for all 6 models
+
+**Issues with the plan:**
+
+1. **Phase 1 timing is underestimated if data volume increases.** At 500k tokens, collection alone takes ~5× longer (5 forward passes per text × 500k/100 texts = ~5000 forward passes per variant). Estimate: ~1 hour collection + ~1 hour training per variant = ~24 GPU-hours total. On 8 GPUs with batching: ~3-4 hours.
+
+2. **Phase 2 timing depends on generation speed.** 1400 records × 512 tokens is a LOT. At ~50 tokens/sec for a 4B model: 1400 × 512 / 50 = ~14,336 seconds = ~4 hours per variant. With 12 variants: ~48 GPU-hours. On 8 GPUs: ~6 hours. **The 6-8 hr estimate is correct but tight.**
+
+3. **GPU scheduling in the shell script:** Batch 1 runs 4 models in parallel (2 GPUs each for PT+IT). Batch 2 runs OLMo. Batch 3 runs DeepSeek (multi-GPU). This is reasonable but DeepSeek-V2-Lite with MoE may need special handling for the hook placement — verify that `residual_from_output()` in the DeepSeek adapter correctly extracts the post-MoE residual stream, not individual expert outputs.
+
+4. **The `max_new_tokens=512` in Phase 2 is excessive.** Most of your prompts generate 40-80 tokens before EOS. Setting max_new_tokens=512 means the model runs until EOS naturally, which is fine, but the shell script time estimate assumes 512 tokens per record. Actual time will be much less.
+
+**Recommendations for 0G:**
+
+- Increase `--n-tokens` to at least 500,000 (or implement streaming — see above)
+- Add `--optimizer sgd_nesterov` option for ablation comparison
+- Add "majority" commitment metric alongside strict no-flip-back
+- Ensure IT→PT transfer test is included in Phase 3
+- Add per-layer tuned-vs-logit-lens delta reporting
+
+### Step 2: 0D (Bootstrap CIs) — CPU ~15 min
+
+**Status:** Code is solid. n_resamples=10,000, BCa method, Cohen's d, Spearman ρ.
+
+**No issues.** This can run on CPU while 0G uses GPUs. Good parallelization.
+
+### Step 3: 0E (Token classifier robustness) — CPU ~5 min
+
+**Status:** Solid. Cohen's kappa, perturbation tests, LLM judge.
+
+**One note:** The LLM judge uses Claude via OpenRouter. Make sure the API key is configured and rate limits won't be a bottleneck.
+
+### Step 4: 0A (Direction calibration) — 8 GPU ~15 min
+
+**Status:** `collect_per_record_acts.py` → `bootstrap_directions.py`
+
+**Check:** The convergence curve tests subset sizes [100, 200, 300, 400, 500, 600, 1000, 1400]. This is good but **1400 is the full dataset — this direction should be treated as the reference, not a bootstrap sample.** Verify that the bootstrap comparisons at size 1400 are comparing to the canonical direction, not self-similarity.
+
+### Step 5: 0B (Force-decode) — 8 GPU ~20 min
+
+**Status:** KV cache is properly implemented. No performance issue.
+
+**The 20 min estimate is reasonable.** 600 records × 80 tokens, with KV cache, ~50ms per step = 600 × 80 × 0.05 = 2400 seconds / 8 GPUs = 5 min per variant × 2 variants = 10 min. The 20 min includes overhead — fine.
+
+### Step 6: 0H (Calibration-evaluation split) — 8 GPU ~45 min
+
+**Status:** `precompute_random_split.py` has the direction computation bug (token-count vs record-count normalization).
+
+**MUST FIX BEFORE RUNNING.** The bug biases directions toward records with longer generations. Fix: normalize sums by number of records, not token counts. Or use `extract_subset_acts()` from `collect_unified_acts.py` to get per-record means first, then average.
+
+### Step 7: 0C (Projection-matched random control) — 8 GPU ~1.5 hr
+
+**Status:** Uses existing intervention infrastructure. Should be straightforward.
+
+**Check:** The projection-matching function `_project_remove_magnitude_matched()` in exp6/interventions.py — verify it scales the random direction perturbation to match the corrective direction's per-token projection magnitude, not just the mean magnitude.
+
+### Step 8: 0I (Intervention formula sensitivity) — 8 GPU ~1.5 hr
+
+**Status:** Tests 3 alternative formulas. Good design.
+
+**Check:** Alternative B (residual stream intervention) hooks at a different point than the current MLP-output intervention. Make sure the hook registration correctly captures residual stream state after MLP addition, not just MLP output.
+
+### Step 9: 0F (Layer range analysis) — depends on A1 runs
+
+**Status:** Solid. 4 layer range variants + single-layer sweep.
+
+**No issues.** This depends on having A1 results for each layer range, so timing is accurate.
+
+---
+
+## Specific Code Edits for 0G
+
+### Edit 1: Increase default `--n-tokens` in cross_model/tuned_lens.py
+
+The default should be at least 500,000. Currently 100,000.
+
+**Location:** CLI argument in `main()` function of `src/poc/cross_model/tuned_lens.py`
+**Change:** `--n-tokens` default from `100000` to `500000`
+
+### Edit 2: Add streaming option to avoid memory constraints
+
+If 500k tokens × 33 layers × d_model × 4 bytes exceeds available CPU RAM (~165 GB for Gemma), add a `--streaming` flag that does fresh forward passes each training step instead of pre-collecting all activations.
+
+### Edit 3: Add SGD+Nesterov optimizer option
+
 ```python
-past_kv = None
-# First: process prompt
-with torch.no_grad():
-    out = model_raw(prompt_ids, use_cache=True)
-    past_kv = out.past_key_values
-
-# Then: step through forced tokens one at a time
-for t in range(len(gen_ids)):
-    tok = torch.tensor([[gen_ids[t]]], dtype=torch.long, device=device)
-    with torch.no_grad():
-        out = model_raw(tok, past_key_values=past_kv, use_cache=True)
-        past_kv = out.past_key_values
+if args.optimizer == "sgd_nesterov":
+    optimizer = torch.optim.SGD(probe.parameters(), lr=1.0, momentum=0.9, nesterov=True)
+    n_steps = 250  # Match Belrose
+    schedule = "linear_decay"
+else:  # adam (default)
+    optimizer = torch.optim.Adam(probe.parameters(), lr=1e-3, weight_decay=1e-3)
+    n_steps = args.n_steps
+    schedule = "cosine_warmup"
 ```
 
-**Caveat:** Verify that MLP hooks still fire correctly with cached attention. They should — the MLP at each layer still executes for the new token — but test on a small batch first.
+Report results under both optimizers. If they agree → robustness.
 
-**Minor:** The hook captures `out[0, -1, :]` which is correct for the last position. With KV cache, the output tensor has shape (1, 1, d_model), so `out[0, -1, :]` and `out[0, 0, :]` are equivalent. No change needed.
-
----
-
-### 3. `precompute_random_split.py` (385 lines) — Exp 0H
-
-**Alignment with NEXT_STEPS_v12:** Conceptually aligned (random-600 / held-out-800 / bottom-600 splits), but has a correctness bug.
-
-**BUG — Direction computation uses proportional scaling instead of subset filtering (lines ~326-337):**
-
-The code computes directions for random-600 by scaling the *total* sum of activations by the fraction of records in the random subset, rather than summing only the activations belonging to records in that subset. Concretely:
+### Edit 4: Add majority-vote commitment metric
 
 ```python
-r_frac = in_r.sum() / max(n_rec, 1)
-it_sum = it_total_sum * r_frac  # WRONG: scales total, not filters
-pt_sum = pt_total_sum * r_frac
+def _commitment_majority(kl_row, threshold=0.1, frac=0.9):
+    """Earliest layer where ≥frac of subsequent layers have KL < threshold."""
+    n = len(kl_row)
+    for i in range(n):
+        subsequent = kl_row[i:]
+        if sum(1 for k in subsequent if k < threshold) / len(subsequent) >= frac:
+            return i
+    return n - 1
 ```
 
-This assumes random-600 records have the same mean activation as the full 1400, which defeats the purpose of testing direction stability on a different subset.
+### Edit 5: Add per-layer tuned-vs-raw delta
 
-**Fix:** Use `collect_unified_acts.extract_subset_acts()` to get the actual activations for the random-600 record IDs, then compute `mean_IT - mean_PT` from those filtered activations directly. The utility function already exists and handles the record-ID matching correctly.
+In the evaluation phase, compute both raw logit lens KL and tuned lens KL at every layer. Report the delta — this shows where the tuned lens adds the most value (should be early/mid layers per Belrose).
 
----
+### Edit 6: Fix shell script token count
 
-### 4. `bootstrap_directions.py` (415 lines) — Exp 0A + 0B analysis
-
-**Alignment:** Excellent. Implements exactly what 0A specifies.
-
-**Assessment:** Solid implementation.
-- Per-layer bootstrap with pairwise cosine similarity is the right approach for direction stability
-- Convergence curve with subset sizes [100, 200, 300, 400, 500, 600, 1000, 1400] × 20 draws
-- OOD direction test properly compares governance-selected vs random-600 directions
-- Layer group summaries (early/mid/corrective) match the paper's framing
-- Matched-token comparison with corrective-vs-early drop flagging for 0B
-
-**No issues found.**
+In `run_cross_model_tuned_lens.sh`, change the `--n-tokens` argument from 100000 to 500000 (or whatever the final default is).
 
 ---
 
-### 5. `bootstrap_ci.py` (586 lines) — Exp 0D
+## Remaining precompute_random_split.py Bug Fix
 
-**Alignment:** Excellent. BCa bootstrap CIs, effect sizes, monotonicity — all per spec.
+The direction computation at line 327:
+```python
+vec = it_sums[li] / n_it - pt_sums[li] / n_pt
+```
 
-**Assessment:** Strong statistical rigor.
-- BCa (bias-corrected accelerated) method via `scipy.stats.bootstrap` — gold standard for small-sample CIs
-- Cohen's d with magnitude interpretation (small/medium/large)
-- Spearman ρ for α-sweep monotonicity
-- Programmatic scorers for all benchmarks (STR, format_compliance_v2, reasoning_em, alignment_behavior, MMLU, GSM8K)
-- Cross-model CIs bootstrapped over prompts (correct unit of analysis)
+Where `n_it` and `n_pt` are **token counts** (accumulated via `int(d[f"it_count_r_{li}"])`).
 
-**Minor suggestion:** Consider adding bootstrap sample size as a configurable parameter (currently hardcoded). For the paper, 10,000 bootstrap samples is conventional; verify this is the default being used.
+If records have different generation lengths, this biases toward longer-generation records. The correct approach is:
 
----
+**Option A:** Track record counts separately from token counts. Divide sums by record count.
 
-### 6. `collect_unified_acts.py` (398 lines) — Exp 0A + 0H activation collection
+**Option B (simpler):** Use `extract_subset_acts()` to get per-record mean activations, then average across records. This gives equal weight to each record regardless of generation length.
 
-**Alignment:** Good. Combined collection for all 1400 records with 8-GPU parallelization.
-
-**Assessment:** Clean implementation.
-- Hooks on `.mlp` — correct for direction extraction (MLP outputs, not residual stream)
-- Worker slicing and merge step well-implemented
-- `extract_subset_acts()` utility is properly designed for downstream subsetting
-- Verification against canonical precompute_v2 directions
-
-**No issues found.**
+Recommend Option B — the utility already exists and is correct.
 
 ---
 
-### 7. `collect_per_record_acts.py` (262 lines) — Per-record activation collection
+## Overall Execution Plan Assessment
 
-**Alignment:** Good. Straightforward data collection pipeline.
+| Exp | Code Ready? | Estimated Time | Blockers |
+|-----|------------|---------------|----------|
+| 0G | **Needs edits** — data volume, optimizer option | 8-12 hr (revised up) | Edit 1-6 above |
+| 0D | ✅ Ready | 15 min CPU | None |
+| 0E | ✅ Ready | 5 min CPU + API calls | OpenRouter API key |
+| 0A | ✅ Ready | 15 min 8-GPU | None |
+| 0B | ✅ Ready | 20 min 8-GPU | None |
+| 0H | **Needs fix** — direction bias bug | 45 min 8-GPU | Fix token-vs-record normalization |
+| 0C | ✅ Ready | 1.5 hr 8-GPU | Needs completed A1 baselines |
+| 0I | ✅ Ready | 1.5 hr 8-GPU | Needs completed A1 baselines |
+| 0F | ✅ Ready | Variable | Needs A1 runs at each range |
 
-**Assessment:** Clean, minimal code. Hooks on `.mlp` for MLP output activations. 8-GPU parallelization with merge step matches the pattern in other files.
+**Critical path:** 0G is the longest job and the #1 priority. Start it first with the edits above. Everything else can run in parallel on remaining GPUs or CPU.
 
-**No issues found.**
-
----
-
-### 8. `token_classifier_robustness.py` (638 lines) — Exp 0E
-
-**Alignment:** Excellent. Comprehensive classifier validation.
-
-**Assessment:** Thorough robustness testing.
-- Cohen's kappa for inter-rater agreement (LLM judge vs rule-based classifier)
-- Two perturbation tests: STRUCTURAL↔DISCOURSE and FUNCTION↔CONTENT boundaries
-- Enrichment ratios with proper baseline comparison
-- Human template CSV generation for manual validation
-- Claude-based LLM judge via OpenRouter
-
-**Minor:** The LLM judge prompt should be documented/versioned somewhere accessible for reproducibility. Consider saving the exact prompt text alongside results.
-
----
-
-### 9. `layer_range_analysis.py` (373 lines) — Exp 0F
-
-**Alignment:** Good. 4 layer range variants + single-layer importance sweep.
-
-**Assessment:** Clean analysis pipeline.
-- 3-panel sensitivity plot (governance/content/safety) is well-designed
-- Per-layer importance ranking by STR delta
-- Proper handling of missing runs (graceful skip with warning)
-
-**No issues found.**
-
----
-
-### 10. `onset_threshold_sensitivity.py` (460 lines) — Exp 0J
-
-**Alignment:** Good. Multi-threshold sensitivity analysis.
-
-**Assessment:** Solid implementation.
-- 5 σ-thresholds (0.5, 0.75, 1.0, 1.5, 2.0) + 4 absolute thresholds (0.02, 0.05, 0.10, 0.15)
-- Consecutive-layer requirement (n_consecutive=2) is a good noise-reduction strategy
-- Baseline from stable mid-early region (layers 6-14) is well-motivated
-- Gemma alt-ranges extraction for A1 reruns
-
-**No issues found.**
-
----
-
-### 11. `__init__.py` — Package init
-
-Trivially fine.
-
----
-
-## Prioritized Action Items
-
-### P0 — Must fix before running experiments
-
-| # | File | Issue | Effort |
-|---|------|-------|--------|
-| 1 | `tuned_lens_probes.py` | Increase training data to 10,000+ prompts (~1M+ tokens) | ~1 hour code + rerun time |
-| 2 | `tuned_lens_probes.py` | Remove `shape[1]==1` filter — collect ALL token positions (prefill + generation) | ~30 min |
-| 3 | `precompute_random_split.py` | Replace proportional scaling with actual subset filtering via `extract_subset_acts()` | ~30 min |
-
-### P1 — Should fix (affects rigor or performance)
-
-| # | File | Issue | Effort |
-|---|------|-------|--------|
-| 4 | `tuned_lens_probes.py` | Add weight_decay=1e-2 and gradient clipping (max_norm=1.0) | ~10 min |
-| 5 | `force_decode_acts.py` | Add KV cache to avoid quadratic compute | ~1 hour |
-
-### P2 — Nice to have
-
-| # | File | Issue | Effort |
-|---|------|-------|--------|
-| 6 | `bootstrap_ci.py` | Make bootstrap n_resamples configurable, document default | ~10 min |
-| 7 | `token_classifier_robustness.py` | Version the LLM judge prompt alongside results | ~15 min |
-
----
-
-## Tuned Lens Literature Alignment Summary
-
-| Aspect | Belrose et al. (2023) | Current code | Status |
-|--------|----------------------|--------------|--------|
-| Architecture | Linear(d, d, bias=True) | Same | ✅ |
-| Init | Identity weight, zero bias | Same | ✅ |
-| Loss | KL divergence (batchmean) | Same | ✅ |
-| Optimizer | Adam, lr=1e-3 | Same | ✅ |
-| LR schedule | Constant | Cosine + warmup | ✅ (better) |
-| Training data | 16.4M tokens (Pile val) | ~160k tokens | ❌ ~100× too small |
-| Token positions | All positions in chunks | Generated only (shape[1]==1) | ❌ Discards ~90% |
-| Weight decay | 1e-2 (some configs) | None | ⚠️ |
-| Gradient clipping | Standard practice | None | ⚠️ |
-| Validation split | Not in original paper | 80/20 with checkpointing | ✅ (better) |
-| Hook placement | Residual stream (layer output) | Same | ✅ |
-| Inference | norm(probe(h)) → lm_head | Same | ✅ |
-| Transfer test | Not in original | PT↔IT probe transfer | ✅ (novel) |
-
----
-
-## Overall Rigor Assessment
-
-**Strengths:**
-- Statistical methods are sound (BCa bootstrap, Cohen's d, Spearman ρ)
-- Parallelization pattern (8-GPU workers + merge) is consistent and well-tested
-- Hook placement is correct for each experiment's purpose (MLP for direction extraction, residual stream for tuned lens)
-- The intervention formula and layer groups align with the paper draft
-- Robustness checks (0E classifier, 0F layer range, 0J threshold sensitivity) cover the major reviewer concerns
-
-**Weaknesses:**
-- The tuned lens training data issue is the single biggest threat to experiment validity. A reviewer could dismiss the 0G results entirely if the probes are undertrained.
-- The precompute_random_split bug would silently produce incorrect OOD directions, undermining 0H's claim that directions generalize beyond governance-selected records.
-- Force-decode without KV cache is a practical blocker — it may be too slow to run on 600 records × 80 steps on reasonable timescales.
-
-**Recommendation:** Fix P0 items 1-3 before any experiment runs. Items 4-5 can be done in parallel with early experiments. The rest of the codebase is solid and ready to execute.
+**Total wall-clock estimate:** ~2 days with 8 GPUs, assuming 0G takes 10-12 hours and everything else fits in the gaps.

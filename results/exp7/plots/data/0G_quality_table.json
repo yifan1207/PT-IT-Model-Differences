@@ -1,0 +1,50 @@
+[
+  {
+    "model_variant": "llama31_8b_pt",
+    "n_layers": 32,
+    "mean_raw_agree": 0.1517,
+    "mean_tuned_agree": 0.4108,
+    "mean_kl_delta": 5.5325,
+    "layers_tuned_better": 31
+  },
+  {
+    "model_variant": "llama31_8b_it",
+    "n_layers": 32,
+    "mean_raw_agree": 0.1655,
+    "mean_tuned_agree": 0.3979,
+    "mean_kl_delta": 5.4387,
+    "layers_tuned_better": 30
+  },
+  {
+    "model_variant": "qwen3_4b_pt",
+    "n_layers": 36,
+    "mean_raw_agree": 0.1662,
+    "mean_tuned_agree": 0.4187,
+    "mean_kl_delta": 6.4035,
+    "layers_tuned_better": 35
+  },
+  {
+    "model_variant": "qwen3_4b_it",
+    "n_layers": 36,
+    "mean_raw_agree": 0.1718,
+    "mean_tuned_agree": 0.4274,
+    "mean_kl_delta": 6.3322,
+    "layers_tuned_better": 35
+  },
+  {
+    "model_variant": "mistral_7b_pt",
+    "n_layers": 32,
+    "mean_raw_agree": 0.1982,
+    "mean_tuned_agree": 0.4642,
+    "mean_kl_delta": 3.2172,
+    "layers_tuned_better": 30
+  },
+  {
+    "model_variant": "mistral_7b_it",
+    "n_layers": 32,
+    "mean_raw_agree": 0.2013,
+    "mean_tuned_agree": 0.4496,
+    "mean_kl_delta": 3.175,
+    "layers_tuned_better": 30
+  }
+]

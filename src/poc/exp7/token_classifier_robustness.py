@@ -51,11 +51,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 def _get_classifier():
     from src.poc.exp3.analysis.word_categories import (
         classify_generated_tokens_by_word,
-        STRUCTURAL_PATTERN,
-        PUNCTUATION_PATTERN,
-        FUNCTION_WORDS,
-        DISCOURSE_WORDS,
-        DISCOURSE_PHRASES,
+        _STRUCTURAL_TOKEN_RE as STRUCTURAL_PATTERN,
+        _PUNCT_ONLY_RE as PUNCTUATION_PATTERN,
+        _FUNCTION_WORDS as FUNCTION_WORDS,
+        _DISCOURSE_SINGLE as DISCOURSE_WORDS,
+        _DISCOURSE_PHRASES as DISCOURSE_PHRASES,
         WordCategory,
     )
     return classify_generated_tokens_by_word, {
@@ -63,7 +63,7 @@ def _get_classifier():
         "punctuation_pattern": PUNCTUATION_PATTERN.pattern,
         "function_words": sorted(FUNCTION_WORDS),
         "discourse_words": sorted(DISCOURSE_WORDS),
-        "discourse_phrases": sorted(DISCOURSE_PHRASES),
+        "discourse_phrases": sorted([" ".join(p) for p in DISCOURSE_PHRASES]),
     }
 
 

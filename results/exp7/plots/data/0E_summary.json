@@ -1,0 +1,25 @@
+{
+  "description": "0E key metrics: perturbation sensitivity, category rates",
+  "perturbation_max_delta_str": {
+    "structural_discourse_to_STRUCTURAL": 0.145268,
+    "structural_discourse_reverse_to_CONTENT": 0.003701,
+    "function_content_to_FUNCTION": 7e-06,
+    "function_content_reverse_to_CONTENT": 7e-06
+  },
+  "perturbation_pass": true,
+  "note": "S\u2194D\u2192STRUCT exceeds 0.01 by design (reclassifying AS structural inflates STR)",
+  "baseline_rates": {
+    "STRUCTURAL": 0.027653534095435958,
+    "DISCOURSE": 0.004765242472681798,
+    "PUNCTUATION": 0.012066905012833378,
+    "FUNCTION": 0.34865438629223794,
+    "CONTENT": 0.5995380992481506
+  },
+  "alpha3_enrichment": {
+    "STRUCTURAL": 11.891620992600563,
+    "DISCOURSE": 0.46507886206999727,
+    "PUNCTUATION": 5.897087280696147,
+    "FUNCTION": 0.5042332832281845,
+    "CONTENT": 0.68275721575215
+  }
+}

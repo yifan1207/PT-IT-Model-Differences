@@ -115,11 +115,11 @@ def load_training_texts(
     fixed seed for reproducibility so that 80/20 train/val splits are IID.
 
     Note on data volume: Belrose et al. (2023) use ~65M tokens (SGD, 250 steps
-    of 262k tokens each). We use fewer tokens (~100k) with more optimiser steps
-    (Adam, 5000 steps × batch 64) because: (1) identity init provides a strong
-    warm start, reducing data needs; (2) full hidden-state collection is memory-
-    bound (~50 GB CPU RAM at 100k tokens for d=4096 × 32 layers); (3) we
-    validate probe quality (tuned_agree > raw_agree) as an empirical check.
+    of 262k tokens each). In streaming mode (default), we load ~500k tokens of
+    text (~5000 texts, ~20 MB strings) and cycle through them with fresh forward
+    passes each step, yielding ~32M token-activations over 5000 steps — matching
+    Belrose's effective data volume. In non-streaming mode (--no-streaming), we
+    pre-collect all hidden states to CPU RAM, limited to ~100k tokens by memory.
 
     Returns a list of text strings, estimated to contain >= n_tokens_target
     tokens total (using ~4 chars/token heuristic for selection, actual
@@ -139,7 +139,7 @@ def load_training_texts(
         log.info("Loading C4 validation split (streaming)...")
         ds = hf_load_dataset(
             "allenai/c4", "en", split="validation", streaming=True,
-            trust_remote_code=True,
+            trust_remote_code=False,
         )
         for example in ds:
             text = example.get("text", "")
@@ -241,7 +241,8 @@ def collect_hidden_states_prefill(
             if input_ids.shape[1] < 2:
                 continue
 
-            model(input_ids)  # single forward pass, no generation
+            with torch.no_grad():
+                model(input_ids)  # single forward pass, no generation
 
             # Extract all positions except position 0 (skip BOS)
             for layer_idx in range(n_layers):
@@ -279,6 +280,111 @@ def collect_hidden_states_prefill(
     return result, final_hidden
 
 
+# ── Streaming text iterator ────────────────────────────────────────────────
+
+def _streaming_text_iterator(
+    texts: list[str],
+    seed: int = 42,
+) -> "Iterator[str]":
+    """Infinite iterator that shuffles and cycles through texts.
+
+    Each epoch is a fresh shuffle with a different seed, so the model sees
+    different orderings even when cycling.
+    """
+    import random
+    epoch = 0
+    while True:
+        rng = random.Random(seed + epoch)
+        order = list(range(len(texts)))
+        rng.shuffle(order)
+        for idx in order:
+            yield texts[idx]
+        epoch += 1
+
+
+def _collect_batch_streaming(
+    model: nn.Module,
+    tokenizer,
+    adapter,
+    spec,
+    text_iter,
+    layer_idx: int,
+    batch_tokens: int,
+    device: torch.device,
+    max_seq_len: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Collect a batch of (h_layer, h_final) pairs via fresh forward passes.
+
+    Runs forward passes on texts from text_iter until we have >= batch_tokens
+    token activations for the target layer. Returns tensors on CPU.
+    Only hooks on two layers (target + final) — minimal overhead.
+    """
+    layer_acts: list[torch.Tensor] = []
+    final_acts: list[torch.Tensor] = []
+    n_tokens = 0
+
+    layer_modules = adapter.layers(model)
+    multi_gpu = spec.multi_gpu
+    gen_device = model.device if multi_gpu else device
+    final_layer_idx = spec.n_layers - 1
+
+    captured: dict[str, torch.Tensor | None] = {"layer": None, "final": None}
+
+    def hook_layer(module, inp, output):
+        h = adapter.residual_from_output(output)
+        captured["layer"] = h[0].detach().float().cpu()
+
+    def hook_final(module, inp, output):
+        h = adapter.residual_from_output(output)
+        captured["final"] = h[0].detach().float().cpu()
+
+    # Register hooks once for the whole batch (avoid per-text register/remove)
+    handles = [layer_modules[layer_idx].register_forward_hook(hook_layer)]
+    if layer_idx != final_layer_idx:
+        handles.append(layer_modules[final_layer_idx].register_forward_hook(hook_final))
+    else:
+        # If target IS the final layer, hook_layer already captures it
+        hook_final = hook_layer  # noqa: reuse
+
+    try:
+        while n_tokens < batch_tokens:
+            text = next(text_iter)
+            input_ids = tokenizer.encode(
+                text, return_tensors="pt", max_length=max_seq_len, truncation=True,
+            ).to(gen_device)
+            if input_ids.shape[1] < 2:
+                continue
+
+            captured["layer"] = None
+            captured["final"] = None
+
+            with torch.no_grad():
+                model(input_ids)
+
+            h_l = captured["layer"]
+            h_f = captured["final"] if layer_idx != final_layer_idx else captured["layer"]
+
+            if h_l is not None and h_f is not None:
+                # Skip position 0 (BOS)
+                layer_acts.append(h_l[1:])
+                final_acts.append(h_f[1:])
+                n_tokens += h_l.shape[0] - 1
+    finally:
+        for hh in handles:
+            hh.remove()
+
+    return torch.cat(layer_acts, dim=0), torch.cat(final_acts, dim=0)
+
+
+# ── LR schedules ──────────────────────────────────────────────────────────
+
+def _linear_lr_decay(optimizer, step: int, n_steps: int, base_lr: float) -> None:
+    """Linear decay to 0 (Belrose et al. SGD schedule)."""
+    lr = base_lr * max(0.0, 1.0 - step / n_steps)
+    for pg in optimizer.param_groups:
+        pg["lr"] = lr
+
+
 # ── Probe training ──────────────────────────────────────────────────────────
 
 def train_probes(
@@ -295,8 +401,22 @@ def train_probes(
     batch_size: int = 64,
     warmup_frac: float = 0.05,
     max_seq_len: int = 512,
+    optimizer_type: str = "adam",
+    streaming: bool = True,
 ) -> dict:
-    """Train tuned-lens probes for all layers using prefill-based collection.
+    """Train tuned-lens probes for all layers.
+
+    Two training modes:
+      streaming=True (default): Each training step does a fresh forward pass on
+          new text from C4, giving ~32M unique tokens over 5000 steps — matching
+          Belrose et al.'s effective data volume. No large CPU RAM needed.
+      streaming=False: Pre-collects all hidden states into CPU RAM (legacy).
+          Limited to ~100k tokens by memory; useful for quick testing.
+
+    optimizer_type:
+      "adam" (default): Adam lr=1e-3, weight_decay=1e-3, cosine LR with warmup.
+      "sgd_nesterov": SGD lr=1.0, momentum=0.9, nesterov=True, linear decay
+          over 250 steps (Belrose et al. exact recipe).
 
     Returns training summary dict with per-layer train/val losses and agreement.
     """
@@ -328,78 +448,139 @@ def train_probes(
     else:
         compute_device = device
 
-    # ── Collect training hidden states (prefill-based) ──
-    log.info("Collecting training hidden states from %d texts...", len(train_texts))
-    train_hidden, train_final = collect_hidden_states_prefill(
-        model, tokenizer, adapter, spec, train_texts, device, max_seq_len,
-    )
-    n_train_tokens = train_final.shape[0]
-    log.info("Training set: %d token activations.", n_train_tokens)
+    # Override n_steps for Belrose SGD recipe
+    if optimizer_type == "sgd_nesterov":
+        n_steps = 250
+        lr = 1.0
+        log.info("SGD+Nesterov mode: 250 steps, lr=1.0, linear decay (Belrose exact)")
 
-    # ── Collect validation hidden states ──
-    log.info("Collecting validation hidden states from %d texts...", len(val_texts))
+    # ── Collect validation hidden states (always pre-collected, small) ──
+    # Cap validation texts to limit CPU RAM (all layers stored simultaneously)
+    # 100 texts ≈ 25k tokens → ~10 GB for large models, well within budget
+    max_val_texts = 100
+    val_texts_used = val_texts[:max_val_texts] if len(val_texts) > max_val_texts else val_texts
+    log.info("Collecting validation hidden states from %d texts...", len(val_texts_used))
     val_hidden, val_final = collect_hidden_states_prefill(
-        model, tokenizer, adapter, spec, val_texts, device, max_seq_len,
+        model, tokenizer, adapter, spec, val_texts_used, device, max_seq_len,
     )
     n_val_tokens = val_final.shape[0]
     log.info("Validation set: %d token activations.", n_val_tokens)
 
-    if n_train_tokens < batch_size:
-        log.warning("Only %d tokens < batch_size=%d, adjusting.", n_train_tokens, batch_size)
-        batch_size = max(1, n_train_tokens // 2)
+    # ── Pre-collect training data if not streaming ──
+    train_hidden = None
+    train_final = None
+    n_train_tokens = 0
+    if not streaming:
+        log.info("Pre-collecting training hidden states from %d texts...", len(train_texts))
+        train_hidden, train_final = collect_hidden_states_prefill(
+            model, tokenizer, adapter, spec, train_texts, device, max_seq_len,
+        )
+        n_train_tokens = train_final.shape[0]
+        log.info("Training set: %d token activations.", n_train_tokens)
+        mem_gb = n_layers * n_train_tokens * d_model * 4 / 1e9
+        log.info("Estimated CPU RAM for hidden states: %.1f GB (train)", mem_gb)
+    else:
+        est_tokens = n_steps * batch_size
+        log.info(
+            "Streaming mode: ~%dk unique tokens over %d steps "
+            "(fresh forward passes, no CPU RAM for training data)",
+            est_tokens // 1000, n_steps,
+        )
 
-    warmup_steps = int(n_steps * warmup_frac)
+    warmup_steps = int(n_steps * warmup_frac) if optimizer_type == "adam" else 0
     rng = torch.Generator()
     rng.manual_seed(42)
     training_summary: dict = {}
+    training_summary["_config"] = {
+        "optimizer": optimizer_type,
+        "streaming": streaming,
+        "n_steps": n_steps,
+        "lr": lr,
+        "batch_size": batch_size,
+    }
 
-    mem_gb = n_layers * n_train_tokens * d_model * 4 / 1e9
-    log.info("Estimated CPU RAM for hidden states: %.1f GB (train)", mem_gb)
+    # Streaming iterator (shared across layers)
+    text_iter = _streaming_text_iterator(train_texts) if streaming else None
 
     for layer_idx in range(n_layers):
         if layer_idx in existing:
             log.info("  layer %d: already trained, skipping.", layer_idx)
-            train_hidden.pop(layer_idx, None)
-            val_hidden.pop(layer_idx, None)
+            if train_hidden is not None:
+                train_hidden.pop(layer_idx, None)
+                val_hidden.pop(layer_idx, None)
             continue
 
-        if layer_idx not in train_hidden:
+        if not streaming and layer_idx not in train_hidden:
             log.info("  layer %d: no training activations, skipping.", layer_idx)
             continue
 
-        layer_train = train_hidden[layer_idx]
-        n_t = min(layer_train.shape[0], n_train_tokens)
-        if n_t == 0:
-            train_hidden.pop(layer_idx, None)
-            continue
-
         probe = TunedLensProbe(d_model).to(compute_device)
-        optimizer = torch.optim.Adam(probe.parameters(), lr=lr, weight_decay=1e-3)
+
+        if optimizer_type == "sgd_nesterov":
+            optimizer = torch.optim.SGD(
+                probe.parameters(), lr=lr, momentum=0.9, nesterov=True,
+                weight_decay=1e-3,
+            )
+        else:
+            optimizer = torch.optim.Adam(
+                probe.parameters(), lr=lr, weight_decay=1e-3,
+            )
 
         best_val_loss = float("inf")
         best_state = None
         patience_counter = 0
-        patience_limit = 5  # stop if no improvement for 5 consecutive val checks (2500 steps)
+        patience_limit = 5  # 5 consecutive val checks without improvement
         train_losses: list[tuple[int, float]] = []
         val_losses: list[tuple[int, float]] = []
         final_step = n_steps
 
-        for step in range(n_steps):
-            _cosine_lr_with_warmup(optimizer, step, n_steps, warmup_steps, lr)
+        # For pre-collected mode
+        if not streaming:
+            layer_train = train_hidden[layer_idx]
+            n_t = min(layer_train.shape[0], n_train_tokens)
+            if n_t == 0:
+                train_hidden.pop(layer_idx, None)
+                continue
 
-            # Random mini-batch
-            idx = torch.randperm(n_t, generator=rng)[:batch_size]
-            h = layer_train[idx].to(compute_device)
+        for step in range(n_steps):
+            # LR schedule
+            if optimizer_type == "sgd_nesterov":
+                _linear_lr_decay(optimizer, step, n_steps, lr)
+            else:
+                _cosine_lr_with_warmup(optimizer, step, n_steps, warmup_steps, lr)
+
+            # Get training batch
+            if streaming:
+                # Fresh forward pass on new text
+                h, h_final_batch = _collect_batch_streaming(
+                    model, tokenizer, adapter, spec, text_iter,
+                    layer_idx, batch_size, device, max_seq_len,
+                )
+                # Sample batch_size tokens from collected (may have more)
+                n_collected = h.shape[0]
+                if n_collected > batch_size:
+                    sel = torch.randperm(n_collected, generator=rng)[:batch_size]
+                    h = h[sel]
+                    h_final_batch = h_final_batch[sel]
+                h = h.to(compute_device)
+            else:
+                idx = torch.randperm(n_t, generator=rng)[:batch_size]
+                h = layer_train[idx].to(compute_device)
+                h_final_batch = train_final[idx]
 
             # Compute target log_probs on-the-fly from final-layer hidden states
+            # Cast to model's dtype (typically bfloat16) for norm/lm_head compat
+            model_dtype = next(final_norm_mod.parameters()).dtype
             with torch.no_grad():
-                h_final = train_final[idx].to(compute_device)
-                target_logits = lm_head_mod(final_norm_mod(h_final))
+                hf = h_final_batch.to(device=compute_device, dtype=model_dtype)
+                target_logits = lm_head_mod(final_norm_mod(hf)).float()
                 target = F.log_softmax(target_logits, dim=-1)
-                del h_final, target_logits
+                del hf, target_logits
 
             # Forward: probe → final_norm → lm_head
-            pred_logits = lm_head_mod(final_norm_mod(probe(h)))
+            # Probe operates in float32; cast output to model dtype for norm/head
+            h_probed = probe(h).to(model_dtype)
+            pred_logits = lm_head_mod(final_norm_mod(h_probed)).float()
             log_pred = F.log_softmax(pred_logits, dim=-1)
             loss = F.kl_div(log_pred, target, reduction="batchmean", log_target=True)
 
@@ -410,21 +591,23 @@ def train_probes(
 
             train_losses.append((step + 1, loss.item()))
 
-            # Validation every 500 steps + early stopping
-            if (step + 1) % 500 == 0 and n_val_tokens > 0 and layer_idx in val_hidden:
+            # Validation every 500 steps (or every 50 steps for SGD's short schedule)
+            val_interval = 50 if optimizer_type == "sgd_nesterov" else 500
+            if (step + 1) % val_interval == 0 and n_val_tokens > 0 and layer_idx in val_hidden:
                 with torch.no_grad():
                     val_h = val_hidden[layer_idx]
                     n_v = min(val_h.shape[0], n_val_tokens)
                     eval_n = min(n_v, 4096)
                     v_idx = torch.randperm(n_v, generator=rng)[:eval_n]
                     v_h = val_h[v_idx].to(compute_device)
-                    v_final = val_final[v_idx].to(compute_device)
+                    v_final = val_final[v_idx].to(device=compute_device, dtype=model_dtype)
                     v_target = F.log_softmax(
-                        lm_head_mod(final_norm_mod(v_final)), dim=-1,
+                        lm_head_mod(final_norm_mod(v_final)).float(), dim=-1,
                     )
                     del v_final
+                    v_probed = probe(v_h).to(model_dtype)
                     v_pred = F.log_softmax(
-                        lm_head_mod(final_norm_mod(probe(v_h))), dim=-1,
+                        lm_head_mod(final_norm_mod(v_probed)).float(), dim=-1,
                     )
                     v_loss = F.kl_div(
                         v_pred, v_target, reduction="batchmean", log_target=True,
@@ -441,8 +624,12 @@ def train_probes(
                     else:
                         patience_counter += 1
 
-                # Early stopping: no improvement for patience_limit val checks
-                if patience_counter >= patience_limit and step >= warmup_steps:
+                # Early stopping (only for Adam; SGD runs fixed schedule)
+                if (
+                    optimizer_type != "sgd_nesterov"
+                    and patience_counter >= patience_limit
+                    and step >= warmup_steps
+                ):
                     final_step = step + 1
                     log.info(
                         "  layer %d: early stop at step %d (no val improvement for %d checks)",
@@ -457,21 +644,43 @@ def train_probes(
         probe_path = output_dir / f"probe_layer_{layer_idx}.pt"
         torch.save(probe.state_dict(), probe_path)
 
-        # Quick eval: raw vs tuned top-1 agreement
+        # Quick eval: raw vs tuned top-1 agreement (on validation data)
+        model_dtype = next(final_norm_mod.parameters()).dtype
         with torch.no_grad():
-            eval_n = min(n_t, 2048)
-            h_eval = layer_train[:eval_n].to(compute_device)
-            f_eval = train_final[:eval_n].to(compute_device)
-            final_top1 = lm_head_mod(final_norm_mod(f_eval)).argmax(dim=-1)
-            del f_eval
+            if layer_idx in val_hidden:
+                eval_n = min(val_hidden[layer_idx].shape[0], 2048)
+                h_eval = val_hidden[layer_idx][:eval_n].to(compute_device)
+                f_eval = val_final[:eval_n].to(device=compute_device, dtype=model_dtype)
+                final_top1 = lm_head_mod(final_norm_mod(f_eval)).argmax(dim=-1)
+                del f_eval
 
-            top1_raw = lm_head_mod(final_norm_mod(h_eval)).argmax(dim=-1)
-            top1_tuned = lm_head_mod(final_norm_mod(probe(h_eval))).argmax(dim=-1)
+                h_eval_md = h_eval.to(model_dtype)
+                top1_raw = lm_head_mod(final_norm_mod(h_eval_md)).argmax(dim=-1)
+                h_tuned_md = probe(h_eval).to(model_dtype)
+                top1_tuned = lm_head_mod(final_norm_mod(h_tuned_md)).argmax(dim=-1)
 
-            raw_agree = (top1_raw == final_top1).float().mean().item()
-            tuned_agree = (top1_tuned == final_top1).float().mean().item()
+                raw_agree = (top1_raw == final_top1).float().mean().item()
+                tuned_agree = (top1_tuned == final_top1).float().mean().item()
 
-        if tuned_agree < raw_agree:
+                # Per-layer raw vs tuned KL delta (Belrose key metric)
+                raw_logits = lm_head_mod(final_norm_mod(h_eval_md)).float()
+                tuned_logits = lm_head_mod(final_norm_mod(probe(h_eval).to(model_dtype))).float()
+                target_logits = lm_head_mod(final_norm_mod(val_final[:eval_n].to(device=compute_device, dtype=model_dtype))).float()
+                target_lp = F.log_softmax(target_logits, dim=-1)
+                raw_kl = F.kl_div(
+                    F.log_softmax(raw_logits, dim=-1), target_lp,
+                    reduction="batchmean", log_target=True,
+                ).item()
+                tuned_kl = F.kl_div(
+                    F.log_softmax(tuned_logits, dim=-1), target_lp,
+                    reduction="batchmean", log_target=True,
+                ).item()
+                kl_delta = raw_kl - tuned_kl  # positive = tuned lens is better
+            else:
+                raw_agree = tuned_agree = float("nan")
+                raw_kl = tuned_kl = kl_delta = float("nan")
+
+        if tuned_agree < raw_agree and not math.isnan(tuned_agree):
             log.warning(
                 "  layer %d: tuned_agree (%.3f) < raw_agree (%.3f) — "
                 "probe may be undertrained!",
@@ -485,17 +694,22 @@ def train_probes(
             "early_stopped": final_step < n_steps,
             "raw_top1_agree": raw_agree,
             "tuned_top1_agree": tuned_agree,
+            "raw_kl": raw_kl,
+            "tuned_kl": tuned_kl,
+            "kl_delta_raw_minus_tuned": kl_delta,
         }
         training_summary[str(layer_idx)] = layer_summary
 
         log.info(
-            "  layer %2d: val_loss=%.4f  raw_agree=%.3f → tuned_agree=%.3f",
-            layer_idx, best_val_loss, raw_agree, tuned_agree,
+            "  layer %2d: val_loss=%.4f  raw_agree=%.3f → tuned_agree=%.3f  "
+            "KL_delta=%.4f",
+            layer_idx, best_val_loss, raw_agree, tuned_agree, kl_delta,
         )
 
         # Free memory
-        del layer_train, probe
-        train_hidden.pop(layer_idx, None)
+        del probe
+        if train_hidden is not None:
+            train_hidden.pop(layer_idx, None)
         val_hidden.pop(layer_idx, None)
         torch.cuda.empty_cache()
 
@@ -549,6 +763,24 @@ def _commitment_from_top1(top1_by_layer: list[int]) -> int:
         if top1_by_layer[i] == final_top1 and all(
             top1_by_layer[j] == final_top1 for j in range(i, n)
         ):
+            return i
+    return n - 1
+
+
+def _commitment_majority(
+    kl_row: list[float], threshold: float, frac: float = 0.9,
+) -> int:
+    """Earliest layer where >=frac of subsequent layers have KL < threshold.
+
+    Relaxed version of strict no-flip-back. Handles noisy late layers that
+    can push strict commitment arbitrarily late. Reports alongside strict
+    metric for robustness.
+    """
+    n = len(kl_row)
+    for i in range(n):
+        subsequent = kl_row[i:]
+        n_below = sum(1 for k in subsequent if k < threshold)
+        if n_below / len(subsequent) >= frac:
             return i
     return n - 1
 
@@ -608,6 +840,7 @@ def eval_commitment(
     # Aggregated stats
     all_commitment_raw: list[list[int]] = []
     all_commitment_tuned: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
+    all_commitment_majority: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_top1_tuned: list[list[int]] = []
     n_prompts_done = 0
 
@@ -623,6 +856,7 @@ def eval_commitment(
             step_commitment_raw: list[int] = []
             step_commitment_tuned: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
             step_commitment_top1_tuned: list[int] = []
+            step_commitment_majority: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
 
             step_buf: list[torch.Tensor | None] = [None] * n_layers
 
@@ -632,8 +866,8 @@ def eval_commitment(
                 h_final = step_buf[n_layers - 1]
                 if h_final is None:
                     return
-                h_final_d = h_final.float().to(compute_device)
-                normed_final = final_norm_mod(h_final_d.unsqueeze(0).unsqueeze(0)).squeeze()
+                h_final_d = h_final.to(compute_device)
+                normed_final = final_norm_mod(h_final_d.unsqueeze(0).unsqueeze(0)).squeeze().float()
                 logits_final = normed_final @ W_U
                 final_top1 = int(logits_final.argmax().item())
                 log_p_final = F.log_softmax(logits_final, dim=-1)
@@ -651,19 +885,19 @@ def eval_commitment(
                         kl_row.append(float("inf"))
                         continue
 
-                    h_d = h.float().to(compute_device)
+                    h_d = h.to(compute_device)
 
                     # Raw logit-lens
-                    normed_raw = final_norm_mod(h_d.unsqueeze(0).unsqueeze(0)).squeeze()
+                    normed_raw = final_norm_mod(h_d.unsqueeze(0).unsqueeze(0)).squeeze().float()
                     raw_logits = normed_raw @ W_U
                     raw_top1_row.append(int(raw_logits.argmax().item()))
 
                     # Tuned lens
                     if li in probes:
-                        h_tuned = probes[li](h_d.unsqueeze(0)).squeeze(0)
+                        h_tuned = probes[li](h_d.float().unsqueeze(0)).squeeze(0)
                     else:
                         h_tuned = h_d  # no probe for this layer
-                    normed_tuned = final_norm_mod(h_tuned.unsqueeze(0).unsqueeze(0)).squeeze()
+                    normed_tuned = final_norm_mod(h_tuned.unsqueeze(0).unsqueeze(0)).squeeze().float()
                     tuned_logits = normed_tuned @ W_U
                     tuned_top1_row.append(int(tuned_logits.argmax().item()))
 
@@ -687,6 +921,12 @@ def eval_commitment(
                 step_commitment_top1_tuned.append(
                     _commitment_from_top1(tuned_top1_row)
                 )
+
+                # Majority-vote commitment (≥90% subsequent layers below threshold)
+                for thresh in KL_THRESHOLDS:
+                    step_commitment_majority[thresh].append(
+                        _commitment_majority(kl_row, thresh)
+                    )
 
             def make_hook(layer_idx: int):
                 def hook(module, inp, output):
@@ -737,6 +977,9 @@ def eval_commitment(
                 key = f"commitment_layer_tuned_{thresh}"
                 result[key] = step_commitment_tuned[thresh]
             result["commitment_layer_top1_tuned"] = step_commitment_top1_tuned
+            for thresh in KL_THRESHOLDS:
+                key = f"commitment_layer_majority_{thresh}"
+                result[key] = step_commitment_majority[thresh]
 
             fout.write(json.dumps(result) + "\n")
             fout.flush()
@@ -744,6 +987,7 @@ def eval_commitment(
             all_commitment_raw.append(step_commitment_raw)
             for thresh in KL_THRESHOLDS:
                 all_commitment_tuned[thresh].append(step_commitment_tuned[thresh])
+                all_commitment_majority[thresh].append(step_commitment_majority[thresh])
             all_commitment_top1_tuned.append(step_commitment_top1_tuned)
 
             n_prompts_done += 1
@@ -766,6 +1010,10 @@ def eval_commitment(
             all_commitment_tuned[thresh]
         )
     summary["median_commitment_top1_tuned"] = _flatten_median(all_commitment_top1_tuned)
+    for thresh in KL_THRESHOLDS:
+        summary[f"median_commitment_majority_{thresh}"] = _flatten_median(
+            all_commitment_majority[thresh]
+        )
 
     return summary
 
@@ -809,6 +1057,7 @@ def run_transfer_test(
     log.info("Transfer test: %d tokens collected.", n_tokens)
 
     eval_n = min(n_tokens, 4096)
+    model_dtype = next(final_norm_mod.parameters()).dtype
     results: dict = {"n_tokens": n_tokens, "per_layer": {}}
 
     for layer_idx in range(n_layers):
@@ -816,29 +1065,29 @@ def run_transfer_test(
             continue
 
         h = hidden_by_layer[layer_idx][:eval_n].to(compute_device)
-        h_final = final_hidden[:eval_n].to(compute_device)
+        h_final = final_hidden[:eval_n].to(device=compute_device, dtype=model_dtype)
 
         # Target distribution from final layer
-        target = F.log_softmax(lm_head_mod(final_norm_mod(h_final)), dim=-1)
+        target = F.log_softmax(lm_head_mod(final_norm_mod(h_final)).float(), dim=-1)
 
         layer_result: dict = {}
 
         # IT probes (matched)
         if layer_idx in it_probes:
-            h_it = it_probes[layer_idx](h)
-            pred_it = F.log_softmax(lm_head_mod(final_norm_mod(h_it)), dim=-1)
+            h_it = it_probes[layer_idx](h).to(model_dtype)
+            pred_it = F.log_softmax(lm_head_mod(final_norm_mod(h_it)).float(), dim=-1)
             kl_it = F.kl_div(pred_it, target, reduction="batchmean", log_target=True).item()
             layer_result["it_probe_kl"] = kl_it
 
         # PT probes (transfer)
         if layer_idx in pt_probes:
-            h_pt = pt_probes[layer_idx](h)
-            pred_pt = F.log_softmax(lm_head_mod(final_norm_mod(h_pt)), dim=-1)
+            h_pt = pt_probes[layer_idx](h).to(model_dtype)
+            pred_pt = F.log_softmax(lm_head_mod(final_norm_mod(h_pt)).float(), dim=-1)
             kl_pt = F.kl_div(pred_pt, target, reduction="batchmean", log_target=True).item()
             layer_result["pt_probe_kl"] = kl_pt
 
         # Raw (no probe)
-        pred_raw = F.log_softmax(lm_head_mod(final_norm_mod(h)), dim=-1)
+        pred_raw = F.log_softmax(lm_head_mod(final_norm_mod(h.to(model_dtype))).float(), dim=-1)
         kl_raw = F.kl_div(pred_raw, target, reduction="batchmean", log_target=True).item()
         layer_result["raw_kl"] = kl_raw
 
@@ -886,12 +1135,17 @@ def main() -> None:
 
     # Training args
     p.add_argument("--n-tokens", type=int, default=100000,
-                   help="Target token count for probe training (default: 100000)")
+                   help="Target token count for training text pool (default: 100000)")
     p.add_argument("--n-steps", type=int, default=5000,
-                   help="Training steps per layer")
-    p.add_argument("--lr", type=float, default=1e-3)
+                   help="Training steps per layer (ignored for sgd_nesterov: always 250)")
+    p.add_argument("--lr", type=float, default=1e-3,
+                   help="Learning rate (ignored for sgd_nesterov: always 1.0)")
     p.add_argument("--batch-size", type=int, default=64)
     p.add_argument("--max-seq-len", type=int, default=512)
+    p.add_argument("--optimizer", choices=["adam", "sgd_nesterov"], default="adam",
+                   help="Optimizer: adam (default) or sgd_nesterov (Belrose exact)")
+    p.add_argument("--no-streaming", action="store_true",
+                   help="Disable streaming (pre-collect all hidden states to CPU RAM)")
 
     # Eval args
     p.add_argument("--eval-only", action="store_true",
@@ -998,19 +1252,36 @@ def main() -> None:
         model_id, args.device, multi_gpu=spec.multi_gpu,
     )
 
-    # Load training texts from C4
+    # Load training texts from C4.
+    # For streaming mode: load a large text pool (~500k tokens = ~5000 texts).
+    # Only text strings are stored (~20 MB), NOT hidden states.
+    # For non-streaming: --n-tokens controls the hidden state collection size.
+    streaming = not args.no_streaming
+    if streaming:
+        # Enough texts so each is seen ~1-2 times over 5000 steps
+        # 5000 steps × ~1 text/step = ~5000 texts needed for near-unique coverage
+        pool_tokens = max(args.n_tokens, 500_000)
+        log.info(
+            "Streaming mode: loading large text pool (~%dk tokens, ~%d texts). "
+            "Only strings stored in RAM.",
+            pool_tokens // 1000, pool_tokens // 100,
+        )
+    else:
+        pool_tokens = args.n_tokens
+
     all_texts = load_training_texts(
-        n_tokens_target=args.n_tokens, max_seq_len=args.max_seq_len,
+        n_tokens_target=pool_tokens, max_seq_len=args.max_seq_len,
     )
 
-    # 80/20 train/val split
+    # 80/20 train/val split (val is pre-collected regardless of streaming)
     split_idx = int(len(all_texts) * 0.8)
     train_texts = all_texts[:split_idx]
     val_texts = all_texts[split_idx:]
 
     log.info(
-        "Training %s probes for %s: %d train + %d val texts (%d steps/layer)",
+        "Training %s probes for %s: %d train + %d val texts (%d steps/layer, %s)",
         args.variant, args.model, len(train_texts), len(val_texts), args.n_steps,
+        "streaming" if streaming else "pre-collected",
     )
 
     output_dir = base_dir / args.variant
@@ -1019,6 +1290,8 @@ def main() -> None:
         train_texts, val_texts, device, output_dir,
         n_steps=args.n_steps, lr=args.lr, batch_size=args.batch_size,
         max_seq_len=args.max_seq_len,
+        optimizer_type=args.optimizer,
+        streaming=not args.no_streaming,
     )
 
     del model

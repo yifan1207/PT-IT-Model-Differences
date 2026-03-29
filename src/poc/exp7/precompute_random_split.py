@@ -158,10 +158,11 @@ def run_worker(
     print(f"[0H w{worker_index}/{n_workers}] {len(my_rows)} records on {device}", flush=True)
 
     def collect_sums(model_raw, tokenizer, rows_subset, in_random, in_bottom):
-        """Collect per-subset MLP activation sums.
+        """Collect per-subset sums of per-record MEAN activations.
 
-        Accumulates separate sums for random-600 and bottom-600 records
-        based on the boolean masks, so compute_directions can merge correctly.
+        Each record contributes its mean activation (averaged over tokens),
+        so records are weighted equally regardless of generation length.
+        Counts track number of RECORDS, not tokens.
         """
         sums_r = {li: np.zeros(D_MODEL, dtype=np.float64) for li in ALL_LAYERS}
         counts_r = {li: 0 for li in ALL_LAYERS}
@@ -200,14 +201,14 @@ def run_worker(
             for li in ALL_LAYERS:
                 if gen_acts[li]:
                     stacked = torch.stack(gen_acts[li])
-                    rec_sum = stacked.sum(dim=0).numpy().astype(np.float64)
-                    rec_count = stacked.shape[0]
+                    # Per-record MEAN (not sum) — equal weight per record
+                    rec_mean = stacked.mean(dim=0).numpy().astype(np.float64)
                     if is_r:
-                        sums_r[li] += rec_sum
-                        counts_r[li] += rec_count
+                        sums_r[li] += rec_mean
+                        counts_r[li] += 1  # count records, not tokens
                     if is_b:
-                        sums_b[li] += rec_sum
-                        counts_b[li] += rec_count
+                        sums_b[li] += rec_mean
+                        counts_b[li] += 1
         return sums_r, counts_r, sums_b, counts_b
 
     # Precompute subset membership masks for this worker's records

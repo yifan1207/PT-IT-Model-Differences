@@ -140,7 +140,7 @@ def load_dataset(dataset_path: str) -> dict[str, dict]:
         for line in f:
             if line.strip():
                 r = json.loads(line)
-                records[r["record_id"]] = r
+                records[r.get("record_id", r.get("id"))] = r
     return records
 
 

@@ -17,6 +17,11 @@
 
 set -euo pipefail
 
+# Limit CPU threads per process to avoid contention with 8 concurrent models
+export OMP_NUM_THREADS=12
+export MKL_NUM_THREADS=12
+export TOKENIZERS_PARALLELISM=false
+
 EXTRA_ARGS=("$@")
 
 # Models grouped by size for scheduling.

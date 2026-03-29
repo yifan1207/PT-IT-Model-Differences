@@ -1,0 +1,17 @@
+{
+  "canonical": {
+    "onset_layer": 20,
+    "n_layers": 34,
+    "layer_range": "20-33"
+  },
+  "broader_0.5sig": {
+    "onset_layer": 16,
+    "n_layers": 34,
+    "layer_range": "16-33"
+  },
+  "narrower_2sig": {
+    "onset_layer": 20,
+    "n_layers": 34,
+    "layer_range": "20-33"
+  }
+}

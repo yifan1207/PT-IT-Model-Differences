@@ -277,3 +277,9 @@ results/exp6/**
 !results/exp6/merged_A5a_notmpl_it_v1/plots/**
 !results/exp6/plots_notmpl/
 !results/exp6/plots_notmpl/**
+
+!results/exp7/
+!results/exp7/plots/
+!results/exp7/plots/**
+!results/exp7/plots/data/
+!results/exp7/plots/data/**
