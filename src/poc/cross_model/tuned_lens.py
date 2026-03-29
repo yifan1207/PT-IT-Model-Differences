@@ -92,7 +92,7 @@ class TunedLensProbe(nn.Module):
 def _cosine_lr_with_warmup(
     optimizer, step: int, n_steps: int, warmup_steps: int, base_lr: float
 ) -> None:
-    """Cosine annealing with linear warmup (Belrose et al. schedule)."""
+    """Cosine annealing with linear warmup (Adam fallback schedule)."""
     if step < warmup_steps:
         lr = base_lr * (step + 1) / warmup_steps
     else:
@@ -105,8 +105,8 @@ def _cosine_lr_with_warmup(
 # ── Training data: C4 validation (prefill-based) ───────────────────────────
 
 def load_training_texts(
-    n_tokens_target: int = 100_000,
-    max_seq_len: int = 512,
+    n_tokens_target: int = 2_000_000,
+    max_seq_len: int = 2048,
     seed: int = 42,
 ) -> list[str]:
     """Load raw text from C4 validation split for probe training.
@@ -191,7 +191,7 @@ def collect_hidden_states_prefill(
     spec,
     texts: list[str],
     device: torch.device,
-    max_seq_len: int = 512,
+    max_seq_len: int = 2048,
 ) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
     """Collect per-layer residual stream hidden states via single forward passes.
 
@@ -377,6 +377,83 @@ def _collect_batch_streaming(
     return torch.cat(layer_acts, dim=0), torch.cat(final_acts, dim=0)
 
 
+def _collect_all_layers_streaming(
+    model: nn.Module,
+    tokenizer,
+    adapter,
+    spec,
+    text_iter,
+    batch_tokens: int,
+    device: torch.device,
+    max_seq_len: int,
+) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
+    """Collect hidden states for ALL layers in a single set of forward passes.
+
+    Unlike _collect_batch_streaming (which hooks only 2 layers), this hooks
+    every layer simultaneously so one forward pass yields data for all probes.
+    This is n_layers× faster when training all probes jointly.
+
+    Returns:
+        all_hidden: {layer_idx: [N_tokens, d_model] float32 on CPU}
+        final_hidden: [N_tokens, d_model] float32 on CPU (= all_hidden[n_layers-1])
+    """
+    n_layers = spec.n_layers
+    layer_modules = adapter.layers(model)
+    multi_gpu = spec.multi_gpu
+    gen_device = model.device if multi_gpu else device
+
+    captured: dict[int, torch.Tensor] = {}
+
+    def make_hook(layer_idx: int):
+        def hook(module, inp, output):
+            h = adapter.residual_from_output(output)
+            captured[layer_idx] = h[0].detach().float().cpu()
+        return hook
+
+    handles = [
+        layer_modules[i].register_forward_hook(make_hook(i))
+        for i in range(n_layers)
+    ]
+
+    layer_acts: dict[int, list[torch.Tensor]] = {i: [] for i in range(n_layers)}
+    n_tokens = 0
+
+    try:
+        while n_tokens < batch_tokens:
+            text = next(text_iter)
+            captured.clear()
+
+            input_ids = tokenizer.encode(
+                text, return_tensors="pt", max_length=max_seq_len, truncation=True,
+            ).to(gen_device)
+            if input_ids.shape[1] < 2:
+                continue
+
+            with torch.no_grad():
+                model(input_ids)
+
+            # Check that at least some layers were captured
+            if 0 not in captured:
+                continue
+
+            seq_tokens = captured[0].shape[0] - 1  # skip BOS (position 0)
+            for i in range(n_layers):
+                if i in captured:
+                    layer_acts[i].append(captured[i][1:])
+            n_tokens += seq_tokens
+    finally:
+        for hh in handles:
+            hh.remove()
+
+    result: dict[int, torch.Tensor] = {}
+    for i in range(n_layers):
+        if layer_acts[i]:
+            result[i] = torch.cat(layer_acts[i], dim=0)
+
+    final = result.get(n_layers - 1, torch.zeros(0, spec.d_model))
+    return result, final
+
+
 # ── LR schedules ──────────────────────────────────────────────────────────
 
 def _linear_lr_decay(optimizer, step: int, n_steps: int, base_lr: float) -> None:
@@ -397,28 +474,32 @@ def train_probes(
     val_texts: list[str],
     device: torch.device,
     output_dir: Path,
-    n_steps: int = 5000,
-    lr: float = 1e-3,
+    n_steps: int = 250,
+    lr: float = 1.0,
     batch_size: int = 262144,
     micro_batch_size: int = 512,
     warmup_frac: float = 0.05,
-    max_seq_len: int = 512,
+    max_seq_len: int = 2048,
     optimizer_type: str = "sgd_nesterov",
     streaming: bool = True,
 ) -> dict:
     """Train tuned-lens probes for all layers.
 
-    Two training modes:
-      streaming=True (default): Each training step does a fresh forward pass on
-          new text from C4, giving ~32M unique tokens over 5000 steps — matching
-          Belrose et al.'s effective data volume. No large CPU RAM needed.
-      streaming=False: Pre-collects all hidden states into CPU RAM (legacy).
-          Limited to ~100k tokens by memory; useful for quick testing.
+    Training modes:
+      streaming=True + sgd_nesterov (default, recommended):
+          Joint training — all probes trained simultaneously per step.
+          Each step collects hidden states for ALL layers in shared forward
+          passes, yielding n_layers× speedup over per-layer collection.
+          SGD lr=1.0, momentum=0.9, nesterov=True, linear decay over 250
+          steps, 262K tokens/step = ~65M total (Belrose et al. exact recipe).
 
-    optimizer_type:
-      "adam" (default): Adam lr=1e-3, weight_decay=1e-3, cosine LR with warmup.
-      "sgd_nesterov": SGD lr=1.0, momentum=0.9, nesterov=True, linear decay
-          over 250 steps (Belrose et al. exact recipe).
+      streaming=True + adam:
+          Per-layer training with fresh forward passes per step per layer.
+          Adam lr=1e-3, weight_decay=1e-3, cosine LR with warmup.
+
+      streaming=False:
+          Pre-collects all hidden states into CPU RAM (legacy).
+          Limited to ~100k tokens by memory; useful for quick testing.
 
     Returns training summary dict with per-layer train/val losses and agreement.
     """
@@ -503,239 +584,505 @@ def train_probes(
 
     # Streaming iterator (shared across layers)
     text_iter = _streaming_text_iterator(train_texts) if streaming else None
+    model_dtype = next(final_norm_mod.parameters()).dtype
 
-    for layer_idx in range(n_layers):
-        if layer_idx in existing:
-            log.info("  layer %d: already trained, skipping.", layer_idx)
-            if train_hidden is not None:
-                train_hidden.pop(layer_idx, None)
-                val_hidden.pop(layer_idx, None)
-            continue
+    # ── Joint training: all probes simultaneously (n_layers× faster) ──────
+    # When streaming + SGD, we hook ALL layers per forward pass so each pass
+    # provides data for every probe. This reduces total forward passes from
+    # (n_layers × n_steps × ~500) to (n_steps × ~500).
 
-        if not streaming and layer_idx not in train_hidden:
-            log.info("  layer %d: no training activations, skipping.", layer_idx)
-            continue
+    if streaming and optimizer_type == "sgd_nesterov":
+        log.info(
+            "Joint training mode: all %d layers simultaneously, "
+            "%d steps, %d tokens/step (%.1fM total token-activations)",
+            n_layers - len(existing), n_steps, batch_size,
+            n_steps * batch_size / 1e6,
+        )
 
-        probe = TunedLensProbe(d_model).to(compute_device)
+        # Create all probes and optimizers upfront
+        probes: dict[int, TunedLensProbe] = {}
+        optimizers_all: dict[int, torch.optim.Optimizer] = {}
+        best_states: dict[int, dict | None] = {}
+        best_val_losses: dict[int, float] = {}
+        train_loss_accum: dict[int, float] = {}
 
-        if optimizer_type == "sgd_nesterov":
-            optimizer = torch.optim.SGD(
+        layers_to_train = [i for i in range(n_layers) if i not in existing]
+        for li in layers_to_train:
+            probe = TunedLensProbe(d_model).to(compute_device)
+            probes[li] = probe
+            optimizers_all[li] = torch.optim.SGD(
                 probe.parameters(), lr=lr, momentum=0.9, nesterov=True,
-                weight_decay=1e-3,
+                weight_decay=0,
             )
-        else:
-            optimizer = torch.optim.Adam(
-                probe.parameters(), lr=lr, weight_decay=1e-3,
-            )
-
-        best_val_loss = float("inf")
-        best_state = None
-        patience_counter = 0
-        patience_limit = 5  # 5 consecutive val checks without improvement
-        train_losses: list[tuple[int, float]] = []
-        val_losses: list[tuple[int, float]] = []
-        final_step = n_steps
-
-        # For pre-collected mode
-        if not streaming:
-            layer_train = train_hidden[layer_idx]
-            n_t = min(layer_train.shape[0], n_train_tokens)
-            if n_t == 0:
-                train_hidden.pop(layer_idx, None)
-                continue
-
-        model_dtype = next(final_norm_mod.parameters()).dtype
+            best_states[li] = None
+            best_val_losses[li] = float("inf")
+            train_loss_accum[li] = 0.0
 
         for step in range(n_steps):
-            # LR schedule
-            if optimizer_type == "sgd_nesterov":
-                _linear_lr_decay(optimizer, step, n_steps, lr)
-            else:
-                _cosine_lr_with_warmup(optimizer, step, n_steps, warmup_steps, lr)
+            # Linear LR decay (Belrose schedule)
+            cur_lr = lr * max(0.0, 1.0 - step / n_steps)
+            for opt in optimizers_all.values():
+                for pg in opt.param_groups:
+                    pg["lr"] = cur_lr
 
-            # Get training batch (may be very large, e.g. 262K tokens)
-            if streaming:
-                h_all, hf_all = _collect_batch_streaming(
+            # Zero grad all probes
+            for opt in optimizers_all.values():
+                opt.zero_grad()
+
+            # Reset loss accumulators
+            for li in layers_to_train:
+                train_loss_accum[li] = 0.0
+
+            # Gradient accumulation: collect micro-batches until batch_size
+            accumulated = 0
+            while accumulated < batch_size:
+                micro_target = min(micro_batch_size, batch_size - accumulated)
+                # Single set of forward passes → data for ALL layers
+                all_h, h_final = _collect_all_layers_streaming(
                     model, tokenizer, adapter, spec, text_iter,
-                    layer_idx, batch_size, device, max_seq_len,
+                    micro_target, device, max_seq_len,
                 )
-            else:
-                idx = torch.randperm(n_t, generator=rng)[:batch_size]
-                h_all = layer_train[idx]
-                hf_all = train_final[idx]
+                actual_tokens = h_final.shape[0]
+                if actual_tokens == 0:
+                    continue
 
-            total_tokens = h_all.shape[0]
-
-            # Gradient accumulation over micro-batches
-            optimizer.zero_grad()
-            total_loss = 0.0
-            n_micro = math.ceil(total_tokens / micro_batch_size)
-
-            for mi in range(n_micro):
-                start = mi * micro_batch_size
-                end = min(start + micro_batch_size, total_tokens)
-                h = h_all[start:end].to(compute_device)
-                h_final_batch = hf_all[start:end]
-
-                # Target log-probs (no_grad)
+                # Compute target log-probs (shared across all probes)
                 with torch.no_grad():
-                    hf = h_final_batch.to(device=compute_device, dtype=model_dtype)
+                    hf = h_final.to(device=compute_device, dtype=model_dtype)
                     target = F.log_softmax(
                         lm_head_mod(final_norm_mod(hf)).float(), dim=-1,
                     )
                     del hf
 
-                # Forward: probe → final_norm → lm_head
-                h_probed = probe(h).to(model_dtype)
-                log_pred = F.log_softmax(
-                    lm_head_mod(final_norm_mod(h_probed)).float(), dim=-1,
-                )
-                # Scale loss: sum over micro-batch, divide by total batch for
-                # correct gradient magnitude with accumulation
-                loss = F.kl_div(
-                    log_pred, target, reduction="sum", log_target=True,
-                ) / total_tokens
-                loss.backward()
-                total_loss += loss.item() * (end - start)
-                del h, h_probed, log_pred, target
+                # Train each probe on its layer's data from this micro-batch
+                for li in layers_to_train:
+                    if li not in all_h:
+                        continue
+                    h = all_h[li].to(compute_device)
+                    h_probed = probes[li](h).to(model_dtype)
+                    log_pred = F.log_softmax(
+                        lm_head_mod(final_norm_mod(h_probed)).float(), dim=-1,
+                    )
+                    loss = F.kl_div(
+                        log_pred, target, reduction="sum", log_target=True,
+                    ) / batch_size  # scale for accumulation
+                    loss.backward()
+                    train_loss_accum[li] += loss.item() * actual_tokens
+                    del h, h_probed, log_pred
 
-            torch.nn.utils.clip_grad_norm_(probe.parameters(), 1.0)
-            optimizer.step()
-            del h_all, hf_all
+                del all_h, h_final, target
+                accumulated += actual_tokens
 
-            avg_loss = total_loss / total_tokens
-            train_losses.append((step + 1, avg_loss))
+            # Clip gradients and step all probes
+            for li in layers_to_train:
+                torch.nn.utils.clip_grad_norm_(probes[li].parameters(), 1.0)
+                optimizers_all[li].step()
 
             # Progress log
-            log_interval = 10 if optimizer_type == "sgd_nesterov" else 100
-            if (step + 1) % log_interval == 0:
-                cur_lr = optimizer.param_groups[0]["lr"]
+            if (step + 1) % 10 == 0:
+                sample_li = layers_to_train[0]
+                avg_loss = train_loss_accum[sample_li] / max(accumulated, 1)
                 log.info(
-                    "  layer %d step %d/%d: loss=%.4f lr=%.4f tokens=%d",
-                    layer_idx, step + 1, n_steps, avg_loss, cur_lr, total_tokens,
+                    "  [joint] step %d/%d: loss=%.4f (layer %d) lr=%.4f tokens=%d",
+                    step + 1, n_steps, avg_loss, sample_li, cur_lr, accumulated,
                 )
 
-            # Validation every 500 steps (or every 50 steps for SGD's short schedule)
-            val_interval = 50 if optimizer_type == "sgd_nesterov" else 500
-            if (step + 1) % val_interval == 0 and n_val_tokens > 0 and layer_idx in val_hidden:
+            # Validation every 50 steps
+            if (step + 1) % 50 == 0 and n_val_tokens > 0:
                 with torch.no_grad():
-                    val_h = val_hidden[layer_idx]
-                    n_v = min(val_h.shape[0], n_val_tokens)
-                    eval_n = min(n_v, 4096)
-                    v_idx = torch.randperm(n_v, generator=rng)[:eval_n]
-                    v_h = val_h[v_idx].to(compute_device)
-                    v_final = val_final[v_idx].to(device=compute_device, dtype=model_dtype)
-                    v_target = F.log_softmax(
-                        lm_head_mod(final_norm_mod(v_final)).float(), dim=-1,
-                    )
-                    del v_final
-                    v_probed = probe(v_h).to(model_dtype)
-                    v_pred = F.log_softmax(
-                        lm_head_mod(final_norm_mod(v_probed)).float(), dim=-1,
-                    )
-                    v_loss = F.kl_div(
-                        v_pred, v_target, reduction="batchmean", log_target=True,
-                    )
-                    val_loss_val = v_loss.item()
-                    val_losses.append((step + 1, val_loss_val))
+                    for li in layers_to_train:
+                        if li not in val_hidden:
+                            continue
+                        eval_n = min(val_hidden[li].shape[0], 4096)
+                        v_h = val_hidden[li][:eval_n].to(compute_device)
+                        v_final = val_final[:eval_n].to(
+                            device=compute_device, dtype=model_dtype,
+                        )
+                        v_target = F.log_softmax(
+                            lm_head_mod(final_norm_mod(v_final)).float(), dim=-1,
+                        )
+                        v_probed = probes[li](v_h).to(model_dtype)
+                        v_pred = F.log_softmax(
+                            lm_head_mod(final_norm_mod(v_probed)).float(), dim=-1,
+                        )
+                        v_loss = F.kl_div(
+                            v_pred, v_target, reduction="batchmean",
+                            log_target=True,
+                        ).item()
 
-                    if val_loss_val < best_val_loss:
-                        best_val_loss = val_loss_val
-                        best_state = {
-                            k: v.clone() for k, v in probe.state_dict().items()
-                        }
-                        patience_counter = 0
-                    else:
-                        patience_counter += 1
+                        if v_loss < best_val_losses[li]:
+                            best_val_losses[li] = v_loss
+                            best_states[li] = {
+                                k: v.clone()
+                                for k, v in probes[li].state_dict().items()
+                            }
+                        del v_h, v_final, v_target, v_probed, v_pred
+                torch.cuda.empty_cache()
 
-                # Early stopping (only for Adam; SGD runs fixed schedule)
-                if (
-                    optimizer_type != "sgd_nesterov"
-                    and patience_counter >= patience_limit
-                    and step >= warmup_steps
-                ):
-                    final_step = step + 1
-                    log.info(
-                        "  layer %d: early stop at step %d (no val improvement for %d checks)",
-                        layer_idx, final_step, patience_limit,
-                    )
-                    break
+        # ── Save all probes and compute final eval metrics ────────────────
+        for li in layers_to_train:
+            probe = probes[li]
+            if best_states[li] is not None:
+                probe.load_state_dict(best_states[li])
 
-        # Use best validation model
-        if best_state is not None:
-            probe.load_state_dict(best_state)
-
-        probe_path = output_dir / f"probe_layer_{layer_idx}.pt"
-        torch.save(probe.state_dict(), probe_path)
-
-        # Quick eval: raw vs tuned top-1 agreement (on validation data)
-        model_dtype = next(final_norm_mod.parameters()).dtype
-        with torch.no_grad():
-            if layer_idx in val_hidden:
-                eval_n = min(val_hidden[layer_idx].shape[0], 2048)
-                h_eval = val_hidden[layer_idx][:eval_n].to(compute_device)
-                f_eval = val_final[:eval_n].to(device=compute_device, dtype=model_dtype)
-                final_top1 = lm_head_mod(final_norm_mod(f_eval)).argmax(dim=-1)
-                del f_eval
-
-                h_eval_md = h_eval.to(model_dtype)
-                top1_raw = lm_head_mod(final_norm_mod(h_eval_md)).argmax(dim=-1)
-                h_tuned_md = probe(h_eval).to(model_dtype)
-                top1_tuned = lm_head_mod(final_norm_mod(h_tuned_md)).argmax(dim=-1)
-
-                raw_agree = (top1_raw == final_top1).float().mean().item()
-                tuned_agree = (top1_tuned == final_top1).float().mean().item()
-
-                # Per-layer raw vs tuned KL delta (Belrose key metric)
-                raw_logits = lm_head_mod(final_norm_mod(h_eval_md)).float()
-                tuned_logits = lm_head_mod(final_norm_mod(probe(h_eval).to(model_dtype))).float()
-                target_logits = lm_head_mod(final_norm_mod(val_final[:eval_n].to(device=compute_device, dtype=model_dtype))).float()
-                target_lp = F.log_softmax(target_logits, dim=-1)
-                raw_kl = F.kl_div(
-                    F.log_softmax(raw_logits, dim=-1), target_lp,
-                    reduction="batchmean", log_target=True,
-                ).item()
-                tuned_kl = F.kl_div(
-                    F.log_softmax(tuned_logits, dim=-1), target_lp,
-                    reduction="batchmean", log_target=True,
-                ).item()
-                kl_delta = raw_kl - tuned_kl  # positive = tuned lens is better
-            else:
-                raw_agree = tuned_agree = float("nan")
-                raw_kl = tuned_kl = kl_delta = float("nan")
-
-        if tuned_agree < raw_agree and not math.isnan(tuned_agree):
-            log.warning(
-                "  layer %d: tuned_agree (%.3f) < raw_agree (%.3f) — "
-                "probe may be undertrained!",
-                layer_idx, tuned_agree, raw_agree,
+            torch.save(
+                probe.state_dict(), output_dir / f"probe_layer_{li}.pt",
             )
 
-        layer_summary = {
-            "train_loss_final": train_losses[-1][1] if train_losses else float("nan"),
-            "val_loss_best": best_val_loss if best_val_loss < float("inf") else float("nan"),
-            "steps_used": final_step,
-            "early_stopped": final_step < n_steps,
-            "raw_top1_agree": raw_agree,
-            "tuned_top1_agree": tuned_agree,
-            "raw_kl": raw_kl,
-            "tuned_kl": tuned_kl,
-            "kl_delta_raw_minus_tuned": kl_delta,
-        }
-        training_summary[str(layer_idx)] = layer_summary
+            # Final eval: raw vs tuned agreement + KL delta
+            with torch.no_grad():
+                if li in val_hidden:
+                    eval_n = min(val_hidden[li].shape[0], 2048)
+                    h_eval = val_hidden[li][:eval_n].to(compute_device)
+                    f_eval = val_final[:eval_n].to(
+                        device=compute_device, dtype=model_dtype,
+                    )
+                    final_top1 = lm_head_mod(
+                        final_norm_mod(f_eval)
+                    ).argmax(dim=-1)
 
-        log.info(
-            "  layer %2d: val_loss=%.4f  raw_agree=%.3f → tuned_agree=%.3f  "
-            "KL_delta=%.4f",
-            layer_idx, best_val_loss, raw_agree, tuned_agree, kl_delta,
-        )
+                    h_eval_md = h_eval.to(model_dtype)
+                    top1_raw = lm_head_mod(
+                        final_norm_mod(h_eval_md)
+                    ).argmax(dim=-1)
+                    h_tuned_md = probe(h_eval).to(model_dtype)
+                    top1_tuned = lm_head_mod(
+                        final_norm_mod(h_tuned_md)
+                    ).argmax(dim=-1)
 
-        # Free memory
-        del probe
-        if train_hidden is not None:
-            train_hidden.pop(layer_idx, None)
-        val_hidden.pop(layer_idx, None)
+                    raw_agree = (
+                        (top1_raw == final_top1).float().mean().item()
+                    )
+                    tuned_agree = (
+                        (top1_tuned == final_top1).float().mean().item()
+                    )
+
+                    # KL delta
+                    target_lp = F.log_softmax(
+                        lm_head_mod(final_norm_mod(f_eval)).float(), dim=-1,
+                    )
+                    raw_kl = F.kl_div(
+                        F.log_softmax(
+                            lm_head_mod(final_norm_mod(h_eval_md)).float(),
+                            dim=-1,
+                        ),
+                        target_lp,
+                        reduction="batchmean",
+                        log_target=True,
+                    ).item()
+                    tuned_kl = F.kl_div(
+                        F.log_softmax(
+                            lm_head_mod(
+                                final_norm_mod(probe(h_eval).to(model_dtype))
+                            ).float(),
+                            dim=-1,
+                        ),
+                        target_lp,
+                        reduction="batchmean",
+                        log_target=True,
+                    ).item()
+                    kl_delta = raw_kl - tuned_kl
+                    del h_eval, f_eval, final_top1
+                else:
+                    raw_agree = tuned_agree = float("nan")
+                    raw_kl = tuned_kl = kl_delta = float("nan")
+
+            if tuned_agree < raw_agree and not math.isnan(tuned_agree):
+                log.warning(
+                    "  layer %d: tuned_agree (%.3f) < raw_agree (%.3f) — "
+                    "probe may be undertrained!",
+                    li, tuned_agree, raw_agree,
+                )
+
+            training_summary[str(li)] = {
+                "train_loss_final": train_loss_accum.get(li, float("nan")),
+                "val_loss_best": (
+                    best_val_losses[li]
+                    if best_val_losses[li] < float("inf")
+                    else float("nan")
+                ),
+                "steps_used": n_steps,
+                "early_stopped": False,
+                "raw_top1_agree": raw_agree,
+                "tuned_top1_agree": tuned_agree,
+                "raw_kl": raw_kl,
+                "tuned_kl": tuned_kl,
+                "kl_delta_raw_minus_tuned": kl_delta,
+            }
+            log.info(
+                "  layer %2d: val_loss=%.4f  raw_agree=%.3f → tuned_agree=%.3f"
+                "  KL_delta=%.4f",
+                li, best_val_losses[li], raw_agree, tuned_agree, kl_delta,
+            )
+
+        # Cleanup
+        del probes, optimizers_all, best_states
         torch.cuda.empty_cache()
+
+    else:
+        # ── Per-layer training (Adam mode or non-streaming fallback) ──────
+        for layer_idx in range(n_layers):
+            if layer_idx in existing:
+                log.info("  layer %d: already trained, skipping.", layer_idx)
+                if train_hidden is not None:
+                    train_hidden.pop(layer_idx, None)
+                    val_hidden.pop(layer_idx, None)
+                continue
+
+            if not streaming and layer_idx not in train_hidden:
+                log.info("  layer %d: no training activations, skipping.", layer_idx)
+                continue
+
+            probe = TunedLensProbe(d_model).to(compute_device)
+
+            if optimizer_type == "sgd_nesterov":
+                optimizer = torch.optim.SGD(
+                    probe.parameters(), lr=lr, momentum=0.9, nesterov=True,
+                    weight_decay=0,
+                )
+            else:
+                optimizer = torch.optim.Adam(
+                    probe.parameters(), lr=lr, weight_decay=1e-3,
+                )
+
+            best_val_loss = float("inf")
+            best_state = None
+            patience_counter = 0
+            patience_limit = 5
+            train_losses: list[tuple[int, float]] = []
+            val_losses: list[tuple[int, float]] = []
+            final_step = n_steps
+
+            if not streaming:
+                layer_train = train_hidden[layer_idx]
+                n_t = min(layer_train.shape[0], n_train_tokens)
+                if n_t == 0:
+                    train_hidden.pop(layer_idx, None)
+                    continue
+
+            for step in range(n_steps):
+                if optimizer_type == "sgd_nesterov":
+                    _linear_lr_decay(optimizer, step, n_steps, lr)
+                else:
+                    _cosine_lr_with_warmup(
+                        optimizer, step, n_steps, warmup_steps, lr,
+                    )
+
+                if streaming:
+                    h_all, hf_all = _collect_batch_streaming(
+                        model, tokenizer, adapter, spec, text_iter,
+                        layer_idx, batch_size, device, max_seq_len,
+                    )
+                else:
+                    idx = torch.randperm(n_t, generator=rng)[:batch_size]
+                    h_all = layer_train[idx]
+                    hf_all = train_final[idx]
+
+                total_tokens = h_all.shape[0]
+
+                optimizer.zero_grad()
+                total_loss = 0.0
+                n_micro = math.ceil(total_tokens / micro_batch_size)
+
+                for mi in range(n_micro):
+                    start = mi * micro_batch_size
+                    end = min(start + micro_batch_size, total_tokens)
+                    h = h_all[start:end].to(compute_device)
+                    h_final_batch = hf_all[start:end]
+
+                    with torch.no_grad():
+                        hf = h_final_batch.to(
+                            device=compute_device, dtype=model_dtype,
+                        )
+                        target = F.log_softmax(
+                            lm_head_mod(final_norm_mod(hf)).float(), dim=-1,
+                        )
+                        del hf
+
+                    h_probed = probe(h).to(model_dtype)
+                    log_pred = F.log_softmax(
+                        lm_head_mod(final_norm_mod(h_probed)).float(), dim=-1,
+                    )
+                    loss = F.kl_div(
+                        log_pred, target, reduction="sum", log_target=True,
+                    ) / total_tokens
+                    loss.backward()
+                    total_loss += loss.item() * (end - start)
+                    del h, h_probed, log_pred, target
+
+                torch.nn.utils.clip_grad_norm_(probe.parameters(), 1.0)
+                optimizer.step()
+                del h_all, hf_all
+
+                avg_loss = total_loss / total_tokens
+                train_losses.append((step + 1, avg_loss))
+
+                log_interval = 10 if optimizer_type == "sgd_nesterov" else 100
+                if (step + 1) % log_interval == 0:
+                    cur_lr = optimizer.param_groups[0]["lr"]
+                    log.info(
+                        "  layer %d step %d/%d: loss=%.4f lr=%.4f tokens=%d",
+                        layer_idx, step + 1, n_steps, avg_loss, cur_lr,
+                        total_tokens,
+                    )
+
+                val_interval = (
+                    50 if optimizer_type == "sgd_nesterov" else 500
+                )
+                if (
+                    (step + 1) % val_interval == 0
+                    and n_val_tokens > 0
+                    and layer_idx in val_hidden
+                ):
+                    with torch.no_grad():
+                        val_h = val_hidden[layer_idx]
+                        n_v = min(val_h.shape[0], n_val_tokens)
+                        eval_n = min(n_v, 4096)
+                        v_idx = torch.randperm(n_v, generator=rng)[:eval_n]
+                        v_h = val_h[v_idx].to(compute_device)
+                        v_final = val_final[v_idx].to(
+                            device=compute_device, dtype=model_dtype,
+                        )
+                        v_target = F.log_softmax(
+                            lm_head_mod(final_norm_mod(v_final)).float(),
+                            dim=-1,
+                        )
+                        del v_final
+                        v_probed = probe(v_h).to(model_dtype)
+                        v_pred = F.log_softmax(
+                            lm_head_mod(final_norm_mod(v_probed)).float(),
+                            dim=-1,
+                        )
+                        v_loss = F.kl_div(
+                            v_pred, v_target, reduction="batchmean",
+                            log_target=True,
+                        )
+                        val_loss_val = v_loss.item()
+                        val_losses.append((step + 1, val_loss_val))
+
+                        if val_loss_val < best_val_loss:
+                            best_val_loss = val_loss_val
+                            best_state = {
+                                k: v.clone()
+                                for k, v in probe.state_dict().items()
+                            }
+                            patience_counter = 0
+                        else:
+                            patience_counter += 1
+
+                    if (
+                        optimizer_type != "sgd_nesterov"
+                        and patience_counter >= patience_limit
+                        and step >= warmup_steps
+                    ):
+                        final_step = step + 1
+                        log.info(
+                            "  layer %d: early stop at step %d "
+                            "(no val improvement for %d checks)",
+                            layer_idx, final_step, patience_limit,
+                        )
+                        break
+
+            if best_state is not None:
+                probe.load_state_dict(best_state)
+
+            probe_path = output_dir / f"probe_layer_{layer_idx}.pt"
+            torch.save(probe.state_dict(), probe_path)
+
+            with torch.no_grad():
+                if layer_idx in val_hidden:
+                    eval_n = min(val_hidden[layer_idx].shape[0], 2048)
+                    h_eval = val_hidden[layer_idx][:eval_n].to(compute_device)
+                    f_eval = val_final[:eval_n].to(
+                        device=compute_device, dtype=model_dtype,
+                    )
+                    final_top1 = lm_head_mod(
+                        final_norm_mod(f_eval)
+                    ).argmax(dim=-1)
+                    del f_eval
+
+                    h_eval_md = h_eval.to(model_dtype)
+                    top1_raw = lm_head_mod(
+                        final_norm_mod(h_eval_md)
+                    ).argmax(dim=-1)
+                    h_tuned_md = probe(h_eval).to(model_dtype)
+                    top1_tuned = lm_head_mod(
+                        final_norm_mod(h_tuned_md)
+                    ).argmax(dim=-1)
+
+                    raw_agree = (
+                        (top1_raw == final_top1).float().mean().item()
+                    )
+                    tuned_agree = (
+                        (top1_tuned == final_top1).float().mean().item()
+                    )
+
+                    raw_logits = lm_head_mod(
+                        final_norm_mod(h_eval_md)
+                    ).float()
+                    tuned_logits = lm_head_mod(
+                        final_norm_mod(probe(h_eval).to(model_dtype))
+                    ).float()
+                    target_logits = lm_head_mod(
+                        final_norm_mod(
+                            val_final[:eval_n].to(
+                                device=compute_device, dtype=model_dtype,
+                            )
+                        )
+                    ).float()
+                    target_lp = F.log_softmax(target_logits, dim=-1)
+                    raw_kl = F.kl_div(
+                        F.log_softmax(raw_logits, dim=-1),
+                        target_lp,
+                        reduction="batchmean",
+                        log_target=True,
+                    ).item()
+                    tuned_kl = F.kl_div(
+                        F.log_softmax(tuned_logits, dim=-1),
+                        target_lp,
+                        reduction="batchmean",
+                        log_target=True,
+                    ).item()
+                    kl_delta = raw_kl - tuned_kl
+                else:
+                    raw_agree = tuned_agree = float("nan")
+                    raw_kl = tuned_kl = kl_delta = float("nan")
+
+            if tuned_agree < raw_agree and not math.isnan(tuned_agree):
+                log.warning(
+                    "  layer %d: tuned_agree (%.3f) < raw_agree (%.3f) — "
+                    "probe may be undertrained!",
+                    layer_idx, tuned_agree, raw_agree,
+                )
+
+            training_summary[str(layer_idx)] = {
+                "train_loss_final": (
+                    train_losses[-1][1] if train_losses else float("nan")
+                ),
+                "val_loss_best": (
+                    best_val_loss
+                    if best_val_loss < float("inf")
+                    else float("nan")
+                ),
+                "steps_used": final_step,
+                "early_stopped": final_step < n_steps,
+                "raw_top1_agree": raw_agree,
+                "tuned_top1_agree": tuned_agree,
+                "raw_kl": raw_kl,
+                "tuned_kl": tuned_kl,
+                "kl_delta_raw_minus_tuned": kl_delta,
+            }
+            log.info(
+                "  layer %2d: val_loss=%.4f  raw_agree=%.3f → "
+                "tuned_agree=%.3f  KL_delta=%.4f",
+                layer_idx, best_val_loss, raw_agree, tuned_agree, kl_delta,
+            )
+
+            del probe
+            if train_hidden is not None:
+                train_hidden.pop(layer_idx, None)
+            val_hidden.pop(layer_idx, None)
+            torch.cuda.empty_cache()
 
     # Save training summary
     summary_path = output_dir / "training_summary.json"
@@ -1205,7 +1552,8 @@ def main() -> None:
                    help="Tokens per optimizer step (default: 262144, Belrose exact)")
     p.add_argument("--micro-batch-size", type=int, default=512,
                    help="GPU micro-batch for gradient accumulation (default: 512)")
-    p.add_argument("--max-seq-len", type=int, default=512)
+    p.add_argument("--max-seq-len", type=int, default=2048,
+                   help="Max sequence length per text (default: 2048, Belrose standard)")
     p.add_argument("--optimizer", choices=["adam", "sgd_nesterov"], default="sgd_nesterov",
                    help="Optimizer: sgd_nesterov (Belrose, default) or adam")
     p.add_argument("--no-streaming", action="store_true",
