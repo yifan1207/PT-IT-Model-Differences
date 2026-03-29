@@ -813,7 +813,8 @@ def eval_commitment(
     multi_gpu = spec.multi_gpu
 
     final_norm_mod = adapter.final_norm(model)
-    lm_head_weight = adapter.lm_head(model).weight.detach().float()  # [vocab, d_model]
+    model_dtype = next(final_norm_mod.parameters()).dtype
+    lm_head_weight = adapter.lm_head(model).weight.detach()  # [vocab, d_model], keep native dtype
     W_U = lm_head_weight.T  # [d_model, vocab]
 
     if multi_gpu:
@@ -861,52 +862,63 @@ def eval_commitment(
             step_buf: list[torch.Tensor | None] = [None] * n_layers
 
             def _process_step() -> None:
-                """Process one generation step: compute commitment metrics."""
-                # Get final-layer distribution
+                """Process one generation step: compute commitment metrics.
+
+                Batched: stacks all layers into [n_layers, d_model] and does
+                2 matmuls (raw + tuned) instead of 2*n_layers individual ones.
+                """
+                # Check all layers have data
                 h_final = step_buf[n_layers - 1]
                 if h_final is None:
                     return
-                h_final_d = h_final.to(compute_device)
-                normed_final = final_norm_mod(h_final_d.unsqueeze(0).unsqueeze(0)).squeeze().float()
-                logits_final = normed_final @ W_U
-                final_top1 = int(logits_final.argmax().item())
-                log_p_final = F.log_softmax(logits_final, dim=-1)
 
-                # Per-layer raw top-1 and tuned KL + top-1
-                raw_top1_row: list[int] = []
-                tuned_top1_row: list[int] = []
-                kl_row: list[float] = []
+                # Stack all layer hidden states → [n_layers, d_model]
+                valid = [step_buf[li] is not None for li in range(n_layers)]
+                all_h = torch.stack(
+                    [step_buf[li] if valid[li] else torch.zeros_like(h_final)
+                     for li in range(n_layers)],
+                    dim=0,
+                ).to(device=compute_device, dtype=model_dtype)
 
+                # === Raw logit-lens (batched) ===
+                # final_norm handles [n_layers, 1, d_model] batch
+                all_normed_raw = final_norm_mod(all_h.unsqueeze(1)).squeeze(1)  # [n_layers, d_model]
+                all_raw_logits = all_normed_raw.float() @ W_U.float()  # [n_layers, vocab]
+                all_raw_top1 = all_raw_logits.argmax(dim=-1)  # [n_layers]
+                final_top1 = int(all_raw_top1[-1].item())
+
+                # Final layer's log-probs for KL computation
+                log_p_final = F.log_softmax(all_raw_logits[-1], dim=-1)
+
+                raw_top1_row = [int(all_raw_top1[li].item()) if valid[li] else -1
+                                for li in range(n_layers)]
+
+                # === Tuned lens (batched) ===
+                tuned_parts = []
                 for li in range(n_layers):
-                    h = step_buf[li]
-                    if h is None:
-                        raw_top1_row.append(-1)
-                        tuned_top1_row.append(-1)
-                        kl_row.append(float("inf"))
-                        continue
-
-                    h_d = h.to(compute_device)
-
-                    # Raw logit-lens
-                    normed_raw = final_norm_mod(h_d.unsqueeze(0).unsqueeze(0)).squeeze().float()
-                    raw_logits = normed_raw @ W_U
-                    raw_top1_row.append(int(raw_logits.argmax().item()))
-
-                    # Tuned lens
-                    if li in probes:
-                        h_tuned = probes[li](h_d.float().unsqueeze(0)).squeeze(0)
+                    if not valid[li]:
+                        tuned_parts.append(torch.zeros_like(h_final).to(device=compute_device, dtype=model_dtype))
+                    elif li in probes:
+                        tuned_parts.append(probes[li](all_h[li].float().unsqueeze(0)).squeeze(0).to(model_dtype))
                     else:
-                        h_tuned = h_d  # no probe for this layer
-                    normed_tuned = final_norm_mod(h_tuned.unsqueeze(0).unsqueeze(0)).squeeze().float()
-                    tuned_logits = normed_tuned @ W_U
-                    tuned_top1_row.append(int(tuned_logits.argmax().item()))
+                        tuned_parts.append(all_h[li])
+                all_h_tuned = torch.stack(tuned_parts, dim=0)  # [n_layers, d_model]
 
-                    # KL(final ‖ tuned_lens)
-                    log_q = F.log_softmax(tuned_logits, dim=-1)
-                    kl = F.kl_div(
-                        log_q, log_p_final, reduction="sum", log_target=True,
-                    ).item()
-                    kl_row.append(max(kl, 0.0))
+                all_normed_tuned = final_norm_mod(all_h_tuned.unsqueeze(1)).squeeze(1)
+                all_tuned_logits = all_normed_tuned.float() @ W_U.float()  # [n_layers, vocab]
+                all_tuned_top1 = all_tuned_logits.argmax(dim=-1)
+
+                tuned_top1_row = [int(all_tuned_top1[li].item()) if valid[li] else -1
+                                  for li in range(n_layers)]
+
+                # KL(tuned_ℓ ‖ final) for each layer
+                all_log_q = F.log_softmax(all_tuned_logits, dim=-1)  # [n_layers, vocab]
+                kl_all = F.kl_div(
+                    all_log_q, log_p_final.unsqueeze(0).expand_as(all_log_q),
+                    reduction="none", log_target=True,
+                ).sum(dim=-1)  # [n_layers]
+                kl_row = [max(kl_all[li].item(), 0.0) if valid[li] else float("inf")
+                          for li in range(n_layers)]
 
                 # Raw commitment (no-flip-back top-1)
                 step_commitment_raw.append(_commitment_from_top1(raw_top1_row))
