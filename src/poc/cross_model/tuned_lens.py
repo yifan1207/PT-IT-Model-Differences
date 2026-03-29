@@ -521,6 +521,11 @@ def train_probes(
             return json.loads(summary_path.read_text())
         return {}
 
+    # Freeze model — only probe parameters should receive gradients.
+    # Without this, backward() stores gradients on lm_head (~3 GB for 256K vocab)
+    # and final_norm, wasting memory and risking OOM in joint training mode.
+    model.requires_grad_(False)
+
     # Access final_norm and lm_head via adapter
     final_norm_mod = adapter.final_norm(model)
     lm_head_mod = adapter.lm_head(model)
