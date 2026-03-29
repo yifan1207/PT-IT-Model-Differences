@@ -279,6 +279,7 @@ results/exp6/**
 !results/exp6/plots_notmpl/**
 
 !results/exp7/
+results/exp7/**
 !results/exp7/plots/
 !results/exp7/plots/**
 !results/exp7/plots/data/

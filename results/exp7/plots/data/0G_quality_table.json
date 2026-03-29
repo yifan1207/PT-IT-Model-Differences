@@ -1,5 +1,21 @@
 [
   {
+    "model_variant": "gemma3_4b_pt",
+    "n_layers": 34,
+    "mean_raw_agree": 0.2448,
+    "mean_tuned_agree": 0.3565,
+    "mean_kl_delta": 12.6493,
+    "layers_tuned_better": 28
+  },
+  {
+    "model_variant": "gemma3_4b_it",
+    "n_layers": 34,
+    "mean_raw_agree": 0.2629,
+    "mean_tuned_agree": 0.3493,
+    "mean_kl_delta": 12.3916,
+    "layers_tuned_better": 25
+  },
+  {
     "model_variant": "llama31_8b_pt",
     "n_layers": 32,
     "mean_raw_agree": 0.1517,
@@ -46,5 +62,21 @@
     "mean_tuned_agree": 0.4496,
     "mean_kl_delta": 3.175,
     "layers_tuned_better": 30
+  },
+  {
+    "model_variant": "olmo2_7b_pt",
+    "n_layers": 20,
+    "mean_raw_agree": 0.3009,
+    "mean_tuned_agree": 0.5216,
+    "mean_kl_delta": 2.821,
+    "layers_tuned_better": 18
+  },
+  {
+    "model_variant": "olmo2_7b_it",
+    "n_layers": 22,
+    "mean_raw_agree": 0.2755,
+    "mean_tuned_agree": 0.4301,
+    "mean_kl_delta": 2.7354,
+    "layers_tuned_better": 19
   }
 ]
