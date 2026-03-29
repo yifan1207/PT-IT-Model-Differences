@@ -5,11 +5,12 @@ families using the cross-model adapter infrastructure. Trains per-layer affine
 probes T_ℓ(h) = W_ℓ h + b_ℓ that map each layer's residual stream to the
 final layer's space, giving a more faithful readout than raw logit lens.
 
-Training:
+Training (Belrose et al. 2023 exact recipe):
   - Prefill-based on C4 validation (single forward pass, all token positions)
-  - 100,000 tokens per model variant (Belrose et al. use ~65M; see load_training_texts docstring)
+  - SGD Nesterov (lr=1.0, momentum=0.9), 250 steps, linear LR decay to 0
+  - 262,144 tokens per step (~65M total), gradient accumulation over micro-batches
   - KL divergence loss: KL(softmax(lm_head(norm(probe(h_ℓ)))) ‖ softmax(lm_head(norm(h_L))))
-  - Identity init + zero bias, Adam lr=1e-3, cosine LR with 5% warmup, 5000 steps
+  - Identity init + zero bias
 
 Evaluation:
   - Autoregressive generation matching collect_L1L2.py methodology
@@ -114,12 +115,10 @@ def load_training_texts(
     Falls back to wikitext if C4 is unavailable. Texts are shuffled with a
     fixed seed for reproducibility so that 80/20 train/val splits are IID.
 
-    Note on data volume: Belrose et al. (2023) use ~65M tokens (SGD, 250 steps
-    of 262k tokens each). In streaming mode (default), we load ~500k tokens of
-    text (~5000 texts, ~20 MB strings) and cycle through them with fresh forward
-    passes each step, yielding ~32M token-activations over 5000 steps — matching
-    Belrose's effective data volume. In non-streaming mode (--no-streaming), we
-    pre-collect all hidden states to CPU RAM, limited to ~100k tokens by memory.
+    Data volume: Belrose et al. (2023) use ~65M tokens (SGD, 250 steps of 262k
+    tokens each). We load ~2M tokens of text (~20k texts) and cycle through them
+    with fresh forward passes each step, yielding 262k tokens per step × 250
+    steps = ~65M token-activations — matching Belrose exactly.
 
     Returns a list of text strings, estimated to contain >= n_tokens_target
     tokens total (using ~4 chars/token heuristic for selection, actual
@@ -347,6 +346,7 @@ def _collect_batch_streaming(
         hook_final = hook_layer  # noqa: reuse
 
     try:
+        n_fwd = 0
         while n_tokens < batch_tokens:
             text = next(text_iter)
             input_ids = tokenizer.encode(
@@ -369,6 +369,7 @@ def _collect_batch_streaming(
                 layer_acts.append(h_l[1:])
                 final_acts.append(h_f[1:])
                 n_tokens += h_l.shape[0] - 1
+            n_fwd += 1
     finally:
         for hh in handles:
             hh.remove()
@@ -398,10 +399,11 @@ def train_probes(
     output_dir: Path,
     n_steps: int = 5000,
     lr: float = 1e-3,
-    batch_size: int = 64,
+    batch_size: int = 262144,
+    micro_batch_size: int = 512,
     warmup_frac: float = 0.05,
     max_seq_len: int = 512,
-    optimizer_type: str = "adam",
+    optimizer_type: str = "sgd_nesterov",
     streaming: bool = True,
 ) -> dict:
     """Train tuned-lens probes for all layers.
@@ -542,6 +544,8 @@ def train_probes(
                 train_hidden.pop(layer_idx, None)
                 continue
 
+        model_dtype = next(final_norm_mod.parameters()).dtype
+
         for step in range(n_steps):
             # LR schedule
             if optimizer_type == "sgd_nesterov":
@@ -549,47 +553,67 @@ def train_probes(
             else:
                 _cosine_lr_with_warmup(optimizer, step, n_steps, warmup_steps, lr)
 
-            # Get training batch
+            # Get training batch (may be very large, e.g. 262K tokens)
             if streaming:
-                # Fresh forward pass on new text
-                h, h_final_batch = _collect_batch_streaming(
+                h_all, hf_all = _collect_batch_streaming(
                     model, tokenizer, adapter, spec, text_iter,
                     layer_idx, batch_size, device, max_seq_len,
                 )
-                # Sample batch_size tokens from collected (may have more)
-                n_collected = h.shape[0]
-                if n_collected > batch_size:
-                    sel = torch.randperm(n_collected, generator=rng)[:batch_size]
-                    h = h[sel]
-                    h_final_batch = h_final_batch[sel]
-                h = h.to(compute_device)
             else:
                 idx = torch.randperm(n_t, generator=rng)[:batch_size]
-                h = layer_train[idx].to(compute_device)
-                h_final_batch = train_final[idx]
+                h_all = layer_train[idx]
+                hf_all = train_final[idx]
 
-            # Compute target log_probs on-the-fly from final-layer hidden states
-            # Cast to model's dtype (typically bfloat16) for norm/lm_head compat
-            model_dtype = next(final_norm_mod.parameters()).dtype
-            with torch.no_grad():
-                hf = h_final_batch.to(device=compute_device, dtype=model_dtype)
-                target_logits = lm_head_mod(final_norm_mod(hf)).float()
-                target = F.log_softmax(target_logits, dim=-1)
-                del hf, target_logits
+            total_tokens = h_all.shape[0]
 
-            # Forward: probe → final_norm → lm_head
-            # Probe operates in float32; cast output to model dtype for norm/head
-            h_probed = probe(h).to(model_dtype)
-            pred_logits = lm_head_mod(final_norm_mod(h_probed)).float()
-            log_pred = F.log_softmax(pred_logits, dim=-1)
-            loss = F.kl_div(log_pred, target, reduction="batchmean", log_target=True)
-
+            # Gradient accumulation over micro-batches
             optimizer.zero_grad()
-            loss.backward()
+            total_loss = 0.0
+            n_micro = math.ceil(total_tokens / micro_batch_size)
+
+            for mi in range(n_micro):
+                start = mi * micro_batch_size
+                end = min(start + micro_batch_size, total_tokens)
+                h = h_all[start:end].to(compute_device)
+                h_final_batch = hf_all[start:end]
+
+                # Target log-probs (no_grad)
+                with torch.no_grad():
+                    hf = h_final_batch.to(device=compute_device, dtype=model_dtype)
+                    target = F.log_softmax(
+                        lm_head_mod(final_norm_mod(hf)).float(), dim=-1,
+                    )
+                    del hf
+
+                # Forward: probe → final_norm → lm_head
+                h_probed = probe(h).to(model_dtype)
+                log_pred = F.log_softmax(
+                    lm_head_mod(final_norm_mod(h_probed)).float(), dim=-1,
+                )
+                # Scale loss: sum over micro-batch, divide by total batch for
+                # correct gradient magnitude with accumulation
+                loss = F.kl_div(
+                    log_pred, target, reduction="sum", log_target=True,
+                ) / total_tokens
+                loss.backward()
+                total_loss += loss.item() * (end - start)
+                del h, h_probed, log_pred, target
+
             torch.nn.utils.clip_grad_norm_(probe.parameters(), 1.0)
             optimizer.step()
+            del h_all, hf_all
 
-            train_losses.append((step + 1, loss.item()))
+            avg_loss = total_loss / total_tokens
+            train_losses.append((step + 1, avg_loss))
+
+            # Progress log
+            log_interval = 10 if optimizer_type == "sgd_nesterov" else 100
+            if (step + 1) % log_interval == 0:
+                cur_lr = optimizer.param_groups[0]["lr"]
+                log.info(
+                    "  layer %d step %d/%d: loss=%.4f lr=%.4f tokens=%d",
+                    layer_idx, step + 1, n_steps, avg_loss, cur_lr, total_tokens,
+                )
 
             # Validation every 500 steps (or every 50 steps for SGD's short schedule)
             val_interval = 50 if optimizer_type == "sgd_nesterov" else 500
@@ -814,8 +838,8 @@ def eval_commitment(
 
     final_norm_mod = adapter.final_norm(model)
     model_dtype = next(final_norm_mod.parameters()).dtype
-    lm_head_weight = adapter.lm_head(model).weight.detach()  # [vocab, d_model], keep native dtype
-    W_U = lm_head_weight.T  # [d_model, vocab]
+    lm_head_weight = adapter.lm_head(model).weight.detach().float()  # [vocab, d_model]
+    W_U = lm_head_weight.T  # [d_model, vocab] — float32, pre-allocated once
 
     if multi_gpu:
         compute_device = next(final_norm_mod.parameters()).device
@@ -840,6 +864,7 @@ def eval_commitment(
 
     # Aggregated stats
     all_commitment_raw: list[list[int]] = []
+    all_commitment_raw_kl: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_tuned: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_majority: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_top1_tuned: list[list[int]] = []
@@ -855,6 +880,7 @@ def eval_commitment(
 
             # Per-step accumulators
             step_commitment_raw: list[int] = []
+            step_commitment_raw_kl: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
             step_commitment_tuned: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
             step_commitment_top1_tuned: list[int] = []
             step_commitment_majority: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
@@ -883,7 +909,7 @@ def eval_commitment(
                 # === Raw logit-lens (batched) ===
                 # final_norm handles [n_layers, 1, d_model] batch
                 all_normed_raw = final_norm_mod(all_h.unsqueeze(1)).squeeze(1)  # [n_layers, d_model]
-                all_raw_logits = all_normed_raw.float() @ W_U.float()  # [n_layers, vocab]
+                all_raw_logits = all_normed_raw.float() @ W_U  # [n_layers, vocab]
                 all_raw_top1 = all_raw_logits.argmax(dim=-1)  # [n_layers]
                 final_top1 = int(all_raw_top1[-1].item())
 
@@ -892,6 +918,15 @@ def eval_commitment(
 
                 raw_top1_row = [int(all_raw_top1[li].item()) if valid[li] else -1
                                 for li in range(n_layers)]
+
+                # Raw KL(raw_ℓ ‖ final) for each layer
+                all_raw_log_q = F.log_softmax(all_raw_logits, dim=-1)
+                raw_kl_all = F.kl_div(
+                    all_raw_log_q, log_p_final.unsqueeze(0).expand_as(all_raw_log_q),
+                    reduction="none", log_target=True,
+                ).sum(dim=-1)  # [n_layers]
+                raw_kl_row = [max(raw_kl_all[li].item(), 0.0) if valid[li] else float("inf")
+                              for li in range(n_layers)]
 
                 # === Tuned lens (batched) ===
                 tuned_parts = []
@@ -905,7 +940,7 @@ def eval_commitment(
                 all_h_tuned = torch.stack(tuned_parts, dim=0)  # [n_layers, d_model]
 
                 all_normed_tuned = final_norm_mod(all_h_tuned.unsqueeze(1)).squeeze(1)
-                all_tuned_logits = all_normed_tuned.float() @ W_U.float()  # [n_layers, vocab]
+                all_tuned_logits = all_normed_tuned.float() @ W_U  # [n_layers, vocab]
                 all_tuned_top1 = all_tuned_logits.argmax(dim=-1)
 
                 tuned_top1_row = [int(all_tuned_top1[li].item()) if valid[li] else -1
@@ -922,6 +957,12 @@ def eval_commitment(
 
                 # Raw commitment (no-flip-back top-1)
                 step_commitment_raw.append(_commitment_from_top1(raw_top1_row))
+
+                # Raw KL commitment at each threshold
+                for thresh in KL_THRESHOLDS:
+                    step_commitment_raw_kl[thresh].append(
+                        _commitment_from_kl(raw_kl_row, thresh)
+                    )
 
                 # Tuned KL commitment at each threshold
                 for thresh in KL_THRESHOLDS:
@@ -945,7 +986,10 @@ def eval_commitment(
                     h = adapter.residual_from_output(output)
                     if h.shape[1] != 1:
                         return  # skip prefill
-                    vec = h[0, 0, :].detach().cpu()
+                    # Keep on GPU for non-multi-GPU models to avoid CPU↔GPU round-trips
+                    vec = h[0, 0, :].detach()
+                    if multi_gpu:
+                        vec = vec.cpu()  # multi-GPU: layers on different devices
                     step_buf[layer_idx] = vec
                     if layer_idx == n_layers - 1:
                         _process_step()
@@ -986,18 +1030,19 @@ def eval_commitment(
                 "commitment_layer_raw": step_commitment_raw,
             }
             for thresh in KL_THRESHOLDS:
-                key = f"commitment_layer_tuned_{thresh}"
-                result[key] = step_commitment_tuned[thresh]
+                result[f"commitment_layer_raw_kl_{thresh}"] = step_commitment_raw_kl[thresh]
+            for thresh in KL_THRESHOLDS:
+                result[f"commitment_layer_tuned_{thresh}"] = step_commitment_tuned[thresh]
             result["commitment_layer_top1_tuned"] = step_commitment_top1_tuned
             for thresh in KL_THRESHOLDS:
-                key = f"commitment_layer_majority_{thresh}"
-                result[key] = step_commitment_majority[thresh]
+                result[f"commitment_layer_majority_{thresh}"] = step_commitment_majority[thresh]
 
             fout.write(json.dumps(result) + "\n")
             fout.flush()
 
             all_commitment_raw.append(step_commitment_raw)
             for thresh in KL_THRESHOLDS:
+                all_commitment_raw_kl[thresh].append(step_commitment_raw_kl[thresh])
                 all_commitment_tuned[thresh].append(step_commitment_tuned[thresh])
                 all_commitment_majority[thresh].append(step_commitment_majority[thresh])
             all_commitment_top1_tuned.append(step_commitment_top1_tuned)
@@ -1017,6 +1062,10 @@ def eval_commitment(
         "n_layers": n_layers,
         "median_commitment_raw": _flatten_median(all_commitment_raw),
     }
+    for thresh in KL_THRESHOLDS:
+        summary[f"median_commitment_raw_kl_{thresh}"] = _flatten_median(
+            all_commitment_raw_kl[thresh]
+        )
     for thresh in KL_THRESHOLDS:
         summary[f"median_commitment_tuned_{thresh}"] = _flatten_median(
             all_commitment_tuned[thresh]
@@ -1146,16 +1195,19 @@ def main() -> None:
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
 
     # Training args
-    p.add_argument("--n-tokens", type=int, default=100000,
-                   help="Target token count for training text pool (default: 100000)")
+    p.add_argument("--n-tokens", type=int, default=2000000,
+                   help="Target token count for training text pool (default: 2M)")
     p.add_argument("--n-steps", type=int, default=5000,
                    help="Training steps per layer (ignored for sgd_nesterov: always 250)")
     p.add_argument("--lr", type=float, default=1e-3,
                    help="Learning rate (ignored for sgd_nesterov: always 1.0)")
-    p.add_argument("--batch-size", type=int, default=64)
+    p.add_argument("--batch-size", type=int, default=262144,
+                   help="Tokens per optimizer step (default: 262144, Belrose exact)")
+    p.add_argument("--micro-batch-size", type=int, default=512,
+                   help="GPU micro-batch for gradient accumulation (default: 512)")
     p.add_argument("--max-seq-len", type=int, default=512)
-    p.add_argument("--optimizer", choices=["adam", "sgd_nesterov"], default="adam",
-                   help="Optimizer: adam (default) or sgd_nesterov (Belrose exact)")
+    p.add_argument("--optimizer", choices=["adam", "sgd_nesterov"], default="sgd_nesterov",
+                   help="Optimizer: sgd_nesterov (Belrose, default) or adam")
     p.add_argument("--no-streaming", action="store_true",
                    help="Disable streaming (pre-collect all hidden states to CPU RAM)")
 
@@ -1270,9 +1322,10 @@ def main() -> None:
     # For non-streaming: --n-tokens controls the hidden state collection size.
     streaming = not args.no_streaming
     if streaming:
-        # Enough texts so each is seen ~1-2 times over 5000 steps
-        # 5000 steps × ~1 text/step = ~5000 texts needed for near-unique coverage
-        pool_tokens = max(args.n_tokens, 500_000)
+        # For Belrose SGD: 250 steps × ~500 texts/step = ~125k texts needed
+        # Load 2M+ tokens (~20k texts) and cycle; each forward pass yields
+        # ~400 tokens so 262k batch needs ~655 passes, cycling ~33x over pool
+        pool_tokens = max(args.n_tokens, 2_000_000)
         log.info(
             "Streaming mode: loading large text pool (~%dk tokens, ~%d texts). "
             "Only strings stored in RAM.",
@@ -1301,6 +1354,7 @@ def main() -> None:
         model, tokenizer, adapter, spec,
         train_texts, val_texts, device, output_dir,
         n_steps=args.n_steps, lr=args.lr, batch_size=args.batch_size,
+        micro_batch_size=args.micro_batch_size,
         max_seq_len=args.max_seq_len,
         optimizer_type=args.optimizer,
         streaming=not args.no_streaming,

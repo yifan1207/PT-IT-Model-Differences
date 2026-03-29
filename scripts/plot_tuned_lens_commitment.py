@@ -1,14 +1,15 @@
-"""Cross-model tuned-lens commitment delay plots.
+"""Cross-model tuned-lens commitment delay plots (0G Phase 2).
 
-Generates three figures:
-  1. L2_commitment_tuned_lens.png  — 6-panel histogram overlay (raw vs tuned)
-  2. tuned_lens_scatter.png        — raw vs tuned commitment scatter (6 panels)
-  3. tuned_lens_summary_table.json — machine-readable summary
+Generates:
+  0G_commitment_top1.png      — 6-panel: raw vs tuned top-1 commitment (PT/IT)
+  0G_commitment_kl.png        — 6-panel: raw vs tuned KL commitment (PT/IT)
+  0G_commitment_summary.png   — bar chart: delay by method across models
+  tuned_lens_scatter.png      — raw vs tuned scatter (6 panels)
+  tuned_lens_summary_table.json — machine-readable summary
 
 Usage:
   uv run python scripts/plot_tuned_lens_commitment.py
   uv run python scripts/plot_tuned_lens_commitment.py --models gemma3_4b llama31_8b
-  uv run python scripts/plot_tuned_lens_commitment.py --threshold 0.1
 """
 from __future__ import annotations
 
@@ -28,7 +29,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger(__name__)
 
 BASE_RESULTS = Path("results/cross_model")
-PLOT_DIR = BASE_RESULTS / "plots"
+PLOT_DIR_CROSS = BASE_RESULTS / "plots"
+PLOT_DIR_EXP7 = Path("results/exp7/plots")
+DATA_DIR = PLOT_DIR_EXP7 / "data"
 
 MODEL_LABELS = {
     "gemma3_4b":        "Gemma 3 4B",
@@ -41,350 +44,315 @@ MODEL_LABELS = {
 
 
 def _save_fig(fig: plt.Figure, filename: str) -> None:
-    PLOT_DIR.mkdir(parents=True, exist_ok=True)
-    out = PLOT_DIR / filename
-    fig.savefig(out, dpi=150, bbox_inches="tight")
-    log.info("Saved → %s", out)
+    for d in [PLOT_DIR_CROSS, PLOT_DIR_EXP7]:
+        d.mkdir(parents=True, exist_ok=True)
+        out = d / filename
+        fig.savefig(out, dpi=150, bbox_inches="tight")
+        log.info("Saved → %s", out)
     plt.close(fig)
 
 
-def _load_commitment_data(
-    model_name: str, variant: str, threshold: float,
-) -> dict[str, list[int]] | None:
-    """Load raw and tuned commitment layers from JSONL.
-
-    Returns {"raw": [...], "tuned": [...], "top1_tuned": [...]} or None.
-    """
-    tuned_path = (
-        BASE_RESULTS / model_name / "tuned_lens" / "commitment"
-        / f"tuned_lens_commitment_{variant}.jsonl"
-    )
-    if not tuned_path.exists():
+def load_commitment(model: str, variant: str) -> dict[str, list[int]] | None:
+    """Load commitment data from JSONL, flatten per-prompt arrays."""
+    path = (BASE_RESULTS / model / "tuned_lens" / "commitment"
+            / f"tuned_lens_commitment_{variant}.jsonl")
+    if not path.exists():
         return None
-
-    raw_commits: list[int] = []
-    tuned_commits: list[int] = []
-    top1_tuned_commits: list[int] = []
-
-    tuned_key = f"commitment_layer_tuned_{threshold}"
-
-    with open(tuned_path) as f:
+    accum: dict[str, list[int]] = {}
+    with open(path) as f:
         for line in f:
             if not line.strip():
                 continue
-            try:
-                rec = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            raw_commits.extend(rec.get("commitment_layer_raw", []))
-            tuned_commits.extend(rec.get(tuned_key, []))
-            top1_tuned_commits.extend(rec.get("commitment_layer_top1_tuned", []))
-
-    if not raw_commits:
-        return None
-
-    return {
-        "raw": raw_commits,
-        "tuned": tuned_commits,
-        "top1_tuned": top1_tuned_commits,
-    }
+            rec = json.loads(line)
+            for key, val in rec.items():
+                if key.startswith("commitment_layer") and isinstance(val, list):
+                    accum.setdefault(key, []).extend(val)
+    return accum if accum else None
 
 
-def _load_l1l2_commitment(model_name: str, variant: str) -> list[int] | None:
-    """Load raw commitment from existing L1L2 results (for comparison)."""
-    path = BASE_RESULTS / model_name / variant / "L1L2_results.jsonl"
-    if not path.exists():
-        return None
-    commits: list[int] = []
-    with open(path) as f:
-        for line in f:
-            if line.strip():
-                try:
-                    r = json.loads(line)
-                    commits.extend(c for c in r.get("commitment_layer", []) if c is not None)
-                except (KeyError, json.JSONDecodeError):
-                    pass
-    return commits if commits else None
+# ── 6-panel histogram ─────────────────────────────────────────────────────
 
+def plot_histogram(
+    models: list[str],
+    series: list[tuple[str, str, str, str, float, float, str]],
+    title: str,
+    filename: str,
+) -> dict[str, dict]:
+    """
+    6-panel histogram for given commitment series.
 
-# ── Figure 1: 6-panel commitment histogram overlay ─────────────────────────
-
-def plot_commitment_histogram(models: list[str], threshold: float) -> None:
-    """6-panel histogram: PT vs IT, raw vs tuned."""
-    n_models = len(models)
-    fig, axes = plt.subplots(1, n_models, figsize=(3.5 * n_models, 4.5), squeeze=False)
-
-    any_data = False
+    series: list of (variant, data_key, color, label, alpha, lw, histtype)
+    """
+    n = len(models)
+    fig, axes = plt.subplots(1, n, figsize=(3.5 * n, 4.5), squeeze=False)
+    summary = {}
 
     for col, model_name in enumerate(models):
-        ax = axes[0][col]
+        ax = axes[0, col]
         spec = get_spec(model_name)
         bins = np.arange(0, spec.n_layers + 2) - 0.5
+        medians = {}
 
-        plotted = False
-
-        # Define histogram layers: (variant, method, data_key, color, label, histtype, alpha, lw, ls)
-        hist_configs = [
-            ("pt", "raw",   "#9E9E9E", "PT raw",     "stepfilled", 0.25, 0.0, "--"),
-            ("it", "raw",   "#1565C0", "IT raw",     "step",       1.0,  1.5, "-"),
-            ("pt", "tuned", "#E53935", "PT tuned",   "step",       0.8,  1.5, "--"),
-            ("it", "tuned", "#FF9800", "IT tuned",   "step",       1.0,  2.0, "-"),
-        ]
-
-        for variant, method, color, label, histtype, alpha, lw, ls in hist_configs:
-            data = _load_commitment_data(model_name, variant, threshold)
-            if data is None:
-                # Try L1L2 data for raw
-                if method == "raw":
-                    l1l2 = _load_l1l2_commitment(model_name, variant)
-                    if l1l2:
-                        ax.hist(l1l2, bins=bins, density=True, alpha=alpha,
-                                color=color, label=label, histtype=histtype, linewidth=lw)
-                        med = np.median(l1l2)
-                        ax.axvline(med, color=color, lw=1.2, ls=ls, zorder=3)
-                        plotted = True
+        for variant, data_key, color, label, alpha, lw, histtype in series:
+            data = load_commitment(model_name, variant)
+            if data is None or data_key not in data:
                 continue
-
-            vals = data[method] if method != "tuned" else data.get("tuned", [])
+            vals = [v for v in data[data_key] if v is not None]
             if not vals:
                 continue
 
-            ax.hist(vals, bins=bins, density=True, alpha=alpha,
-                    color=color, label=label, histtype=histtype, linewidth=lw)
-            med = np.median(vals)
-            ax.axvline(med, color=color, lw=1.2, ls=ls, zorder=3)
-            plotted = True
+            ax.hist(vals, bins=bins, density=True, histtype=histtype,
+                    color=color, alpha=alpha, linewidth=lw, label=label, zorder=2)
 
-        # Corrective onset reference line
+            med = np.median(vals)
+            ls = "--" if "PT" in label else "-"
+            ax.axvline(med, color=color, lw=1.5, ls=ls, zorder=3)
+            medians[label] = float(med)
+
+        # Corrective onset
         ax.axvline(spec.corrective_onset, color="green", lw=1.2, ls=":",
                    alpha=0.7, label="Corrective onset")
 
-        ax.set_title(MODEL_LABELS.get(model_name, model_name), fontsize=9, fontweight="bold")
+        ax.set_title(MODEL_LABELS.get(model_name, model_name),
+                     fontsize=9, fontweight="bold")
         ax.set_xlabel("Commitment layer", fontsize=8)
         if col == 0:
             ax.set_ylabel("Density", fontsize=8)
+            ax.legend(fontsize=5.5, loc="upper left")
         ax.tick_params(labelsize=7)
-        if col == 0:
-            ax.legend(fontsize=6, loc="upper left")
+        ax.set_xlim(-0.5, spec.n_layers + 0.5)
 
-        if not plotted:
-            ax.text(0.5, 0.5, "no data", transform=ax.transAxes, ha="center")
-        else:
-            any_data = True
+        summary[model_name] = medians
 
-    fig.suptitle(
-        f"Commitment Delay: Raw vs Tuned Lens (KL threshold={threshold})",
-        fontsize=12, fontweight="bold",
-    )
+    fig.suptitle(title, fontsize=11, fontweight="bold", y=1.02)
     fig.tight_layout()
-
-    if any_data:
-        _save_fig(fig, "L2_commitment_tuned_lens.png")
-    else:
-        log.warning("No data found for histogram plot.")
-        plt.close(fig)
+    _save_fig(fig, filename)
+    return summary
 
 
-# ── Figure 2: Raw vs tuned scatter plot ────────────────────────────────────
+def plot_commitment_top1(models: list[str]) -> dict:
+    """Raw vs Tuned top-1 commitment."""
+    return plot_histogram(
+        models,
+        series=[
+            ("pt", "commitment_layer_raw",         "#9E9E9E", "PT raw",   0.3, 0, "stepfilled"),
+            ("it", "commitment_layer_raw",         "#1565C0", "IT raw",   0.9, 2, "step"),
+            ("pt", "commitment_layer_top1_tuned",  "#E53935", "PT tuned", 0.7, 1.5, "step"),
+            ("it", "commitment_layer_top1_tuned",  "#FF9800", "IT tuned", 0.9, 2.0, "step"),
+        ],
+        title="Top-1 Commitment: Raw Logit-Lens vs Tuned Lens",
+        filename="0G_commitment_top1.png",
+    )
 
-def plot_scatter(models: list[str], threshold: float) -> None:
-    """6-panel scatter: raw commitment (x) vs tuned commitment (y) per token."""
-    n_models = len(models)
-    fig, axes = plt.subplots(1, n_models, figsize=(3.5 * n_models, 3.5), squeeze=False)
 
-    any_data = False
-    variant_colors = {"pt": "#9E9E9E", "it": "#1565C0"}
+def plot_commitment_kl(models: list[str], threshold: float = 0.1) -> dict:
+    """Raw vs Tuned KL commitment."""
+    raw_key = f"commitment_layer_raw_kl_{threshold}"
     tuned_key = f"commitment_layer_tuned_{threshold}"
+    return plot_histogram(
+        models,
+        series=[
+            ("pt", raw_key,   "#9E9E9E", "PT raw KL",   0.3, 0, "stepfilled"),
+            ("it", raw_key,   "#1565C0", "IT raw KL",   0.9, 2, "step"),
+            ("pt", tuned_key, "#E53935", "PT tuned KL", 0.7, 1.5, "step"),
+            ("it", tuned_key, "#FF9800", "IT tuned KL", 0.9, 2.0, "step"),
+        ],
+        title=f"KL Commitment (< {threshold} nats): Raw vs Tuned Lens",
+        filename="0G_commitment_kl.png",
+    )
+
+
+# ── Summary bar chart ────────────────────────────────────────────────────
+
+def plot_summary_bar(models: list[str], threshold: float = 0.1) -> dict:
+    """Bar chart: delay (IT median - PT median) by method."""
+    methods = [
+        ("Raw Top-1",   "commitment_layer_raw",        "#9E9E9E"),
+        ("Tuned Top-1", "commitment_layer_top1_tuned", "#1565C0"),
+        ("Raw KL",      f"commitment_layer_raw_kl_{threshold}", "#E65100"),
+        ("Tuned KL",    f"commitment_layer_tuned_{threshold}", "#1B5E20"),
+    ]
+
+    results = {}  # method -> {model -> delay}
+    for method_label, key, _ in methods:
+        results[method_label] = {}
+        for model in models:
+            pt = load_commitment(model, "pt")
+            it = load_commitment(model, "it")
+            if pt and key in pt and it and key in it:
+                pt_vals = [v for v in pt[key] if v is not None]
+                it_vals = [v for v in it[key] if v is not None]
+                if pt_vals and it_vals:
+                    results[method_label][model] = {
+                        "pt_median": float(np.median(pt_vals)),
+                        "it_median": float(np.median(it_vals)),
+                        "delay": float(np.median(it_vals) - np.median(pt_vals)),
+                    }
+
+    # Find models with at least some data
+    models_with_data = [m for m in models
+                        if any(m in results[ml] for ml, _, _ in methods)]
+    if not models_with_data:
+        log.warning("No data for summary bar chart")
+        return results
+
+    n_methods = len(methods)
+    n_models = len(models_with_data)
+    x = np.arange(n_models)
+    width = 0.8 / n_methods
+
+    fig, ax = plt.subplots(figsize=(max(8, n_models * 1.8), 5))
+
+    for i, (method_label, _, color) in enumerate(methods):
+        delays = [results[method_label].get(m, {}).get("delay", 0)
+                  for m in models_with_data]
+        offset = i * width - (n_methods - 1) * width / 2
+        bars = ax.bar(x + offset, delays, width, label=method_label,
+                      color=color, alpha=0.8)
+        # Value labels
+        for bar, d in zip(bars, delays):
+            if d != 0:
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                        f"{d:+.1f}", ha="center", va="bottom", fontsize=6)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([MODEL_LABELS.get(m, m) for m in models_with_data],
+                       fontsize=9, rotation=15, ha="right")
+    ax.set_ylabel("Commitment Delay (IT - PT median layers)", fontsize=10)
+    ax.axhline(0, color="black", lw=0.5, ls="--")
+    ax.legend(fontsize=8)
+    ax.set_title("Commitment Delay Across Methods and Models",
+                 fontsize=12, fontweight="bold")
+    fig.tight_layout()
+    _save_fig(fig, "0G_commitment_summary.png")
+
+    return results
+
+
+# ── Scatter plot ─────────────────────────────────────────────────────────
+
+def plot_scatter(models: list[str]) -> None:
+    """Raw vs tuned top-1 commitment scatter."""
+    n = len(models)
+    fig, axes = plt.subplots(1, n, figsize=(3.5 * n, 3.5), squeeze=False)
+    any_data = False
 
     for col, model_name in enumerate(models):
-        ax = axes[0][col]
+        ax = axes[0, col]
         spec = get_spec(model_name)
 
-        for variant in ("pt", "it"):
-            tuned_path = (
-                BASE_RESULTS / model_name / "tuned_lens" / "commitment"
-                / f"tuned_lens_commitment_{variant}.jsonl"
-            )
-            if not tuned_path.exists():
+        for variant, color in [("pt", "#9E9E9E"), ("it", "#1565C0")]:
+            data = load_commitment(model_name, variant)
+            if data is None:
+                continue
+            raw = data.get("commitment_layer_raw", [])
+            tuned = data.get("commitment_layer_top1_tuned", [])
+            n_pts = min(len(raw), len(tuned))
+            if n_pts == 0:
                 continue
 
-            raw_vals: list[int] = []
-            tuned_vals: list[int] = []
+            raw_arr = np.array(raw[:n_pts])
+            tuned_arr = np.array(tuned[:n_pts])
 
-            with open(tuned_path) as f:
-                for line in f:
-                    if not line.strip():
-                        continue
-                    try:
-                        rec = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    raw_list = rec.get("commitment_layer_raw", [])
-                    tuned_list = rec.get(tuned_key, [])
-                    n = min(len(raw_list), len(tuned_list))
-                    raw_vals.extend(raw_list[:n])
-                    tuned_vals.extend(tuned_list[:n])
-
-            if not raw_vals:
-                continue
-
-            # Subsample if too many points
-            n_pts = len(raw_vals)
+            # Subsample
             if n_pts > 5000:
-                rng = np.random.default_rng(42)
-                idx = rng.choice(n_pts, size=5000, replace=False)
-                raw_arr = np.array(raw_vals)[idx]
-                tuned_arr = np.array(tuned_vals)[idx]
-            else:
-                raw_arr = np.array(raw_vals)
-                tuned_arr = np.array(tuned_vals)
+                idx = np.random.default_rng(42).choice(n_pts, 5000, replace=False)
+                raw_arr, tuned_arr = raw_arr[idx], tuned_arr[idx]
 
-            ax.scatter(
-                raw_arr, tuned_arr,
-                c=variant_colors[variant],
-                s=3, alpha=0.15,
-                label=f"{variant.upper()} (n={n_pts})",
-                rasterized=True,
-            )
-
-            # Pearson r
-            if len(raw_arr) > 2:
-                r = np.corrcoef(raw_arr, tuned_arr)[0, 1]
-                label_txt = f"{variant.upper()} r={r:.2f}"
-                ax.scatter([], [], c=variant_colors[variant], s=10, label=label_txt)
-
+            ax.scatter(raw_arr, tuned_arr, c=color, s=3, alpha=0.15,
+                       rasterized=True)
+            r = np.corrcoef(raw_arr, tuned_arr)[0, 1] if len(raw_arr) > 2 else 0
+            ax.scatter([], [], c=color, s=10,
+                       label=f"{variant.upper()} r={r:.2f} (n={n_pts})")
             any_data = True
 
-        # Diagonal
         ax.plot([0, spec.n_layers], [0, spec.n_layers], "k--", lw=0.8, alpha=0.5)
         ax.set_xlim(-0.5, spec.n_layers + 0.5)
         ax.set_ylim(-0.5, spec.n_layers + 0.5)
         ax.set_aspect("equal")
-        ax.set_title(MODEL_LABELS.get(model_name, model_name), fontsize=9, fontweight="bold")
-        ax.set_xlabel("Raw commitment layer", fontsize=8)
+        ax.set_title(MODEL_LABELS.get(model_name, model_name),
+                     fontsize=9, fontweight="bold")
+        ax.set_xlabel("Raw commitment", fontsize=8)
         if col == 0:
-            ax.set_ylabel("Tuned commitment layer", fontsize=8)
+            ax.set_ylabel("Tuned commitment", fontsize=8)
         ax.tick_params(labelsize=7)
         ax.legend(fontsize=6, markerscale=2)
 
-    fig.suptitle(
-        f"Raw vs Tuned Lens Commitment (KL threshold={threshold})",
-        fontsize=12, fontweight="bold",
-    )
+    fig.suptitle("Raw vs Tuned Top-1 Commitment", fontsize=12, fontweight="bold")
     fig.tight_layout()
-
     if any_data:
-        _save_fig(fig, "tuned_lens_scatter.png")
+        _save_fig(fig, "0G_commitment_scatter.png")
     else:
-        log.warning("No data found for scatter plot.")
         plt.close(fig)
 
 
-# ── Figure 3: Summary table ───────────────────────────────────────────────
+# ── Summary table ────────────────────────────────────────────────────────
 
-def build_summary_table(models: list[str], threshold: float) -> list[dict]:
-    """Build summary: model, method, PT median, IT median, delay."""
-    rows: list[dict] = []
-
-    for model_name in models:
-        for method_label, data_key in [("raw", "raw"), ("tuned", "tuned")]:
-            pt_data = _load_commitment_data(model_name, "pt", threshold)
-            it_data = _load_commitment_data(model_name, "it", threshold)
-
-            pt_vals = pt_data[data_key] if pt_data and data_key in pt_data else None
-            it_vals = it_data[data_key] if it_data and data_key in it_data else None
-
-            # Fallback to L1L2 for raw
-            if method_label == "raw":
-                if pt_vals is None:
-                    pt_vals = _load_l1l2_commitment(model_name, "pt")
-                if it_vals is None:
-                    it_vals = _load_l1l2_commitment(model_name, "it")
-
-            pt_med = float(np.median(pt_vals)) if pt_vals else None
-            it_med = float(np.median(it_vals)) if it_vals else None
-            delay = (it_med - pt_med) if (pt_med is not None and it_med is not None) else None
-
-            rows.append({
-                "model": model_name,
-                "method": method_label,
-                "threshold": threshold if method_label == "tuned" else None,
-                "pt_median": pt_med,
-                "it_median": it_med,
-                "delay": delay,
-                "delay_direction": (
-                    "IT commits later" if delay and delay > 0
-                    else "PT commits later" if delay and delay < 0
-                    else None
-                ),
-                "n_pt": len(pt_vals) if pt_vals else 0,
-                "n_it": len(it_vals) if it_vals else 0,
-            })
-
-    return rows
-
-
-def save_summary(models: list[str], threshold: float) -> None:
-    """Save summary table as JSON."""
-    rows = build_summary_table(models, threshold)
-
-    # Also check all 3 thresholds for sensitivity
-    all_threshold_rows: list[dict] = []
-    for t in [0.05, 0.1, 0.2]:
-        all_threshold_rows.extend(build_summary_table(models, t))
+def save_summary(models: list[str], threshold: float, bar_results: dict) -> None:
+    """Save machine-readable summary."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     out = {
-        "primary_threshold": threshold,
-        "primary_table": rows,
-        "all_thresholds": all_threshold_rows,
+        "threshold": threshold,
+        "models": {},
     }
 
-    # Add transfer test results
-    transfer_results: dict = {}
-    for model_name in models:
-        transfer_path = (
-            BASE_RESULTS / model_name / "tuned_lens" / "commitment" / "transfer_test.json"
-        )
-        if transfer_path.exists():
-            with open(transfer_path) as f:
-                transfer_results[model_name] = json.load(f)
-    if transfer_results:
-        out["transfer_tests"] = transfer_results
+    for model in models:
+        model_data = {}
+        for method_name, method_results in bar_results.items():
+            if model in method_results:
+                model_data[method_name] = method_results[model]
+        if model_data:
+            out["models"][model] = model_data
 
-    PLOT_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = PLOT_DIR / "tuned_lens_summary_table.json"
+    out_path = DATA_DIR / "0G_commitment_summary.json"
     with open(out_path, "w") as f:
         json.dump(out, f, indent=2)
-    log.info("Summary table → %s", out_path)
+    log.info("Data → %s", out_path)
 
-    # Print summary
-    print("\n=== Tuned-Lens Commitment Delay Summary ===\n")
-    print(f"{'Model':<20} {'Method':<8} {'PT med':>8} {'IT med':>8} {'Delay':>8} {'Direction'}")
-    print("-" * 75)
-    for row in rows:
-        pt = f"{row['pt_median']:.1f}" if row["pt_median"] is not None else "N/A"
-        it = f"{row['it_median']:.1f}" if row["it_median"] is not None else "N/A"
-        dl = f"{row['delay']:.1f}" if row["delay"] is not None else "N/A"
-        dr = row["delay_direction"] or ""
-        print(f"{row['model']:<20} {row['method']:<8} {pt:>8} {it:>8} {dl:>8} {dr}")
+    # Also save to cross_model/plots
+    cm_path = PLOT_DIR_CROSS / "tuned_lens_summary_table.json"
+    PLOT_DIR_CROSS.mkdir(parents=True, exist_ok=True)
+    with open(cm_path, "w") as f:
+        json.dump(out, f, indent=2)
+
+    # Print table
+    print("\n=== Commitment Delay Summary ===\n")
+    print(f"{'Model':<22} {'Method':<12} {'PT med':>7} {'IT med':>7} {'Delay':>7}")
+    print("-" * 60)
+    for model in models:
+        for method_name in bar_results:
+            d = bar_results[method_name].get(model)
+            if d:
+                pt = f"{d['pt_median']:.1f}"
+                it = f"{d['it_median']:.1f}"
+                dl = f"{d['delay']:+.1f}"
+                print(f"{MODEL_LABELS.get(model, model):<22} {method_name:<12} {pt:>7} {it:>7} {dl:>7}")
 
 
-# ── Main ────────────────────────────────────────────────────────────────────
+# ── Main ─────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Plot tuned-lens commitment results")
-    p.add_argument("--models", nargs="+", default=list(MODEL_REGISTRY.keys()),
-                   choices=list(MODEL_REGISTRY.keys()))
-    p.add_argument("--threshold", type=float, default=0.1,
-                   help="Primary KL threshold for tuned-lens commitment (default: 0.1)")
+    p = argparse.ArgumentParser()
+    p.add_argument("--models", nargs="+", default=list(MODEL_REGISTRY.keys()))
+    p.add_argument("--threshold", type=float, default=0.1)
     args = p.parse_args()
 
-    print(f"Models: {args.models}")
-    print(f"KL threshold: {args.threshold}")
+    # Filter to models with data
+    available = [m for m in args.models
+                 if (BASE_RESULTS / m / "tuned_lens" / "commitment").exists()
+                 and list((BASE_RESULTS / m / "tuned_lens" / "commitment").glob("*.jsonl"))]
+    log.info("Models with data: %s", available)
 
-    plot_commitment_histogram(args.models, args.threshold)
-    plot_scatter(args.models, args.threshold)
-    save_summary(args.models, args.threshold)
+    if not available:
+        log.warning("No commitment data found.")
+        return
+
+    plot_commitment_top1(available)
+    plot_commitment_kl(available, args.threshold)
+    bar_results = plot_summary_bar(available, args.threshold)
+    plot_scatter(available)
+    save_summary(available, args.threshold, bar_results)
 
 
 if __name__ == "__main__":
