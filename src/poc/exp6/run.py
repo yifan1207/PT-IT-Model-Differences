@@ -1038,7 +1038,7 @@ def main() -> None:
     # Filter to specific record IDs if provided (used by 0H held-out evaluation)
     if args.eval_record_ids:
         allowed_ids = set(json.loads(Path(args.eval_record_ids).read_text()))
-        records = [r for r in records if r.get("record_id") in allowed_ids]
+        records = [r for r in records if r.get("record_id", r.get("id")) in allowed_ids]
         print(f"[exp6] filtered to {len(records)} records from {args.eval_record_ids}", flush=True)
 
     if cfg.n_eval_examples and len(records) > cfg.n_eval_examples:

@@ -74,53 +74,94 @@ def plot_0A_direction_stability(output_dir: Path = PLOTS_DIR) -> None:
     }
     colors_conv = {"early (1-11)": "#3498db", "mid (12-19)": "#27ae60", "corrective (20-33)": "#e74c3c"}
 
-    for grp_name, grp_layers in layer_groups.items():
-        if "subset_sizes" not in convergence:
-            break
-        sizes = convergence["subset_sizes"]
-        means, stds = [], []
-        for s in sizes:
-            key = str(s)
-            if key not in convergence.get("cosines_by_layer", {}):
-                continue
-            layer_cosines = convergence["cosines_by_layer"][key]
-            grp_vals = [layer_cosines.get(str(l), float("nan")) for l in grp_layers]
-            grp_vals = [v for v in grp_vals if not np.isnan(v)]
-            means.append(np.mean(grp_vals) if grp_vals else float("nan"))
-            stds.append(np.std(grp_vals) if grp_vals else 0.0)
-
-        if means:
-            means_arr = np.array(means)
-            stds_arr = np.array(stds)
-            ax.plot(sizes[:len(means)], means_arr,
-                    color=colors_conv[grp_name], label=grp_name, linewidth=2, marker="o", markersize=4)
-            ax.fill_between(sizes[:len(means)],
-                            means_arr - stds_arr, means_arr + stds_arr,
-                            color=colors_conv[grp_name], alpha=0.15)
+    # Detect data format: {layer: {size: {cosine_to_canonical_mean, ...}}}
+    # vs legacy {subset_sizes: [...], cosines_by_layer: {size: {layer: val}}}
+    if "subset_sizes" in convergence:
+        # Legacy format
+        for grp_name, grp_layers in layer_groups.items():
+            sizes = convergence["subset_sizes"]
+            means, stds = [], []
+            for s in sizes:
+                key = str(s)
+                if key not in convergence.get("cosines_by_layer", {}):
+                    continue
+                layer_cosines = convergence["cosines_by_layer"][key]
+                grp_vals = [layer_cosines.get(str(l), float("nan")) for l in grp_layers]
+                grp_vals = [v for v in grp_vals if not np.isnan(v)]
+                means.append(np.mean(grp_vals) if grp_vals else float("nan"))
+                stds.append(np.std(grp_vals) if grp_vals else 0.0)
+            if means:
+                means_arr = np.array(means)
+                stds_arr = np.array(stds)
+                ax.plot(sizes[:len(means)], means_arr,
+                        color=colors_conv[grp_name], label=grp_name, linewidth=2, marker="o", markersize=4)
+                ax.fill_between(sizes[:len(means)],
+                                means_arr - stds_arr, means_arr + stds_arr,
+                                color=colors_conv[grp_name], alpha=0.15)
+    else:
+        # Actual format: {layer_idx_str: {subset_size_str: {cosine_to_canonical_mean, ...}}}
+        # Collect all subset sizes from first layer
+        first_layer = next(iter(convergence.values()), {})
+        sizes = sorted(int(s) for s in first_layer.keys())
+        for grp_name, grp_layers in layer_groups.items():
+            means, stds = [], []
+            for s in sizes:
+                grp_vals = []
+                for l in grp_layers:
+                    layer_data = convergence.get(str(l), {}).get(str(s), {})
+                    val = layer_data.get("cosine_to_canonical_mean", float("nan"))
+                    if not np.isnan(val):
+                        grp_vals.append(val)
+                means.append(np.mean(grp_vals) if grp_vals else float("nan"))
+                stds.append(np.std(grp_vals) if grp_vals else 0.0)
+            if means:
+                means_arr = np.array(means)
+                stds_arr = np.array(stds)
+                ax.plot(sizes, means_arr,
+                        color=colors_conv[grp_name], label=grp_name, linewidth=2, marker="o", markersize=4)
+                ax.fill_between(sizes,
+                                means_arr - stds_arr, means_arr + stds_arr,
+                                color=colors_conv[grp_name], alpha=0.15)
 
     ax.axhline(0.95, color="grey", linewidth=0.8, linestyle="--", alpha=0.6, label="threshold 0.95")
     ax.set_xlabel("Calibration subset size")
     ax.set_ylabel("cos(d̂_S, d̂_canonical)")
     ax.set_title("Direction Convergence Curve (0A)")
-    ax.set_ylim(0, 1.05)
-    ax.legend()
+    ax.set_ylim(0.9, 1.005)
+    ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
 
-    # Panel 2: Pairwise cosine at corrective layers
+    # Panel 2: Pairwise cosine at ALL layers (color-coded by group)
     ax2 = axes[1]
-    pairwise = data.get("pairwise_cosine", {})
-    corr_layers = list(range(20, 34))
-    layer_means = [pairwise.get(f"layer_{l}", {}).get("mean", float("nan")) for l in corr_layers]
-    layer_stds  = [pairwise.get(f"layer_{l}", {}).get("std",  0.0) for l in corr_layers]
+    per_layer = data.get("per_layer", {})
+    all_layers = sorted(int(k) for k in per_layer.keys())
+    layer_means = [per_layer[str(l)].get("pairwise_cosine_mean", float("nan")) for l in all_layers]
+    layer_stds  = [per_layer[str(l)].get("pairwise_cosine_std",  0.0) for l in all_layers]
 
-    ax2.bar(corr_layers, layer_means, color="#e74c3c", alpha=0.8, label="mean pairwise cosine")
-    ax2.errorbar(corr_layers, layer_means, yerr=layer_stds, fmt="none", color="black", capsize=3)
+    # Color bars by layer group
+    bar_colors = []
+    for l in all_layers:
+        if l < 12:
+            bar_colors.append("#3498db")  # early
+        elif l < 20:
+            bar_colors.append("#27ae60")  # mid
+        else:
+            bar_colors.append("#e74c3c")  # corrective
+
+    ax2.bar(all_layers, layer_means, color=bar_colors, alpha=0.8)
+    ax2.errorbar(all_layers, layer_means, yerr=layer_stds, fmt="none", color="black", capsize=2)
     ax2.axhline(0.95, color="grey", linewidth=0.8, linestyle="--", alpha=0.6, label="threshold 0.95")
+    # Legend for groups
+    from matplotlib.patches import Patch
+    ax2.legend(handles=[
+        Patch(color="#3498db", label="early (1-11)"),
+        Patch(color="#27ae60", label="mid (12-19)"),
+        Patch(color="#e74c3c", label="corrective (20-33)"),
+    ], fontsize=7, loc="lower left")
     ax2.set_xlabel("Layer")
     ax2.set_ylabel("Pairwise cosine similarity")
     ax2.set_title("Bootstrap Direction Stability (0A)")
-    ax2.set_ylim(0, 1.05)
-    ax2.legend()
+    ax2.set_ylim(0.98, 1.002)
     ax2.grid(True, alpha=0.3, axis="y")
 
     fig.suptitle("0A: Direction Calibration Sensitivity", fontsize=13, fontweight="bold")
@@ -137,26 +178,44 @@ def plot_0A_direction_stability(output_dir: Path = PLOTS_DIR) -> None:
 def plot_0B_matched_cosine(output_dir: Path = PLOTS_DIR) -> None:
     """Cosine(d̂_matched, d̂_canonical) vs layer."""
     plt = _setup_mpl()
-    results_path = Path("results/exp7/0B/matched_cosines.json")
-    if not results_path.exists():
-        print("[0B] matched_cosines.json not found — skipping 0B plots", flush=True)
-        return
 
-    with open(results_path) as f:
-        data = json.load(f)
+    # Support both legacy single file and per-label files
+    base = Path("results/exp7/0B")
+    cosine_files = sorted(base.glob("matched_cosines_*.json"))
+    if not cosine_files:
+        legacy = base / "matched_cosines.json"
+        if legacy.exists():
+            cosine_files = [legacy]
+        else:
+            print("[0B] No matched_cosines*.json found — skipping 0B plots", flush=True)
+            return
 
-    layers = sorted(int(k.split("_")[1]) for k in data if k.startswith("layer_"))
-    cosines = [data[f"layer_{l}"] for l in layers]
-
+    colors = ["#2c3e50", "#e74c3c", "#27ae60", "#8e44ad"]
     fig, ax = plt.subplots(figsize=(9, 4))
-    ax.plot(layers, cosines, color="#2c3e50", linewidth=2, marker="o", markersize=4)
+
+    for i, fpath in enumerate(cosine_files):
+        with open(fpath) as f:
+            data = json.load(f)
+
+        # Support both formats: top-level layer_N keys and nested per_layer dict
+        if "per_layer" in data and isinstance(data["per_layer"], dict):
+            pl = data["per_layer"]
+            layers = sorted(int(k) for k in pl.keys())
+            cosines = [pl[str(l)].get("cosine_matched_vs_canonical", float("nan")) for l in layers]
+        else:
+            layers = sorted(int(k.split("_")[1]) for k in data if k.startswith("layer_"))
+            cosines = [data[f"layer_{l}"] for l in layers]
+        label = fpath.stem.replace("matched_cosines_", "").replace("_", " ")
+        ax.plot(layers, cosines, color=colors[i % len(colors)], linewidth=2,
+                marker="o", markersize=4, label=label)
+
     ax.axhline(0.90, color="grey", linewidth=0.8, linestyle="--", alpha=0.7, label="threshold 0.90")
     ax.axvspan(20, 33, color="#e74c3c", alpha=0.08, label="corrective layers")
     ax.set_xlabel("Layer")
     ax.set_ylabel("cos(d̂_matched, d̂_canonical)")
     ax.set_title("0B: Matched-Token Direction Validation")
-    ax.set_ylim(-0.1, 1.05)
-    ax.legend()
+    ax.set_ylim(-1.05, 1.05)
+    ax.legend(fontsize=8)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
 
@@ -255,15 +314,29 @@ def plot_0D_bootstrap_ci(output_dir: Path = PLOTS_DIR) -> None:
     with open(ci_path) as f:
         ci_data = json.load(f)
 
+    # Handle both formats: list-of-dicts (actual) and nested dict (legacy)
+    if isinstance(ci_data, list):
+        # Convert flat list to nested {benchmark: {condition: stats}}
+        ci_nested: dict = {}
+        for row in ci_data:
+            b = row.get("benchmark", "")
+            c = row.get("condition", "")
+            ci_nested.setdefault(b, {})[c] = row
+        ci_data = ci_nested
+
     benchmarks = [
-        ("Governance (STR)", "structural_token_ratio"),
-        ("Content (Reasoning EM)", "exp3_reasoning_em"),
-        ("Safety (Alignment)", "exp3_alignment_behavior"),
+        ("Governance (STR)", ["structural_token_ratio"]),
+        ("Content (Reasoning EM)", ["reasoning_em", "exp3_reasoning_em"]),
+        ("Safety (Alignment)", ["alignment_behavior", "exp3_alignment_behavior"]),
     ]
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-    for ax, (panel_title, bench) in zip(axes, benchmarks):
-        bench_data = ci_data.get(bench, {})
+    for ax, (panel_title, bench_keys) in zip(axes, benchmarks):
+        bench_data = {}
+        for bk in bench_keys:
+            bench_data = ci_data.get(bk, {})
+            if bench_data:
+                break
         if not bench_data:
             ax.set_title(f"{panel_title}\n(no data)")
             continue
@@ -278,8 +351,8 @@ def plot_0D_bootstrap_ci(output_dir: Path = PLOTS_DIR) -> None:
                 continue
             alphas.append(alpha)
             means.append(stats.get("mean", float("nan")))
-            lo.append(stats.get("ci_lo", float("nan")))
-            hi.append(stats.get("ci_hi", float("nan")))
+            lo.append(stats.get("ci_low", stats.get("ci_lo", float("nan"))))
+            hi.append(stats.get("ci_high", stats.get("ci_hi", float("nan"))))
 
         if alphas:
             order = np.argsort(alphas)
