@@ -297,58 +297,119 @@ def plot_sensitivity(
         "olmo2_7b":        "#1abc9c",
     }
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5.5))
 
-    # Panel 1: Onset layer vs threshold for each model
+    # Panel 1: Onset layer vs threshold (σ-based ONLY — these are comparable across models)
     ax = axes[0]
+    sigma_labels = [t for t in THRESHOLD_LABELS if "σ" in t]
     for model_name, model_label, n_layers in MODELS:
         model_rows = {r["threshold"]: r["onset_layer"]
                       for r in rows if r["model"] == model_name}
-        y_vals = [model_rows.get(t) for t in THRESHOLD_LABELS]
-        # Convert None to NaN
+        y_vals = [model_rows.get(t) for t in sigma_labels]
         y_arr = np.array([float("nan") if v is None else v for v in y_vals], dtype=float)
-        x = np.arange(len(THRESHOLD_LABELS))
+        x = np.arange(len(sigma_labels))
+        n_found = int(np.sum(~np.isnan(y_arr)))
+        marker = "o" if n_found > 0 else "x"
         ax.plot(x, y_arr, color=model_colors.get(model_name, "grey"),
-                label=model_label, linewidth=2, marker="o", markersize=5)
+                label=f"{model_label} ({n_found}/{len(sigma_labels)})",
+                linewidth=2, marker=marker, markersize=5)
 
-    ax.set_xticks(np.arange(len(THRESHOLD_LABELS)))
-    ax.set_xticklabels(THRESHOLD_LABELS, rotation=30, ha="right", fontsize=9)
+    ax.set_xticks(np.arange(len(sigma_labels)))
+    ax.set_xticklabels(sigma_labels, rotation=30, ha="right", fontsize=9)
     ax.axvline(2.0, color="grey", linewidth=0.8, linestyle="--", alpha=0.6, label="current (1σ)")
-    ax.set_xlabel("Threshold")
+    ax.set_xlabel("Threshold (σ-based, per-model normalized)")
     ax.set_ylabel("Onset layer (absolute)")
-    ax.set_title("Onset Layer vs Threshold")
-    ax.legend(fontsize=8)
+    ax.set_title("σ-Based Thresholds (Comparable)")
+    ax.legend(fontsize=7)
     ax.grid(True, alpha=0.3)
 
-    # Panel 2: Normalized depth range per model (showing min..max span)
+    # Panel 2: Detection rate heatmap — show which model×threshold combos found onset
     ax2 = axes[1]
-    model_names_ordered = [m for m, _, _ in MODELS if m in summary]
-    labels = [summary[m]["model_label"] for m in model_names_ordered]
-    depth_mins = [summary[m]["depth_min"] for m in model_names_ordered]
-    depth_maxs = [summary[m]["depth_max"] for m in model_names_ordered]
-    depth_curr = [summary[m]["current_onset_1sigma"] / summary[m]["n_layers"]
-                  for m in model_names_ordered
-                  if summary[m]["current_onset_1sigma"] is not None]
+    all_models = [(m, ml) for m, ml, _ in MODELS]
+    table = np.full((len(all_models), len(THRESHOLD_LABELS)), np.nan)
+    for i, (model_name, _) in enumerate(all_models):
+        for j, t in enumerate(THRESHOLD_LABELS):
+            onset = next((r["onset_layer"] for r in rows
+                         if r["model"] == model_name and r["threshold"] == t), None)
+            if onset is not None:
+                n_layers = next(nl for mn, _, nl in MODELS if mn == model_name)
+                table[i, j] = onset / n_layers  # normalized depth
+            # else stays NaN → will show as red/missing
 
-    x = np.arange(len(model_names_ordered))
-    for i, (m, lo, hi) in enumerate(zip(model_names_ordered, depth_mins, depth_maxs)):
-        ax2.plot([i, i], [lo, hi], color=model_colors.get(m, "grey"), linewidth=6, alpha=0.5)
-        ax2.plot(i, depth_curr[i] if i < len(depth_curr) else float("nan"),
-                 color=model_colors.get(m, "grey"), marker="D", markersize=8,
-                 label=labels[i])
+    # Draw cells: green = found (with depth label), red = not detected
+    for i in range(len(all_models)):
+        for j in range(len(THRESHOLD_LABELS)):
+            if np.isnan(table[i, j]):
+                ax2.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1,
+                              facecolor="#ffcccc", edgecolor="white", linewidth=1))
+                ax2.text(j, i, "—", ha="center", va="center", fontsize=7, color="#cc0000")
+            else:
+                depth = table[i, j]
+                # Color by how reasonable the depth is (green=55-65%, yellow=outside)
+                if 0.45 <= depth <= 0.70:
+                    fc = "#ccffcc"
+                else:
+                    fc = "#ffffcc"  # suspicious (too early or too late)
+                ax2.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1,
+                              facecolor=fc, edgecolor="white", linewidth=1))
+                ax2.text(j, i, f".{int(depth*100):02d}", ha="center", va="center",
+                         fontsize=7, fontweight="bold")
 
-    # Shade 55-65% region
-    ax2.axhspan(0.55, 0.65, color="lightblue", alpha=0.25, label="55–65% zone")
-    ax2.axhspan(0.50, 0.70, color="lightyellow", alpha=0.25, label="50–70% zone")
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(labels, rotation=25, ha="right", fontsize=9)
-    ax2.set_ylabel("Normalized depth")
-    ax2.set_ylim(0.3, 0.9)
-    ax2.set_title("Onset Depth Range Across Thresholds\n(diamond = 1σ canonical, bar = full range)")
-    ax2.legend(fontsize=7, loc="upper left")
-    ax2.grid(True, alpha=0.3, axis="y")
+    ax2.set_xticks(range(len(THRESHOLD_LABELS)))
+    ax2.set_xticklabels(THRESHOLD_LABELS, rotation=30, ha="right", fontsize=8)
+    ax2.set_yticks(range(len(all_models)))
+    ax2.set_yticklabels([ml for _, ml in all_models], fontsize=8)
+    ax2.set_xlim(-0.5, len(THRESHOLD_LABELS) - 0.5)
+    ax2.set_ylim(-0.5, len(all_models) - 0.5)
+    ax2.invert_yaxis()
+    ax2.set_title("Detection Success\n(green=detected, red=no onset, yellow=suspicious depth)")
 
-    fig.suptitle("0J: Corrective Onset Threshold Sensitivity", fontsize=13, fontweight="bold")
+    # Panel 3: σ-only depth range (honest — only uses σ thresholds)
+    ax3 = axes[2]
+    all_model_names = [m for m, _, _ in MODELS]
+    all_model_labels = [ml for _, ml, _ in MODELS]
+    x = np.arange(len(all_model_names))
+
+    for i, (m, ml) in enumerate(zip(all_model_names, all_model_labels)):
+        # Only use σ-based thresholds for the range
+        sigma_onsets = [r["onset_layer"] for r in rows
+                        if r["model"] == m and "σ" in r["threshold"]
+                        and r["onset_layer"] is not None]
+        n_layers = next(nl for mn, _, nl in MODELS if mn == m)
+
+        n_total = len(sigma_labels)
+        n_found = len(sigma_onsets)
+        color = model_colors.get(m, "grey")
+
+        if sigma_onsets:
+            lo = min(sigma_onsets) / n_layers
+            hi = max(sigma_onsets) / n_layers
+            sigma1 = next((r["onset_layer"] for r in rows
+                          if r["model"] == m and r["threshold"] == "1.0σ"
+                          and r["onset_layer"] is not None), None)
+
+            ax3.plot([i, i], [lo, hi], color=color, linewidth=6, alpha=0.5)
+            if sigma1 is not None:
+                ax3.plot(i, sigma1 / n_layers, color=color, marker="D", markersize=8)
+            ax3.text(i, hi + 0.02, f"{n_found}/{n_total}", ha="center", fontsize=7,
+                     color=color, fontweight="bold")
+        else:
+            # No onset at any σ threshold — show explicitly
+            ax3.plot(i, 0.5, marker="x", color=color, markersize=12, markeredgewidth=2)
+            ax3.text(i, 0.53, f"0/{n_total}\nno onset", ha="center", fontsize=7,
+                     color="#cc0000", fontweight="bold")
+
+        ax3.text(i, 0.35, ml.replace(" ", "\n"), ha="center", fontsize=7, color=color)
+
+    ax3.axhspan(0.45, 0.65, color="lightblue", alpha=0.25, label="45–65% zone")
+    ax3.set_xticks([])
+    ax3.set_ylabel("Normalized depth")
+    ax3.set_ylim(0.30, 0.75)
+    ax3.set_title("σ-Only Onset Depth\n(diamond=1σ, bar=range, fractions=detection rate)")
+    ax3.legend(fontsize=7)
+    ax3.grid(True, alpha=0.3, axis="y")
+
+    fig.suptitle("0J: Corrective Onset Threshold Sensitivity (Honest View)", fontsize=13, fontweight="bold")
     plt.tight_layout()
 
     out = output_dir / "plots" / "onset_sensitivity.png"
