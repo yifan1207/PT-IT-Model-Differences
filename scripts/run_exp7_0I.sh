@@ -41,7 +41,7 @@ for i in $(seq 0 $((NW-1))); do
         --variant it \
         --worker-index "$i" --n-workers "$NW" \
         --device "cuda:${i}" \
-        --run-name "${RUN_NAME}_w${i}" \
+        --run-name "${RUN_NAME}" \
         --output-base "$OUTPUT_BASE" \
         --corrective-direction-path "$CORR_DIR" \
         "${EXTRA_ARGS[@]}" \
@@ -63,6 +63,7 @@ if [[ "$failed" -ne 0 ]]; then
 fi
 
 echo "=== [0I] Merging worker results... ==="
+# exp6/run.py appends _w{worker_index} to run_name → dir is ${RUN_NAME}_w${i}
 src_dirs=()
 for i in $(seq 0 $((NW-1))); do src_dirs+=("${OUTPUT_BASE}/${RUN_NAME}_w${i}"); done
 

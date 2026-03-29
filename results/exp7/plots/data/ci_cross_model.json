@@ -1,170 +1,164 @@
 [
   {
-    "mean": 22.392196378392576,
-    "ci_low": 22.331298230056486,
-    "ci_high": 22.457217230367988,
-    "n": 2928,
-    "method": "BCa",
     "model": "gemma3_4b",
     "variant": "pt",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 22.02174348474395,
+    "median": 23.0,
+    "n_tokens": 1258124,
+    "n_prompts": 2928,
+    "method": "per_token_skip5"
   },
   {
-    "mean": 26.268075607410708,
-    "ci_low": 26.19530807393609,
-    "ci_high": 26.342859750098405,
-    "n": 2936,
-    "method": "BCa",
     "model": "gemma3_4b",
     "variant": "it",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 25.711557835820894,
+    "median": 26.0,
+    "n_tokens": 643200,
+    "n_prompts": 2936,
+    "method": "per_token_skip5"
   },
   {
-    "d": 2.039035031075151,
-    "magnitude": "large",
-    "n1": 2936,
-    "n2": 2928,
     "model": "gemma3_4b",
-    "metric": "commitment_layer_IT_vs_PT"
+    "metric": "commitment_delay_IT_minus_PT",
+    "per_token_delay": 3.6898143510769437,
+    "per_prompt_delay": 4.026375053974778,
+    "direction": "IT commits later"
   },
   {
-    "mean": 26.738103725031845,
-    "ci_low": 26.651094671045104,
-    "ci_high": 26.824779014658333,
-    "n": 2881,
-    "method": "BCa",
     "model": "llama31_8b",
     "variant": "pt",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 24.65962370815299,
+    "median": 25.0,
+    "n_tokens": 509445,
+    "n_prompts": 2881,
+    "method": "per_token_skip5"
   },
   {
-    "mean": 25.226962122204966,
-    "ci_low": 25.18523703142501,
-    "ci_high": 25.26625101999671,
-    "n": 2936,
-    "method": "BCa",
     "model": "llama31_8b",
     "variant": "it",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 25.196253521973563,
+    "median": 26.0,
+    "n_tokens": 1463668,
+    "n_prompts": 2936,
+    "method": "per_token_skip5"
   },
   {
-    "d": -0.8160357177733816,
-    "magnitude": "large",
-    "n1": 2936,
-    "n2": 2881,
     "model": "llama31_8b",
-    "metric": "commitment_layer_IT_vs_PT"
+    "metric": "commitment_delay_IT_minus_PT",
+    "per_token_delay": 0.536629813820575,
+    "per_prompt_delay": -1.554597820730958,
+    "direction": "IT commits later"
   },
   {
-    "mean": 29.602978061407228,
-    "ci_low": 29.519898379432025,
-    "ci_high": 29.684378125072808,
-    "n": 2936,
-    "method": "BCa",
     "model": "qwen3_4b",
     "variant": "pt",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 28.576323095737763,
+    "median": 29.0,
+    "n_tokens": 475079,
+    "n_prompts": 2936,
+    "method": "per_token_skip5"
   },
   {
-    "mean": 28.62055354410063,
-    "ci_low": 28.579142879992293,
-    "ci_high": 28.662585594969546,
-    "n": 2936,
-    "method": "BCa",
     "model": "qwen3_4b",
     "variant": "it",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 28.60615731117597,
+    "median": 29.0,
+    "n_tokens": 1485616,
+    "n_prompts": 2936,
+    "method": "per_token_skip5"
   },
   {
-    "d": -0.5415263007774187,
-    "magnitude": "medium",
-    "n1": 2936,
-    "n2": 2936,
     "model": "qwen3_4b",
-    "metric": "commitment_layer_IT_vs_PT"
+    "metric": "commitment_delay_IT_minus_PT",
+    "per_token_delay": 0.029834215438206968,
+    "per_prompt_delay": -1.092983651226156,
+    "direction": "IT commits later"
   },
   {
-    "mean": 23.50915922849476,
-    "ci_low": 23.450191427922082,
-    "ci_high": 23.568183421583154,
-    "n": 2936,
-    "method": "BCa",
     "model": "mistral_7b",
     "variant": "pt",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 23.273089910952688,
+    "median": 24.0,
+    "n_tokens": 1363994,
+    "n_prompts": 2936,
+    "method": "per_token_skip5"
   },
   {
-    "mean": 25.87979560429982,
-    "ci_low": 25.827587860824913,
-    "ci_high": 25.930730673508453,
-    "n": 2935,
-    "method": "BCa",
     "model": "mistral_7b",
     "variant": "it",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 26.019744186906212,
+    "median": 28.0,
+    "n_tokens": 541020,
+    "n_prompts": 2935,
+    "method": "per_token_skip5"
   },
   {
-    "d": 1.5324833828008575,
-    "magnitude": "large",
-    "n1": 2935,
-    "n2": 2936,
     "model": "mistral_7b",
-    "metric": "commitment_layer_IT_vs_PT"
+    "metric": "commitment_delay_IT_minus_PT",
+    "per_token_delay": 2.7466542759535244,
+    "per_prompt_delay": 3.524912152031529,
+    "direction": "IT commits later"
   },
   {
-    "mean": 19.39195030997199,
-    "ci_low": 19.339877043292784,
-    "ci_high": 19.44299962947233,
-    "n": 2936,
-    "method": "BCa",
     "model": "deepseek_v2_lite",
     "variant": "pt",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 19.314579178652735,
+    "median": 19.0,
+    "n_tokens": 169989,
+    "n_prompts": 2936,
+    "method": "per_token_skip5"
   },
   {
-    "mean": 20.78267752853312,
-    "ci_low": 20.726251417076043,
-    "ci_high": 20.843329096902714,
-    "n": 2933,
-    "method": "BCa",
     "model": "deepseek_v2_lite",
     "variant": "it",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 20.52997362089457,
+    "median": 21.0,
+    "n_tokens": 137988,
+    "n_prompts": 2933,
+    "method": "per_token_skip5"
   },
   {
-    "d": 0.913334374617156,
-    "magnitude": "large",
-    "n1": 2933,
-    "n2": 2936,
     "model": "deepseek_v2_lite",
-    "metric": "commitment_layer_IT_vs_PT"
+    "metric": "commitment_delay_IT_minus_PT",
+    "per_token_delay": 1.2153944422418341,
+    "per_prompt_delay": 1.29038118339556,
+    "direction": "IT commits later"
   },
   {
-    "mean": 23.988483145922118,
-    "ci_low": 23.81789806226743,
-    "ci_high": 24.144875103316924,
-    "n": 2911,
-    "method": "BCa",
     "model": "olmo2_7b",
     "variant": "pt",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 24.23006210805027,
+    "median": 24.0,
+    "n_tokens": 529883,
+    "n_prompts": 2911,
+    "method": "per_token_skip5"
   },
   {
-    "mean": 25.165657906758646,
-    "ci_low": 25.069502086089607,
-    "ci_high": 25.260521586079417,
-    "n": 2933,
-    "method": "BCa",
     "model": "olmo2_7b",
     "variant": "it",
-    "metric": "commitment_layer"
+    "metric": "commitment_layer",
+    "mean": 26.03091530447017,
+    "median": 27.0,
+    "n_tokens": 240237,
+    "n_prompts": 2933,
+    "method": "per_token_skip5"
   },
   {
-    "d": 0.3189064769692372,
-    "magnitude": "small",
-    "n1": 2933,
-    "n2": 2911,
     "model": "olmo2_7b",
-    "metric": "commitment_layer_IT_vs_PT"
+    "metric": "commitment_delay_IT_minus_PT",
+    "per_token_delay": 1.8008531964199008,
+    "per_prompt_delay": 1.7608390900733575,
+    "direction": "IT commits later"
   }
 ]

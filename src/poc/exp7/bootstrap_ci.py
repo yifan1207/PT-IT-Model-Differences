@@ -342,25 +342,33 @@ def compute_cross_model_ci(cross_model_dir: Path, n_bootstrap: int, seed: int) -
     for model in models:
         model_dir = cross_model_dir / model
 
-        # ── Commitment delay per-prompt (bootstrap over prompts) ──────────
+        # ── Commitment delay per-token (bootstrap over tokens) ─────────
+        # Use per-token commitment values directly, skipping the first 5
+        # generated tokens (early tokens are noisy). Per-prompt aggregation
+        # is biased by generation length (PT produces short outputs whose
+        # per-prompt means are inflated).
+        SKIP_FIRST_N = 5
         for variant in ("pt", "it"):
             results_path = model_dir / variant / "L1L2_results.jsonl"
             if not results_path.exists():
                 continue
-            # Per-prompt mean commitment: average steps within each prompt
-            per_prompt_commitment: list[float] = []
+            all_tokens: list[float] = []
             with open(results_path) as f:
                 for line in f:
                     if not line.strip():
                         continue
                     r = json.loads(line)
                     cl = r.get("commitment_layer", [])
-                    if cl:
-                        per_prompt_commitment.append(float(np.mean(cl)))
+                    all_tokens.extend(float(c) for c in cl[SKIP_FIRST_N:] if c is not None)
 
-            if per_prompt_commitment:
-                ci = _bootstrap_ci_bca(per_prompt_commitment, n_bootstrap, seed)
-                ci.update({"model": model, "variant": variant, "metric": "commitment_layer"})
+            if all_tokens:
+                # Subsample for bootstrap efficiency (>100k tokens is wasteful)
+                rng = np.random.default_rng(seed)
+                if len(all_tokens) > 50000:
+                    all_tokens = list(rng.choice(all_tokens, size=50000, replace=False))
+                ci = _bootstrap_ci_bca(all_tokens, n_bootstrap, seed)
+                ci.update({"model": model, "variant": variant, "metric": "commitment_layer",
+                           "aggregation": "per_token", "skip_first": SKIP_FIRST_N})
                 results.append(ci)
 
         # ── Cohen's d for commitment PT vs IT ─────────────────────────────
@@ -375,10 +383,15 @@ def compute_cross_model_ci(cross_model_dir: Path, n_bootstrap: int, seed: int) -
                         continue
                     r = json.loads(line)
                     cl = r.get("commitment_layer", [])
-                    if cl:
-                        store.append(float(np.mean(cl)))
+                    store.extend(float(c) for c in cl[SKIP_FIRST_N:] if c is not None)
 
         if pt_commit and it_commit:
+            # Subsample for Cohen's d efficiency
+            rng = np.random.default_rng(seed)
+            if len(pt_commit) > 50000:
+                pt_commit = list(rng.choice(pt_commit, size=50000, replace=False))
+            if len(it_commit) > 50000:
+                it_commit = list(rng.choice(it_commit, size=50000, replace=False))
             cd = _cohens_d(it_commit, pt_commit)
             cd.update({"model": model, "metric": "commitment_layer_IT_vs_PT"})
             results.append(cd)
