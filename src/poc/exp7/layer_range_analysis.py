@@ -117,8 +117,44 @@ def save_csv(rows: list[dict], output_path: Path) -> None:
             w.writerow({k: row.get(k, "") for k in fields})
 
 
+def _load_0D_ci_for_0F() -> dict[str, dict[float, dict]]:
+    """Load 0D bootstrap CIs for the canonical 20-33 range overlay."""
+    ci_path = Path("results/exp7/0D/ci_A1_programmatic.json")
+    if not ci_path.exists():
+        return {}
+    with open(ci_path) as f:
+        ci_raw = json.load(f)
+    result: dict[str, dict[float, dict]] = {}
+    for row in ci_raw:
+        cond = row.get("condition", "")
+        if not cond.startswith("A1_alpha_"):
+            continue
+        try:
+            alpha = float(cond[len("A1_alpha_"):])
+        except ValueError:
+            continue
+        bench = row.get("benchmark", "")
+        result.setdefault(bench, {})[alpha] = {
+            "ci_low": row.get("ci_low", row.get("ci_lo", float("nan"))),
+            "ci_high": row.get("ci_high", row.get("ci_hi", float("nan"))),
+        }
+    return result
+
+
+# Benchmark name aliases for CI lookup
+_BENCH_ALIASES_0F = {
+    "structural_token_ratio": "structural_token_ratio",
+    "mmlu_forced_choice": "mmlu_accuracy",
+    "reasoning_em": "reasoning_em",
+    "exp3_reasoning_em": "reasoning_em",
+    "alignment_behavior": "alignment_behavior",
+    "exp3_alignment_behavior": "alignment_behavior",
+}
+
+
 def plot_sensitivity(rows: list[dict], output_dir: Path) -> None:
-    """3-panel sensitivity plot: governance / content / safety."""
+    """3-panel sensitivity plot: governance / content / safety.
+    Adds 95% CI band on canonical 20-33 range from 0D bootstrap data."""
     try:
         import matplotlib
         matplotlib.use("Agg")
@@ -126,6 +162,8 @@ def plot_sensitivity(rows: list[dict], output_dir: Path) -> None:
     except ImportError:
         print("[0F] matplotlib not available — skipping plot", flush=True)
         return
+
+    ci_data = _load_0D_ci_for_0F()
 
     panels = [
         ("Governance (STR)", GOVERNANCE_BENCHMARKS),
@@ -162,10 +200,29 @@ def plot_sensitivity(rows: list[dict], output_dir: Path) -> None:
                 marker="o", markersize=4,
             )
 
+            # Add 95% CI band for canonical 20-33 range
+            if layer_range == "20-33" and ci_data:
+                # Find the CI benchmark key for this panel
+                ci_bench_key = None
+                for b in benchmarks:
+                    alias = _BENCH_ALIASES_0F.get(b)
+                    if alias and alias in ci_data:
+                        ci_bench_key = alias
+                        break
+                if ci_bench_key:
+                    bench_ci = ci_data[ci_bench_key]
+                    ci_lo = [bench_ci[a]["ci_low"] if a in bench_ci else float("nan") for a in alphas_sorted]
+                    ci_hi = [bench_ci[a]["ci_high"] if a in bench_ci else float("nan") for a in alphas_sorted]
+                    valid = sum(1 for v in ci_lo if not np.isnan(v))
+                    if valid >= 3:
+                        ax.fill_between(alphas_sorted, ci_lo, ci_hi,
+                                        color=colors["20-33"], alpha=0.15,
+                                        label="95% CI (20-33)")
+
         ax.axvline(x=1.0, color="grey", linewidth=0.8, linestyle="--", alpha=0.5)
         ax.set_xlabel("α (removal strength)")
         ax.set_title(title)
-        ax.legend(fontsize=8)
+        ax.legend(fontsize=7)
         ax.grid(True, alpha=0.3)
 
     axes[0].set_ylabel("Score")
