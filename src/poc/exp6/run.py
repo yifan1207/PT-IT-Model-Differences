@@ -507,16 +507,17 @@ def _A1_rand_matched_multiseed_conditions(cfg: Exp6Config) -> list[tuple[str, Ex
 def _A1_formula_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     """A1_formula: Intervention formula sensitivity analysis (Exp7 0I).
 
-    Tests 4 intervention formula variants at the same 5 α values to confirm the
-    governance-content dissociation is robust to the choice of hook point and formula:
+    Tests 4 intervention formula variants at the same α values as the canonical A1
+    sweep to confirm the governance-content dissociation is robust to the choice of
+    hook point and formula:
       1. mlp_proj_remove      — current canonical (directional_remove on MLP output)
       2. mlp_additive         — additive injection (directional_add, already exists)
       3. residual_proj_remove — projection-removal on full residual stream
       4. attn_proj_remove     — projection-removal on self_attn output only
 
-    Reduced α sweep (5 values) for speed. 4 × 6 = 24 conditions.
+    Full α sweep matching A1 (14 values including negatives). 4 × 15 = 60 conditions.
     """
-    ALPHAS = [2.0, 1.5, 1.0, 0.5, 0.0]
+    ALPHAS = [5.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
     CORR_LAYERS = list(range(cfg.proposal_boundary, cfg.n_layers))  # layers 20-33
 
     METHODS: list[tuple[str, str]] = [
@@ -535,7 +536,7 @@ def _A1_formula_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
                 ablation_layers=CORR_LAYERS,
                 directional_alpha=alpha,
             )))
-    return specs  # 4 × 6 = 24 conditions
+    return specs  # 4 × 15 = 60 conditions
 
 
 def _A1_single_layer_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:

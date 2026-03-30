@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Exp7 0I: Intervention Formula Sensitivity
-# Tests 4 intervention formula variants at 5 α values to confirm the governance-content
-# dissociation is robust to the choice of hook point and formula:
+# Tests 4 intervention formula variants at 14 α values (matching A1 sweep,
+# including negatives) to confirm the governance-content dissociation is robust:
 #   1. mlp_proj_remove      — canonical (directional_remove on MLP output)
 #   2. mlp_additive         — additive injection (directional_add)
 #   3. residual_proj_remove — projection-removal on full residual stream
 #   4. attn_proj_remove     — projection-removal on self_attn output only
-# 24 conditions total. ~1.5 hrs on 8 GPUs.
+# 60 conditions total (4 methods × 14 alphas + 4 baselines). ~3.5 hrs on 8 GPUs.
+# Re-running will reuse existing results and only compute new alpha conditions.
 #
 # Usage:
 #   bash scripts/run_exp7_0I.sh
@@ -28,11 +29,11 @@ fi
 
 OUTPUT_BASE="results/exp7/0I"
 RUN_NAME="A1_formula_it_v1"
-NW=8
+NW=4  # must match original run (4 workers) so resume finds existing results
 
 mkdir -p logs/exp7 "$OUTPUT_BASE"
 
-echo "=== Exp7 0I: Intervention formula sensitivity (${NW} GPUs, 24 conditions) ==="
+echo "=== Exp7 0I: Intervention formula sensitivity (${NW} GPUs, 60 conditions) ==="
 pids=()
 for i in $(seq 0 $((NW-1))); do
     echo "[0I] launching worker $i on cuda:$i"

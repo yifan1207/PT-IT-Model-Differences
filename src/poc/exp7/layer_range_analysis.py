@@ -35,8 +35,8 @@ LAYER_RANGES = ["18-33", "20-33", "22-33", "20-31"]
 ALPHA_VALUES = [5.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
 
 GOVERNANCE_BENCHMARKS = {"structural_token_ratio"}
-CONTENT_BENCHMARKS = {"mmlu_forced_choice", "reasoning_em"}
-SAFETY_BENCHMARKS = {"alignment_behavior"}
+CONTENT_BENCHMARKS = {"mmlu_forced_choice", "reasoning_em", "exp3_reasoning_em"}
+SAFETY_BENCHMARKS = {"alignment_behavior", "exp3_alignment_behavior"}
 
 
 def _parse_alpha(condition: str) -> float | None:
@@ -70,6 +70,8 @@ def load_all_layer_ranges(results_dir: Path) -> dict[str, list[dict]]:
     all_scores: dict[str, list[dict]] = {}
     for lr in LAYER_RANGES:
         run_dir = results_dir / f"A1_it_layers_{lr}"
+        if not (run_dir / "scores.jsonl").exists():
+            run_dir = results_dir / f"merged_A1_it_layers_{lr}"
         scores = load_scores(run_dir)
         if scores:
             all_scores[lr] = scores
