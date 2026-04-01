@@ -284,3 +284,5 @@ results/exp7/**
 !results/exp7/plots/**
 !results/exp7/plots/data/
 !results/exp7/plots/data/**
+
+paper_drafts/*
