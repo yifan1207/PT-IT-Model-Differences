@@ -65,8 +65,11 @@ from src.poc.cross_model.utils import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-# Belrose et al. KL commitment thresholds (nats)
-KL_THRESHOLDS = [0.05, 0.1, 0.2]
+# KL commitment thresholds (nats) — Belrose standard + extended
+KL_THRESHOLDS = [0.05, 0.1, 0.2, 0.5, 1.0]
+
+# Cosine commitment threshold
+COSINE_THRESHOLD = 0.95
 
 
 # ── Probe definition ────────────────────────────────────────────────────────
@@ -105,7 +108,7 @@ def _cosine_lr_with_warmup(
 # ── Training data: C4 validation (prefill-based) ───────────────────────────
 
 def load_training_texts(
-    n_tokens_target: int = 2_000_000,
+    n_tokens_target: int = 70_000_000,
     max_seq_len: int = 2048,
     seed: int = 42,
 ) -> list[str]:
@@ -115,10 +118,11 @@ def load_training_texts(
     Falls back to wikitext if C4 is unavailable. Texts are shuffled with a
     fixed seed for reproducibility so that 80/20 train/val splits are IID.
 
-    Data volume: Belrose et al. (2023) use ~65M tokens (SGD, 250 steps of 262k
-    tokens each). We load ~2M tokens of text (~20k texts) and cycle through them
-    with fresh forward passes each step, yielding 262k tokens per step × 250
-    steps = ~65M token-activations — matching Belrose exactly.
+    Data volume: Belrose et al. (2023) use ~65M unique tokens (SGD, 250 steps
+    of 262k tokens each). We load ~70M tokens of text so each token is seen
+    roughly once during training, matching Belrose exactly. The streaming
+    iterator shuffles and cycles if needed, but with 70M tokens and 65.5M
+    token-activations per training run, recycling is minimal.
 
     Returns a list of text strings, estimated to contain >= n_tokens_target
     tokens total (using ~4 chars/token heuristic for selection, actual
@@ -1182,6 +1186,32 @@ def _commitment_majority(
     return n - 1
 
 
+def _commitment_from_cosine(
+    cosine_row: list[float], threshold: float = COSINE_THRESHOLD,
+) -> int:
+    """Earliest layer where cos(h_ℓ, h_L) >= threshold and stays above."""
+    n = len(cosine_row)
+    for i in range(n):
+        if cosine_row[i] >= threshold and all(
+            cosine_row[j] >= threshold for j in range(i, n)
+        ):
+            return i
+    return n - 1
+
+
+def _commitment_from_entropy(
+    entropy_row: list[float], threshold: float,
+) -> int:
+    """Earliest layer where entropy < threshold and stays below."""
+    n = len(entropy_row)
+    for i in range(n):
+        if entropy_row[i] < threshold and all(
+            entropy_row[j] < threshold for j in range(i, n)
+        ):
+            return i
+    return n - 1
+
+
 # ── Commitment evaluation (autoregressive, matching collect_L1L2.py) ──────
 
 @torch.no_grad()
@@ -1241,6 +1271,8 @@ def eval_commitment(
     all_commitment_tuned: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_majority: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_top1_tuned: list[list[int]] = []
+    all_commitment_cosine: list[list[int]] = []
+    all_commitment_entropy: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     n_prompts_done = 0
 
     with open(output_path, "a") as fout:
@@ -1257,6 +1289,11 @@ def eval_commitment(
             step_commitment_tuned: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
             step_commitment_top1_tuned: list[int] = []
             step_commitment_majority: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
+            # Training-free methods
+            step_commitment_cosine: list[int] = []
+            step_cosine_values: list[list[float]] = []  # raw cosine per layer per step
+            step_commitment_entropy: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
+            step_entropy_values: list[list[float]] = []  # raw entropy per layer per step
 
             step_buf: list[torch.Tensor | None] = [None] * n_layers
 
@@ -1354,6 +1391,40 @@ def eval_commitment(
                         _commitment_majority(kl_row, thresh)
                     )
 
+                # === Cosine commitment (training-free) ===
+                # cos(h_ℓ, h_L) for each layer
+                h_final_vec = all_h[-1].float()  # [d_model]
+                h_final_norm = h_final_vec / (h_final_vec.norm() + 1e-8)
+                cosine_row = []
+                for li in range(n_layers):
+                    if valid[li]:
+                        h_li = all_h[li].float()
+                        cos_val = float(
+                            (h_li / (h_li.norm() + 1e-8)) @ h_final_norm
+                        )
+                        cosine_row.append(cos_val)
+                    else:
+                        cosine_row.append(0.0)
+                step_commitment_cosine.append(
+                    _commitment_from_cosine(cosine_row, COSINE_THRESHOLD)
+                )
+                step_cosine_values.append(cosine_row)
+
+                # === Entropy-lens (training-free) ===
+                # entropy(softmax(W_U · norm(h_ℓ))) for each layer — raw logit-lens
+                all_raw_probs = F.softmax(all_raw_logits, dim=-1)  # [n_layers, vocab]
+                all_raw_log_p = F.log_softmax(all_raw_logits, dim=-1)
+                entropy_per_layer = -(all_raw_probs * all_raw_log_p).sum(dim=-1)  # [n_layers]
+                entropy_row = [
+                    float(entropy_per_layer[li].item()) if valid[li] else float("inf")
+                    for li in range(n_layers)
+                ]
+                step_entropy_values.append(entropy_row)
+                for thresh in KL_THRESHOLDS:
+                    step_commitment_entropy[thresh].append(
+                        _commitment_from_entropy(entropy_row, thresh)
+                    )
+
             def make_hook(layer_idx: int):
                 def hook(module, inp, output):
                     h = adapter.residual_from_output(output)
@@ -1409,6 +1480,10 @@ def eval_commitment(
             result["commitment_layer_top1_tuned"] = step_commitment_top1_tuned
             for thresh in KL_THRESHOLDS:
                 result[f"commitment_layer_majority_{thresh}"] = step_commitment_majority[thresh]
+            # Training-free methods
+            result["commitment_layer_cosine"] = step_commitment_cosine
+            for thresh in KL_THRESHOLDS:
+                result[f"commitment_layer_entropy_{thresh}"] = step_commitment_entropy[thresh]
 
             fout.write(json.dumps(result) + "\n")
             fout.flush()
@@ -1419,6 +1494,9 @@ def eval_commitment(
                 all_commitment_tuned[thresh].append(step_commitment_tuned[thresh])
                 all_commitment_majority[thresh].append(step_commitment_majority[thresh])
             all_commitment_top1_tuned.append(step_commitment_top1_tuned)
+            all_commitment_cosine.append(step_commitment_cosine)
+            for thresh in KL_THRESHOLDS:
+                all_commitment_entropy[thresh].append(step_commitment_entropy[thresh])
 
             n_prompts_done += 1
             if n_prompts_done % 50 == 0:
@@ -1447,6 +1525,12 @@ def eval_commitment(
     for thresh in KL_THRESHOLDS:
         summary[f"median_commitment_majority_{thresh}"] = _flatten_median(
             all_commitment_majority[thresh]
+        )
+    # Training-free methods
+    summary["median_commitment_cosine"] = _flatten_median(all_commitment_cosine)
+    for thresh in KL_THRESHOLDS:
+        summary[f"median_commitment_entropy_{thresh}"] = _flatten_median(
+            all_commitment_entropy[thresh]
         )
 
     return summary
@@ -1568,8 +1652,9 @@ def main() -> None:
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
 
     # Training args
-    p.add_argument("--n-tokens", type=int, default=2000000,
-                   help="Target token count for training text pool (default: 2M)")
+    p.add_argument("--n-tokens", type=int, default=70000000,
+                   help="Target token count for training text pool (default: 70M, "
+                        "ensures unique tokens across 250 steps × 262K tokens/step)")
     p.add_argument("--n-steps", type=int, default=5000,
                    help="Training steps per layer (ignored for sgd_nesterov: always 250)")
     p.add_argument("--lr", type=float, default=1e-3,

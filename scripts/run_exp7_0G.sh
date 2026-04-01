@@ -1,91 +1,123 @@
-#!/usr/bin/env bash
-# Exp7 0G: Tuned-Lens Replication of Commitment Delay
+#!/bin/bash
+# 0G: Train tuned-lens probes for ALL 6 models × 2 variants = 12 jobs
+# Uses all 8 GPUs in fixed batches (8 parallel, then 4 parallel)
+# Joint training mode (~34× faster than per-layer sequential)
 #
-# Trains per-layer affine probes T_ℓ for both PT and IT models following
-# Belrose et al. (2023) methodology:
-#   - Hooks on residual stream (layer output), not MLP output
-#   - 2000 prompts × 80 tokens ≈ 160k training activations
-#   - 80/20 train/val split with validation loss checkpointing
-#   - Cosine annealing LR with warmup
-#   - Identity initialisation (warm start)
+# Belrose et al. 2023 exact recipe:
+#   SGD Nesterov, lr=1.0, momentum=0.9, wd=0, 250 steps, 262K tokens/step
+#   70M unique tokens from C4 (no recycling), linear LR decay, identity init
+#   KL divergence loss, gradient clipping norm 1.0
 #
-# Evaluation uses KL-to-final commitment metric (KL < 0.1 nats):
-#   1. IT probes on IT (matched)
-#   2. PT probes on PT (matched)
-#   3. PT probes on IT (cross-model transfer — tests universal geometry)
-#   4. Raw logit-lens baseline (no probes)
-#
-# Expected: IT commits later than PT under tuned-lens, within ~2 layers of raw.
-# Expected: PT probes work reasonably on IT (cross-model transfer gap < 2 layers).
-#
-# Usage:
-#   bash scripts/run_exp7_0G.sh
-#   bash scripts/run_exp7_0G.sh --n-train 40   # quick test
-
+# Estimated: ~2-3h per 4B model, ~3-5h per 7-8B model
+# Wall time with 8 GPUs: ~5-6h total (batch 1: 8 jobs, batch 2: 4 jobs)
 set -euo pipefail
 
-EXTRA_ARGS=()
-while [[ $# -gt 0 ]]; do
-    EXTRA_ARGS+=("$1")
-    shift
+export OMP_NUM_THREADS=12
+export MKL_NUM_THREADS=12
+export TOKENIZERS_PARALLELISM=false
+
+mkdir -p logs/exp7/0G
+
+MODELS=(gemma3_4b llama31_8b qwen3_4b mistral_7b deepseek_v2_lite olmo2_7b)
+VARIANTS=(pt it)
+
+# Build list of all (model, variant) pairs
+declare -a JOBS=()
+for m in "${MODELS[@]}"; do
+    for v in "${VARIANTS[@]}"; do
+        JOBS+=("${m}:${v}")
+    done
 done
 
-TRAIN_DATA="results/precompute_v2_work/gen_merged.jsonl"
-if [[ ! -f "$TRAIN_DATA" ]]; then
-    echo "[0G] ERROR: gen_merged.jsonl not found at $TRAIN_DATA"
-    exit 1
-fi
+echo "[$(date '+%H:%M')] === 0G Tuned Lens Training: ${#JOBS[@]} jobs on 8 GPUs ==="
 
-mkdir -p logs/exp7 results/exp7/0G/probes/pt results/exp7/0G/probes/it
+# ── Phase 1: Training (batch-based, 8 at a time) ────────────────────────
+NGPUS=8
+batch=0
+for ((start=0; start<${#JOBS[@]}; start+=NGPUS)); do
+    batch=$((batch + 1))
+    end=$((start + NGPUS))
+    if ((end > ${#JOBS[@]})); then end=${#JOBS[@]}; fi
 
-echo "=== Exp7 0G: Tuned-lens probe training ==="
-echo "  PT probes on cuda:0, IT probes on cuda:1"
-echo "  Default: 2000 prompts, 5000 steps/layer, cosine LR w/ warmup"
+    echo "[$(date '+%H:%M')] --- Training batch $batch: jobs $start-$((end-1)) ---"
 
-# Train PT probes on cuda:0
-uv run python -m src.poc.exp7.tuned_lens_probes \
-    --variant pt \
-    --device cuda:0 \
-    --output-dir results/exp7/0G/probes/pt/ \
-    "${EXTRA_ARGS[@]}" \
-    > logs/exp7/0G_pt.log 2>&1 &
-PT_PID=$!
+    pids=()
+    for ((i=start; i<end; i++)); do
+        gpu=$((i - start))
+        IFS=: read -r model variant <<< "${JOBS[$i]}"
+        logfile="logs/exp7/0G/${model}_${variant}.log"
 
-# Train IT probes on cuda:1
-uv run python -m src.poc.exp7.tuned_lens_probes \
-    --variant it \
-    --device cuda:1 \
-    --output-dir results/exp7/0G/probes/it/ \
-    "${EXTRA_ARGS[@]}" \
-    > logs/exp7/0G_it.log 2>&1 &
-IT_PID=$!
+        echo "[$(date '+%H:%M')] Training ${model}/${variant} on cuda:${gpu}"
+        uv run python -m src.poc.cross_model.tuned_lens \
+            --model "$model" --variant "$variant" \
+            --device "cuda:${gpu}" \
+            > "$logfile" 2>&1 &
+        pids+=($!)
+    done
 
-echo "[0G] Training in parallel. Waiting for PT (pid=$PT_PID) and IT (pid=$IT_PID)..."
-failed=0
-wait "$PT_PID" || { echo "[0G] ERROR: PT probe training failed"; failed=1; }
-wait "$IT_PID" || { echo "[0G] ERROR: IT probe training failed"; failed=1; }
+    # Wait for ALL jobs in this batch
+    failed=0
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+            echo "[$(date '+%H:%M')] PID $pid FAILED"
+            failed=1
+        fi
+    done
+    if ((failed)); then
+        echo "[$(date '+%H:%M')] WARNING: batch $batch had failures — check logs"
+    fi
+    echo "[$(date '+%H:%M')] --- Training batch $batch complete ---"
+done
 
-if [[ "$failed" -ne 0 ]]; then
-    echo "[0G] Check logs/exp7/0G_pt.log and logs/exp7/0G_it.log"
-    exit 1
-fi
+echo "[$(date '+%H:%M')] === Training COMPLETE ==="
 
-echo ""
-echo "=== [0G] Probes trained. Running evaluation (4 conditions)... ==="
-echo "  1. IT probes on IT (matched)"
-echo "  2. PT probes on PT (matched)"
-echo "  3. PT probes on IT (cross-model transfer)"
-echo "  4. Raw logit-lens (no probes)"
+# ── Phase 2: Eval (batch-based, 8 at a time) ────────────────────────────
+echo "[$(date '+%H:%M')] === Eval phase ==="
+batch=0
+for ((start=0; start<${#JOBS[@]}; start+=NGPUS)); do
+    batch=$((batch + 1))
+    end=$((start + NGPUS))
+    if ((end > ${#JOBS[@]})); then end=${#JOBS[@]}; fi
 
-uv run python -m src.poc.exp7.tuned_lens_probes \
-    --eval-only \
-    --probe-dir results/exp7/0G/probes/ \
-    --output-dir results/exp7/0G/ \
-    --n-eval 400 \
-    2>&1 | tee logs/exp7/0G_eval.log
+    echo "[$(date '+%H:%M')] --- Eval batch $batch ---"
 
-echo ""
-echo "=== [0G] Done. Results in results/exp7/0G/ ==="
-echo "Check: results/exp7/0G/tuned_lens_commitment.json"
-echo "  - IT KL commitment should exceed PT under tuned-lens"
-echo "  - Cross-model transfer gap (PT probes on IT vs IT probes on IT) should be < 2 layers"
+    pids=()
+    for ((i=start; i<end; i++)); do
+        gpu=$((i - start))
+        IFS=: read -r model variant <<< "${JOBS[$i]}"
+        logfile="logs/exp7/0G/${model}_${variant}_eval.log"
+
+        echo "[$(date '+%H:%M')] Eval ${model}/${variant} on cuda:${gpu} (2936 prompts)"
+        uv run python -m src.poc.cross_model.tuned_lens \
+            --model "$model" --variant "$variant" \
+            --device "cuda:${gpu}" --eval-only \
+            --dataset data/exp3_dataset.jsonl \
+            > "$logfile" 2>&1 &
+        pids+=($!)
+    done
+
+    for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null || true; done
+    echo "[$(date '+%H:%M')] --- Eval batch $batch complete ---"
+done
+
+echo "[$(date '+%H:%M')] === Eval COMPLETE ==="
+
+# ── Phase 3: Cross-model CIs + plots ────────────────────────────────────
+echo "[$(date '+%H:%M')] === Regenerating cross-model CIs (per-token method) ==="
+uv run python -m src.poc.exp7.bootstrap_ci \
+    --merged-dir results/exp6/merged_A1_it_v4 \
+    --cross-model-dir results/cross_model \
+    > logs/exp7/0G/cross_model_ci.log 2>&1 || echo "[0G] cross-model CI had errors"
+
+cp results/exp7/0D/ci_cross_model.json results/exp7/plots/data/ci_cross_model.json 2>/dev/null || true
+echo "[$(date '+%H:%M')] === CIs regenerated ==="
+
+echo "[$(date '+%H:%M')] === Generating commitment plots ==="
+uv run python scripts/plot_tuned_lens_commitment.py \
+    > logs/exp7/0G/plot_commitment.log 2>&1 || echo "[0G] plot had errors"
+
+echo "[$(date '+%H:%M')] === Regenerating all Tier 0 plots ==="
+uv run python scripts/plot_exp7_tier0.py \
+    > logs/exp7/0G/plot_tier0.log 2>&1 || echo "[0G] tier0 plots had errors"
+
+echo "[$(date '+%H:%M')] === 0G ALL DONE ==="

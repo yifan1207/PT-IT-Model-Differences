@@ -91,7 +91,7 @@ uv run python scripts/plot_exp7_tier0.py
 
 ## Tuned-lens recipe (Belrose et al. 2023 — exact)
 - SGD Nesterov: lr=1.0, momentum=0.9, weight_decay=0
-- 250 steps, 262,144 tokens/step (65.5M total token-activations)
+- 250 steps, 262,144 tokens/step (65.5M total token-activations, 70M unique tokens loaded)
 - Linear LR decay to 0 (no warmup)
 - 2048-token chunks, identity init + zero bias
 - KL divergence loss (sum reduction / batch_size)

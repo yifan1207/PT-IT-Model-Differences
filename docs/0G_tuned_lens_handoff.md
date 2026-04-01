@@ -21,6 +21,7 @@ The training recipe must match **Belrose et al. 2023 exactly**:
 | Steps | **250** (not less) | Belrose exact |
 | Tokens per step | **262,144** | Belrose exact |
 | Total token-activations | 65.5M | 250 × 262,144 |
+| Unique tokens loaded | 70M | Ensures ~1× pass (no recycling) |
 | LR schedule | Linear decay to 0, no warmup | Belrose exact |
 | Chunk length | 2048 tokens | Belrose exact |
 | Initialization | Identity weight + zero bias | Belrose exact |
