@@ -68,8 +68,8 @@ log = logging.getLogger(__name__)
 # KL commitment thresholds (nats) — Belrose standard + extended
 KL_THRESHOLDS = [0.05, 0.1, 0.2, 0.5, 1.0]
 
-# Cosine commitment threshold
-COSINE_THRESHOLD = 0.95
+# Cosine commitment thresholds (residual stream convergence)
+COSINE_THRESHOLDS = [0.80, 0.90, 0.95, 0.99]
 
 
 # ── Probe definition ────────────────────────────────────────────────────────
@@ -1186,8 +1186,65 @@ def _commitment_majority(
     return n - 1
 
 
+# Qualification bounds for relaxed commitment
+TOPK_QUALIFICATIONS = [3, 5]  # final token must stay in top-K in subsequent layers
+KL_QUALIFICATION_MULTIPLIERS = [3, 5]  # KL can't exceed M × threshold in subsequent layers
+
+
+def _commitment_from_top1_qualified(
+    top1_by_layer: list[int],
+    rank_of_final_by_layer: list[int],
+    top_k: int,
+) -> int:
+    """Top-1 commitment with qualification: final token stays in top-K subsequently.
+
+    Earliest layer where top-1 matches final AND in all subsequent layers
+    the final token's rank is <= top_k (i.e. within top-K logits).
+    """
+    n = len(top1_by_layer)
+    final_top1 = top1_by_layer[-1]
+    for i in range(n):
+        if top1_by_layer[i] != final_top1:
+            continue
+        # Check: top1 matches AND final token stays in top-K for all subsequent
+        qualified = True
+        for j in range(i, n):
+            if top1_by_layer[j] != final_top1:
+                qualified = False
+                break
+            if rank_of_final_by_layer[j] > top_k:
+                qualified = False
+                break
+        if qualified:
+            return i
+    return n - 1
+
+
+def _commitment_from_kl_qualified(
+    kl_row: list[float], threshold: float, multiplier: float,
+) -> int:
+    """KL commitment with qualification: no subsequent spike above M × threshold.
+
+    Earliest layer where KL < threshold AND all subsequent layers have
+    KL < multiplier × threshold. Prevents counting transient dips.
+    """
+    n = len(kl_row)
+    ceiling = threshold * multiplier
+    for i in range(n):
+        if kl_row[i] >= threshold:
+            continue
+        qualified = True
+        for j in range(i, n):
+            if kl_row[j] >= ceiling:
+                qualified = False
+                break
+        if qualified:
+            return i
+    return n - 1
+
+
 def _commitment_from_cosine(
-    cosine_row: list[float], threshold: float = COSINE_THRESHOLD,
+    cosine_row: list[float], threshold: float = 0.95,
 ) -> int:
     """Earliest layer where cos(h_ℓ, h_L) >= threshold and stays above."""
     n = len(cosine_row)
@@ -1271,8 +1328,16 @@ def eval_commitment(
     all_commitment_tuned: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_majority: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_top1_tuned: list[list[int]] = []
-    all_commitment_cosine: list[list[int]] = []
+    all_commitment_cosine: dict[float, list[list[int]]] = {t: [] for t in COSINE_THRESHOLDS}
     all_commitment_entropy: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
+    all_commitment_raw_top1_qual: dict[int, list[list[int]]] = {k: [] for k in TOPK_QUALIFICATIONS}
+    all_commitment_tuned_top1_qual: dict[int, list[list[int]]] = {k: [] for k in TOPK_QUALIFICATIONS}
+    all_commitment_raw_kl_qual: dict[str, list[list[int]]] = {}
+    all_commitment_tuned_kl_qual: dict[str, list[list[int]]] = {}
+    for _t in KL_THRESHOLDS:
+        for _m in KL_QUALIFICATION_MULTIPLIERS:
+            all_commitment_raw_kl_qual[f"{_t}_{_m}x"] = []
+            all_commitment_tuned_kl_qual[f"{_t}_{_m}x"] = []
     n_prompts_done = 0
 
     with open(output_path, "a") as fout:
@@ -1290,10 +1355,19 @@ def eval_commitment(
             step_commitment_top1_tuned: list[int] = []
             step_commitment_majority: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
             # Training-free methods
-            step_commitment_cosine: list[int] = []
+            step_commitment_cosine: dict[float, list[int]] = {t: [] for t in COSINE_THRESHOLDS}
             step_cosine_values: list[list[float]] = []  # raw cosine per layer per step
             step_commitment_entropy: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
             step_entropy_values: list[list[float]] = []  # raw entropy per layer per step
+            # Qualified commitment (top-K and KL ceiling)
+            step_commitment_raw_top1_qual: dict[int, list[int]] = {k: [] for k in TOPK_QUALIFICATIONS}
+            step_commitment_tuned_top1_qual: dict[int, list[int]] = {k: [] for k in TOPK_QUALIFICATIONS}
+            step_commitment_raw_kl_qual: dict[str, list[int]] = {}
+            step_commitment_tuned_kl_qual: dict[str, list[int]] = {}
+            for t in KL_THRESHOLDS:
+                for m in KL_QUALIFICATION_MULTIPLIERS:
+                    step_commitment_raw_kl_qual[f"{t}_{m}x"] = []
+                    step_commitment_tuned_kl_qual[f"{t}_{m}x"] = []
 
             step_buf: list[torch.Tensor | None] = [None] * n_layers
 
@@ -1391,6 +1465,45 @@ def eval_commitment(
                         _commitment_majority(kl_row, thresh)
                     )
 
+                # === Qualified commitment metrics ===
+                # Compute rank of final token at each layer (raw and tuned)
+                # rank=1 means it's the argmax, rank=2 means 2nd highest, etc.
+                raw_ranks = []
+                tuned_ranks = []
+                for li in range(n_layers):
+                    if valid[li]:
+                        # Raw: rank of final_top1 in raw logits at layer li
+                        raw_sorted_idx = all_raw_logits[li].argsort(descending=True)
+                        raw_rank = int((raw_sorted_idx == final_top1).nonzero(as_tuple=True)[0].item()) + 1
+                        raw_ranks.append(raw_rank)
+                        # Tuned: rank of final_top1 in tuned logits at layer li
+                        tuned_sorted_idx = all_tuned_logits[li].argsort(descending=True)
+                        tuned_rank = int((tuned_sorted_idx == final_top1).nonzero(as_tuple=True)[0].item()) + 1
+                        tuned_ranks.append(tuned_rank)
+                    else:
+                        raw_ranks.append(999999)
+                        tuned_ranks.append(999999)
+
+                # Qualified top-1 (raw and tuned)
+                for k in TOPK_QUALIFICATIONS:
+                    step_commitment_raw_top1_qual[k].append(
+                        _commitment_from_top1_qualified(raw_top1_row, raw_ranks, k)
+                    )
+                    step_commitment_tuned_top1_qual[k].append(
+                        _commitment_from_top1_qualified(tuned_top1_row, tuned_ranks, k)
+                    )
+
+                # Qualified KL (raw and tuned)
+                for thresh in KL_THRESHOLDS:
+                    for mult in KL_QUALIFICATION_MULTIPLIERS:
+                        key = f"{thresh}_{mult}x"
+                        step_commitment_raw_kl_qual[key].append(
+                            _commitment_from_kl_qualified(raw_kl_row, thresh, mult)
+                        )
+                        step_commitment_tuned_kl_qual[key].append(
+                            _commitment_from_kl_qualified(kl_row, thresh, mult)
+                        )
+
                 # === Cosine commitment (training-free) ===
                 # cos(h_ℓ, h_L) for each layer
                 h_final_vec = all_h[-1].float()  # [d_model]
@@ -1405,9 +1518,10 @@ def eval_commitment(
                         cosine_row.append(cos_val)
                     else:
                         cosine_row.append(0.0)
-                step_commitment_cosine.append(
-                    _commitment_from_cosine(cosine_row, COSINE_THRESHOLD)
-                )
+                for thresh in COSINE_THRESHOLDS:
+                    step_commitment_cosine[thresh].append(
+                        _commitment_from_cosine(cosine_row, thresh)
+                    )
                 step_cosine_values.append(cosine_row)
 
                 # === Entropy-lens (training-free) ===
@@ -1481,9 +1595,17 @@ def eval_commitment(
             for thresh in KL_THRESHOLDS:
                 result[f"commitment_layer_majority_{thresh}"] = step_commitment_majority[thresh]
             # Training-free methods
-            result["commitment_layer_cosine"] = step_commitment_cosine
+            for thresh in COSINE_THRESHOLDS:
+                result[f"commitment_layer_cosine_{thresh}"] = step_commitment_cosine[thresh]
             for thresh in KL_THRESHOLDS:
                 result[f"commitment_layer_entropy_{thresh}"] = step_commitment_entropy[thresh]
+            # Qualified commitment
+            for k in TOPK_QUALIFICATIONS:
+                result[f"commitment_layer_raw_top1_qual_top{k}"] = step_commitment_raw_top1_qual[k]
+                result[f"commitment_layer_tuned_top1_qual_top{k}"] = step_commitment_tuned_top1_qual[k]
+            for key in step_commitment_raw_kl_qual:
+                result[f"commitment_layer_raw_kl_qual_{key}"] = step_commitment_raw_kl_qual[key]
+                result[f"commitment_layer_tuned_kl_qual_{key}"] = step_commitment_tuned_kl_qual[key]
 
             fout.write(json.dumps(result) + "\n")
             fout.flush()
@@ -1494,9 +1616,16 @@ def eval_commitment(
                 all_commitment_tuned[thresh].append(step_commitment_tuned[thresh])
                 all_commitment_majority[thresh].append(step_commitment_majority[thresh])
             all_commitment_top1_tuned.append(step_commitment_top1_tuned)
-            all_commitment_cosine.append(step_commitment_cosine)
+            for thresh in COSINE_THRESHOLDS:
+                all_commitment_cosine[thresh].append(step_commitment_cosine[thresh])
             for thresh in KL_THRESHOLDS:
                 all_commitment_entropy[thresh].append(step_commitment_entropy[thresh])
+            for k in TOPK_QUALIFICATIONS:
+                all_commitment_raw_top1_qual[k].append(step_commitment_raw_top1_qual[k])
+                all_commitment_tuned_top1_qual[k].append(step_commitment_tuned_top1_qual[k])
+            for key in step_commitment_raw_kl_qual:
+                all_commitment_raw_kl_qual[key].append(step_commitment_raw_kl_qual[key])
+                all_commitment_tuned_kl_qual[key].append(step_commitment_tuned_kl_qual[key])
 
             n_prompts_done += 1
             if n_prompts_done % 50 == 0:
@@ -1527,10 +1656,28 @@ def eval_commitment(
             all_commitment_majority[thresh]
         )
     # Training-free methods
-    summary["median_commitment_cosine"] = _flatten_median(all_commitment_cosine)
+    for thresh in COSINE_THRESHOLDS:
+        summary[f"median_commitment_cosine_{thresh}"] = _flatten_median(
+            all_commitment_cosine[thresh]
+        )
     for thresh in KL_THRESHOLDS:
         summary[f"median_commitment_entropy_{thresh}"] = _flatten_median(
             all_commitment_entropy[thresh]
+        )
+    # Qualified commitment
+    for k in TOPK_QUALIFICATIONS:
+        summary[f"median_commitment_raw_top1_qual_top{k}"] = _flatten_median(
+            all_commitment_raw_top1_qual[k]
+        )
+        summary[f"median_commitment_tuned_top1_qual_top{k}"] = _flatten_median(
+            all_commitment_tuned_top1_qual[k]
+        )
+    for key in all_commitment_raw_kl_qual:
+        summary[f"median_commitment_raw_kl_qual_{key}"] = _flatten_median(
+            all_commitment_raw_kl_qual[key]
+        )
+        summary[f"median_commitment_tuned_kl_qual_{key}"] = _flatten_median(
+            all_commitment_tuned_kl_qual[key]
         )
 
     return summary
