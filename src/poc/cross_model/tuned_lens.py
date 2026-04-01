@@ -507,19 +507,29 @@ def train_probes(
     n_layers = spec.n_layers
     d_model = spec.d_model
 
-    # Check for already-trained probes (resumable)
+    # Check for already-trained probes (resumable).
+    # training_summary.json is written only after full training completes.
+    # checkpoint.json is written every 50 steps during training.
+    # We skip training ONLY if training_summary.json exists (= fully done).
     existing = set()
     for p in output_dir.glob("probe_layer_*.pt"):
         try:
             existing.add(int(p.stem.split("_")[-1]))
         except ValueError:
             pass
-    if len(existing) == n_layers:
-        log.info("All %d probes already exist, skipping training.", n_layers)
-        summary_path = output_dir / "training_summary.json"
-        if summary_path.exists():
-            return json.loads(summary_path.read_text())
-        return {}
+    summary_path = output_dir / "training_summary.json"
+    if len(existing) == n_layers and summary_path.exists():
+        log.info("All %d probes already exist with summary, skipping training.", n_layers)
+        return json.loads(summary_path.read_text())
+    if existing:
+        ckpt_path = output_dir / "checkpoint.json"
+        if ckpt_path.exists():
+            ckpt = json.loads(ckpt_path.read_text())
+            log.info("Found %d checkpoint probes at step %s/%s — retraining from scratch "
+                     "(checkpoints are safety net, not resume point).",
+                     len(existing), ckpt.get("checkpoint_step"), ckpt.get("n_steps"))
+        else:
+            log.info("Found %d partial probes without summary — retraining.", len(existing))
 
     # Freeze model — only probe parameters should receive gradients.
     # Without this, backward() stores gradients on lm_head (~3 GB for 256K vocab)
@@ -723,6 +733,17 @@ def train_probes(
                             }
                         del v_h, v_final, v_target, v_probed, v_pred
                 torch.cuda.empty_cache()
+
+                # Checkpoint: save best probes so far to disk.
+                # If preempted/killed, these survive and the resume logic
+                # will detect all n_layers probes exist → skip training.
+                for li in layers_to_train:
+                    state = best_states[li] if best_states[li] is not None else probes[li].state_dict()
+                    torch.save(state, output_dir / f"probe_layer_{li}.pt")
+                ckpt_meta = {"checkpoint_step": step + 1, "n_steps": n_steps}
+                (output_dir / "checkpoint.json").write_text(json.dumps(ckpt_meta))
+                log.info("  [checkpoint] Saved %d probes at step %d/%d",
+                         len(layers_to_train), step + 1, n_steps)
 
         # ── Save all probes and compute final eval metrics ────────────────
         for li in layers_to_train:
