@@ -105,6 +105,8 @@ def load_model(cfg) -> "LoadedModel":
             cfg.model_name, torch_dtype=dtype, device_map=str(device)
         )
         hf_tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
+        if hf_tokenizer.pad_token is None:
+            hf_tokenizer.pad_token = hf_tokenizer.eos_token
         # get_output_embeddings() is the HF-standard accessor for the output projection
         # (lm_head) across all model families — avoids hardcoding nested attribute paths.
         W_U = hf_model.get_output_embeddings().weight.detach().float().T.contiguous().to(device)

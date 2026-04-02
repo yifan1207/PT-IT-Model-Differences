@@ -1079,7 +1079,8 @@ def main() -> None:
     # Override real_token_mask with adapter's generalized version when multi-model
     if steering_adapter is not None:
         device = torch.device(cfg.device)
-        loaded.real_token_mask = steering_adapter.real_token_mask(loaded.tokenizer, device)
+        model_raw = loaded.model._model
+        loaded.real_token_mask = steering_adapter.real_token_mask(loaded.tokenizer, device, model_raw=model_raw)
 
     condition_specs = _condition_specs(cfg)
 

@@ -67,18 +67,28 @@ class SteeringAdapter:
 
     # ── Real-token mask ─────────────────────────────────────────────────────
 
-    def real_token_mask(self, tokenizer: Any, device: torch.device) -> torch.Tensor:
-        """Boolean mask [vocab_size] — True for real tokens, False for placeholders.
+    def real_token_mask(self, tokenizer: Any, device: torch.device,
+                        model_raw: nn.Module | None = None) -> torch.Tensor:
+        """Boolean mask [logit_dim] — True for real tokens, False for placeholders.
 
         Gemma has ~100k <unusedXXXX> placeholder tokens whose W_U columns have
         high norms from random init; generating them produces garbage.  Other
         models typically don't have this issue, so we return all-True for them.
 
-        We also suppress any token that the tokenizer maps to UNK (id == unk_token_id
-        AND the token string is a known placeholder pattern).
+        The mask size matches the model's actual logit output dimension (from
+        lm_head weight), which may be larger than len(tokenizer) due to vocab
+        padding.  Extra entries beyond the tokenizer are suppressed.
         """
-        vocab_size = len(tokenizer)
-        all_token_strs = tokenizer.convert_ids_to_tokens(list(range(vocab_size)))
+        tok_vocab_size = len(tokenizer)
+
+        # Determine the actual logit dimension from the model's lm_head
+        if model_raw is not None:
+            lm_head = self.adapter.lm_head(model_raw)
+            logit_dim = lm_head.weight.shape[0]
+        else:
+            logit_dim = tok_vocab_size
+
+        all_token_strs = tokenizer.convert_ids_to_tokens(list(range(tok_vocab_size)))
 
         # Patterns for tokens to suppress during generation
         _suppress_patterns = [
@@ -86,7 +96,10 @@ class SteeringAdapter:
             re.compile(r"^<\|reserved_special_token_\d+\|>$"),  # Llama 3
         ]
 
-        mask = torch.ones(vocab_size, dtype=torch.bool, device=device)
+        mask = torch.ones(logit_dim, dtype=torch.bool, device=device)
+        # Suppress padding entries beyond the tokenizer's vocab
+        if logit_dim > tok_vocab_size:
+            mask[tok_vocab_size:] = False
         for i, tok_str in enumerate(all_token_strs):
             if tok_str is None:
                 mask[i] = False
@@ -97,9 +110,9 @@ class SteeringAdapter:
                     break
 
         n_real = int(mask.sum().item())
-        n_suppressed = vocab_size - n_real
+        n_suppressed = logit_dim - n_real
         if n_suppressed > 0:
-            print(f"  Vocabulary: {vocab_size} total, {n_real} real tokens, "
+            print(f"  Vocabulary: {logit_dim} total, {n_real} real tokens, "
                   f"{n_suppressed} placeholder tokens filtered")
         return mask
 
