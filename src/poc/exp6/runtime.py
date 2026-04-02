@@ -56,7 +56,10 @@ def _tokenize_prompt(record: dict, tokenizer: Any, cfg: Exp6Config, device: torc
     return tokenizer.encode(prompt, return_tensors="pt").to(device)
 
 
-def _eos_token_ids(tokenizer: Any, cfg: Exp6Config) -> list[int]:
+def _eos_token_ids(tokenizer: Any, cfg: Exp6Config, adapter: Any = None) -> list[int]:
+    if adapter is not None:
+        return adapter.eos_token_ids(tokenizer)
+    # Legacy Gemma path
     eos = [tokenizer.eos_token_id]
     if cfg.model_variant == "it":
         eot = tokenizer.convert_tokens_to_ids("<end_of_turn>")
@@ -75,6 +78,7 @@ def generate_records_A_batch(
     loaded: Any,
     cfg: Exp6Config,
     intervention: Exp6InterventionSpec,
+    adapter: Any = None,
     batch_size: int = _BATCH_SIZE_A,
 ) -> list[GeneratedSample6]:
     """Batch-generate for a list of records using register_forward_hook + model.generate().
@@ -83,8 +87,12 @@ def generate_records_A_batch(
     hooks active. ~8x faster than sequential single-record generation.
 
     Benchmarked: batch=8 → ~212 tok/s vs ~34 tok/s sequential (6x+ improvement).
+
+    Args:
+        adapter: Optional SteeringAdapter for multi-model support. When None, uses
+            legacy Gemma paths.
     """
-    model_raw = loaded.model._model   # Gemma3ForConditionalGeneration
+    model_raw = loaded.model._model
     tokenizer = loaded.tokenizer
     device = next(model_raw.parameters()).device
 
@@ -96,7 +104,7 @@ def generate_records_A_batch(
 
     bad_mask = ~loaded.real_token_mask.to(device)
     logits_processor = LogitsProcessorList([_RealTokenMaskProcessor(bad_mask)])
-    eos_ids = _eos_token_ids(tokenizer, cfg)
+    eos_ids = _eos_token_ids(tokenizer, cfg, adapter=adapter)
 
     results: list[GeneratedSample6] = []
 
@@ -104,9 +112,13 @@ def generate_records_A_batch(
     # final_norm + lm_head applied to each layer's residual stream output.
     do_logit_lens = getattr(cfg, "collect_logit_lens", False)
     if do_logit_lens:
-        ll_norm    = model_raw.language_model.model.norm
-        ll_lm_head = model_raw.language_model.lm_head
-        n_layers   = cfg.n_layers   # 34 for Gemma-3-4b
+        if adapter is not None:
+            ll_norm    = adapter.get_final_norm(model_raw)
+            ll_lm_head = adapter.get_lm_head(model_raw)
+        else:
+            ll_norm    = model_raw.language_model.model.norm
+            ll_lm_head = model_raw.language_model.lm_head
+        n_layers   = cfg.n_layers
 
     try:
         for batch_start in range(0, len(records), batch_size):
@@ -142,12 +154,17 @@ def generate_records_A_batch(
                         ll_steps[li].append(top1.cpu().tolist())
                 return hook
 
-            handles = intervention.register_hooks(model_raw, cfg)
-            ll_handles = (
-                [model_raw.language_model.layers[li].register_forward_hook(make_ll_hook(li))
-                 for li in range(n_layers)]
-                if do_logit_lens else []
-            )
+            handles = intervention.register_hooks(model_raw, cfg, adapter=adapter)
+            if do_logit_lens:
+                if adapter is not None:
+                    layers_list = adapter.get_layers(model_raw)
+                    ll_handles = [layers_list[li].register_forward_hook(make_ll_hook(li))
+                                  for li in range(n_layers)]
+                else:
+                    ll_handles = [model_raw.language_model.layers[li].register_forward_hook(make_ll_hook(li))
+                                  for li in range(n_layers)]
+            else:
+                ll_handles = []
             try:
                 with torch.no_grad():
                     out_ids = model_raw.generate(
@@ -204,8 +221,9 @@ def generate_record_A(
     loaded: Any,
     cfg: Exp6Config,
     intervention: Exp6InterventionSpec,
+    adapter: Any = None,
 ) -> GeneratedSample6:
-    return generate_records_A_batch([record], loaded, cfg, intervention, batch_size=1)[0]
+    return generate_records_A_batch([record], loaded, cfg, intervention, adapter=adapter, batch_size=1)[0]
 
 
 # ── Path B: plain-hook generation ────────────────────────────────────────────
@@ -318,6 +336,7 @@ def generate_records_B_batch(
     real_token_mask: torch.Tensor,
     cfg: Exp6Config,
     hooks_config: dict,
+    adapter: Any = None,
     batch_size: int = _BATCH_SIZE_B,
 ) -> list[GeneratedSample6]:
     """Batched generation for B experiments using register_forward_hook + model.generate().
@@ -332,7 +351,7 @@ def generate_records_B_batch(
 
     bad_mask = ~real_token_mask.to(device)
     logits_processor = LogitsProcessorList([_RealTokenMaskProcessor(bad_mask)])
-    eos_ids = _eos_token_ids(tokenizer, cfg)
+    eos_ids = _eos_token_ids(tokenizer, cfg, adapter=adapter)
 
     results: list[GeneratedSample6] = []
     try:
@@ -412,6 +431,7 @@ def generate_record_B(
     real_token_mask: torch.Tensor,
     cfg: Exp6Config,
     hooks_config: dict,  # {"transcoders": ..., "governance_features": ..., "mean_acts": ..., "governance_direction": ...}
+    adapter: Any = None,
 ) -> GeneratedSample6:
     """Autoregressive generation with plain forward hooks (Approach B).
 
@@ -440,11 +460,14 @@ def generate_record_B(
     else:
         input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
 
-    eos = {tokenizer.eos_token_id}
-    if cfg.model_variant == "it":
-        eot = tokenizer.convert_tokens_to_ids("<end_of_turn>")
-        if eot is not None and eot != tokenizer.unk_token_id:
-            eos.add(eot)
+    if adapter is not None:
+        eos = set(adapter.eos_token_ids(tokenizer))
+    else:
+        eos = {tokenizer.eos_token_id}
+        if cfg.model_variant == "it":
+            eot = tokenizer.convert_tokens_to_ids("<end_of_turn>")
+            if eot is not None and eot != tokenizer.unk_token_id:
+                eos.add(eot)
 
     # Register hooks based on method
     hook_handles: list = []

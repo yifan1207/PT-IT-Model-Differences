@@ -35,6 +35,56 @@ All plots have 95% CI bands or ±1σ error bars where data supports it (from 0D 
 
 ## IMMEDIATE NEXT STEPS
 
+### 0. Phase 0: Multi-model steering (HIGHEST PRIORITY)
+Extends causal steering from Gemma-only to all 6 models. Code changes DONE.
+
+**New files:**
+- `src/poc/exp6/model_adapter.py` — SteeringAdapter bridging cross_model adapters to exp6
+- `scripts/precompute_directions_multimodel.py` — Multi-model direction extraction (4-phase pipeline)
+- `scripts/run_phase0_multimodel.sh` — Orchestration script
+
+**Modified files:**
+- `src/poc/exp6/config.py` — Added `model_family` field, derives arch params from MODEL_REGISTRY
+- `src/poc/exp6/interventions.py` — `register_hooks()` accepts optional `adapter` param
+- `src/poc/exp6/runtime.py` — Generalized EOS tokens, logit-lens hooks, real_token_mask
+- `src/poc/exp6/run.py` — Added `--model-name` and `--no-chat-template` CLI args
+
+**Run order:**
+```bash
+# Step 1: Precompute directions for 5 new models (~6h, GPUs 2-7)
+bash scripts/run_phase0_multimodel.sh --step precompute
+
+# Step 2: Validate (3-point sanity check, ~2h)
+bash scripts/run_phase0_multimodel.sh --step validate
+
+# Step 3: Full A1 alpha-sweep + logit lens, all 6 models (~17h, GPUs 2-7)
+bash scripts/run_phase0_multimodel.sh --step steer
+
+# Step 4: LLM judge (~4h, API-bound, can overlap with steps 5-7)
+bash scripts/run_phase0_multimodel.sh --step judge
+
+# Step 5: 1A PCA of IT-PT direction (~1.5h, 6 models in parallel)
+bash scripts/run_phase0_multimodel.sh --step pca
+
+# Step 6: 1C ID under steering (TwoNN, ~30min, 6 models in parallel)
+bash scripts/run_phase0_multimodel.sh --step id-steering
+
+# Step 7: 1B Commitment vs alpha (CPU post-processing, ~30min)
+bash scripts/run_phase0_multimodel.sh --step commitment
+```
+
+**Piggybacked experiments (1A/1B/1C):**
+- **1A PCA**: `scripts/phase0_pca_direction.py` — Is PC1 > 60%? Rank-1 justified?
+- **1B Commitment**: `scripts/phase0_commitment_vs_alpha.py` — Commitment layer vs α (THE causal link)
+- **1C ID under steering**: `scripts/phase0_id_under_steering.py` — TwoNN ID at α=1.0, 0.0, -1.0
+
+**Key design decisions:**
+- ALL experiments use `apply_chat_template=False` (raw format B) for cross-model consistency
+- Gemma directions reused from `results/exp5/precompute_v2/precompute/` (already no-template)
+- Gemma A1 rerun needed (existing A1_it_v4 used chat template)
+- Output: `results/cross_model/{model}/directions/` and `results/cross_model/{model}/exp6/`
+- GPUs 0-1 reserved for other users; GPUs 2-7 available
+
 ### 1. Rerun 0I (expanded alpha values)
 Script: `scripts/run_exp7_0I.sh` — already updated with 14 alpha values, 4 methods, 60 conditions.
 ```bash
@@ -130,26 +180,38 @@ None use multi_gpu (all fit on 1×80GB A100).
 ## Key file paths
 
 ```
+# Phase 0 (multi-model steering)
+src/poc/exp6/model_adapter.py       — SteeringAdapter for multi-model hook resolution
+scripts/precompute_directions_multimodel.py — Multi-model direction extraction
+scripts/run_phase0_multimodel.sh    — Phase 0 orchestration (precompute/validate/steer/judge)
+
+# Exp6 core
+src/poc/exp6/run.py                 — Core intervention runner (--model-name for multi-model)
+src/poc/exp6/config.py              — Exp6Config (model_family field for multi-model)
+src/poc/exp6/interventions.py       — Hook registration (adapter param for multi-model)
+src/poc/exp6/runtime.py             — Generation (adapter param for multi-model)
+
+# Exp7 / Cross-model
 scripts/plot_exp7_tier0.py          — All Tier 0 plots (0A-0J)
 scripts/plot_tuned_lens_commitment.py — 0G commitment plots
 scripts/merge_exp6_workers.py       — Merge multi-worker results
 scripts/run_exp7_0*.sh              — Per-experiment run scripts
-
-src/poc/exp6/run.py                 — Core intervention runner
 src/poc/cross_model/tuned_lens.py   — Tuned-lens training/eval
 src/poc/cross_model/config.py       — MODEL_REGISTRY
+src/poc/cross_model/adapters/       — Per-model architecture adapters
 src/poc/exp7/bootstrap_ci.py        — Bootstrap CIs + effect sizes
-src/poc/exp7/layer_range_analysis.py — 0F layer range analysis + plot
-src/poc/exp7/onset_threshold_sensitivity.py — 0J analysis
 
-results/exp6/merged_A1_it_v4/       — Canonical A1 intervention results
-results/exp7/0*/                    — Per-experiment results
+# Results
+results/exp6/merged_A1_it_v4/       — Canonical A1 intervention results (Gemma, with chat template)
+results/cross_model/{model}/directions/ — Per-model corrective directions
+results/cross_model/{model}/exp6/   — Per-model steering results (Phase 0)
+results/exp7/0*/                    — Per-experiment Tier 0 results
 results/exp7/plots/                 — All PNG plots
 results/exp7/plots/data/            — All JSON data exports
-results/cross_model/                — Per-model tuned-lens probes + commitment data
 ```
 
 ## GPU usage
-- Server has 8× A100 80GB GPUs (cuda:0-7)
+- Server has 8× H100 80GB GPUs (cuda:0-7)
 - Another user (ubuntu) runs RL training — check `nvidia-smi` before claiming GPUs
 - Never interfere with other users' processes
+- Phase 0: use GPUs 2-7 (0-1 typically occupied)

@@ -30,6 +30,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 import numpy as np
+import torch
 
 from src.poc.collect import load_dataset_records
 from src.poc.exp6.benchmarks.governance import evaluate_governance_benchmark
@@ -639,6 +640,7 @@ def _run_condition_A(
     scores_jsonl: Path,
     samples_jsonl: Path,
     done_benchmarks: set[str],
+    adapter: Any = None,
 ) -> list[dict]:
     """Run one A-experiment condition (nnsight trace).
 
@@ -662,7 +664,7 @@ def _run_condition_A(
         cached_all_outputs = []
         for batch_start in range(0, len(records), BATCH_SIZE):
             batch = records[batch_start: batch_start + BATCH_SIZE]
-            cached_all_outputs.extend(generate_records_A_batch(batch, loaded, cfg, intervention, batch_size=BATCH_SIZE))
+            cached_all_outputs.extend(generate_records_A_batch(batch, loaded, cfg, intervention, adapter=adapter, batch_size=BATCH_SIZE))
             done_so_far = min(batch_start + BATCH_SIZE, len(records))
             if done_so_far % 100 < BATCH_SIZE or done_so_far == len(records):
                 _check_disk()
@@ -695,7 +697,7 @@ def _run_condition_A(
             outputs = []
             for batch_start in range(0, len(bench_records), BATCH_SIZE):
                 batch = bench_records[batch_start: batch_start + BATCH_SIZE]
-                outputs.extend(generate_records_A_batch(batch, loaded, fc_cfg, intervention, batch_size=BATCH_SIZE))
+                outputs.extend(generate_records_A_batch(batch, loaded, fc_cfg, intervention, adapter=adapter, batch_size=BATCH_SIZE))
                 done_so_far = min(batch_start + BATCH_SIZE, len(bench_records))
                 if done_so_far % 100 < BATCH_SIZE or done_so_far == len(bench_records):
                     _check_disk()
@@ -705,7 +707,7 @@ def _run_condition_A(
             outputs = []
             for batch_start in range(0, len(bench_records), BATCH_SIZE):
                 batch = bench_records[batch_start: batch_start + BATCH_SIZE]
-                outputs.extend(generate_records_A_batch(batch, loaded, cfg, intervention, batch_size=BATCH_SIZE))
+                outputs.extend(generate_records_A_batch(batch, loaded, cfg, intervention, adapter=adapter, batch_size=BATCH_SIZE))
                 done_so_far = min(batch_start + BATCH_SIZE, len(bench_records))
                 if done_so_far % 100 < BATCH_SIZE or done_so_far == len(bench_records):
                     _check_disk()
@@ -935,6 +937,13 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Run exp6 steering experiments.")
     p.add_argument("--experiment", choices=["A1", "A1_notmpl", "A1_early", "A1_mid", "A1_rand", "A1_rand_matched", "A1_rand_matched_multiseed", "A1_formula", "A1_single_layer", "A2", "A5a", "A5a_early", "A5a_mid", "A5a_notmpl", "A5b", "B1", "B2", "B3", "B4", "B5"], required=True)
     p.add_argument("--variant", choices=["pt", "it"], default="it")
+    p.add_argument("--model-name", default="",
+                   help="Model family from cross_model registry (e.g. llama31_8b). "
+                        "When set, derives model_id, n_layers, d_model, proposal_boundary "
+                        "from MODEL_REGISTRY. Empty = legacy Gemma path.")
+    p.add_argument("--no-chat-template", action="store_true", default=False,
+                   help="Force apply_chat_template=False for all variants (raw format B input). "
+                        "Required for Phase 0 multi-model consistency.")
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl")
     p.add_argument("--device", default="cuda")
     p.add_argument("--max-gen-tokens", type=int, default=200)
@@ -982,6 +991,15 @@ def main() -> None:
 
     is_B = args.experiment.startswith("B")
 
+    # Build config — model_family triggers MODEL_REGISTRY lookup for architecture params
+    cfg_kwargs: dict = {}
+    if args.model_name:
+        cfg_kwargs["model_family"] = args.model_name
+    if args.proposal_boundary is not None:
+        cfg_kwargs["proposal_boundary"] = args.proposal_boundary
+    if args.n_layers is not None:
+        cfg_kwargs["n_layers"] = args.n_layers
+
     cfg = Exp6Config(
         experiment=args.experiment,
         model_variant=args.variant,
@@ -1002,9 +1020,21 @@ def main() -> None:
         feature_layer_range=args.feature_layer_range,
         skip_transcoders=(not is_B),
         collect_logit_lens=args.collect_logit_lens,
-        **({"proposal_boundary": args.proposal_boundary} if args.proposal_boundary is not None else {}),
-        **({"n_layers": args.n_layers} if args.n_layers is not None else {}),
+        **cfg_kwargs,
     )
+
+    # Force no-chat-template if requested (Phase 0 multi-model consistency)
+    if args.no_chat_template:
+        object.__setattr__(cfg, "apply_chat_template", False)
+
+    # Build steering adapter for multi-model support
+    steering_adapter = None
+    if args.model_name:
+        from src.poc.exp6.model_adapter import get_steering_adapter
+        steering_adapter = get_steering_adapter(args.model_name)
+        print(f"[exp6] model={args.model_name} n_layers={cfg.n_layers} d_model={cfg.d_model} "
+              f"proposal_boundary={cfg.proposal_boundary} corrective_layers={cfg.corrective_layers[0]}-{cfg.corrective_layers[-1]}",
+              flush=True)
 
     ensure_dir(cfg.run_dir)
     ensure_dir(cfg.plots_dir)
@@ -1045,6 +1075,11 @@ def main() -> None:
     if cfg.n_eval_examples and len(records) > cfg.n_eval_examples:
         records = records[:cfg.n_eval_examples]
     loaded = load_model(cfg)
+
+    # Override real_token_mask with adapter's generalized version when multi-model
+    if steering_adapter is not None:
+        device = torch.device(cfg.device)
+        loaded.real_token_mask = steering_adapter.real_token_mask(loaded.tokenizer, device)
 
     condition_specs = _condition_specs(cfg)
 
@@ -1102,6 +1137,7 @@ def main() -> None:
             _run_condition_A(
                 condition_name, condition_cfg, records, loaded,
                 scores_jsonl, samples_jsonl, done_benchmarks,
+                adapter=steering_adapter,
             )
 
         print(f"[exp6] {condition_name} done", flush=True)

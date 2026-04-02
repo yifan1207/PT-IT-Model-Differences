@@ -282,23 +282,43 @@ class Exp6InterventionSpec:
         raise ValueError(f"Unknown A-experiment method: {self.method!r}")
 
 
-    def register_hooks(self, model_raw: Any, cfg: Any) -> list:
+    def register_hooks(self, model_raw: Any, cfg: Any, adapter: Any = None) -> list:
         """Register forward hooks on raw HF model MLP modules (fast path).
 
         Returns a list of hook handles. Caller must call h.remove() for each.
         This replaces apply_in_trace() for A experiments, enabling use of
         model.generate() with KV cache instead of the slow token-by-token nnsight loop.
+
+        Args:
+            adapter: Optional SteeringAdapter. When provided, uses adapter for
+                architecture-specific layer paths. Falls back to Gemma paths if None.
         """
         if self.method == "none" or not self.layers:
             return []
+
+        # Layer access helpers — use adapter if available, else Gemma paths
+        def _get_mlp(li: int):
+            if adapter is not None:
+                return adapter.get_mlp(model_raw, li)
+            return model_raw.language_model.layers[li].mlp
+
+        def _get_attn(li: int):
+            if adapter is not None:
+                return adapter.get_attn(model_raw, li)
+            return model_raw.language_model.layers[li].self_attn
+
+        def _get_layer(li: int):
+            if adapter is not None:
+                return adapter.get_layer(model_raw, li)
+            return model_raw.language_model.layers[li]
 
         handles = []
 
         # ── Progressive skip: zero MLP + attention outputs → layer acts as identity ──
         if self.method == "progressive_skip":
             for layer_idx in self.layers:
-                mlp_mod  = model_raw.language_model.layers[layer_idx].mlp
-                attn_mod = model_raw.language_model.layers[layer_idx].self_attn
+                mlp_mod  = _get_mlp(layer_idx)
+                attn_mod = _get_attn(layer_idx)
 
                 def make_zero_mlp_hook():
                     def hook(mod: Any, inp: tuple, out: torch.Tensor) -> torch.Tensor:
@@ -321,7 +341,7 @@ class Exp6InterventionSpec:
         # ── Residual stream hook (Exp7 0I: directional_remove_residual) ─────────────
         if self.method == "directional_remove_residual":
             for layer_idx in self.layers:
-                layer_mod = model_raw.language_model.layers[layer_idx]
+                layer_mod = _get_layer(layer_idx)
 
                 def make_residual_hook(li: int):
                     def hook(mod: Any, inp: tuple, out: Any) -> Any:
@@ -346,7 +366,7 @@ class Exp6InterventionSpec:
         # ── Attention output hook (Exp7 0I: directional_remove_attn) ─────────────
         if self.method == "directional_remove_attn":
             for layer_idx in self.layers:
-                attn_mod = model_raw.language_model.layers[layer_idx].self_attn
+                attn_mod = _get_attn(layer_idx)
 
                 def make_attn_hook(li: int):
                     def hook(mod: Any, inp: tuple, out: Any) -> Any:
@@ -370,7 +390,7 @@ class Exp6InterventionSpec:
 
         # ── Directional methods: hook MLP only ────────────────────────────────────
         for layer_idx in self.layers:
-            mlp_mod = model_raw.language_model.layers[layer_idx].mlp
+            mlp_mod = _get_mlp(layer_idx)
 
             def make_hook(li: int):
                 def hook(mod: Any, inp: tuple, out: torch.Tensor) -> torch.Tensor:

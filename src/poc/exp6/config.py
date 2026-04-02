@@ -42,7 +42,8 @@ class Exp6Config:
     # ── Experiment identity ────────────────────────────────────────────────
     experiment: str = "A1"          # "A1" | "A2" | "B1" | "B2" | "B3" | "B4"
     model_variant: str = "it"       # "it" | "pt"
-    model_id: str = ""              # auto-derived from variant
+    model_id: str = ""              # auto-derived from variant or model_family
+    model_family: str = ""          # key in MODEL_REGISTRY (e.g. "llama31_8b"); empty = legacy Gemma
 
     # ── Dataset & prompt ──────────────────────────────────────────────────
     dataset_path: str = "data/eval_dataset_v2.jsonl"
@@ -110,7 +111,20 @@ class Exp6Config:
     ])
 
     def __post_init__(self) -> None:
-        if not self.model_id:
+        # If model_family is set, derive architecture params from MODEL_REGISTRY.
+        if self.model_family:
+            from src.poc.cross_model.config import get_spec, model_id_for_variant
+            spec = get_spec(self.model_family)
+            if not self.model_id:
+                self.model_id = model_id_for_variant(spec, self.model_variant)
+            # Only override architecture params if they're still at Gemma defaults
+            if self.n_layers == 34 and spec.n_layers != 34:
+                self.n_layers = spec.n_layers
+            if self.d_model == 2560 and spec.d_model != 2560:
+                self.d_model = spec.d_model
+            if self.proposal_boundary == 20 and spec.corrective_onset != 20:
+                self.proposal_boundary = spec.corrective_onset
+        elif not self.model_id:
             self.model_id = f"google/gemma-3-4b-{self.model_variant}"
         if not self.transcoder_release:
             self.transcoder_release = f"google/gemma-scope-2-4b-{self.model_variant}"
