@@ -43,7 +43,7 @@ hf_cache_vol = modal.Volume.from_name("0g-hf-cache", create_if_missing=True)
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install(
-        "torch",
+        "torch>=2.5.0,<2.7.0",  # pin to CUDA 12.x compatible range
         "transformers==4.57.3",  # pin exact — DeepSeek breaks on >=5.0
         "accelerate",
         "numpy",
@@ -76,7 +76,7 @@ MODEL_INFO = {
 # ── Main eval function ────────────────────────────────────────────────────
 
 @app.function(
-    gpu=["H100", "A100-80GB"],       # prefer H100, fall back to A100-80GB
+    gpu=["H100", "A100-80GB"],           # H100 preferred; B200 needs torch>=2.7
     timeout=86400,                    # 24 hours max per attempt
     retries=modal.Retries(
         max_retries=10,               # max 10 retries per job
@@ -90,6 +90,7 @@ MODEL_INFO = {
         "/root/.cache/huggingface": hf_cache_vol,
     },
     secrets=[modal.Secret.from_name("huggingface-token")],
+    max_containers=10,                # use all 10 GPU slots
     memory=65536,                     # 64 GiB RAM
     cpu=8.0,
 )
@@ -116,7 +117,9 @@ def eval_model_variant(model_name: str, variant: str) -> dict:
     log = logging.getLogger("modal_eval")
     log.info("=== Starting eval: %s/%s ===", model_name, variant)
     log.info("GPU: %s", torch.cuda.get_device_name(0))
-    log.info("VRAM: %.1f GB", torch.cuda.get_device_properties(0).total_mem / 1e9)
+    props = torch.cuda.get_device_properties(0)
+    vram = getattr(props, 'total_memory', getattr(props, 'total_mem', 0))
+    log.info("VRAM: %.1f GB", vram / 1e9)
 
     # ── Set up paths ──────────────────────────────────────────────────────
     probe_src = Path(f"/probes/{model_name}/{variant}")
@@ -127,9 +130,12 @@ def eval_model_variant(model_name: str, variant: str) -> dict:
 
     # ── Check for already-complete evaluation ─────────────────────────────
     results_vol.reload()
-    if summary_path.exists():
-        log.info("Summary already exists at %s — skipping", summary_path)
+    arrays_complete = (results_dir / "arrays" / "step_index.jsonl").exists()
+    if summary_path.exists() and arrays_complete:
+        log.info("Summary + arrays already exist — skipping")
         return json.loads(summary_path.read_text())
+    elif summary_path.exists():
+        log.info("Summary exists but arrays missing — re-running with collect_full")
 
     # ── Reload probes volume ──────────────────────────────────────────────
     probes_vol.reload()
@@ -246,12 +252,17 @@ def eval_model_variant(model_name: str, variant: str) -> dict:
         len(records), max_new_tokens,
     )
 
+    arrays_dir = results_dir / "arrays"
     try:
         summary = eval_commitment(
             model, tokenizer, adapter, spec, probes, records, device,
             output_path=out_path,
             variant=variant,
             max_new_tokens=max_new_tokens,
+            collect_full=True,
+            collect_top5=True,
+            top5_max_prompts=200,
+            arrays_dir=arrays_dir,
         )
     finally:
         stop_event.set()
@@ -274,16 +285,20 @@ def eval_model_variant(model_name: str, variant: str) -> dict:
 @app.local_entrypoint()
 def main():
     """Launch all 12 eval jobs in parallel."""
+    # Order: slowest first. With 10-GPU limit, the 11th/12th jobs queue.
+    # 7B models (d=4096) are slowest → start first to minimize wall time.
+    # DeepSeek (smallest, max_new_tokens=64) is fastest → queued last.
     models = [
-        "gemma3_4b", "llama31_8b", "qwen3_4b",
-        "mistral_7b", "deepseek_v2_lite", "olmo2_7b",
+        "llama31_8b", "mistral_7b", "olmo2_7b",   # 7B models (slowest)
+        "gemma3_4b", "qwen3_4b",                   # 4B models
+        "deepseek_v2_lite",                         # MoE (fastest)
     ]
     variants = ["pt", "it"]
     configs = list(itertools.product(models, variants))
 
     print(f"Launching {len(configs)} eval jobs in parallel...")
     print("Each job: 2,936 prompts × all commitment metrics")
-    print("GPU preference: H100 > A100-80GB")
+    print("GPU preference: H100 > A100-80GB (max 10 containers)")
     print()
 
     results = list(eval_model_variant.starmap(configs))

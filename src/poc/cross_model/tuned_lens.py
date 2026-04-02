@@ -1269,6 +1269,90 @@ def _commitment_from_entropy(
     return n - 1
 
 
+# ── Array checkpoint helper ────────────────────────────────────────────────
+
+def _save_arrays_checkpoint(
+    arrays_dir: Path,
+    n_layers: int,
+    arr_raw_top1, arr_tuned_top1, arr_generated_ids,
+    arr_raw_kl_final, arr_tuned_kl_final,
+    arr_raw_kl_adj, arr_tuned_kl_adj,
+    arr_raw_ntprob, arr_tuned_ntprob,
+    arr_raw_ntrank, arr_tuned_ntrank,
+    arr_raw_entropy, arr_tuned_entropy,
+    arr_delta_cosine, arr_cosine_final,
+    arr_raw_top5_ids, arr_raw_top5_probs,
+    arr_tuned_top5_ids, arr_tuned_top5_probs,
+    step_index_records, top5_step_index_records,
+) -> None:
+    """Save accumulated per-step arrays to NPY files + step index JSONL."""
+    arrays_dir.mkdir(parents=True, exist_ok=True)
+
+    if not arr_raw_top1:
+        return
+
+    # Core arrays: [total_steps, n_layers]
+    # Token IDs use int32 (vocab sizes >32K overflow int16)
+    np.save(arrays_dir / "raw_top1.npy",
+            np.array(arr_raw_top1, dtype=np.int32))
+    np.save(arrays_dir / "tuned_top1.npy",
+            np.array(arr_tuned_top1, dtype=np.int32))
+    np.save(arrays_dir / "generated_ids.npy",
+            np.array(arr_generated_ids, dtype=np.int32))
+
+    # KL arrays: float16 for storage efficiency
+    np.save(arrays_dir / "raw_kl_final.npy",
+            np.array(arr_raw_kl_final, dtype=np.float16))
+    np.save(arrays_dir / "tuned_kl_final.npy",
+            np.array(arr_tuned_kl_final, dtype=np.float16))
+    np.save(arrays_dir / "raw_kl_adj.npy",
+            np.array(arr_raw_kl_adj, dtype=np.float16))
+    np.save(arrays_dir / "tuned_kl_adj.npy",
+            np.array(arr_tuned_kl_adj, dtype=np.float16))
+
+    # Probability + rank arrays
+    np.save(arrays_dir / "raw_ntprob.npy",
+            np.array(arr_raw_ntprob, dtype=np.float16))
+    np.save(arrays_dir / "tuned_ntprob.npy",
+            np.array(arr_tuned_ntprob, dtype=np.float16))
+    # Ranks: clamp to int16 range (ranks >32K are meaningless for analysis)
+    np.save(arrays_dir / "raw_ntrank.npy",
+            np.clip(np.array(arr_raw_ntrank, dtype=np.int32), 0, 32767).astype(np.int16))
+    np.save(arrays_dir / "tuned_ntrank.npy",
+            np.clip(np.array(arr_tuned_ntrank, dtype=np.int32), 0, 32767).astype(np.int16))
+
+    # Entropy arrays
+    np.save(arrays_dir / "raw_entropy.npy",
+            np.array(arr_raw_entropy, dtype=np.float16))
+    np.save(arrays_dir / "tuned_entropy.npy",
+            np.array(arr_tuned_entropy, dtype=np.float16))
+
+    # Cosine arrays
+    np.save(arrays_dir / "delta_cosine.npy",
+            np.array(arr_delta_cosine, dtype=np.float16))
+    np.save(arrays_dir / "cosine_h_to_final.npy",
+            np.array(arr_cosine_final, dtype=np.float16))
+
+    # Step index
+    with open(arrays_dir / "step_index.jsonl", "w") as f:
+        for rec in step_index_records:
+            f.write(json.dumps(rec) + "\n")
+
+    # Top-5 arrays (may be empty if collect_top5=False)
+    if arr_raw_top5_ids:
+        np.save(arrays_dir / "raw_top5_ids.npy",
+                np.array(arr_raw_top5_ids, dtype=np.int32))
+        np.save(arrays_dir / "raw_top5_probs.npy",
+                np.array(arr_raw_top5_probs, dtype=np.float16))
+        np.save(arrays_dir / "tuned_top5_ids.npy",
+                np.array(arr_tuned_top5_ids, dtype=np.int32))
+        np.save(arrays_dir / "tuned_top5_probs.npy",
+                np.array(arr_tuned_top5_probs, dtype=np.float16))
+        with open(arrays_dir / "top5_step_index.jsonl", "w") as f:
+            for rec in top5_step_index_records:
+                f.write(json.dumps(rec) + "\n")
+
+
 # ── Commitment evaluation (autoregressive, matching collect_L1L2.py) ──────
 
 @torch.no_grad()
@@ -1283,6 +1367,10 @@ def eval_commitment(
     output_path: Path,
     variant: str = "?",
     max_new_tokens: int = 512,
+    collect_full: bool = False,
+    collect_top5: bool = False,
+    top5_max_prompts: int = 200,
+    arrays_dir: Path | None = None,
 ) -> dict:
     """Evaluate commitment using autoregressive generation with hooks.
 
@@ -1292,6 +1380,10 @@ def eval_commitment(
       - KL(tuned_ℓ ‖ final) for KL-based commitment
 
     Output JSONL with per-prompt commitment layers at multiple thresholds.
+
+    With collect_full=True, also saves per-layer arrays (Groups B-G) as NPY
+    files in arrays_dir for downstream analysis (mind-change, confidence-
+    stratified commitment, adjacent-KL profiles, entropy, δ-cosine, etc.).
     """
     n_layers = spec.n_layers
     multi_gpu = spec.multi_gpu
@@ -1318,9 +1410,49 @@ def eval_commitment(
 
     # Resume support
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    done_ids = read_done_ids(output_path)
-    if done_ids:
-        log.info("Resuming: %d/%d already done", len(done_ids), len(records))
+    if collect_full:
+        # collect_full needs ALL prompts re-evaluated for aligned arrays.
+        # Clear any partial JSONL from previous interrupted run.
+        if output_path.exists():
+            output_path.unlink()
+        done_ids: set[str] = set()
+        log.info("collect_full=True: processing all %d prompts (no resume)", len(records))
+        if arrays_dir is None:
+            arrays_dir = output_path.parent / "arrays"
+        arrays_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        done_ids = read_done_ids(output_path)
+        if done_ids:
+            log.info("Resuming: %d/%d already done", len(done_ids), len(records))
+
+    # ── Cross-prompt array accumulators (Groups B-G) ──────────────────────
+    # These accumulate per-step data across ALL prompts for NPY output.
+    # Only populated when collect_full=True.
+    arr_raw_top1: list[list[int]] = []          # Group B
+    arr_tuned_top1: list[list[int]] = []        # Group B
+    arr_generated_ids: list[int] = []           # Group B
+    arr_raw_kl_final: list[list[float]] = []    # Group C
+    arr_tuned_kl_final: list[list[float]] = []  # Group C
+    arr_raw_kl_adj: list[list[float]] = []      # Group C (NEW computation)
+    arr_tuned_kl_adj: list[list[float]] = []    # Group C (NEW computation)
+    arr_raw_ntprob: list[list[float]] = []      # Group D
+    arr_tuned_ntprob: list[list[float]] = []    # Group D
+    arr_raw_ntrank: list[list[int]] = []        # Group D
+    arr_tuned_ntrank: list[list[int]] = []      # Group D
+    arr_raw_entropy: list[list[float]] = []     # Group F
+    arr_tuned_entropy: list[list[float]] = []   # Group F (NEW computation)
+    arr_delta_cosine: list[list[float]] = []    # Group G (NEW computation)
+    arr_cosine_final: list[list[float]] = []    # Group G (already computed)
+    # Group E (top-5, first top5_max_prompts only)
+    arr_raw_top5_ids: list[list[list[int]]] = []
+    arr_raw_top5_probs: list[list[list[float]]] = []
+    arr_tuned_top5_ids: list[list[list[int]]] = []
+    arr_tuned_top5_probs: list[list[list[float]]] = []
+    # Step index: maps prompt → step range
+    step_index_records: list[dict] = []
+    top5_step_index_records: list[dict] = []
+    global_step_counter = 0
+    top5_prompts_collected = 0
 
     # Aggregated stats
     all_commitment_raw: list[list[int]] = []
@@ -1368,6 +1500,13 @@ def eval_commitment(
                 for m in KL_QUALIFICATION_MULTIPLIERS:
                     step_commitment_raw_kl_qual[f"{t}_{m}x"] = []
                     step_commitment_tuned_kl_qual[f"{t}_{m}x"] = []
+
+            # Track whether to collect top-5 for this prompt
+            should_collect_top5 = (
+                collect_full and collect_top5
+                and top5_prompts_collected < top5_max_prompts
+            )
+            prompt_start_step = global_step_counter
 
             step_buf: list[torch.Tensor | None] = [None] * n_layers
 
@@ -1539,6 +1678,100 @@ def eval_commitment(
                         _commitment_from_entropy(entropy_row, thresh)
                     )
 
+                # === Full array collection (Groups B-G) ===
+                if collect_full:
+                    # Group B: top-1 tokens + generated token
+                    arr_raw_top1.append(raw_top1_row)
+                    arr_tuned_top1.append(tuned_top1_row)
+                    arr_generated_ids.append(final_top1)
+
+                    # Group C: KL-to-final (already computed)
+                    arr_raw_kl_final.append(raw_kl_row)
+                    arr_tuned_kl_final.append(kl_row)
+
+                    # Group C: Adjacent-layer KL (NEW)
+                    # KL(raw_ℓ ‖ raw_{ℓ-1}) — reuses all_raw_log_q (line ~1455)
+                    raw_adj_kl_row = [float("nan")]  # layer 0 has no predecessor
+                    for li in range(1, n_layers):
+                        if valid[li] and valid[li - 1]:
+                            adj_kl = F.kl_div(
+                                all_raw_log_q[li], all_raw_log_q[li - 1],
+                                reduction="none", log_target=True,
+                            ).sum(-1).item()
+                            raw_adj_kl_row.append(max(adj_kl, 0.0))
+                        else:
+                            raw_adj_kl_row.append(float("nan"))
+                    arr_raw_kl_adj.append(raw_adj_kl_row)
+
+                    # KL(tuned_ℓ ‖ tuned_{ℓ-1})
+                    tuned_adj_kl_row = [float("nan")]
+                    for li in range(1, n_layers):
+                        if valid[li] and valid[li - 1]:
+                            adj_kl = F.kl_div(
+                                all_log_q[li], all_log_q[li - 1],
+                                reduction="none", log_target=True,
+                            ).sum(-1).item()
+                            tuned_adj_kl_row.append(max(adj_kl, 0.0))
+                        else:
+                            tuned_adj_kl_row.append(float("nan"))
+                    arr_tuned_kl_adj.append(tuned_adj_kl_row)
+
+                    # Group D: Next-token probability + rank
+                    raw_ntprob_row = [
+                        float(all_raw_probs[li, final_top1].item()) if valid[li] else 0.0
+                        for li in range(n_layers)
+                    ]
+                    arr_raw_ntprob.append(raw_ntprob_row)
+
+                    all_tuned_probs = F.softmax(all_tuned_logits, dim=-1)
+                    tuned_ntprob_row = [
+                        float(all_tuned_probs[li, final_top1].item()) if valid[li] else 0.0
+                        for li in range(n_layers)
+                    ]
+                    arr_tuned_ntprob.append(tuned_ntprob_row)
+
+                    arr_raw_ntrank.append(raw_ranks)     # already computed
+                    arr_tuned_ntrank.append(tuned_ranks)  # already computed
+
+                    # Group F: Tuned entropy (NEW — raw entropy already in entropy_row)
+                    arr_raw_entropy.append(entropy_row)
+                    tuned_ent_per_layer = -(
+                        all_tuned_probs * F.log_softmax(all_tuned_logits, dim=-1)
+                    ).sum(dim=-1)  # [n_layers]
+                    tuned_entropy_row = [
+                        float(tuned_ent_per_layer[li].item()) if valid[li] else float("inf")
+                        for li in range(n_layers)
+                    ]
+                    arr_tuned_entropy.append(tuned_entropy_row)
+
+                    # Group G: δ-cosine = cos(h_ℓ - h_{ℓ-1}, h_{ℓ-1})
+                    delta_cos_row = [float("nan")]  # layer 0 has no predecessor
+                    for li in range(1, n_layers):
+                        if valid[li] and valid[li - 1]:
+                            h_prev = all_h[li - 1].float()
+                            h_cur = all_h[li].float()
+                            delta = h_cur - h_prev
+                            denom = delta.norm() * h_prev.norm()
+                            if denom > 1e-8:
+                                delta_cos_row.append(float(torch.dot(delta, h_prev) / denom))
+                            else:
+                                delta_cos_row.append(float("nan"))
+                        else:
+                            delta_cos_row.append(float("nan"))
+                    arr_delta_cosine.append(delta_cos_row)
+
+                    # Cosine-to-final (already computed as cosine_row)
+                    arr_cosine_final.append(cosine_row)
+
+                    # Group E: Top-5 tokens (conditional)
+                    if should_collect_top5:
+                        r_top5_probs, r_top5_ids = torch.topk(all_raw_probs, k=5, dim=-1)
+                        arr_raw_top5_ids.append(r_top5_ids.cpu().tolist())
+                        arr_raw_top5_probs.append(r_top5_probs.cpu().tolist())
+                        t_top5_probs, t_top5_ids = torch.topk(all_tuned_probs, k=5, dim=-1)
+                        arr_tuned_top5_ids.append(t_top5_ids.cpu().tolist())
+                        arr_tuned_top5_probs.append(t_top5_probs.cpu().tolist())
+
             def make_hook(layer_idx: int):
                 def hook(module, inp, output):
                     h = adapter.residual_from_output(output)
@@ -1627,9 +1860,64 @@ def eval_commitment(
                 all_commitment_raw_kl_qual[key].append(step_commitment_raw_kl_qual[key])
                 all_commitment_tuned_kl_qual[key].append(step_commitment_tuned_kl_qual[key])
 
+            # Step index tracking for array alignment
+            if collect_full and n_steps > 0:
+                category = rec.get("question_type", rec.get("category", "unknown"))
+                step_index_records.append({
+                    "prompt_id": pid,
+                    "start_step": prompt_start_step,
+                    "end_step": prompt_start_step + n_steps,
+                    "category": category,
+                    "n_steps": n_steps,
+                })
+                if should_collect_top5:
+                    top5_step_index_records.append({
+                        "prompt_id": pid,
+                        "start_step": prompt_start_step,
+                        "end_step": prompt_start_step + n_steps,
+                    })
+                    top5_prompts_collected += 1
+                global_step_counter += n_steps
+
             n_prompts_done += 1
             if n_prompts_done % 50 == 0:
                 log.info("[eval] %d/%d prompts done", n_prompts_done, len(records))
+
+            # Periodic NPY save for preemption safety
+            if collect_full and n_prompts_done % 500 == 0:
+                _save_arrays_checkpoint(
+                    arrays_dir, n_layers,
+                    arr_raw_top1, arr_tuned_top1, arr_generated_ids,
+                    arr_raw_kl_final, arr_tuned_kl_final,
+                    arr_raw_kl_adj, arr_tuned_kl_adj,
+                    arr_raw_ntprob, arr_tuned_ntprob,
+                    arr_raw_ntrank, arr_tuned_ntrank,
+                    arr_raw_entropy, arr_tuned_entropy,
+                    arr_delta_cosine, arr_cosine_final,
+                    arr_raw_top5_ids, arr_raw_top5_probs,
+                    arr_tuned_top5_ids, arr_tuned_top5_probs,
+                    step_index_records, top5_step_index_records,
+                )
+                log.info("[arrays] Checkpoint saved at %d prompts (%d steps)",
+                         n_prompts_done, global_step_counter)
+
+    # Save final arrays
+    if collect_full and global_step_counter > 0:
+        _save_arrays_checkpoint(
+            arrays_dir, n_layers,
+            arr_raw_top1, arr_tuned_top1, arr_generated_ids,
+            arr_raw_kl_final, arr_tuned_kl_final,
+            arr_raw_kl_adj, arr_tuned_kl_adj,
+            arr_raw_ntprob, arr_tuned_ntprob,
+            arr_raw_ntrank, arr_tuned_ntrank,
+            arr_raw_entropy, arr_tuned_entropy,
+            arr_delta_cosine, arr_cosine_final,
+            arr_raw_top5_ids, arr_raw_top5_probs,
+            arr_tuned_top5_ids, arr_tuned_top5_probs,
+            step_index_records, top5_step_index_records,
+        )
+        log.info("[arrays] Final save: %d steps across %d prompts → %s",
+                 global_step_counter, len(step_index_records), arrays_dir)
 
     # Compute summary statistics
     def _flatten_median(nested: list[list[int]]) -> float:
@@ -1824,6 +2112,14 @@ def main() -> None:
                    help="Cap number of evaluation examples")
     p.add_argument("--max-new-tokens", type=int, default=512)
 
+    # Full array collection args
+    p.add_argument("--collect-full", action="store_true",
+                   help="Save per-layer arrays (Groups B-G) to NPY files")
+    p.add_argument("--collect-top5", action="store_true",
+                   help="Save top-5 tokens per layer (Group E, heavier)")
+    p.add_argument("--top5-max-prompts", type=int, default=200,
+                   help="Only collect top5 for first N prompts (default: 200)")
+
     # Transfer test
     p.add_argument("--transfer-test", action="store_true",
                    help="Run PT-probes-on-IT transfer test")
@@ -1897,11 +2193,16 @@ def main() -> None:
         )
 
         out_path = base_dir / "commitment" / f"tuned_lens_commitment_{args.variant}.jsonl"
+        arrays_dir = (base_dir / "commitment" / "arrays") if args.collect_full else None
         summary = eval_commitment(
             model, tokenizer, adapter, spec, probes, records, device,
             output_path=out_path,
             variant=args.variant,
             max_new_tokens=args.max_new_tokens,
+            collect_full=args.collect_full,
+            collect_top5=args.collect_top5,
+            top5_max_prompts=args.top5_max_prompts,
+            arrays_dir=arrays_dir,
         )
 
         # Save summary

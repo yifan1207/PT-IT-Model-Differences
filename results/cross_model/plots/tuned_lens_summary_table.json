@@ -1,0 +1,93 @@
+{
+  "threshold": 0.1,
+  "models": {
+    "gemma3_4b": {
+      "Raw Top-1": {
+        "pt_median": 23.0,
+        "it_median": 25.0,
+        "delay": 2.0
+      },
+      "Tuned Top-1": {
+        "pt_median": 24.0,
+        "it_median": 23.0,
+        "delay": -1.0
+      },
+      "Raw KL": {
+        "pt_median": 26.0,
+        "it_median": 30.0,
+        "delay": 4.0
+      },
+      "Tuned KL": {
+        "pt_median": 33.0,
+        "it_median": 33.0,
+        "delay": 0.0
+      }
+    },
+    "llama31_8b": {
+      "Raw Top-1": {
+        "pt_median": 29.0,
+        "it_median": 25.0,
+        "delay": -4.0
+      },
+      "Tuned Top-1": {
+        "pt_median": 26.0,
+        "it_median": 17.0,
+        "delay": -9.0
+      },
+      "Raw KL": {
+        "pt_median": 30.0,
+        "it_median": 30.0,
+        "delay": 0.0
+      },
+      "Tuned KL": {
+        "pt_median": 31.0,
+        "it_median": 28.0,
+        "delay": -3.0
+      }
+    },
+    "qwen3_4b": {
+      "Raw Top-1": {
+        "pt_median": 29.0,
+        "it_median": 29.0,
+        "delay": 0.0
+      },
+      "Tuned Top-1": {
+        "pt_median": 24.0,
+        "it_median": 25.0,
+        "delay": 1.0
+      },
+      "Raw KL": {
+        "pt_median": 31.0,
+        "it_median": 32.0,
+        "delay": 1.0
+      },
+      "Tuned KL": {
+        "pt_median": 35.0,
+        "it_median": 35.0,
+        "delay": 0.0
+      }
+    },
+    "mistral_7b": {
+      "Raw Top-1": {
+        "pt_median": 24.0,
+        "it_median": 27.0,
+        "delay": 3.0
+      },
+      "Tuned Top-1": {
+        "pt_median": 18.0,
+        "it_median": 18.0,
+        "delay": 0.0
+      },
+      "Raw KL": {
+        "pt_median": 29.0,
+        "it_median": 30.0,
+        "delay": 1.0
+      },
+      "Tuned KL": {
+        "pt_median": 21.0,
+        "it_median": 27.0,
+        "delay": 6.0
+      }
+    }
+  }
+}
