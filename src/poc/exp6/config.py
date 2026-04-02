@@ -111,7 +111,11 @@ class Exp6Config:
     ])
 
     def __post_init__(self) -> None:
-        # If model_family is set, derive architecture params from MODEL_REGISTRY.
+        # Phase 0 multi-model support: when model_family is set (e.g. "llama31_8b"),
+        # derive model_id, n_layers, d_model, and proposal_boundary from MODEL_REGISTRY.
+        # This replaces the Gemma-specific defaults. The guard conditions (e.g.
+        # "n_layers == 34") prevent overwriting values that were explicitly passed
+        # via CLI args like --n-layers.
         if self.model_family:
             from src.poc.cross_model.config import get_spec, model_id_for_variant
             spec = get_spec(self.model_family)

@@ -402,7 +402,12 @@ def phase_acts(model_name: str, worker_index: int, n_workers: int, device: str) 
                         gen_acts[li].append(out[0, 0, :].float().cpu())
                 return hook
 
-            # Register hooks on ALL layers' MLP modules
+            # Register hooks on ALL layers' MLP modules simultaneously.
+            # We hook .mlp (not the full layer) because the corrective direction
+            # is defined as the IT-PT difference in MLP *output* activations —
+            # this must match the intervention site in exp6/interventions.py.
+            # Using adapter.get_layers() resolves the architecture-specific path
+            # (model.model.layers for most models, model.language_model.layers for Gemma).
             layers_list = adapter.get_layers(model_raw)
             handles = [
                 layers_list[li].mlp.register_forward_hook(make_hook(li))

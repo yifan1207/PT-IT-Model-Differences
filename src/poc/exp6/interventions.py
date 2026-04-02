@@ -296,7 +296,9 @@ class Exp6InterventionSpec:
         if self.method == "none" or not self.layers:
             return []
 
-        # Layer access helpers — use adapter if available, else Gemma paths
+        # Layer access helpers — Phase 0 multi-model: use adapter for architecture-
+        # specific paths (e.g. model.model.layers for Llama vs model.language_model.layers
+        # for Gemma). When adapter=None, falls back to legacy Gemma-hardcoded paths.
         def _get_mlp(li: int):
             if adapter is not None:
                 return adapter.get_mlp(model_raw, li)
