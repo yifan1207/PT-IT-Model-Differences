@@ -7,7 +7,7 @@ final layer's space, giving a more faithful readout than raw logit lens.
 
 Training (Belrose et al. 2023 exact recipe):
   - Prefill-based on C4 validation (single forward pass, all token positions)
-  - SGD Nesterov (lr=1.0, momentum=0.9), 250 steps, linear LR decay to 0
+  - SGD Nesterov (lr=0.1 passed to optimizer, momentum=0.9), 250 steps, linear LR decay to 0
   - 262,144 tokens per step (~65M total), gradient accumulation over micro-batches
   - KL divergence loss: KL(softmax(lm_head(norm(probe(h_ℓ)))) ‖ softmax(lm_head(norm(h_L))))
   - Identity init + zero bias
@@ -551,10 +551,13 @@ def train_probes(
         compute_device = device
 
     # Override n_steps for Belrose SGD recipe
+    # CRITICAL: Belrose codebase passes lr = lr_scale * (1 - momentum) = 1.0 * 0.1 = 0.1
+    # to PyTorch SGD, because PyTorch Nesterov internally scales by 1/(1-beta).
+    # The paper says "lr=1.0" but that's the conceptual lr, not what's passed to the optimizer.
     if optimizer_type == "sgd_nesterov":
         n_steps = 250
-        lr = 1.0
-        log.info("SGD+Nesterov mode: 250 steps, lr=1.0, linear decay (Belrose exact)")
+        lr = 0.1
+        log.info("SGD+Nesterov mode: 250 steps, lr=0.1 (Belrose exact: lr_scale=1.0 * (1-momentum=0.9) = 0.1)")
 
     # ── Collect validation hidden states (always pre-collected, small) ──
     # Cap validation texts to limit CPU RAM (all layers stored simultaneously)
