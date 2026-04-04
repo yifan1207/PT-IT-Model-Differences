@@ -63,21 +63,40 @@ def main() -> None:
 
     print(f"Merging from {len(source_dirs)} source dirs into {merged_dir}...", flush=True)
 
-    # Collect all scores
+    # Collect all scores, deduplicating within each worker first.
+    # Workers split by CONDITIONS (not records): each worker processes all N records
+    # for its assigned conditions. Preemption + restart can cause duplicate entries
+    # within a single worker's scores.jsonl — take the last entry per (condition,
+    # benchmark) to use the most recent (post-restart) score.
     all_scores: list[dict] = []
     all_samples: list[dict] = []
 
     for src_dir in source_dirs:
-        scores = _read_jsonl(src_dir / "scores.jsonl")
+        raw_scores = _read_jsonl(src_dir / "scores.jsonl")
         samples = _read_jsonl(src_dir / "sample_outputs.jsonl")
-        all_scores.extend(scores)
-        all_samples.extend(samples)
-        print(f"  {src_dir.name}: {len(scores)} score rows, {len(samples)} samples", flush=True)
 
-    # Merge scores across workers: weighted average by n for each (condition, benchmark).
-    # Each worker processes a record slice and produces a partial score; picking just one
-    # worker would discard (N-1)/N of the data. Weighted average gives the correct
-    # full-dataset estimate.
+        # Within-worker dedup: last entry wins for each (condition, benchmark)
+        seen: dict[tuple[str, str], dict] = {}
+        n_dupes = 0
+        for row in raw_scores:
+            key = (row["condition"], row["benchmark"])
+            if key in seen:
+                n_dupes += 1
+            seen[key] = row  # last entry wins
+        deduped = list(seen.values())
+        if n_dupes:
+            print(f"  {src_dir.name}: {len(raw_scores)} raw → {len(deduped)} after dedup "
+                  f"({n_dupes} preemption duplicates removed)", flush=True)
+        else:
+            print(f"  {src_dir.name}: {len(deduped)} score rows, {len(samples)} samples", flush=True)
+
+        all_scores.extend(deduped)
+        all_samples.extend(samples)
+
+    # Merge across workers: since conditions are worker-exclusive, each
+    # (condition, benchmark) should appear exactly once after within-worker dedup.
+    # If duplicates remain (e.g., overlapping worker assignments), take the entry
+    # with the larger n.
     groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for row in all_scores:
         groups[(row["condition"], row["benchmark"])].append(row)
@@ -86,22 +105,33 @@ def main() -> None:
     for (cond, bench), rows in sorted(groups.items()):
         if len(rows) == 1:
             deduped_scores.append(rows[0])
-            continue
-        valid = [r for r in rows
-                 if r.get("value") is not None and r.get("n") is not None and r["n"] > 0]
-        if not valid:
-            deduped_scores.append(rows[0])
-            continue
-        total_n   = sum(r["n"] for r in valid)
-        avg_value = sum(r["value"] * r["n"] for r in valid) / total_n
-        deduped_scores.append({**valid[0], "value": avg_value, "n": total_n})
+        else:
+            # Unexpected cross-worker duplicate — take entry with largest n
+            best = max(rows, key=lambda r: r.get("n", 0))
+            print(f"  WARN: cross-worker duplicate ({cond}, {bench}) — "
+                  f"{len(rows)} entries, keeping n={best.get('n')}", flush=True)
+            deduped_scores.append(best)
 
-    print(f"Total: {len(all_scores)} raw rows → {len(deduped_scores)} conditions after "
-          f"weighted merge across {len(source_dirs)} workers", flush=True)
+    print(f"Total: {sum(len(_read_jsonl(d / 'scores.jsonl')) for d in source_dirs)} raw rows → "
+          f"{len(deduped_scores)} conditions after dedup+merge across "
+          f"{len(source_dirs)} workers", flush=True)
+
+    # Deduplicate sample_outputs: preemption restarts can re-generate the same
+    # (condition, record_id) records. Keep the last entry for each.
+    seen_samples: dict[tuple[str, str], dict] = {}
+    for s in all_samples:
+        rid = s.get("record_id", s.get("id", ""))
+        key = (s.get("condition", ""), rid)
+        seen_samples[key] = s  # last entry wins
+    deduped_samples = list(seen_samples.values())
+    n_sample_dupes = len(all_samples) - len(deduped_samples)
+    if n_sample_dupes:
+        print(f"Sample outputs: {len(all_samples)} raw → {len(deduped_samples)} after dedup "
+              f"({n_sample_dupes} duplicates removed)", flush=True)
 
     # Write merged files
     _write_jsonl(merged_dir / "scores.jsonl", deduped_scores)
-    _write_jsonl(merged_dir / "sample_outputs.jsonl", all_samples)
+    _write_jsonl(merged_dir / "sample_outputs.jsonl", deduped_samples)
 
     with open(merged_dir / "scores.json", "w") as f:
         json.dump(deduped_scores, f, indent=2)

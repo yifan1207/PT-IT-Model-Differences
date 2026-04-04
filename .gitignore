@@ -285,4 +285,13 @@ results/exp7/**
 !results/exp7/plots/data/
 !results/exp7/plots/data/**
 
+!results/exp8/
+results/exp8/**
+!results/exp8/plots/
+!results/exp8/plots/**
+!results/exp8/plots/data/
+!results/exp8/plots/data/**
+!results/exp8/plots/per_model/
+!results/exp8/plots/per_model/**
+
 paper_draft/*

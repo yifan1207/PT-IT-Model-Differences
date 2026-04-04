@@ -8,15 +8,16 @@ Runs the full Phase 0 pipeline on Modal cloud GPUs:
   4. PCA rank-1 check (1A), ID under steering (1C)
   5. Commitment delay post-processing (1B, CPU)
 
-Cost estimate (A100-80GB @ ~$2.78/GPU-hr):
-  Precompute gen:      10 jobs × 1.5h  = 15 GPU-hr  ~$42
-  Precompute acts:     10 jobs × 1.7h  = 17 GPU-hr  ~$47
-  A1 steering:         12 jobs × 8h    = 96 GPU-hr  ~$267
-  PCA + ID-steering:   12 jobs × 0.3h  =  4 GPU-hr  ~$11
+Cost estimate (B200 @ ~$6.25/GPU-hr):
+  Precompute gen:      10 jobs × 1.5h  = 15 GPU-hr  ~$94
+  Precompute acts:     10 jobs × 1.7h  = 17 GPU-hr  ~$106
+  A1 steering:         12 jobs × 4h    = 48 GPU-hr  ~$300
+  PCA + ID-steering:   12 jobs × 0.2h  =  2 GPU-hr  ~$13
   ─────────────────────────────────────────────────────────
-  Total GPU:           132 GPU-hr                    ~$367
+  Total GPU:            82 GPU-hr                    ~$513
   LLM judge (Gemini):  ~44,000 calls               ~$4
-  GRAND TOTAL:                                       ~$371
+  GRAND TOTAL:                                       ~$517
+  Note: B200 ~2-3× faster than A100, model weights baked into image.
 
 Wall time with 12 containers: ~12-14h
 
@@ -55,14 +56,28 @@ import modal
 app = modal.App("phase0-multimodel")
 
 results_vol = modal.Volume.from_name("phase0-results", create_if_missing=True)
-hf_cache_vol = modal.Volume.from_name("phase0-hf-cache", create_if_missing=True)
+# HF cache volume no longer needed — model weights are baked into the image.
+# This avoids the "cannot mount volume on non-empty path" conflict.
 
-# Container image with all dependencies
+# HuggingFace model IDs to pre-download into the image (IT variants only for steering)
+_HF_MODELS_TO_BAKE = [
+    "google/gemma-3-4b-it",
+    "meta-llama/Llama-3.1-8B-Instruct",
+    "Qwen/Qwen3-4B",              # IT = base for Qwen3
+    "mistralai/Mistral-7B-Instruct-v0.3",
+    "deepseek-ai/DeepSeek-V2-Lite-Chat",
+    "allenai/OLMo-2-1124-7B-Instruct",
+]
+
+# Container image with all dependencies + pre-downloaded model weights
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git")  # for circuit-tracer install + git rev-parse
     .pip_install(
-        "torch>=2.5.0,<2.7.0",
+        "torch>=2.7.0",
+        extra_index_url="https://download.pytorch.org/whl/cu128",
+    )
+    .pip_install(
         "transformers==4.57.3",       # pinned — DeepSeek breaks on >=5.0
         "accelerate",
         "numpy",
@@ -83,6 +98,16 @@ image = (
     )
     .pip_install(
         "circuit-tracer @ git+https://github.com/safety-research/circuit-tracer.git@26a976e",
+    )
+    # Pre-download all IT model weights into the image — eliminates re-download
+    # on every preemption restart. Modal caches images, so this is a one-time cost.
+    .env({"HF_HOME": "/root/.cache/huggingface"})
+    .run_commands(
+        *[
+            f"huggingface-cli download {model_id}"
+            for model_id in _HF_MODELS_TO_BAKE
+        ],
+        secrets=[modal.Secret.from_name("huggingface-token")],
     )
     .add_local_dir("src", remote_path="/root/src")
     .add_local_dir("scripts", remote_path="/root/scripts")
@@ -118,7 +143,6 @@ N_WORKERS = 2  # workers per model for gen/acts/steer
 
 VOLUME_MOUNTS = {
     "/root/results": results_vol,
-    "/root/.cache/huggingface": hf_cache_vol,
 }
 
 GPU_RETRIES = modal.Retries(max_retries=10, initial_delay=10.0, backoff_coefficient=1.0)
@@ -159,15 +183,11 @@ def _run(cmd: list[str], timeout: int | None = None) -> str:
 
 
 def _commit_volumes():
-    """Commit both volumes."""
+    """Commit results volume."""
     try:
         results_vol.commit()
     except Exception as e:
         print(f"[volume] results commit warn: {e}")
-    try:
-        hf_cache_vol.commit()
-    except Exception as e:
-        print(f"[volume] hf_cache commit warn: {e}")
 
 
 def _setup_sigterm_handler():
@@ -188,7 +208,7 @@ def _setup_sigterm_handler():
 # ── Phase 1: Precompute directions ────────────────────────────────────────────
 
 @app.function(
-    gpu="A100-80GB:1",
+    gpu="B200",
     timeout=10800,  # 3h
     retries=GPU_RETRIES,
     image=image,
@@ -250,7 +270,7 @@ def precompute_score(model_name: str) -> str:
 
 
 @app.function(
-    gpu="A100-80GB:1",
+    gpu="B200",
     timeout=10800,  # 3h
     retries=GPU_RETRIES,
     image=image,
@@ -308,7 +328,7 @@ def precompute_merge(model_name: str) -> str:
 # ── Phase 2: A1 α-sweep steering ─────────────────────────────────────────────
 
 @app.function(
-    gpu="A100-80GB:1",
+    gpu="B200",
     timeout=86400,  # 24h — steering is the longest step
     retries=GPU_RETRIES,
     image=image,
@@ -426,6 +446,7 @@ def merge_workers(model_name: str) -> str:
     image=image,
     volumes=VOLUME_MOUNTS,
     memory=4096,
+    nonpreemptible=True,  # CPU orchestrator must not be preempted — prevents cascade restarts
 )
 def orchestrate_steer(models: list[str], n_workers: int = 2) -> str:
     """Remote orchestrator for steer+merge — runs on Modal without local client.
@@ -474,8 +495,26 @@ def orchestrate_steer(models: list[str], n_workers: int = 2) -> str:
             print(msg)
             results.append(msg)
 
+    # LLM judge (runs after merge, API-bound not GPU-bound)
+    print(f"\nLaunching LLM judge for {len(models)} models...")
+    judge_handles = []
+    for m in models:
+        h = judge_model.spawn(m)
+        judge_handles.append((m, h))
+        print(f"  Spawned judge {m}")
+
+    for m, h in judge_handles:
+        try:
+            result = h.get()
+            print(f"  ✓ {result}")
+            results.append(result)
+        except Exception as e:
+            msg = f"  ✗ judge {m} FAILED: {e}"
+            print(msg)
+            results.append(msg)
+
     summary = "\n".join(results)
-    print(f"\n=== STEER+MERGE COMPLETE ===\n{summary}")
+    print(f"\n=== STEER+MERGE+JUDGE COMPLETE ===\n{summary}")
     return summary
 
 
@@ -513,7 +552,7 @@ def judge_model(model_name: str) -> str:
 # ── Phase 4: Piggybacked experiments (1A, 1B, 1C) ────────────────────────────
 
 @app.function(
-    gpu="A100-80GB:1",
+    gpu="B200",
     timeout=3600,
     retries=GPU_RETRIES,
     image=image,
@@ -543,7 +582,7 @@ def pca_model(model_name: str) -> str:
 
 
 @app.function(
-    gpu="A100-80GB:1",
+    gpu="B200",
     timeout=3600,
     retries=GPU_RETRIES,
     image=image,
@@ -597,7 +636,7 @@ def commitment_model(model_name: str) -> str:
 # ── Smoke test function ──────────────────────────────────────────────────────
 
 @app.function(
-    gpu="A100-80GB:1",
+    gpu="B200",
     timeout=600,
     image=image,
     volumes=VOLUME_MOUNTS,
