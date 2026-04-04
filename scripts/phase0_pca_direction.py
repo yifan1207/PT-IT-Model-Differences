@@ -147,7 +147,7 @@ def run_pca(diff_matrix: np.ndarray, n_components: int = 10) -> dict:
     }
 
 
-def run_model(model_name: str, device: str) -> dict:
+def run_model(model_name: str, device: str, max_records: int = 200) -> dict:
     spec = get_spec(model_name)
     adapter = get_steering_adapter(model_name)
     max_gen = adapter.max_gen_tokens
@@ -171,7 +171,9 @@ def run_model(model_name: str, device: str) -> dict:
                 records_by_id[r["record_id"]] = r
 
     records = [records_by_id[rid] for rid in sorted(records_by_id.keys())]
-    print(f"[1A] {model_name}: {len(records)} selected records, "
+    if max_records and len(records) > max_records:
+        records = records[:max_records]
+    print(f"[1A] {model_name}: {len(records)} records (of {len(records_by_id)} selected), "
           f"corrective layers {corrective_layers[0]}-{corrective_layers[-1]}", flush=True)
 
     # Collect IT activations
@@ -230,9 +232,11 @@ def main() -> None:
     p = argparse.ArgumentParser(description="1A: PCA of IT-PT corrective direction")
     p.add_argument("--model-name", required=True, choices=list(MODEL_REGISTRY.keys()))
     p.add_argument("--device", default="cuda:0")
+    p.add_argument("--max-records", type=int, default=200,
+                   help="Max records to use (200 is plenty for PCA stability)")
     args = p.parse_args()
 
-    results = run_model(args.model_name, args.device)
+    results = run_model(args.model_name, args.device, max_records=args.max_records)
 
     if results:
         out_dir = Path(f"results/cross_model/{args.model_name}/directions")

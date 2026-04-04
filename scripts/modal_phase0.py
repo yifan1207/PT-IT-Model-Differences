@@ -553,7 +553,7 @@ def judge_model(model_name: str) -> str:
 
 @app.function(
     gpu="B200",
-    timeout=3600,
+    timeout=7200,
     retries=GPU_RETRIES,
     image=image,
     volumes=VOLUME_MOUNTS,
@@ -575,7 +575,8 @@ def pca_model(model_name: str) -> str:
         "python", "/root/scripts/phase0_pca_direction.py",
         "--model-name", model_name,
         "--device", "cuda:0",
-    ], timeout=3000)
+        "--max-records", "200",
+    ], timeout=6000)
 
     _commit_volumes()
     return f"pca {model_name} done"
@@ -583,7 +584,7 @@ def pca_model(model_name: str) -> str:
 
 @app.function(
     gpu="B200",
-    timeout=3600,
+    timeout=7200,
     retries=GPU_RETRIES,
     image=image,
     volumes=VOLUME_MOUNTS,
@@ -605,7 +606,7 @@ def id_steering_model(model_name: str) -> str:
         "python", "/root/scripts/phase0_id_under_steering.py",
         "--model-name", model_name,
         "--device", "cuda:0",
-    ], timeout=3000)
+    ], timeout=6000)
 
     _commit_volumes()
     return f"id_steering {model_name} done"
