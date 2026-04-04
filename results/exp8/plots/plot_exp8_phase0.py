@@ -631,6 +631,208 @@ def plot_direction_stability(stability_data):
     print(f"  ✓ {out.name}")
 
 
+def plot_bootstrap_stability(boot_data):
+    """§5.3: Bootstrap direction stability — pairwise cosine distribution per model."""
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    axes = axes.flatten()
+
+    for idx, m in enumerate(MODELS):
+        ax = axes[idx]
+        if m not in boot_data:
+            ax.set_title(f"{MODEL_LABELS[m]} — N/A")
+            continue
+
+        d = boot_data[m]
+        summary = d.get("summary", d)  # handle both flat and nested formats
+        mean_pw = summary.get("mean_pairwise", summary.get("mean_pairwise_cosine", 0))
+        min_pw = summary.get("min_pairwise", summary.get("min_pairwise_cosine", 0))
+        mean_bvf = summary.get("mean_bootstrap_vs_full", summary.get("mean_boot_vs_full_cosine", 0))
+        stable = summary.get("stable", False)
+
+        # Summary bar chart: mean pairwise, min pairwise, mean boot-vs-full
+        labels = ['Mean\npairwise', 'Min\npairwise', 'Mean\nboot-vs-full']
+        vals = [mean_pw, min_pw, mean_bvf]
+        colors_bar = [COLORS[m]] * 3
+        ax.bar(labels, vals, color=colors_bar, alpha=0.7, edgecolor='black', linewidth=0.5)
+        ax.axhline(y=0.95, color='black', linestyle='--', alpha=0.5, label='Stability threshold (0.95)')
+        ax.set_ylim(0, 1.05)
+
+        status = "STABLE" if stable else "UNSTABLE"
+        ax.set_title(f"{MODEL_LABELS[m]} ({status})",
+                     fontsize=11, fontweight='bold', color=COLORS[m])
+        ax.set_ylabel('Cosine Similarity')
+        ax.grid(True, alpha=0.2, axis='y')
+        if idx == 0:
+            ax.legend(fontsize=7)
+
+        # Annotate values
+        for i, v in enumerate(vals):
+            ax.text(i, v + 0.01, f'{v:.4f}', ha='center', va='bottom', fontsize=9)
+
+    fig.suptitle('Bootstrap Direction Stability (100 resamples × 200 records)',
+                 fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+    out = PLOTS_DIR / "exp8_bootstrap_stability.png"
+    plt.savefig(str(out), dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ {out.name}")
+
+
+def plot_pca_spectrum(pca_data):
+    """§5.10: PCA variance explained spectrum per model.
+
+    Each panel: one model, bar chart of top-7 PC variance ratios per corrective layer,
+    with mean across layers shown as line overlay.
+    """
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    axes = axes.flatten()
+    N_PCS = 7  # show top 7 components
+
+    for idx, m in enumerate(MODELS):
+        ax = axes[idx]
+        if m not in pca_data:
+            ax.set_title(f"{MODEL_LABELS[m]} — N/A")
+            continue
+
+        d = pca_data[m]
+        per_layer = d["per_layer_pca"]
+        corrective_layers = d.get("corrective_layers", [])
+
+        # Collect variance explained across corrective layers
+        all_varexp = []
+        for li_str, layer_d in per_layer.items():
+            if int(li_str) in corrective_layers:
+                ve = layer_d["variance_explained"][:N_PCS]
+                # Pad if fewer than N_PCS
+                ve = ve + [0.0] * (N_PCS - len(ve))
+                all_varexp.append(ve)
+
+        if not all_varexp:
+            # Fallback: use all layers
+            for li_str, layer_d in per_layer.items():
+                ve = layer_d["variance_explained"][:N_PCS]
+                ve = ve + [0.0] * (N_PCS - len(ve))
+                all_varexp.append(ve)
+
+        all_varexp = np.array(all_varexp)  # (n_layers, N_PCS)
+        mean_ve = all_varexp.mean(axis=0)
+        std_ve = all_varexp.std(axis=0)
+
+        x = np.arange(1, N_PCS + 1)
+        ax.bar(x, mean_ve, color=COLORS[m], alpha=0.7, yerr=std_ve, capsize=3,
+               error_kw={'linewidth': 1, 'alpha': 0.5})
+        ax.axhline(y=0.6, color='black', linestyle='--', alpha=0.4, label='Rank-1 threshold (60%)')
+
+        summary = d["summary"]
+        ax.set_title(f"{MODEL_LABELS[m]} (PC1={summary['mean_pc1_variance_ratio']:.1%})",
+                     fontsize=11, fontweight='bold', color=COLORS[m])
+        ax.set_xlabel('Principal Component')
+        ax.set_ylabel('Variance Explained')
+        ax.set_xticks(x)
+        ax.set_ylim(0, 0.8)
+        ax.grid(True, alpha=0.2, axis='y')
+        if idx == 0:
+            ax.legend(fontsize=7)
+
+    fig.suptitle('PCA Spectrum of IT−PT MLP Differences at Corrective Layers',
+                 fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+    out = PLOTS_DIR / "exp8_pca_spectrum.png"
+    plt.savefig(str(out), dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ {out.name}")
+
+
+def plot_id_profiles(id_data):
+    """§5.9: TwoNN intrinsic dimensionality profiles at α=1.0, 0.0, -1.0.
+
+    Each panel: one model, 3 lines (one per α) showing ID across layers.
+    """
+    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+    axes = axes.flatten()
+    alpha_colors = {'1.0': '#2196F3', '0.0': '#E41A1C', '-1.0': '#4CAF50'}
+    alpha_labels = {'1.0': 'α=1.0 (baseline)', '0.0': 'α=0.0 (removal)', '-1.0': 'α=−1.0 (reversal)'}
+
+    for idx, m in enumerate(MODELS):
+        ax = axes[idx]
+        if m not in id_data:
+            ax.set_title(f"{MODEL_LABELS[m]} — N/A")
+            continue
+
+        profiles = id_data[m]["profiles"]
+        for alpha_str in ['1.0', '0.0', '-1.0']:
+            if alpha_str not in profiles:
+                continue
+            ids = profiles[alpha_str]["id_twonn"]
+            layers = list(range(len(ids)))
+            ax.plot(layers, ids, marker='.', markersize=3, linewidth=1.5,
+                    color=alpha_colors[alpha_str], label=alpha_labels[alpha_str])
+
+        ax.set_title(MODEL_LABELS[m], fontsize=11, fontweight='bold', color=COLORS[m])
+        ax.set_xlabel('Layer')
+        ax.set_ylabel('Intrinsic Dimensionality (TwoNN)')
+        ax.grid(True, alpha=0.2)
+        if idx == 0:
+            ax.legend(fontsize=7)
+
+    fig.suptitle('Intrinsic Dimensionality Under Corrective Direction Steering',
+                 fontsize=14, fontweight='bold', y=1.02)
+    plt.tight_layout()
+    out = PLOTS_DIR / "exp8_id_profiles.png"
+    plt.savefig(str(out), dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ {out.name}")
+
+
+def plot_commitment_vs_alpha(commitment_data):
+    """§5.8: Mean commitment layer vs α for each model.
+
+    Single panel with all 6 models overlaid, α on x-axis, mean commitment layer on y-axis.
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    for m in MODELS:
+        if m not in commitment_data:
+            continue
+
+        cond_data = commitment_data[m]
+        alphas = []
+        means = []
+        stds = []
+        for cond_name, cd in cond_data.items():
+            a = cd.get("alpha")
+            if a is not None:
+                alphas.append(a)
+                means.append(cd["mean_commitment"])
+                stds.append(cd.get("std_commitment", 0))
+
+        # Sort by alpha
+        order = np.argsort(alphas)
+        alphas = [alphas[i] for i in order]
+        means = [means[i] for i in order]
+        stds = [stds[i] for i in order]
+
+        ax.plot(alphas, means, marker='o', markersize=4, linewidth=1.5,
+                color=COLORS[m], label=MODEL_LABELS[m])
+        ax.fill_between(alphas,
+                        [m_ - s for m_, s in zip(means, stds)],
+                        [m_ + s for m_, s in zip(means, stds)],
+                        color=COLORS[m], alpha=0.1)
+
+    ax.axvline(x=1.0, color='gray', linestyle='--', alpha=0.4, label='α=1 (baseline)')
+    ax.set_xlabel('α (correction strength)', fontsize=12)
+    ax.set_ylabel('Mean Commitment Layer', fontsize=12)
+    ax.set_title('Logit-Lens Commitment Layer vs Steering Strength',
+                 fontsize=14, fontweight='bold')
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
+    out = PLOTS_DIR / "exp8_commitment_vs_alpha.png"
+    plt.savefig(str(out), dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f"  ✓ {out.name}")
+
+
 def main():
     print("Generating Exp8 Phase 0 plots...")
     all_scores = load_scores()
@@ -656,6 +858,34 @@ def main():
         plot_direction_stability(json.loads(stability_path.read_text()))
     else:
         print(f"  [skip] direction stability — run phase0_direction_stability.py first")
+
+    # §5.10: PCA spectrum
+    pca_path = DATA_DIR / "phase0_pca_scree.json"
+    if pca_path.exists():
+        plot_pca_spectrum(json.loads(pca_path.read_text()))
+    else:
+        print(f"  [skip] PCA spectrum — no data")
+
+    # §5.9: ID profiles
+    id_path = DATA_DIR / "phase0_id_steering.json"
+    if id_path.exists():
+        plot_id_profiles(json.loads(id_path.read_text()))
+    else:
+        print(f"  [skip] ID profiles — no data")
+
+    # §5.8: Commitment vs alpha
+    cm_path = DATA_DIR / "phase0_commitment.json"
+    if cm_path.exists():
+        plot_commitment_vs_alpha(json.loads(cm_path.read_text()))
+    else:
+        print(f"  [skip] commitment vs alpha — no data")
+
+    # §5.3: Bootstrap stability
+    boot_path = DATA_DIR / "phase0_bootstrap_stability.json"
+    if boot_path.exists():
+        plot_bootstrap_stability(json.loads(boot_path.read_text()))
+    else:
+        print(f"  [skip] bootstrap stability — no data")
 
     print(f"\nAll plots → {PLOTS_DIR}")
 
