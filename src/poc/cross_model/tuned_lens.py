@@ -551,13 +551,18 @@ def train_probes(
         compute_device = device
 
     # Override n_steps for Belrose SGD recipe
-    # CRITICAL: Belrose codebase passes lr = lr_scale * (1 - momentum) = 1.0 * 0.1 = 0.1
-    # to PyTorch SGD, because PyTorch Nesterov internally scales by 1/(1-beta).
-    # The paper says "lr=1.0" but that's the conceptual lr, not what's passed to the optimizer.
+    # Belrose codebase: lr_passed = lr_scale * (1 - momentum)
+    # PyTorch Nesterov effectively scales by 1/(1-β), so we undo that.
+    # Paper says "lr=1.0" — that's lr_scale. Default lr_scale=1.0 → lr_passed=0.1.
+    # For models with extreme raw_kl range (e.g., Gemma 3 4B, raw_kl_L0=85),
+    # lr_scale=0.25 reduces probe drift at later layers where identity is optimal.
+    momentum = 0.9
     if optimizer_type == "sgd_nesterov":
         n_steps = 250
-        lr = 0.1
-        log.info("SGD+Nesterov mode: 250 steps, lr=0.1 (Belrose exact: lr_scale=1.0 * (1-momentum=0.9) = 0.1)")
+        lr_scale = lr  # lr parameter is interpreted as lr_scale for SGD
+        lr = lr_scale * (1 - momentum)
+        log.info("SGD+Nesterov mode: 250 steps, lr_scale=%.2f, lr_passed=%.4f (momentum=%.1f)",
+                 lr_scale, lr, momentum)
 
     # ── Collect validation hidden states (always pre-collected, small) ──
     # Cap validation texts to limit CPU RAM (all layers stored simultaneously)
@@ -628,7 +633,10 @@ def train_probes(
         best_val_losses: dict[int, float] = {}
         train_loss_accum: dict[int, float] = {}
 
-        layers_to_train = [i for i in range(n_layers) if i not in existing]
+        # Train ALL layers (not just missing ones) — partial checkpoints from
+        # a crashed run should not prevent full retraining.  Only skip if
+        # training_summary.json exists (handled above).
+        layers_to_train = list(range(n_layers))
         for li in layers_to_train:
             probe = TunedLensProbe(d_model).to(compute_device)
             probes[li] = probe
@@ -709,8 +717,8 @@ def train_probes(
                     step + 1, n_steps, avg_loss, sample_li, cur_lr, accumulated,
                 )
 
-            # Validation every 50 steps
-            if (step + 1) % 50 == 0 and n_val_tokens > 0:
+            # Validation every 50 steps + step 0 (captures identity baseline)
+            if (step == 0 or (step + 1) % 50 == 0) and n_val_tokens > 0:
                 with torch.no_grad():
                     for li in layers_to_train:
                         if li not in val_hidden:
@@ -963,7 +971,7 @@ def train_probes(
                     50 if optimizer_type == "sgd_nesterov" else 500
                 )
                 if (
-                    (step + 1) % val_interval == 0
+                    (step == 0 or (step + 1) % val_interval == 0)
                     and n_val_tokens > 0
                     and layer_idx in val_hidden
                 ):
@@ -2095,8 +2103,9 @@ def main() -> None:
                         "ensures unique tokens across 250 steps × 262K tokens/step)")
     p.add_argument("--n-steps", type=int, default=5000,
                    help="Training steps per layer (ignored for sgd_nesterov: always 250)")
-    p.add_argument("--lr", type=float, default=1e-3,
-                   help="Learning rate (ignored for sgd_nesterov: always 1.0)")
+    p.add_argument("--lr", type=float, default=1.0,
+                   help="LR scale (SGD: passed as lr_scale*(1-momentum); Adam: used directly). "
+                        "Belrose default=1.0. Use 0.25 for models with high raw_kl range (e.g. Gemma 3).")
     p.add_argument("--batch-size", type=int, default=262144,
                    help="Tokens per optimizer step (default: 262144, Belrose exact)")
     p.add_argument("--micro-batch-size", type=int, default=512,
