@@ -149,10 +149,13 @@ def estimate_id_profile(
             ci_highs.append(float("nan"))
             continue
 
-        # Bootstrap CI (100 resamples, 5th/95th percentile)
+        # Bootstrap CI (100 subsamples, 5th/95th percentile)
+        # Use 80% subsampling WITHOUT replacement to avoid duplicate rows
+        # which cause TwoNN to fail on degenerate distance matrices.
         boot_estimates: list[float] = []
+        sub_size = max(int(n_prompts * 0.8), 2)
         for _ in range(100):
-            idx = rng.integers(0, n_prompts, size=n_prompts)
+            idx = rng.choice(n_prompts, size=sub_size, replace=False)
             try:
                 boot_estimates.append(float(skdim.id.TwoNN().fit_transform(X[idx])))
             except Exception:
