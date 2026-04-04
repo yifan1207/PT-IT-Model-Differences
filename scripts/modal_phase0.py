@@ -634,6 +634,38 @@ def commitment_model(model_name: str) -> str:
     return f"commitment {model_name} done"
 
 
+@app.function(
+    gpu="B200",
+    timeout=7200,
+    retries=GPU_RETRIES,
+    image=image,
+    volumes=VOLUME_MOUNTS,
+    secrets=[modal.Secret.from_name("huggingface-token")],
+    memory=65536,
+)
+def bootstrap_model(model_name: str) -> str:
+    """Direction stability bootstrap (§4.4): 100 resamples, 200 records."""
+    _setup()
+    _setup_sigterm_handler()
+
+    import torch
+    print(f"=== bootstrap (§4.4): {model_name} ===")
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
+
+    results_vol.reload()
+
+    _run([
+        "python", "/root/scripts/phase0_direction_bootstrap.py",
+        "--model-name", model_name,
+        "--device", "cuda:0",
+        "--max-records", "200",
+        "--n-resamples", "100",
+    ], timeout=6000)
+
+    _commit_volumes()
+    return f"bootstrap {model_name} done"
+
+
 # ── Smoke test function ──────────────────────────────────────────────────────
 
 @app.function(
@@ -993,6 +1025,21 @@ def main(
         print("\n=== ANALYSIS COMPLETE ===")
         if sync_gcs:
             _local_sync_gcs("analysis (PCA + ID + commitment)")
+
+    # ── Direction bootstrap (§4.4) ────────────────────────────────────────
+    if step in ("dir-bootstrap", "all"):
+        print("\n" + "─" * 70)
+        print("DIRECTION BOOTSTRAP: 100 resamples × 200 records per model (GPU)")
+        print("─" * 70)
+
+        bs_args = [(m,) for m in models]
+        bs_results = list(bootstrap_model.starmap(bs_args))
+        for r in bs_results:
+            print(f"  ✓ {r}")
+
+        print("\n=== DIRECTION BOOTSTRAP COMPLETE ===")
+        if sync_gcs:
+            _local_sync_gcs("direction bootstrap")
 
     # ── Summary ───────────────────────────────────────────────────────────
     print("\n" + "=" * 70)
