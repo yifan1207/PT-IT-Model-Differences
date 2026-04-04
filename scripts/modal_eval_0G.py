@@ -35,7 +35,7 @@ import modal
 app = modal.App("0g-tuned-lens-eval")
 
 # Persistent volumes
-probes_vol = modal.Volume.from_name("0g-probes", create_if_missing=True)
+probes_vol = modal.Volume.from_name("0g-probes-v2", create_if_missing=True)
 results_vol = modal.Volume.from_name("0g-results", create_if_missing=True)
 hf_cache_vol = modal.Volume.from_name("0g-hf-cache", create_if_missing=True)
 
@@ -94,11 +94,11 @@ MODEL_INFO = {
     memory=65536,                     # 64 GiB RAM
     cpu=8.0,
 )
-def eval_model_variant(model_name: str, variant: str) -> dict:
-    """Evaluate one model+variant on 2,936 prompts with all commitment metrics.
+def eval_model_variant(model_name: str, variant: str, worker_index: int = 0, n_workers: int = 1) -> dict:
+    """Evaluate one model+variant (or a worker slice) with all commitment metrics.
 
-    Saves results to /results/{model_name}/tuned_lens_commitment_{variant}.jsonl
-    on the Modal Volume. Resume-safe: skips already-evaluated prompts.
+    When n_workers > 1, processes records[worker_index::n_workers] and saves to
+    worker-specific output paths (e.g. tuned_lens_commitment_pt_w0.jsonl, arrays_w0/).
     """
     import atexit
     import json
@@ -115,26 +115,36 @@ def eval_model_variant(model_name: str, variant: str) -> dict:
         format="%(asctime)s %(levelname)s %(message)s",
     )
     log = logging.getLogger("modal_eval")
-    log.info("=== Starting eval: %s/%s ===", model_name, variant)
+    worker_tag = f"w{worker_index}" if n_workers > 1 else ""
+    log.info("=== Starting eval: %s/%s %s===", model_name, variant,
+             f"(worker {worker_index}/{n_workers}) " if n_workers > 1 else "")
     log.info("GPU: %s", torch.cuda.get_device_name(0))
     props = torch.cuda.get_device_properties(0)
     vram = getattr(props, 'total_memory', getattr(props, 'total_mem', 0))
     log.info("VRAM: %.1f GB", vram / 1e9)
 
-    # ── Set up paths ──────────────────────────────────────────────────────
+    # ── Set up paths (per-worker when parallelized) ───────────────────────
     probe_src = Path(f"/probes/{model_name}/{variant}")
     results_dir = Path(f"/results/{model_name}/tuned_lens/commitment")
     results_dir.mkdir(parents=True, exist_ok=True)
-    out_path = results_dir / f"tuned_lens_commitment_{variant}.jsonl"
+    if n_workers > 1:
+        out_path = results_dir / f"tuned_lens_commitment_{variant}_{worker_tag}.jsonl"
+        arrays_subdir = f"arrays_{worker_tag}"
+    else:
+        out_path = results_dir / f"tuned_lens_commitment_{variant}.jsonl"
+        arrays_subdir = "arrays"
     summary_path = results_dir / f"summary_{variant}.json"
 
     # ── Check for already-complete evaluation ─────────────────────────────
     results_vol.reload()
-    arrays_complete = (results_dir / "arrays" / "step_index.jsonl").exists()
-    if summary_path.exists() and arrays_complete:
+    arrays_complete = (results_dir / arrays_subdir / "step_index.jsonl").exists()
+    if n_workers == 1 and summary_path.exists() and arrays_complete:
         log.info("Summary + arrays already exist — skipping")
         return json.loads(summary_path.read_text())
-    elif summary_path.exists():
+    elif out_path.exists() and arrays_complete:
+        log.info("Worker output already complete — skipping")
+        return {"status": "skipped", "worker": worker_index}
+    elif summary_path.exists() and n_workers == 1:
         log.info("Summary exists but arrays missing — re-running with collect_full")
 
     # ── Reload probes volume ──────────────────────────────────────────────
@@ -223,9 +233,15 @@ def eval_model_variant(model_name: str, variant: str) -> dict:
     except Exception:
         pass
 
-    # ── Load dataset ──────────────────────────────────────────────────────
-    records = load_dataset("/root/data/exp3_dataset.jsonl")
-    log.info("Dataset: %d records (will skip %d already done)", len(records), len(done_ids))
+    # ── Load dataset (slice for data parallelism) ──────────────────────────
+    all_records = load_dataset("/root/data/exp3_dataset.jsonl")
+    if n_workers > 1:
+        records = all_records[worker_index::n_workers]
+        log.info("Worker %d/%d: %d records (slice of %d total)",
+                 worker_index, n_workers, len(records), len(all_records))
+    else:
+        records = all_records
+        log.info("Dataset: %d records (will skip %d already done)", len(records), len(done_ids))
 
     # ── Monkey-patch eval_commitment to commit Volume every 10 prompts ────
     # The original function flushes JSONL after each prompt. We hook into
@@ -252,7 +268,9 @@ def eval_model_variant(model_name: str, variant: str) -> dict:
         len(records), max_new_tokens,
     )
 
-    arrays_dir = results_dir / "arrays"
+    arrays_dir = results_dir / arrays_subdir
+    # Limit top5 collection proportionally for workers
+    top5_limit = 200 // n_workers if n_workers > 1 else 200
     try:
         summary = eval_commitment(
             model, tokenizer, adapter, spec, probes, records, device,
@@ -261,15 +279,16 @@ def eval_model_variant(model_name: str, variant: str) -> dict:
             max_new_tokens=max_new_tokens,
             collect_full=True,
             collect_top5=True,
-            top5_max_prompts=200,
+            top5_max_prompts=top5_limit,
             arrays_dir=arrays_dir,
         )
     finally:
         stop_event.set()
         commit_thread.join(timeout=5)
 
-    # ── Save summary ──────────────────────────────────────────────────────
-    summary_path.write_text(json.dumps(summary, indent=2))
+    # ── Save summary (only for single-worker or we save per-worker) ───────
+    if n_workers == 1:
+        summary_path.write_text(json.dumps(summary, indent=2))
     results_vol.commit()
     log.info("=== Evaluation COMPLETE: %s/%s ===", model_name, variant)
     log.info("  Prompts: %d", summary.get("n_prompts", "?"))
@@ -283,21 +302,32 @@ def eval_model_variant(model_name: str, variant: str) -> dict:
 # ── Entrypoint ─────────────────────────────────────────────────────────────
 
 @app.local_entrypoint()
-def main():
-    """Launch all 12 eval jobs in parallel."""
-    # Order: slowest first. With 10-GPU limit, the 11th/12th jobs queue.
-    # 7B models (d=4096) are slowest → start first to minimize wall time.
-    # DeepSeek (smallest, max_new_tokens=64) is fastest → queued last.
-    models = [
-        "llama31_8b", "mistral_7b", "olmo2_7b",   # 7B models (slowest)
-        "gemma3_4b", "qwen3_4b",                   # 4B models
-        "deepseek_v2_lite",                         # MoE (fastest)
-    ]
-    variants = ["pt", "it"]
-    configs = list(itertools.product(models, variants))
+def main(models: str = "", n_workers: int = 1):
+    """Launch eval jobs in parallel, with optional data parallelism.
 
-    print(f"Launching {len(configs)} eval jobs in parallel...")
-    print("Each job: 2,936 prompts × all commitment metrics")
+    Usage:
+        modal run --detach scripts/modal_eval_0G.py                             # all 6, 1 worker each
+        modal run --detach scripts/modal_eval_0G.py --models gemma3_4b,qwen3_4b # specific models
+        modal run --detach scripts/modal_eval_0G.py --n-workers 3               # 3 workers per model
+    """
+    if models:
+        model_list = [m.strip() for m in models.split(",")]
+    else:
+        model_list = [
+            "llama31_8b", "mistral_7b", "olmo2_7b",
+            "gemma3_4b", "qwen3_4b",
+            "deepseek_v2_lite",
+        ]
+    variants = ["pt", "it"]
+
+    # Build config tuples: (model, variant, worker_index, n_workers)
+    configs = []
+    for model in model_list:
+        for variant in variants:
+            for wi in range(n_workers):
+                configs.append((model, variant, wi, n_workers))
+
+    print(f"Launching {len(configs)} eval jobs ({len(model_list)} models × 2 variants × {n_workers} workers)")
     print("GPU preference: H100 > A100-80GB (max 10 containers)")
     print()
 
@@ -306,13 +336,22 @@ def main():
     print("\n" + "=" * 60)
     print("ALL EVALUATIONS COMPLETE")
     print("=" * 60)
-    for (model, variant), summary in zip(configs, results):
-        if summary:
+    for cfg, summary in zip(configs, results):
+        model, variant, wi, nw = cfg
+        if summary and nw == 1:
             n = summary.get("n_prompts", "?")
             med = summary.get("median_commitment_raw", "?")
             print(f"  {model:20s} {variant:3s}: {n:>5} prompts, median_raw={med}")
+        elif summary:
+            n = summary.get("n_prompts", "?")
+            print(f"  {model:20s} {variant:3s} w{wi}: {n:>5} prompts")
         else:
-            print(f"  {model:20s} {variant:3s}: FAILED")
+            print(f"  {model:20s} {variant:3s} w{wi}: FAILED")
+
+    if n_workers > 1:
+        print()
+        print("Workers finished. Run merge locally:")
+        print(f"  uv run python scripts/merge_tuned_lens_workers.py --models {','.join(model_list)} --n-workers {n_workers}")
 
     print()
     print("Download results with:")
