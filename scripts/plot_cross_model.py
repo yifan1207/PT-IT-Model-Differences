@@ -39,16 +39,11 @@ PLOT_DIR = BASE_RESULTS / "plots"
 
 
 def _save_fig(fig: plt.Figure, filename: str, models: list[str]) -> None:
-    """Save figure to shared plots/ dir and to per-model subfolders."""
+    """Save figure to shared plots/ dir."""
     PLOT_DIR.mkdir(parents=True, exist_ok=True)
     out = PLOT_DIR / filename
     fig.savefig(out, dpi=150, bbox_inches="tight")
     log.info("Saved → %s", out)
-    # Also save to each model's own subfolder
-    for model_name in models:
-        model_dir = PLOT_DIR / model_name
-        model_dir.mkdir(parents=True, exist_ok=True)
-        fig.savefig(model_dir / filename, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
 # Model display names for plot labels

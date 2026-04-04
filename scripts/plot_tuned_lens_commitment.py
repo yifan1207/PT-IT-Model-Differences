@@ -92,6 +92,7 @@ def plot_histogram(
         spec = get_spec(model_name)
         bins = np.arange(0, spec.n_layers + 2) - 0.5
         medians = {}
+        med_items = []  # (y_offset_idx, median, color, label, linestyle)
 
         for variant, data_key, color, label, alpha, lw, histtype in series:
             data = load_commitment(model_name, variant)
@@ -108,6 +109,20 @@ def plot_histogram(
             ls = "--" if "PT" in label else "-"
             ax.axvline(med, color=color, lw=1.5, ls=ls, zorder=3)
             medians[label] = float(med)
+            med_items.append((len(med_items), med, color, label, ls))
+
+        # Add median value annotations at the top so all 4 series are clearly visible
+        # even when histograms overlap or concentrate in a single bin
+        if med_items:
+            ymax = ax.get_ylim()[1]
+            for idx, (_, med, color, label, ls) in enumerate(med_items):
+                y_pos = ymax * (0.92 - idx * 0.08)
+                short = label.replace(" KL", "").replace(" raw", "r").replace(" tuned", "t")
+                ax.annotate(f"{short}={med:.0f}", xy=(med, y_pos),
+                            fontsize=5.5, color=color, fontweight="bold",
+                            ha="center", va="top",
+                            bbox=dict(boxstyle="round,pad=0.15", fc="white", ec=color,
+                                      alpha=0.8, lw=0.5))
 
         # Corrective onset
         ax.axvline(spec.corrective_onset, color="green", lw=1.2, ls=":",
@@ -118,7 +133,7 @@ def plot_histogram(
         ax.set_xlabel("Commitment layer", fontsize=8)
         if col == 0:
             ax.set_ylabel("Density", fontsize=8)
-            ax.legend(fontsize=5.5, loc="upper left")
+        ax.legend(fontsize=5.5, loc="upper left")
         ax.tick_params(labelsize=7)
         ax.set_xlim(-0.5, spec.n_layers + 0.5)
 
@@ -330,6 +345,208 @@ def save_summary(models: list[str], threshold: float, bar_results: dict) -> None
                 print(f"{MODEL_LABELS.get(model, model):<22} {method_name:<12} {pt:>7} {it:>7} {dl:>7}")
 
 
+# ── NEW: KL threshold sensitivity ────────────────────────────────────────
+
+def plot_kl_threshold_sensitivity(models: list[str]) -> None:
+    """Line plot: median commitment vs KL threshold for each model (PT vs IT)."""
+    thresholds = [0.05, 0.1, 0.2, 0.5, 1.0]
+    n = len(models)
+    fig, axes = plt.subplots(1, n, figsize=(3.5 * n, 4), squeeze=False)
+
+    for col, model_name in enumerate(models):
+        ax = axes[0, col]
+        spec = get_spec(model_name)
+
+        for variant, color, ls in [("pt", "#1565C0", "--"), ("it", "#B71C1C", "-")]:
+            data = load_commitment(model_name, variant)
+            if data is None:
+                continue
+            medians = []
+            for tau in thresholds:
+                key = f"commitment_layer_raw_kl_{tau}"
+                vals = [v for v in data.get(key, []) if v is not None]
+                medians.append(np.median(vals) if vals else np.nan)
+            ax.plot(thresholds, medians, f"{ls}o", color=color, lw=2,
+                    markersize=5, label=f"{variant.upper()} raw")
+
+            # Tuned
+            medians_t = []
+            for tau in thresholds:
+                key = f"commitment_layer_tuned_{tau}"
+                vals = [v for v in data.get(key, []) if v is not None]
+                medians_t.append(np.median(vals) if vals else np.nan)
+            ax.plot(thresholds, medians_t, f"{ls}s", color=color, lw=1.5,
+                    markersize=4, alpha=0.6, label=f"{variant.upper()} tuned")
+
+        ax.set_title(MODEL_LABELS.get(model_name, model_name), fontsize=9, fontweight="bold")
+        ax.set_xlabel("KL threshold (nats)", fontsize=8)
+        if col == 0:
+            ax.set_ylabel("Median commitment layer", fontsize=8)
+            ax.legend(fontsize=6)
+        ax.set_xscale("log")
+        ax.set_ylim(0, spec.n_layers)
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(labelsize=7)
+
+    fig.suptitle("KL Threshold Sensitivity: Commitment Layer vs Threshold",
+                 fontsize=11, fontweight="bold", y=1.02)
+    fig.tight_layout()
+    _save_fig(fig, "0G_commitment_kl_sensitivity.png")
+
+
+# ── NEW: Qualified commitment ────────────────────────────────────────────
+
+def plot_qualified_commitment(models: list[str]) -> None:
+    """Qualified KL commitment (must stay below threshold for K consecutive layers)."""
+    return plot_histogram(
+        models,
+        series=[
+            ("pt", "commitment_layer_raw_kl_qual_0.1_3x", "#9E9E9E", "PT raw 3x", 0.3, 0, "stepfilled"),
+            ("it", "commitment_layer_raw_kl_qual_0.1_3x", "#1565C0", "IT raw 3x", 0.9, 2, "step"),
+            ("pt", "commitment_layer_tuned_kl_qual_0.1_3x", "#E53935", "PT tuned 3x", 0.7, 1.5, "step"),
+            ("it", "commitment_layer_tuned_kl_qual_0.1_3x", "#FF9800", "IT tuned 3x", 0.9, 2.0, "step"),
+        ],
+        title="Qualified KL Commitment (< 0.1 nats, 3 consecutive layers)",
+        filename="0G_commitment_qualified.png",
+    )
+
+
+# ── NEW: Cosine commitment ──────────────────────────────────────────────
+
+def plot_cosine_commitment(models: list[str]) -> None:
+    """Cosine similarity commitment — independent of logit lens."""
+    return plot_histogram(
+        models,
+        series=[
+            ("pt", "commitment_layer_cosine_0.95", "#9E9E9E", "PT cos>0.95", 0.3, 0, "stepfilled"),
+            ("it", "commitment_layer_cosine_0.95", "#1565C0", "IT cos>0.95", 0.9, 2, "step"),
+            ("pt", "commitment_layer_cosine_0.99", "#E53935", "PT cos>0.99", 0.7, 1.5, "step"),
+            ("it", "commitment_layer_cosine_0.99", "#FF9800", "IT cos>0.99", 0.9, 2.0, "step"),
+        ],
+        title="Cosine Commitment: Residual Stream Convergence (independent of logit lens)",
+        filename="0G_commitment_cosine.png",
+    )
+
+
+# ── NEW: Entropy commitment ─────────────────────────────────────────────
+
+def plot_entropy_commitment(models: list[str]) -> None:
+    """Entropy-based commitment."""
+    return plot_histogram(
+        models,
+        series=[
+            ("pt", "commitment_layer_entropy_0.1", "#9E9E9E", "PT ent<0.1", 0.3, 0, "stepfilled"),
+            ("it", "commitment_layer_entropy_0.1", "#1565C0", "IT ent<0.1", 0.9, 2, "step"),
+            ("pt", "commitment_layer_entropy_0.5", "#E53935", "PT ent<0.5", 0.7, 1.5, "step"),
+            ("it", "commitment_layer_entropy_0.5", "#FF9800", "IT ent<0.5", 0.9, 2.0, "step"),
+        ],
+        title="Entropy Commitment: When Does Prediction Uncertainty Stabilize?",
+        filename="0G_commitment_entropy.png",
+    )
+
+
+# ── NEW: CDF curves ─────────────────────────────────────────────────────
+
+def plot_commitment_cdf(models: list[str]) -> None:
+    """CDF of commitment layer — fraction committed by normalized depth."""
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    colors = {
+        "gemma3_4b": "#1565C0", "llama31_8b": "#B71C1C", "qwen3_4b": "#1B5E20",
+        "mistral_7b": "#E65100", "deepseek_v2_lite": "#4A148C", "olmo2_7b": "#006064",
+    }
+
+    for ax_idx, (key, title) in enumerate([
+        ("commitment_layer_raw", "Raw Top-1 Commitment CDF"),
+        ("commitment_layer_top1_tuned", "Tuned Top-1 Commitment CDF"),
+    ]):
+        ax = axes[ax_idx]
+        for model_name in models:
+            spec = get_spec(model_name)
+            color = colors.get(model_name, "#333333")
+
+            for variant, ls, alpha in [("pt", "--", 0.5), ("it", "-", 1.0)]:
+                data = load_commitment(model_name, variant)
+                if data is None or key not in data:
+                    continue
+                vals = np.array([v for v in data[key] if v is not None])
+                if len(vals) == 0:
+                    continue
+                # Normalize to [0, 1]
+                normalized = vals / spec.n_layers
+                sorted_vals = np.sort(normalized)
+                cdf = np.arange(1, len(sorted_vals) + 1) / len(sorted_vals)
+                label = f"{MODEL_LABELS.get(model_name, model_name)} {variant.upper()}" if variant == "it" else None
+                ax.plot(sorted_vals, cdf, color=color, ls=ls, lw=1.5, alpha=alpha, label=label)
+
+        ax.set_xlabel("Normalized depth (commitment layer / n_layers)", fontsize=9)
+        ax.set_ylabel("Cumulative fraction committed", fontsize=9)
+        ax.set_title(title, fontsize=10, fontweight="bold")
+        ax.legend(fontsize=7, loc="lower right")
+        ax.grid(True, alpha=0.3)
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+
+    fig.suptitle("Commitment CDF: IT (solid) vs PT (dashed) — IT should shift right",
+                 fontsize=11, fontweight="bold")
+    fig.tight_layout()
+    _save_fig(fig, "0G_commitment_cdf.png")
+
+
+# ── NEW: Normalized summary ─────────────────────────────────────────────
+
+def plot_normalized_summary(models: list[str], threshold: float = 0.1) -> None:
+    """Commitment delay as fraction of total depth for cross-model comparison."""
+    methods = [
+        ("Raw Top-1",   "commitment_layer_raw",        "#9E9E9E"),
+        ("Tuned Top-1", "commitment_layer_top1_tuned", "#1565C0"),
+        ("Raw KL",      f"commitment_layer_raw_kl_{threshold}", "#E65100"),
+        ("Tuned KL",    f"commitment_layer_tuned_{threshold}", "#1B5E20"),
+    ]
+
+    n_methods = len(methods)
+    n_models = len(models)
+    x = np.arange(n_models)
+    width = 0.8 / n_methods
+
+    fig, ax = plt.subplots(figsize=(max(8, n_models * 1.8), 5))
+
+    for i, (method_label, key, color) in enumerate(methods):
+        delays = []
+        for model in models:
+            spec = get_spec(model)
+            pt = load_commitment(model, "pt")
+            it = load_commitment(model, "it")
+            if pt and key in pt and it and key in it:
+                pt_vals = [v for v in pt[key] if v is not None]
+                it_vals = [v for v in it[key] if v is not None]
+                if pt_vals and it_vals:
+                    delay = (np.median(it_vals) - np.median(pt_vals)) / spec.n_layers
+                    delays.append(delay)
+                else:
+                    delays.append(0)
+            else:
+                delays.append(0)
+
+        offset = i * width - (n_methods - 1) * width / 2
+        bars = ax.bar(x + offset, delays, width, label=method_label, color=color, alpha=0.8)
+        for bar, d in zip(bars, delays):
+            if abs(d) > 0.001:
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                        f"{d:+.3f}", ha="center", va="bottom", fontsize=6)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([MODEL_LABELS.get(m, m) for m in models],
+                       fontsize=9, rotation=15, ha="right")
+    ax.set_ylabel("Normalized Commitment Delay\n(IT−PT median / n_layers)", fontsize=9)
+    ax.axhline(0, color="black", lw=0.5, ls="--")
+    ax.legend(fontsize=8)
+    ax.set_title("Normalized Commitment Delay (cross-model comparable)",
+                 fontsize=12, fontweight="bold")
+    fig.tight_layout()
+    _save_fig(fig, "0G_commitment_normalized_summary.png")
+
+
 # ── Main ─────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -348,10 +565,23 @@ def main() -> None:
         log.warning("No commitment data found.")
         return
 
+    # Core plots (paper main text)
     plot_commitment_top1(available)
     plot_commitment_kl(available, args.threshold)
     bar_results = plot_summary_bar(available, args.threshold)
     plot_scatter(available)
+
+    # Extended plots (paper appendix)
+    plot_kl_threshold_sensitivity(available)
+    plot_qualified_commitment(available)
+    # NOTE: cosine commitment dropped — cos(h_ℓ, h_final) only reaches 0.8+ at
+    # the very last layer for all models, making it uninformative for commitment.
+    # Residual stream direction changes too much through layers.
+    plot_entropy_commitment(available)
+    plot_commitment_cdf(available)
+    plot_normalized_summary(available, args.threshold)
+
+    # Summary data
     save_summary(available, args.threshold, bar_results)
 
 
