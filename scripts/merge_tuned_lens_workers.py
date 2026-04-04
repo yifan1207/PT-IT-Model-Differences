@@ -35,11 +35,11 @@ def merge_model_variant(base_dir: Path, variant: str, n_workers: int) -> None:
     print(f"  JSONL: {len(all_lines)} prompts → {merged_jsonl.name}")
 
     # ── Merge NPY arrays ────────────────────────────────────────────────
-    merged_arrays_dir = base_dir / "arrays"
+    merged_arrays_dir = base_dir / f"arrays_{variant}"
     merged_arrays_dir.mkdir(exist_ok=True)
 
     # Find all .npy files from worker 0
-    w0_dir = base_dir / "arrays_w0"
+    w0_dir = base_dir / f"arrays_{variant}_w0"
     if not w0_dir.exists():
         print(f"  WARNING: {w0_dir} missing, skipping arrays")
         return
@@ -48,7 +48,7 @@ def merge_model_variant(base_dir: Path, variant: str, n_workers: int) -> None:
     for npy_name in npy_names:
         parts = []
         for wi in range(n_workers):
-            p = base_dir / f"arrays_w{wi}" / npy_name
+            p = base_dir / f"arrays_{variant}_w{wi}" / npy_name
             if p.exists():
                 parts.append(np.load(p))
         if parts:
@@ -61,7 +61,7 @@ def merge_model_variant(base_dir: Path, variant: str, n_workers: int) -> None:
     all_step_entries = []
     offset = 0
     for wi in range(n_workers):
-        si = base_dir / f"arrays_w{wi}" / "step_index.jsonl"
+        si = base_dir / f"arrays_{variant}_w{wi}" / "step_index.jsonl"
         if not si.exists():
             continue
         with open(si) as f:
@@ -83,7 +83,7 @@ def merge_model_variant(base_dir: Path, variant: str, n_workers: int) -> None:
     all_top5 = []
     t5_offset = 0
     for wi in range(n_workers):
-        si = base_dir / f"arrays_w{wi}" / "top5_step_index.jsonl"
+        si = base_dir / f"arrays_{variant}_w{wi}" / "top5_step_index.jsonl"
         if not si.exists():
             continue
         with open(si) as f:

@@ -129,20 +129,21 @@ def eval_model_variant(model_name: str, variant: str, worker_index: int = 0, n_w
     results_dir.mkdir(parents=True, exist_ok=True)
     if n_workers > 1:
         out_path = results_dir / f"tuned_lens_commitment_{variant}_{worker_tag}.jsonl"
-        arrays_subdir = f"arrays_{worker_tag}"
+        arrays_subdir = f"arrays_{variant}_{worker_tag}"
     else:
         out_path = results_dir / f"tuned_lens_commitment_{variant}.jsonl"
-        arrays_subdir = "arrays"
+        arrays_subdir = f"arrays_{variant}"
     summary_path = results_dir / f"summary_{variant}.json"
 
     # ── Check for already-complete evaluation ─────────────────────────────
     results_vol.reload()
     arrays_complete = (results_dir / arrays_subdir / "step_index.jsonl").exists()
+    jsonl_complete = out_path.exists() and sum(1 for _ in open(out_path)) > 0 if out_path.exists() else False
     if n_workers == 1 and summary_path.exists() and arrays_complete:
         log.info("Summary + arrays already exist — skipping")
         return json.loads(summary_path.read_text())
-    elif out_path.exists() and arrays_complete:
-        log.info("Worker output already complete — skipping")
+    elif jsonl_complete and arrays_complete:
+        log.info("Worker %d output already complete — skipping", worker_index)
         return {"status": "skipped", "worker": worker_index}
     elif summary_path.exists() and n_workers == 1:
         log.info("Summary exists but arrays missing — re-running with collect_full")
