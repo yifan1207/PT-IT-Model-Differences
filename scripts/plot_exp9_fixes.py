@@ -252,6 +252,24 @@ def _adaptive_majority_commit(kl_arr, threshold):
     return np.where(has_any, committed.argmax(axis=1), n_layers - 1)
 
 
+def _kl_plus_mean_commit(kl_arr, threshold):
+    """Commitment: earliest layer ℓ where KL[ℓ] < τ AND mean(KL[ℓ:]) < τ.
+
+    The layer itself must be below threshold (candidate),
+    AND the average of it and all subsequent layers must also be below.
+    Vectorized. Returns numpy int array.
+    """
+    n_steps, n_layers = kl_arr.shape
+    below_thresh = kl_arr < threshold  # candidate layers
+    rev_cumsum = np.cumsum(kl_arr[:, ::-1], axis=1)[:, ::-1]
+    remaining = np.arange(n_layers, 0, -1, dtype=np.float32)
+    mean_kl = rev_cumsum / remaining
+    mean_ok = mean_kl < threshold
+    committed = below_thresh & mean_ok
+    has_any = committed.any(axis=1)
+    return np.where(has_any, committed.argmax(axis=1), n_layers - 1)
+
+
 def _mean_and_median_kl_commit(kl_arr, threshold):
     """Commitment: earliest layer ℓ where BOTH mean(KL[ℓ:]) < τ AND median(KL[ℓ:]) < τ.
 
@@ -853,9 +871,9 @@ def plot_kl_sensitivity():
     thresholds = [0.05, 0.1, 0.2, 0.5, 1.0]
     fig, axes = plt.subplots(2, 3, figsize=(16, 9))
     fig.suptitle("KL Threshold Sensitivity: Mean Commitment vs τ\n"
-                 "[≥90% subsequent layers < τ | "
+                 "[≥90% of layers ℓ..end have KL < τ (incl. ℓ itself) | "
                  "Blue = raw, Red = tuned | Solid = IT, Dashed = PT]",
-                 fontsize=12, fontweight="bold")
+                 fontsize=11, fontweight="bold")
     for idx, model in enumerate(MODELS):
         ax = axes[idx // 3, idx % 3]
         nl = N_LAYERS[model]
@@ -895,6 +913,91 @@ def plot_kl_sensitivity():
 # ═══════════════════════════════════════════════════════════════════════════════
 # 12b-i. Entropy threshold sensitivity
 # ═══════════════════════════════════════════════════════════════════════════════
+def _plot_kl_plus_mean_commitment(lens, threshold=0.1):
+    """6-panel histogram: KL[ℓ] < τ AND mean(KL[ℓ:]) < τ."""
+    lens_label = "Raw Logit-Lens" if lens == "raw" else "Tuned Logit-Lens"
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle(
+        f"Commitment Delay: KL[ℓ] < {threshold} AND mean(KL[ℓ:]) < {threshold}\n"
+        f"[{lens_label}]",
+        fontsize=13, fontweight="bold",
+    )
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+        bins = np.arange(nl + 1) - 0.5
+        has_data = False
+        mean_lines = {}
+
+        for variant, color, lbl in [("pt", COL_PT, "PT"), ("it", COL_IT, "IT")]:
+            kl = _load_kl_for_variant(model, variant, lens=lens)
+            if kl is None:
+                ax.text(0.5, 0.85 if variant == "it" else 0.78,
+                        f"{lbl}: NO DATA", transform=ax.transAxes,
+                        ha="center", fontsize=9, color=color, alpha=0.7)
+                continue
+            commits = _kl_plus_mean_commit(kl, threshold)
+            has_data = True
+            n = len(commits)
+            mn = float(np.mean(commits))
+            mean_lines[variant] = mn
+            ax.hist(commits, bins=bins, density=True, alpha=0.45, color=color,
+                    label=f"{lbl} (n={n:,}, μ={mn:.1f})")
+
+        if mean_lines:
+            vals = list(mean_lines.values())
+            close = len(vals) == 2 and abs(vals[0] - vals[1]) < 0.8
+            for vi, (variant, mn) in enumerate(mean_lines.items()):
+                color = COL_PT if variant == "pt" else COL_IT
+                offset = (-0.25 if vi == 0 else 0.25) if close else 0
+                ax.axvline(mn + offset, color=color, ls="--", lw=2, alpha=0.9)
+
+        if has_data:
+            ax.axvline(round(nl * 0.6), color="gray", ls=":", lw=1, alpha=0.3)
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("Commitment layer")
+        if idx % 3 == 0:
+            ax.set_ylabel("Density")
+        ax.legend(fontsize=7, loc="upper left")
+
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, f"L2_commitment_{lens}_kl_plus_mean_{threshold}.png")
+
+
+def plot_kl_plus_mean_sensitivity():
+    """Sensitivity: KL[ℓ] < τ AND mean(KL[ℓ:]) < τ, varying τ."""
+    thresholds = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle(
+        "KL Threshold Sensitivity: Mean Commitment vs τ\n"
+        "[KL[ℓ] < τ AND mean(KL[ℓ:]) < τ | "
+        "Blue = raw, Red = tuned | Solid = IT, Dashed = PT]",
+        fontsize=11, fontweight="bold",
+    )
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+        for variant, ls, marker in [("pt", "--", "o"), ("it", "-", "s")]:
+            lbl_v = variant.upper()
+            for lens, color, lens_lbl in [("raw", COL_PT, "Raw"), ("tuned", COL_IT, "Tuned")]:
+                kl = _load_kl_for_variant(model, variant, lens=lens)
+                if kl is None:
+                    continue
+                vals = []
+                for t in thresholds:
+                    commits = _kl_plus_mean_commit(kl, t)
+                    vals.append(np.mean(commits) / nl)
+                ax.plot(thresholds, vals, marker=marker, color=color, ls=ls,
+                        lw=1.2, markersize=4, label=f"{lens_lbl} {lbl_v}")
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("KL threshold τ (nats)")
+        ax.set_ylabel("Mean commitment (norm. depth)")
+        ax.set_xscale("log"); ax.set_ylim(0, 1.05)
+        ax.legend(fontsize=6)
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, "L2_kl_plus_mean_sensitivity.png")
+
+
 def plot_entropy_sensitivity():
     thresholds = [0.05, 0.1, 0.2, 0.5, 1.0]
     fig, axes = plt.subplots(2, 3, figsize=(16, 9))
