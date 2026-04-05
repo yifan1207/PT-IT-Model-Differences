@@ -1,11 +1,9 @@
 """
 Exp9 plot fixes — regenerate all plots with:
   1. Clear lens/data-source label on EVERY plot
-  2. Gemma3 tuned lens marked as BROKEN
-  3. DeepSeek tuned lens marked as MIXED
-  4. Missing commitment data marked clearly
-  5. KL-to-final raw vs tuned as key validation plot
-  6. Remove misleading delta_cosine_tuned_lens (was single-variant, no PT vs IT)
+  2. Missing commitment data marked clearly
+  3. KL-to-final raw vs tuned as key validation plot
+  4. Remove misleading delta_cosine_tuned_lens (was single-variant, no PT vs IT)
 """
 from __future__ import annotations
 import json, logging, os
@@ -24,16 +22,6 @@ LABELS = {"gemma3_4b":"Gemma 3 4B", "llama31_8b":"Llama 3.1 8B", "qwen3_4b":"Qwe
           "mistral_7b":"Mistral 7B v0.3", "deepseek_v2_lite":"DeepSeek-V2-Lite", "olmo2_7b":"OLMo 2 7B"}
 COL_PT, COL_IT = "#2196F3", "#E53935"
 
-# Tuned lens status per model
-TUNED_LENS_STATUS = {
-    "gemma3_4b": "BROKEN",       # probes diverge (embedding scaling bug)
-    "llama31_8b": "OK",
-    "qwen3_4b": "OK",
-    "mistral_7b": "OK",
-    "deepseek_v2_lite": "MIXED", # entropy worse, prob ok
-    "olmo2_7b": "OK",
-}
-
 BASE = Path("results/cross_model")
 OUT = Path("results/exp9/plots")
 
@@ -43,20 +31,6 @@ def _save(fig, name):
     fig.savefig(OUT / name, dpi=200, bbox_inches="tight")
     log.info("Saved → %s", OUT / name)
     plt.close(fig)
-
-
-def _mark_broken(ax, model):
-    """Overlay warning on panel if tuned lens is broken for this model."""
-    status = TUNED_LENS_STATUS.get(model, "OK")
-    if status == "BROKEN":
-        ax.text(0.5, 0.5, "TUNED LENS\nBROKEN", transform=ax.transAxes,
-                ha="center", va="center", fontsize=16, color="red", alpha=0.4,
-                fontweight="bold", rotation=30,
-                bbox=dict(boxstyle="round", facecolor="white", alpha=0.7))
-    elif status == "MIXED":
-        ax.text(0.98, 0.02, "tuned lens\nquality mixed", transform=ax.transAxes,
-                ha="right", va="bottom", fontsize=7, color="orange", alpha=0.8,
-                fontstyle="italic")
 
 
 def _load_cosine_profile(model, variant):
@@ -104,6 +78,339 @@ def _extract_commits(records, key):
         if key in rec:
             values.extend(rec[key])
     return values
+
+
+def _majority_commit_from_kl(kl_arr, threshold, frac=0.9):
+    """Compute majority-vote commitment for each row of a [steps, layers] KL array.
+
+    Vectorized: for each layer ℓ, compute fraction of layers ℓ..L-1 below threshold.
+    Returns numpy array of commitment layers (one per step).
+    """
+    kl = kl_arr.astype(np.float32)
+    n_steps, n_layers = kl.shape
+    below = (kl < threshold)  # [steps, layers] bool
+
+    # For each layer ℓ, fraction of layers ℓ..L-1 that are below threshold
+    # Use reverse cumsum: cumsum of below from right
+    rev_cumsum = np.cumsum(below[:, ::-1], axis=1)[:, ::-1]  # [steps, layers]
+    remaining = np.arange(n_layers, 0, -1)  # [layers]: n_layers, n_layers-1, ..., 1
+    frac_below = rev_cumsum / remaining  # [steps, layers]
+
+    # Commitment = first layer where frac_below >= frac
+    committed = frac_below >= frac  # [steps, layers] bool
+    # argmax on bool gives first True; if none True, gives 0 (wrong), so handle that
+    has_any = committed.any(axis=1)
+    result = np.where(has_any, committed.argmax(axis=1), n_layers - 1)
+    return result.tolist()
+
+
+def _load_raw_kl_majority(model, variant, threshold=0.1):
+    """Compute raw-KL majority commitment from NPY arrays, split by variant.
+
+    Uses (prompt_id, n_steps) matching between step_index and JSONL to
+    determine which array rows belong to which variant, since prompt_ids
+    are shared between PT and IT (same eval dataset) but n_steps differ.
+    """
+    arr_dir = BASE / model / "tuned_lens" / "commitment" / "arrays"
+    arr_path = arr_dir / "raw_kl_final.npy"
+    idx_path = arr_dir / "step_index.jsonl"
+    if not arr_path.exists() or not idx_path.exists():
+        return None
+
+    kl_arr = np.load(arr_path)
+    with open(idx_path) as f:
+        step_index = [json.loads(line) for line in f]
+
+    # Build (prompt_id, n_steps) set from this variant's JSONL
+    recs = _load_commitment(model, variant)
+    if recs is None:
+        return None
+    variant_keys = {(rec["prompt_id"], rec["n_steps"]) for rec in recs}
+
+    # Collect row ranges from step_index that match this variant
+    total_rows = kl_arr.shape[0]
+    row_ranges = []
+    for entry in step_index:
+        key = (entry["prompt_id"], entry["n_steps"])
+        if key in variant_keys and entry["end_step"] <= total_rows:
+            row_ranges.append((entry["start_step"], entry["end_step"]))
+
+    if not row_ranges:
+        return None
+
+    # Build index array from ranges (avoids per-element list extension)
+    row_indices = np.concatenate([np.arange(s, e) for s, e in row_ranges])
+    sub = kl_arr[row_indices]
+    return _majority_commit_from_kl(sub, threshold)
+
+
+def _load_kl_for_variant(model, variant, lens="raw"):
+    """Load per-step per-layer KL-to-final values for a specific variant.
+
+    Args:
+        lens: "raw" or "tuned"
+    Returns [n_steps, n_layers] float32 array or None.
+    """
+    arr_dir = BASE / model / "tuned_lens" / "commitment" / "arrays"
+    arr_path = arr_dir / f"{lens}_kl_final.npy"
+    idx_path = arr_dir / "step_index.jsonl"
+    if not arr_path.exists() or not idx_path.exists():
+        return None
+
+    kl_arr = np.load(arr_path)
+    with open(idx_path) as f:
+        step_index = [json.loads(line) for line in f]
+
+    recs = _load_commitment(model, variant)
+    if recs is None:
+        return None
+    variant_keys = {(rec["prompt_id"], rec["n_steps"]) for rec in recs}
+
+    total_rows = kl_arr.shape[0]
+    row_ranges = []
+    for entry in step_index:
+        key = (entry["prompt_id"], entry["n_steps"])
+        if key in variant_keys and entry["end_step"] <= total_rows:
+            row_ranges.append((entry["start_step"], entry["end_step"]))
+
+    if not row_ranges:
+        return None
+
+    row_indices = np.concatenate([np.arange(s, e) for s, e in row_ranges])
+    return kl_arr[row_indices].astype(np.float32)
+
+
+def _mean_kl_commit(kl_arr, threshold):
+    """Commitment: earliest layer ℓ where mean(KL[ℓ:]) < threshold.
+
+    Vectorized via reverse cumsum.
+    Returns numpy int array of commitment layers (one per step).
+    """
+    n_steps, n_layers = kl_arr.shape
+    rev_cumsum = np.cumsum(kl_arr[:, ::-1], axis=1)[:, ::-1]
+    remaining = np.arange(n_layers, 0, -1, dtype=np.float32)
+    mean_kl = rev_cumsum / remaining
+    committed = mean_kl < threshold
+    has_any = committed.any(axis=1)
+    return np.where(has_any, committed.argmax(axis=1), n_layers - 1)
+
+
+def _median_kl_commit(kl_arr, threshold):
+    """Commitment: earliest layer ℓ where median(KL[ℓ:]) < threshold.
+
+    Iterates over layers; computes median of KL[ℓ:] for all steps at once.
+    Returns numpy int array of commitment layers (one per step).
+    """
+    n_steps, n_layers = kl_arr.shape
+    result = np.full(n_steps, n_layers - 1, dtype=np.int32)
+    uncommitted = np.ones(n_steps, dtype=bool)
+    for li in range(n_layers):
+        if not uncommitted.any():
+            break
+        med = np.median(kl_arr[uncommitted, li:], axis=1)
+        newly = med < threshold
+        # Map back to full index
+        idx = np.where(uncommitted)[0][newly]
+        result[idx] = li
+        uncommitted[idx] = False
+    return result
+
+
+def _adaptive_majority_commit(kl_arr, threshold):
+    """Commitment: earliest layer ℓ where KL[ℓ] < τ and subsequent layers mostly below τ.
+
+    Rule:
+      - If ≥10 subsequent layers (including ℓ): ≥90% must have KL < τ
+      - If <10 subsequent layers: at most 1 may exceed τ
+
+    Vectorized. Returns numpy int array of commitment layers (one per step).
+    """
+    n_steps, n_layers = kl_arr.shape
+    below = (kl_arr < threshold)  # [steps, layers] bool
+
+    # Reverse cumsum: count of below-threshold layers from ℓ to end
+    rev_cumsum = np.cumsum(below[:, ::-1], axis=1)[:, ::-1]  # [steps, layers]
+    remaining = np.arange(n_layers, 0, -1)  # layers remaining from ℓ
+
+    # Build committed mask per layer
+    committed = np.zeros((n_steps, n_layers), dtype=bool)
+    for li in range(n_layers):
+        rem = remaining[li]  # n_layers - li
+        n_below = rev_cumsum[:, li]
+        n_above = rem - n_below
+        if rem >= 10:
+            # ≥90% below threshold
+            committed[:, li] = (n_below / rem) >= 0.9
+        else:
+            # At most 1 exceeds threshold
+            committed[:, li] = n_above <= 1
+
+    # Must also have KL[ℓ] < threshold at the commitment layer itself
+    committed = committed & below
+
+    has_any = committed.any(axis=1)
+    return np.where(has_any, committed.argmax(axis=1), n_layers - 1)
+
+
+def _mean_and_median_kl_commit(kl_arr, threshold):
+    """Commitment: earliest layer ℓ where BOTH mean(KL[ℓ:]) < τ AND median(KL[ℓ:]) < τ.
+
+    Returns numpy int array of commitment layers (one per step).
+    """
+    mean_commits = _mean_kl_commit(kl_arr, threshold)
+    median_commits = _median_kl_commit(kl_arr, threshold)
+    # Commitment = max of the two (whichever is later / more conservative)
+    return np.maximum(mean_commits, median_commits)
+
+
+def _plot_meanmedian_commitment(lens, threshold=0.1):
+    """6-panel histogram: commitment where both mean & median KL[ℓ:] < τ."""
+    lens_label = "Raw Logit-Lens" if lens == "raw" else "Tuned Logit-Lens"
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle(
+        f"Commitment Delay: mean(KL[ℓ:]) < {threshold} AND median(KL[ℓ:]) < {threshold}\n"
+        f"[{lens_label}]",
+        fontsize=13, fontweight="bold",
+    )
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+        bins = np.arange(nl + 1) - 0.5
+        has_data = False
+        mean_lines = {}
+
+        for variant, color, lbl in [("pt", COL_PT, "PT"), ("it", COL_IT, "IT")]:
+            kl = _load_kl_for_variant(model, variant, lens=lens)
+            if kl is None:
+                ax.text(0.5, 0.85 if variant == "it" else 0.78,
+                        f"{lbl}: NO DATA", transform=ax.transAxes,
+                        ha="center", fontsize=9, color=color, alpha=0.7)
+                continue
+            commits = _mean_and_median_kl_commit(kl, threshold)
+            has_data = True
+            n = len(commits)
+            mn = float(np.mean(commits))
+            mean_lines[variant] = mn
+            ax.hist(commits, bins=bins, density=True, alpha=0.45, color=color,
+                    label=f"{lbl} (n={n:,}, μ={mn:.1f})")
+
+        if mean_lines:
+            vals = list(mean_lines.values())
+            close = len(vals) == 2 and abs(vals[0] - vals[1]) < 0.8
+            for vi, (variant, mn) in enumerate(mean_lines.items()):
+                color = COL_PT if variant == "pt" else COL_IT
+                offset = (-0.25 if vi == 0 else 0.25) if close else 0
+                ax.axvline(mn + offset, color=color, ls="--", lw=2, alpha=0.9)
+
+        if has_data:
+            ax.axvline(round(nl * 0.6), color="gray", ls=":", lw=1, alpha=0.3)
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("Commitment layer")
+        if idx % 3 == 0:
+            ax.set_ylabel("Density")
+        ax.legend(fontsize=7, loc="upper left")
+
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, f"L2_commitment_{lens}_meanmedian_kl_{threshold}.png")
+
+
+def _plot_raw_vs_tuned_meankl(threshold=0.1):
+    """6-panel histogram: raw vs tuned commitment on same axes, PT and IT combined."""
+    COL_RAW, COL_TUNED = "#2196F3", "#E53935"
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle(
+        f"Commitment Delay: mean(KL[ℓ:]) < {threshold} nats\n"
+        f"[Raw (blue) vs Tuned (red) Logit-Lens — PT+IT combined]",
+        fontsize=13, fontweight="bold",
+    )
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+        bins = np.arange(nl + 1) - 0.5
+        mean_lines = {}
+
+        for lens, color, lbl in [("raw", COL_RAW, "Raw"), ("tuned", COL_TUNED, "Tuned")]:
+            all_commits = []
+            for variant in ["pt", "it"]:
+                kl = _load_kl_for_variant(model, variant, lens=lens)
+                if kl is not None:
+                    all_commits.append(_mean_kl_commit(kl, threshold))
+            if not all_commits:
+                ax.text(0.5, 0.5, f"{lbl}: NO DATA", transform=ax.transAxes,
+                        ha="center", fontsize=9, color=color, alpha=0.7)
+                continue
+            commits = np.concatenate(all_commits)
+            n = len(commits)
+            mn = float(np.mean(commits))
+            mean_lines[lens] = mn
+            ax.hist(commits, bins=bins, density=True, alpha=0.4, color=color,
+                    label=f"{lbl} (n={n:,}, μ={mn:.1f})")
+
+        if mean_lines:
+            for lens, mn in mean_lines.items():
+                color = COL_RAW if lens == "raw" else COL_TUNED
+                ax.axvline(mn, color=color, ls="--", lw=2, alpha=0.9)
+
+        ax.axvline(round(nl * 0.6), color="gray", ls=":", lw=1, alpha=0.3)
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("Commitment layer")
+        if idx % 3 == 0:
+            ax.set_ylabel("Density")
+        ax.legend(fontsize=7, loc="upper left")
+
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, f"L2_commitment_raw_vs_tuned_meankl_{threshold}.png")
+
+
+def _plot_mean_commitment(lens, threshold=0.1):
+    """6-panel histogram: commitment where mean(KL[ℓ:]) < τ."""
+    lens_label = "Raw Logit-Lens" if lens == "raw" else "Tuned Logit-Lens"
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle(
+        f"Commitment Delay: mean(KL[ℓ:]) < {threshold} nats\n"
+        f"[{lens_label}]",
+        fontsize=13, fontweight="bold",
+    )
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+        bins = np.arange(nl + 1) - 0.5
+        has_data = False
+        mean_lines = {}
+
+        for variant, color, lbl in [("pt", COL_PT, "PT"), ("it", COL_IT, "IT")]:
+            kl = _load_kl_for_variant(model, variant, lens=lens)
+            if kl is None:
+                ax.text(0.5, 0.85 if variant == "it" else 0.78,
+                        f"{lbl}: NO DATA", transform=ax.transAxes,
+                        ha="center", fontsize=9, color=color, alpha=0.7)
+                continue
+            commits = _mean_kl_commit(kl, threshold)
+            has_data = True
+            n = len(commits)
+            mn = float(np.mean(commits))
+            mean_lines[variant] = mn
+            ax.hist(commits, bins=bins, density=True, alpha=0.45, color=color,
+                    label=f"{lbl} (n={n:,}, μ={mn:.1f})")
+
+        if mean_lines:
+            vals = list(mean_lines.values())
+            close = len(vals) == 2 and abs(vals[0] - vals[1]) < 0.8
+            for vi, (variant, mn) in enumerate(mean_lines.items()):
+                color = COL_PT if variant == "pt" else COL_IT
+                offset = (-0.25 if vi == 0 else 0.25) if close else 0
+                ax.axvline(mn + offset, color=color, ls="--", lw=2, alpha=0.9)
+
+        if has_data:
+            ax.axvline(round(nl * 0.6), color="gray", ls=":", lw=1, alpha=0.3)
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("Commitment layer")
+        if idx % 3 == 0:
+            ax.set_ylabel("Density")
+        ax.legend(fontsize=7, loc="upper left")
+
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, f"L2_commitment_{lens}_meankl_{threshold}.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -253,7 +560,7 @@ def plot_kl_to_final_validation():
         if idx % 3 == 0:
             ax.set_ylabel("Median KL to final (nats)")
         ax.legend(fontsize=9)
-        _mark_broken(ax, model)
+
     fig.tight_layout(rect=[0, 0, 1, 0.91])
     _save(fig, "tuned_lens_validation_kl_to_final.png")
 
@@ -301,6 +608,7 @@ def _plot_commitment(key, title, filename, lens_label):
         nl = N_LAYERS[model]
         bins = np.arange(nl + 1) - 0.5
         has_data = False
+        mean_lines = {}  # variant -> mean value, for offset when overlapping
 
         for variant, color, lbl in [("pt", COL_PT, "PT"), ("it", COL_IT, "IT")]:
             recs = _load_commitment(model, variant)
@@ -317,11 +625,19 @@ def _plot_commitment(key, title, filename, lens_label):
                 continue
             has_data = True
             n = len(commits)
-            med = np.median(commits)
-            partial = "" if n > 100000 else f" PARTIAL"
+            mn = np.mean(commits)
+            mean_lines[variant] = mn
             ax.hist(commits, bins=bins, density=True, alpha=0.45, color=color,
-                    label=f"{lbl} (n={n:,}, med={med:.0f}){partial}")
-            ax.axvline(med, color=color, ls="--", lw=2, alpha=0.9)
+                    label=f"{lbl} (n={n:,}, μ={mn:.1f})")
+
+        # Draw mean lines with offset when they overlap
+        if mean_lines:
+            vals = list(mean_lines.values())
+            close = len(vals) == 2 and abs(vals[0] - vals[1]) < 0.8
+            for vi, (variant, mn) in enumerate(mean_lines.items()):
+                color = COL_PT if variant == "pt" else COL_IT
+                offset = (-0.25 if vi == 0 else 0.25) if close else 0
+                ax.axvline(mn + offset, color=color, ls="--", lw=2, alpha=0.9)
 
         if has_data:
             ax.axvline(round(nl * 0.6), color="gray", ls=":", lw=1, alpha=0.3)
@@ -331,12 +647,59 @@ def _plot_commitment(key, title, filename, lens_label):
             ax.set_ylabel("Density")
         ax.legend(fontsize=7, loc="upper left")
 
-        # Mark broken tuned lens if this is a tuned-lens method
-        if "tuned" in key.lower() or "majority" in key.lower():
-            _mark_broken(ax, model)
-
     fig.tight_layout(rect=[0, 0, 1, 0.91])
     _save(fig, filename)
+
+
+def _plot_adaptive_majority(lens, threshold=0.1):
+    """Plot adaptive majority commitment from NPY arrays for a given lens type."""
+    lens_label = "Raw Logit-Lens" if lens == "raw" else "Tuned Logit-Lens"
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle(
+        f"Commitment Delay: adaptive majority KL < {threshold}\n"
+        f"[{lens_label} | ≥10 remaining: ≥90% below | <10 remaining: ≤1 exceeds]",
+        fontsize=12, fontweight="bold",
+    )
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+        bins = np.arange(nl + 1) - 0.5
+        has_data = False
+        mean_lines = {}
+
+        for variant, color, lbl in [("pt", COL_PT, "PT"), ("it", COL_IT, "IT")]:
+            kl = _load_kl_for_variant(model, variant, lens=lens)
+            if kl is None:
+                ax.text(0.5, 0.85 if variant == "it" else 0.78,
+                        f"{lbl}: NO DATA", transform=ax.transAxes,
+                        ha="center", fontsize=9, color=color, alpha=0.7)
+                continue
+            commits = _adaptive_majority_commit(kl, threshold)
+            has_data = True
+            n = len(commits)
+            mn = float(np.mean(commits))
+            mean_lines[variant] = mn
+            ax.hist(commits, bins=bins, density=True, alpha=0.45, color=color,
+                    label=f"{lbl} (n={n:,}, μ={mn:.1f})")
+
+        if mean_lines:
+            vals = list(mean_lines.values())
+            close = len(vals) == 2 and abs(vals[0] - vals[1]) < 0.8
+            for vi, (variant, mn) in enumerate(mean_lines.items()):
+                color = COL_PT if variant == "pt" else COL_IT
+                offset = (-0.25 if vi == 0 else 0.25) if close else 0
+                ax.axvline(mn + offset, color=color, ls="--", lw=2, alpha=0.9)
+
+        if has_data:
+            ax.axvline(round(nl * 0.6), color="gray", ls=":", lw=1, alpha=0.3)
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("Commitment layer")
+        if idx % 3 == 0:
+            ax.set_ylabel("Density")
+        ax.legend(fontsize=7, loc="upper left")
+
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, f"L2_commitment_{lens}_majority_0.1.png")
 
 
 def plot_all_commitment():
@@ -345,12 +708,16 @@ def plot_all_commitment():
                      "L2_commitment_raw_top1.png", "Raw Logit-Lens")
     _plot_commitment("commitment_layer_raw_kl_0.1", "KL(ℓ ‖ final) < 0.1 nats",
                      "L2_commitment_raw_kl_0.1.png", "Raw Logit-Lens")
+    _plot_commitment("commitment_layer_raw_kl_0.5", "KL(ℓ ‖ final) < 0.5 nats",
+                     "L2_commitment_raw_kl_0.5.png", "Raw Logit-Lens")
 
     # === Tuned logit-lens methods ===
     _plot_commitment("commitment_layer_top1_tuned", "Top-1 No-Flip-Back",
                      "L2_commitment_tuned_top1.png", "Tuned Logit-Lens")
     _plot_commitment("commitment_layer_tuned_0.1", "KL(ℓ ‖ final) < 0.1 nats",
                      "L2_commitment_tuned_kl_0.1.png", "Tuned Logit-Lens")
+    _plot_commitment("commitment_layer_tuned_0.5", "KL(ℓ ‖ final) < 0.5 nats",
+                     "L2_commitment_tuned_kl_0.5.png", "Tuned Logit-Lens")
 
     # === Residual-stream method (no logit lens) ===
     _plot_commitment("commitment_layer_cosine_0.95", "cos(h_ℓ, h_final) > 0.95",
@@ -361,14 +728,27 @@ def plot_all_commitment():
                      "L2_commitment_entropy_0.2.png", "Raw Logit-Lens Entropy")
 
     # === Majority vote ===
-    _plot_commitment("commitment_layer_majority_0.1", "≥90% subsequent layers KL < 0.1",
-                     "L2_commitment_majority_0.1.png", "Tuned Logit-Lens (majority)")
+    # Tuned: use JSONL (complete data for both variants)
+    _plot_commitment("commitment_layer_majority_0.1",
+                     "≥90% subsequent layers KL < 0.1",
+                     "L2_commitment_tuned_majority_0.1.png",
+                     "Tuned Logit-Lens | ≥10 remaining: ≥90% below | <10 remaining: ≤1 exceeds")
+    # Raw: compute from NPY arrays (no pre-computed raw majority in JSONL)
+    _plot_adaptive_majority("raw", threshold=0.1)
 
     # === Qualified ===
     _plot_commitment("commitment_layer_raw_kl_qual_0.5_3x", "KL < 0.5, holds 3 layers",
                      "L2_commitment_raw_kl_qual_0.5_3x.png", "Raw Logit-Lens (qualified)")
     _plot_commitment("commitment_layer_tuned_kl_qual_0.5_3x", "KL < 0.5, holds 3 layers",
                      "L2_commitment_tuned_kl_qual_0.5_3x.png", "Tuned Logit-Lens (qualified)")
+
+    # === Mean+Median KL commitment (from NPY arrays) ===
+    _plot_meanmedian_commitment("raw", threshold=0.1)
+    _plot_meanmedian_commitment("tuned", threshold=0.1)
+
+    # === Mean-only KL commitment (from NPY arrays) ===
+    _plot_mean_commitment("raw", threshold=0.1)
+    _plot_mean_commitment("tuned", threshold=0.1)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -466,13 +846,62 @@ def plot_cdf():
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 12. KL threshold sensitivity
+#     Tuned: JSONL majority (complete data)
+#     Raw: NPY adaptive majority (partial but best available)
 # ═══════════════════════════════════════════════════════════════════════════════
 def plot_kl_sensitivity():
     thresholds = [0.05, 0.1, 0.2, 0.5, 1.0]
     fig, axes = plt.subplots(2, 3, figsize=(16, 9))
-    fig.suptitle("KL Threshold Sensitivity: Median Commitment vs τ\n"
-                 "[Blue = raw logit-lens, Red = tuned logit-lens | Solid = IT, Dashed = PT]",
-                 fontsize=13, fontweight="bold")
+    fig.suptitle("KL Threshold Sensitivity: Mean Commitment vs τ\n"
+                 "[≥90% subsequent layers < τ | "
+                 "Blue = raw, Red = tuned | Solid = IT, Dashed = PT]",
+                 fontsize=12, fontweight="bold")
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+        for variant, ls, marker in [("pt", "--", "o"), ("it", "-", "s")]:
+            lbl_v = variant.upper()
+
+            # Raw: from NPY arrays (adaptive majority)
+            raw_kl = _load_kl_for_variant(model, variant, lens="raw")
+            if raw_kl is not None:
+                raw_vals = []
+                for t in thresholds:
+                    commits = _adaptive_majority_commit(raw_kl, t)
+                    raw_vals.append(np.mean(commits) / nl)
+                ax.plot(thresholds, raw_vals, marker=marker, color=COL_PT, ls=ls,
+                        lw=1.2, markersize=4, label=f"Raw {lbl_v}")
+
+            # Tuned: from JSONL (complete data, pre-computed majority)
+            recs = _load_commitment(model, variant)
+            if recs is not None:
+                tuned_vals = []
+                for t in thresholds:
+                    c = _extract_commits(recs, f"commitment_layer_majority_{t}")
+                    tuned_vals.append(np.mean(c) / nl if c else np.nan)
+                ax.plot(thresholds, tuned_vals, marker=marker, color=COL_IT, ls=ls,
+                        lw=1.2, markersize=4, label=f"Tuned {lbl_v}")
+
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("KL threshold τ (nats)")
+        ax.set_ylabel("Mean commitment (norm. depth)")
+        ax.set_xscale("log"); ax.set_ylim(0, 1.05)
+        ax.legend(fontsize=6)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, "L2_kl_threshold_sensitivity.png")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 12b-i. Entropy threshold sensitivity
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_entropy_sensitivity():
+    thresholds = [0.05, 0.1, 0.2, 0.5, 1.0]
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle("Entropy Threshold Sensitivity: Mean Commitment vs τ\n"
+                 "[|H_ℓ − H_final| < τ, stays below | "
+                 "Solid = IT, Dashed = PT]",
+                 fontsize=12, fontweight="bold")
     for idx, model in enumerate(MODELS):
         ax = axes[idx // 3, idx % 3]
         nl = N_LAYERS[model]
@@ -480,25 +909,91 @@ def plot_kl_sensitivity():
             recs = _load_commitment(model, variant)
             if recs is None:
                 continue
-            raw_meds, tuned_meds = [], []
+            lbl_v = variant.upper()
+            vals = []
+            for t in thresholds:
+                c = _extract_commits(recs, f"commitment_layer_entropy_{t}")
+                vals.append(np.mean(c) / nl if c else np.nan)
+            ax.plot(thresholds, vals, marker=marker, color=COL_IT, ls=ls,
+                    lw=1.5, markersize=5, label=f"Entropy {lbl_v}")
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("Entropy threshold τ (nats)")
+        ax.set_ylabel("Mean commitment (norm. depth)")
+        ax.set_xscale("log"); ax.set_ylim(0, 1.05)
+        ax.legend(fontsize=7)
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, "L2_entropy_threshold_sensitivity.png")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 12b-ii. Cosine threshold sensitivity
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_cosine_sensitivity():
+    thresholds = [0.8, 0.9, 0.95, 0.99]
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle("Cosine Threshold Sensitivity: Mean Commitment vs θ\n"
+                 "[cos(h_ℓ, h_final) > θ, stays above | "
+                 "Solid = IT, Dashed = PT]",
+                 fontsize=12, fontweight="bold")
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+        for variant, ls, marker in [("pt", "--", "o"), ("it", "-", "s")]:
+            recs = _load_commitment(model, variant)
+            if recs is None:
+                continue
+            lbl_v = variant.upper()
+            vals = []
+            for t in thresholds:
+                c = _extract_commits(recs, f"commitment_layer_cosine_{t}")
+                vals.append(np.mean(c) / nl if c else np.nan)
+            ax.plot(thresholds, vals, marker=marker, color="#4A148C", ls=ls,
+                    lw=1.5, markersize=5, label=f"Cosine {lbl_v}")
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("Cosine threshold θ")
+        ax.set_ylabel("Mean commitment (norm. depth)")
+        ax.set_ylim(0, 1.05)
+        ax.legend(fontsize=7)
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, "L2_cosine_threshold_sensitivity.png")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 12b-iii. Pure KL threshold sensitivity (no-flip-back, no majority, JSONL)
+# ═══════════════════════════════════════════════════════════════════════════════
+def plot_pure_kl_sensitivity():
+    thresholds = [0.05, 0.1, 0.2, 0.5, 1.0]
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle("KL Threshold Sensitivity: Mean Commitment vs τ\n"
+                 "[First layer ℓ where KL(ℓ ‖ final) < τ and stays below | "
+                 "Blue = raw, Red = tuned | Solid = IT, Dashed = PT]",
+                 fontsize=11, fontweight="bold")
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+        for variant, ls, marker in [("pt", "--", "o"), ("it", "-", "s")]:
+            recs = _load_commitment(model, variant)
+            if recs is None:
+                continue
+            lbl_v = variant.upper()
+            raw_vals, tuned_vals = [], []
             for t in thresholds:
                 c = _extract_commits(recs, f"commitment_layer_raw_kl_{t}")
-                raw_meds.append(np.median(c) / nl if c else np.nan)
+                raw_vals.append(np.mean(c) / nl if c else np.nan)
                 c = _extract_commits(recs, f"commitment_layer_tuned_{t}")
-                tuned_meds.append(np.median(c) / nl if c else np.nan)
-            lbl_v = variant.upper()
-            ax.plot(thresholds, raw_meds, marker=marker, color=COL_PT, ls=ls, lw=1.2,
-                    markersize=4, label=f"Raw {lbl_v}")
-            ax.plot(thresholds, tuned_meds, marker=marker, color=COL_IT, ls=ls, lw=1.2,
-                    markersize=4, label=f"Tuned {lbl_v}")
+                tuned_vals.append(np.mean(c) / nl if c else np.nan)
+            ax.plot(thresholds, raw_vals, marker=marker, color=COL_PT, ls=ls,
+                    lw=1.2, markersize=4, label=f"Raw {lbl_v}")
+            ax.plot(thresholds, tuned_vals, marker=marker, color=COL_IT, ls=ls,
+                    lw=1.2, markersize=4, label=f"Tuned {lbl_v}")
         ax.set_title(LABELS[model], fontsize=11)
         ax.set_xlabel("KL threshold τ (nats)")
-        ax.set_ylabel("Median commitment (norm. depth)")
+        ax.set_ylabel("Mean commitment (norm. depth)")
         ax.set_xscale("log"); ax.set_ylim(0, 1.05)
         ax.legend(fontsize=6)
-        _mark_broken(ax, model)
-    fig.tight_layout(rect=[0, 0, 1, 0.91])
-    _save(fig, "L2_kl_threshold_sensitivity.png")
+
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, "L2_pure_kl_threshold_sensitivity.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -529,9 +1024,76 @@ def plot_scatter():
         ax.set_xlabel("Raw top-1 commitment")
         ax.set_ylabel("Tuned top-1 commitment")
         ax.legend(fontsize=8, markerscale=5)
-        _mark_broken(ax, model)
+
     fig.tight_layout(rect=[0, 0, 1, 0.93])
     _save(fig, "L2_raw_vs_tuned_scatter.png")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 14-15. Mean/Median KL commitment sensitivity
+#    Commitment at layer ℓ iff mean/median(KL[ℓ:]) < τ
+#    Computed from NPY arrays (raw_kl_final, tuned_kl_final)
+# ═══════════════════════════════════════════════════════════════════════════════
+def _plot_avgkl_sensitivity(agg_name, commit_fn, filename):
+    """6-panel sensitivity: x = KL threshold, y = mean commitment (norm. depth).
+
+    agg_name: "mean" or "median" (the aggregation used in the criterion)
+    commit_fn: function(kl_arr, threshold) -> int array of commitment layers
+    """
+    thresholds = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    fig.suptitle(
+        f"KL Threshold Sensitivity: Mean Commitment vs τ\n"
+        f"[Criterion: {agg_name}(KL[ℓ:]) < τ | "
+        f"Blue = raw logit-lens, Red = tuned logit-lens | Solid = IT, Dashed = PT]",
+        fontsize=12, fontweight="bold",
+    )
+
+    for idx, model in enumerate(MODELS):
+        ax = axes[idx // 3, idx % 3]
+        nl = N_LAYERS[model]
+
+        for variant, ls, marker in [("pt", "--", "o"), ("it", "-", "s")]:
+            # Load KL arrays once per variant
+            raw_kl = _load_kl_for_variant(model, variant, lens="raw")
+            tuned_kl = _load_kl_for_variant(model, variant, lens="tuned")
+            lbl_v = variant.upper()
+
+            if raw_kl is not None:
+                raw_means = []
+                for t in thresholds:
+                    commits = commit_fn(raw_kl, t)
+                    raw_means.append(np.mean(commits) / nl)
+                ax.plot(thresholds, raw_means, marker=marker, color=COL_PT, ls=ls,
+                        lw=1.2, markersize=4, label=f"Raw {lbl_v}")
+
+            if tuned_kl is not None:
+                tuned_means = []
+                for t in thresholds:
+                    commits = commit_fn(tuned_kl, t)
+                    tuned_means.append(np.mean(commits) / nl)
+                ax.plot(thresholds, tuned_means, marker=marker, color=COL_IT, ls=ls,
+                        lw=1.2, markersize=4, label=f"Tuned {lbl_v}")
+
+        ax.set_title(LABELS[model], fontsize=11)
+        ax.set_xlabel("KL threshold τ (nats)")
+        ax.set_ylabel("Mean commitment (norm. depth)")
+        ax.set_xscale("log")
+        ax.set_ylim(0, 1.05)
+        ax.legend(fontsize=6)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.89])
+    _save(fig, filename)
+
+
+def plot_mean_kl_sensitivity():
+    _plot_avgkl_sensitivity("mean", _mean_kl_commit,
+                            "L2_kl_sensitivity_mean_criterion.png")
+
+
+def plot_median_kl_sensitivity():
+    _plot_avgkl_sensitivity("median", _median_kl_commit,
+                            "L2_kl_sensitivity_median_criterion.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -564,7 +1126,13 @@ if __name__ == "__main__":
     plot_summary_bar()
     plot_cdf()
     plot_kl_sensitivity()
+    plot_pure_kl_sensitivity()
     plot_scatter()
+
+    # Group D: Mean/Median KL commitment sensitivity
+    log.info("--- Group D: Mean/Median KL commitment sensitivity ---")
+    plot_mean_kl_sensitivity()
+    plot_median_kl_sensitivity()
 
     # Final inventory
     plots = sorted(OUT.glob("*.png"))

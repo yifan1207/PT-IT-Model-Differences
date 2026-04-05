@@ -1470,6 +1470,7 @@ def eval_commitment(
     all_commitment_raw_kl: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_tuned: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_majority: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
+    all_commitment_raw_majority: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
     all_commitment_top1_tuned: list[list[int]] = []
     all_commitment_cosine: dict[float, list[list[int]]] = {t: [] for t in COSINE_THRESHOLDS}
     all_commitment_entropy: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
@@ -1497,6 +1498,7 @@ def eval_commitment(
             step_commitment_tuned: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
             step_commitment_top1_tuned: list[int] = []
             step_commitment_majority: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
+            step_commitment_raw_majority: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
             # Training-free methods
             step_commitment_cosine: dict[float, list[int]] = {t: [] for t in COSINE_THRESHOLDS}
             step_cosine_values: list[list[float]] = []  # raw cosine per layer per step
@@ -1613,6 +1615,9 @@ def eval_commitment(
                 for thresh in KL_THRESHOLDS:
                     step_commitment_majority[thresh].append(
                         _commitment_majority(kl_row, thresh)
+                    )
+                    step_commitment_raw_majority[thresh].append(
+                        _commitment_majority(raw_kl_row, thresh)
                     )
 
                 # === Qualified commitment metrics ===
@@ -1838,6 +1843,8 @@ def eval_commitment(
             result["commitment_layer_top1_tuned"] = step_commitment_top1_tuned
             for thresh in KL_THRESHOLDS:
                 result[f"commitment_layer_majority_{thresh}"] = step_commitment_majority[thresh]
+            for thresh in KL_THRESHOLDS:
+                result[f"commitment_layer_raw_majority_{thresh}"] = step_commitment_raw_majority[thresh]
             # Training-free methods
             for thresh in COSINE_THRESHOLDS:
                 result[f"commitment_layer_cosine_{thresh}"] = step_commitment_cosine[thresh]
@@ -1859,6 +1866,7 @@ def eval_commitment(
                 all_commitment_raw_kl[thresh].append(step_commitment_raw_kl[thresh])
                 all_commitment_tuned[thresh].append(step_commitment_tuned[thresh])
                 all_commitment_majority[thresh].append(step_commitment_majority[thresh])
+                all_commitment_raw_majority[thresh].append(step_commitment_raw_majority[thresh])
             all_commitment_top1_tuned.append(step_commitment_top1_tuned)
             for thresh in COSINE_THRESHOLDS:
                 all_commitment_cosine[thresh].append(step_commitment_cosine[thresh])
@@ -1953,6 +1961,9 @@ def eval_commitment(
     for thresh in KL_THRESHOLDS:
         summary[f"median_commitment_majority_{thresh}"] = _flatten_median(
             all_commitment_majority[thresh]
+        )
+        summary[f"median_commitment_raw_majority_{thresh}"] = _flatten_median(
+            all_commitment_raw_majority[thresh]
         )
     # Training-free methods
     for thresh in COSINE_THRESHOLDS:
