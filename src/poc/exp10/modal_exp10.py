@@ -3,9 +3,12 @@ Modal script for Exp10: Contrastive Activation Patching.
 
 Runs the full Exp10 pipeline on Modal cloud H100 GPUs:
   Phase 1: Forced-decoding paired data collection (6 models in parallel)
+            Regression target: per-layer KL excess (Δkl_ℓ), winsorized.
   Phase 2: Ridge regression probes + direction comparison (CPU-heavy)
+            Outputs: convergence_directions.npz (+ backward-compat commitment_directions.npz)
   Phase 3: Causal activation patching (6 models in parallel)
-  Phase 4B: Steering with commitment directions (conditional on go/no-go)
+            Metric: ΔKL at downstream layers (not scalar commitment)
+  Phase 4B: Steering with convergence-gap directions (conditional on go/no-go)
 
 Setup:
     modal run --detach src/poc/exp10/modal_exp10.py

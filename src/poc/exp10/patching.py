@@ -1,18 +1,19 @@
 """
 Exp10 — Phase 3: Causal Validation via Activation Patching.
 
-For the top-k layers by probe R², patches the commitment-change direction
-from IT into PT and measures whether commitment actually shifts.
+For the top-k layers by probe R², patches the convergence-gap direction
+from IT into PT and measures whether KL-to-final increases at downstream
+layers (i.e., convergence slows).
 
 5 conditions per (layer, token):
-  - d_commit:    project Δh onto commitment direction, patch that component
+  - commit:      project Δh onto convergence-gap direction, patch that component
   - full:        replace h_pt with h_it entirely at this layer
   - random:      same magnitude along a random unit vector
-  - d_mean:      project Δh onto existing mean IT-PT direction
-  - orthogonal:  everything in Δh EXCEPT the d_commit component
+  - mean:        project Δh onto existing mean IT-PT direction
+  - orthogonal:  everything in Δh EXCEPT the convergence-gap component
 
-This provides causal evidence that d_commit *causes* commitment change,
-not merely predicts it.
+Causal metric: ΔKL_causal(ℓ') = KL_patched(ℓ') - KL_baseline(ℓ') at
+downstream layers. Positive = patch slowed convergence.
 """
 from __future__ import annotations
 
@@ -132,7 +133,7 @@ def _make_patch_hook(
 # ── Commitment measurement (for patched model) ────────────────────────────────
 
 @torch.no_grad()
-def _measure_commitment_at_position(
+def _measure_kl_profile_at_position(
     model: nn.Module,
     adapter: ModelAdapter,
     input_ids: torch.Tensor,       # [1, seq_len]
@@ -141,11 +142,10 @@ def _measure_commitment_at_position(
     final_norm: nn.Module,
     W_U: torch.Tensor,
     probes: dict[int, nn.Module] | None = None,
-    kl_threshold: float = KL_THRESHOLD,
-) -> float:
-    """Run forward pass and compute commitment at target_pos.
+) -> torch.Tensor:
+    """Run forward pass and return per-layer KL-to-final at target_pos.
 
-    Returns continuous commitment layer index.
+    Returns: [n_layers] float tensor (KL in nats, non-negative).
     """
     captured = _forward_capture_all_layers(model, adapter, input_ids, n_layers, model.device)
 
@@ -153,7 +153,6 @@ def _measure_commitment_at_position(
     h_layers = torch.stack([captured[li][target_pos] for li in range(n_layers)])
     h_final = captured[n_layers - 1][target_pos]
 
-    # Compute KL-to-final at target position
     # Reshape to [n_layers, 1, d_model] for the compute functions
     h_layers_3d = h_layers.unsqueeze(1)
     h_final_2d = h_final.unsqueeze(0)
@@ -163,9 +162,26 @@ def _measure_commitment_at_position(
     else:
         kl = _compute_kl_to_final_raw(h_layers_3d, h_final_2d, final_norm, W_U)
 
-    # kl: [n_layers, 1] → [n_layers]
-    kl_array = kl[:, 0].cpu().tolist()
-    return commitment_continuous(kl_array, kl_threshold)
+    return kl[:, 0]  # [n_layers]
+
+
+@torch.no_grad()
+def _measure_commitment_at_position(
+    model: nn.Module,
+    adapter: ModelAdapter,
+    input_ids: torch.Tensor,
+    target_pos: int,
+    n_layers: int,
+    final_norm: nn.Module,
+    W_U: torch.Tensor,
+    probes: dict[int, nn.Module] | None = None,
+    kl_threshold: float = KL_THRESHOLD,
+) -> float:
+    """Backward-compat wrapper: returns scalar commitment layer index."""
+    kl = _measure_kl_profile_at_position(
+        model, adapter, input_ids, target_pos, n_layers, final_norm, W_U, probes,
+    )
+    return commitment_continuous(kl.cpu().tolist(), kl_threshold)
 
 
 # ── Main patching function ─────────────────────────────────────────────────────
@@ -339,7 +355,7 @@ def validate_patching(
             for t_pos in patch_positions:
                 t_idx = t_pos - n_prompt_tokens
 
-                # Baseline commitment for PT at this position
+                # Baseline KL profile for PT at this position
                 h_pt_layers = torch.stack([captured_pt[li][t_pos] for li in range(n_layers)])
                 h_pt_final = captured_pt[n_layers - 1][t_pos]
                 h_pt_3d = h_pt_layers.unsqueeze(1)
@@ -347,12 +363,12 @@ def validate_patching(
                 if use_tuned:
                     kl_baseline = _compute_kl_to_final_tuned(
                         h_pt_3d, h_pt_final_2d, final_norm_pt, W_U_pt, probes_pt_tuned,
-                    )
+                    )[:, 0]  # [n_layers]
                 else:
                     kl_baseline = _compute_kl_to_final_raw(
                         h_pt_3d, h_pt_final_2d, final_norm_pt, W_U_pt,
-                    )
-                c_baseline = commitment_continuous(kl_baseline[:, 0].cpu().tolist(), kl_threshold)
+                    )[:, 0]  # [n_layers]
+                c_baseline = commitment_continuous(kl_baseline.cpu().tolist(), kl_threshold)
 
                 for layer in top_layers:
                     # Δh at this layer and position
@@ -377,17 +393,23 @@ def validate_patching(
                         handle = layer_modules_pt[layer].register_forward_hook(hook_fn)
 
                         try:
-                            # Forward PT with patch active → measure commitment
-                            c_patched = _measure_commitment_at_position(
+                            # Forward PT with patch active → measure KL profile
+                            kl_patched = _measure_kl_profile_at_position(
                                 model_pt, adapter, full_ids, t_pos,
                                 n_layers, final_norm_pt, W_U_pt,
                                 probes_pt_tuned if use_tuned else None,
-                                kl_threshold,
                             )
                         finally:
                             handle.remove()
 
+                        # Per-layer causal effect
+                        delta_kl_causal = (kl_patched - kl_baseline).cpu().tolist()
+                        c_patched = commitment_continuous(kl_patched.cpu().tolist(), kl_threshold)
                         delta_c_causal = c_patched - c_baseline
+
+                        # Aggregate: mean ΔKL at downstream layers (ℓ' > patched layer)
+                        downstream = [delta_kl_causal[l] for l in range(layer + 1, n_layers)]
+                        mean_delta_kl_downstream = float(np.mean(downstream)) if downstream else 0.0
 
                         result = {
                             "prompt_id": prompt_id,
@@ -397,6 +419,8 @@ def validate_patching(
                             "c_baseline": c_baseline,
                             "c_patched": c_patched,
                             "delta_c_causal": delta_c_causal,
+                            "delta_kl_causal": delta_kl_causal,
+                            "mean_delta_kl_downstream": mean_delta_kl_downstream,
                         }
                         f_out.write(json.dumps(result) + "\n")
                         n_patched += 1
@@ -426,8 +450,9 @@ def _aggregate_patching_results(results_path: Path, summary_path: Path, top_laye
     """Aggregate per-(layer, condition) statistics from patching results."""
     from collections import defaultdict
 
-    # Collect delta_c_causal per (layer, condition)
-    by_layer_cond: dict[tuple[int, str], list[float]] = defaultdict(list)
+    # Collect per (layer, condition)
+    dc_by_lc: dict[tuple[int, str], list[float]] = defaultdict(list)
+    dkl_by_lc: dict[tuple[int, str], list[float]] = defaultdict(list)
 
     with open(results_path) as f:
         for line in f:
@@ -435,30 +460,39 @@ def _aggregate_patching_results(results_path: Path, summary_path: Path, top_laye
                 continue
             rec = json.loads(line)
             key = (rec["layer"], rec["condition"])
-            by_layer_cond[key].append(rec["delta_c_causal"])
+            dc_by_lc[key].append(rec["delta_c_causal"])
+            dkl_by_lc[key].append(rec.get("mean_delta_kl_downstream", 0.0))
 
     # Compute summary statistics
     summary: dict[str, dict] = {}
     for layer in top_layers:
         layer_summary: dict[str, dict] = {}
         for cond in CONDITIONS:
-            vals = by_layer_cond.get((layer, cond), [])
-            if not vals:
-                layer_summary[cond] = {"mean_delta_c": 0, "std": 0, "n": 0}
+            dc_vals = dc_by_lc.get((layer, cond), [])
+            dkl_vals = dkl_by_lc.get((layer, cond), [])
+            if not dc_vals:
+                layer_summary[cond] = {
+                    "mean_delta_c": 0, "mean_delta_kl_downstream": 0,
+                    "std_delta_kl_downstream": 0, "std": 0, "n": 0,
+                }
                 continue
 
-            arr = np.array(vals)
+            dc_arr = np.array(dc_vals)
+            dkl_arr = np.array(dkl_vals)
             layer_summary[cond] = {
-                "mean_delta_c": float(arr.mean()),
-                "std": float(arr.std()),
-                "n": len(vals),
-                "median_delta_c": float(np.median(arr)),
+                "mean_delta_c": float(dc_arr.mean()),
+                "median_delta_c": float(np.median(dc_arr)),
+                "std": float(dc_arr.std()),
+                "mean_delta_kl_downstream": float(dkl_arr.mean()),
+                "std_delta_kl_downstream": float(dkl_arr.std()),
+                "median_delta_kl_downstream": float(np.median(dkl_arr)),
+                "n": len(dc_vals),
             }
 
-        # Permutation test: d_commit vs random
-        commit_vals = by_layer_cond.get((layer, "commit"), [])
-        random_vals = by_layer_cond.get((layer, "random"), [])
-        p_value = _permutation_test(commit_vals, random_vals) if commit_vals and random_vals else 1.0
+        # Permutation test: d_commit vs random (on ΔKL metric)
+        commit_dkl = dkl_by_lc.get((layer, "commit"), [])
+        random_dkl = dkl_by_lc.get((layer, "random"), [])
+        p_value = _permutation_test(commit_dkl, random_dkl) if commit_dkl and random_dkl else 1.0
         layer_summary["p_value_commit_vs_random"] = p_value
 
         summary[str(layer)] = layer_summary
