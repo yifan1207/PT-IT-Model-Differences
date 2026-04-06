@@ -93,6 +93,12 @@ def _make_patch_hook(
 
     The hook modifies the PT model's activation at layer ℓ, position target_pos.
     """
+    # Cast all vectors to model dtype (bfloat16) to avoid dtype mismatches in hook
+    model_dtype = delta_h_token.dtype
+    d_commit = d_commit.to(model_dtype)
+    d_mean = d_mean.to(model_dtype)
+    d_random = d_random.to(model_dtype)
+
     def hook(module, inp, output):
         h = adapter.residual_from_output(output)
         # h: [1, seq_len, d_model]
