@@ -380,7 +380,6 @@ def steer_model(model_name: str, worker_index: int, n_workers: int) -> str:
             "--experiment", "A1",
             "--model-name", model_name,
             "--variant", "it",
-            "--no-chat-template",
             "--dataset", "data/eval_dataset_v2.jsonl",
             "--n-eval-examples", "1400",
             "--device", "cuda:0",

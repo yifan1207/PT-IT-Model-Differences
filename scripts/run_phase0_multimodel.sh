@@ -2,12 +2,12 @@
 # Phase 0: Multi-model steering — precompute directions + A1 alpha-sweep + evaluation.
 #
 # Extends the causal steering story from Gemma-only to all 6 model families.
-# All experiments use raw format B (no chat template) for cross-model consistency.
+# IT models use chat template; PT models use raw format B.
 #
 # Steps:
 #   1. precompute  — Extract corrective directions for 5 non-Gemma models
 #   2. validate    — Bootstrap stability + 3-point sanity steering check
-#   3. steer       — Full A1 alpha-sweep on all 6 models (no chat template, +logit lens)
+#   3. steer       — Full A1 alpha-sweep on all 6 models (+logit lens)
 #   4. judge       — Post-hoc LLM judge (G1, G2, S1, S2)
 #   5. pca         — 1A: PCA of IT-PT direction (rank-1 justification)
 #   6. id-steering — 1C: TwoNN ID profiles at alpha=1.0, 0.0, -1.0
@@ -230,14 +230,13 @@ if [[ "$STEP" == "validate" ]]; then
         echo "=== Validate: $model ==="
 
         # 3-point sanity check: alpha=1.0 (baseline), 0.0 (full removal), -1.0 (amplify)
-        # Quick run: 100 prompts, no chat template
+        # Quick run: 100 prompts, IT with chat template
         local_gpu=$(next_gpu)
         echo "  [sanity] 3-point check on cuda:$local_gpu (100 prompts)..."
         uv run python -m src.poc.exp6.run \
             --experiment A1 \
             --model-name "$model" \
             --variant it \
-            --no-chat-template \
             --dataset "$DATASET" \
             --n-eval-examples 100 \
             --device "cuda:${local_gpu}" \
@@ -255,7 +254,7 @@ fi
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Step 3: STEER (full A1 alpha-sweep, all 6 models, no chat template)
+# Step 3: STEER (full A1 alpha-sweep, all 6 models, IT with chat template)
 # ══════════════════════════════════════════════════════════════════════════════
 
 steer_model() {
@@ -275,7 +274,6 @@ steer_model() {
             --experiment A1 \
             --model-name "$model" \
             --variant it \
-            --no-chat-template \
             --collect-logit-lens \
             --dataset "$DATASET" \
             --n-eval-examples "$N_EVAL" \

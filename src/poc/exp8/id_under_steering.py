@@ -62,6 +62,7 @@ def collect_residuals_under_steering(
     device: str,
     max_gen: int,
     n_layers: int,
+    is_it: bool = True,
 ) -> dict[int, np.ndarray]:
     """Generate with intervention active, collect residual stream at each layer.
 
@@ -95,7 +96,11 @@ def collect_residuals_under_steering(
     try:
         for idx, record in enumerate(records):
             prompt = record["formats"]["B"]
-            input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
+            if is_it:
+                templated = adapter.adapter.apply_template(tokenizer, prompt, is_it=True)
+                input_ids = tokenizer.encode(templated, return_tensors="pt").to(device)
+            else:
+                input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
 
             with torch.no_grad():
                 model_raw.generate(

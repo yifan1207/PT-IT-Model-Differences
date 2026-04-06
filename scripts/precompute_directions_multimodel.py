@@ -7,7 +7,7 @@ in MODEL_REGISTRY.  Architecture-specific layer paths resolved via SteeringAdapt
 Pipeline (same 4-phase design as v2):
 
   Phase 1 — gen   (GPU, N parallel workers)
-    Generate IT and PT texts (no chat template, raw format B).
+    Generate IT texts (with chat template) and PT texts (raw format B).
     Compute STR and PT_NLL(IT_output).
     Output: work_dir/gen/w{wi}.jsonl
 
@@ -113,9 +113,17 @@ def _load_model_raw(model_id: str, device: str):
     return model, tokenizer
 
 
-def _generate_batch(model_raw, tokenizer, adapter, prompts, device, max_new_tokens):
-    """Generate from raw prompts (no chat template). Returns list of (text, token_ids)."""
-    enc = tokenizer(prompts, return_tensors="pt", padding=True)
+def _generate_batch(model_raw, tokenizer, adapter, prompts, device, max_new_tokens,
+                     is_it=False):
+    """Generate from prompts. IT models get chat template; PT models get raw text.
+
+    Returns list of (text, token_ids).
+    """
+    if is_it:
+        templated = [adapter.adapter.apply_template(tokenizer, p, is_it=True) for p in prompts]
+        enc = tokenizer(templated, return_tensors="pt", padding=True)
+    else:
+        enc = tokenizer(prompts, return_tensors="pt", padding=True)
     input_ids = enc["input_ids"].to(device)
     attn_mask = enc["attention_mask"].to(device)
     prompt_len = input_ids.shape[1]
@@ -197,7 +205,8 @@ def phase_gen(model_name: str, worker_index: int, n_workers: int, device: str) -
     it_texts, it_ids_all = [], []
     for i in range(0, len(prompts), BS):
         batch = prompts[i:i+BS]
-        for text, ids in _generate_batch(it_raw, tokenizer, adapter, batch, device, max_gen):
+        for text, ids in _generate_batch(it_raw, tokenizer, adapter, batch, device, max_gen,
+                                          is_it=True):
             it_texts.append(text)
             it_ids_all.append(ids)
         if (i // BS + 1) % 10 == 0:
@@ -414,7 +423,10 @@ def phase_acts(model_name: str, worker_index: int, n_workers: int, device: str) 
                 for li in all_layers
             ]
             try:
-                input_ids = tokenizer.encode(row["prompt"], return_tensors="pt").to(device)
+                prompt_text = row["prompt"]
+                if is_it:
+                    prompt_text = adapter.adapter.apply_template(tokenizer, prompt_text, is_it=True)
+                input_ids = tokenizer.encode(prompt_text, return_tensors="pt").to(device)
                 eos_ids = adapter.eos_token_ids(tokenizer)
                 with torch.no_grad():
                     model_raw.generate(
