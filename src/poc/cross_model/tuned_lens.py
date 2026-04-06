@@ -59,6 +59,7 @@ from src.poc.cross_model.utils import (
     load_model_and_tokenizer,
     load_dataset,
     get_raw_prompt,
+    get_prompt_for_variant,
     read_done_ids,
 )
 
@@ -1382,6 +1383,7 @@ def eval_commitment(
     collect_top5: bool = False,
     top5_max_prompts: int = 200,
     arrays_dir: Path | None = None,
+    apply_chat_template: bool = False,
 ) -> dict:
     """Evaluate commitment using autoregressive generation with hooks.
 
@@ -1490,7 +1492,10 @@ def eval_commitment(
             if pid in done_ids:
                 continue
 
-            raw_prompt = get_raw_prompt(rec)
+            raw_prompt = get_prompt_for_variant(
+                rec, variant=variant, tokenizer=tokenizer,
+                apply_chat_template=apply_chat_template,
+            )
 
             # Per-step accumulators
             step_commitment_raw: list[int] = []
@@ -2149,6 +2154,13 @@ def main() -> None:
     p.add_argument("--worker-index", type=int, default=0,
                    help="This worker's index (0-based)")
 
+    # Chat template
+    p.add_argument("--apply-chat-template", action="store_true", default=False,
+                   help="Apply native chat template for IT variants during eval "
+                        "(recommended: IT models should be evaluated in their trained distribution)")
+    p.add_argument("--no-chat-template", action="store_true", default=False,
+                   help="Explicitly disable chat template (ablation mode)")
+
     # Transfer test
     p.add_argument("--transfer-test", action="store_true",
                    help="Run PT-probes-on-IT transfer test")
@@ -2237,6 +2249,12 @@ def main() -> None:
             arrays_dir = base_dir / "commitment" / f"arrays_{args.variant}{worker_suffix}"
         else:
             arrays_dir = None
+        use_chat_template = args.apply_chat_template and not args.no_chat_template
+        if args.variant == "it" and not args.no_chat_template:
+            # Default: IT models use chat template (their trained distribution)
+            use_chat_template = True
+        log.info("Chat template: %s (variant=%s)", use_chat_template, args.variant)
+
         summary = eval_commitment(
             model, tokenizer, adapter, spec, probes, records, device,
             output_path=out_path,
@@ -2246,6 +2264,7 @@ def main() -> None:
             collect_top5=args.collect_top5,
             top5_max_prompts=args.top5_max_prompts,
             arrays_dir=arrays_dir,
+            apply_chat_template=use_chat_template,
         )
 
         # Save summary (skip overwrite when just collecting arrays)

@@ -46,6 +46,7 @@ from src.poc.cross_model.utils import (
     load_model_and_tokenizer,
     load_dataset,
     get_raw_prompt,
+    get_prompt_for_variant,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -68,6 +69,8 @@ def collect_residuals(
     adapter,
     spec,
     device: torch.device,
+    variant: str = "pt",
+    apply_chat_template: bool = False,
 ) -> dict[str, np.ndarray]:
     """Single forward pass per prompt; collect last-token residual at every layer.
 
@@ -89,7 +92,10 @@ def collect_residuals(
 
     for i, rec in enumerate(records):
         step_buf.clear()
-        raw_prompt = get_raw_prompt(rec)
+        raw_prompt = get_prompt_for_variant(
+            rec, variant=variant, tokenizer=tokenizer,
+            apply_chat_template=apply_chat_template,
+        )
         pid        = rec.get("id", f"rec_{i}")
 
         input_ids = tokenizer.encode(raw_prompt, return_tensors="pt").to(device)
@@ -191,6 +197,7 @@ def run_worker(
     worker_index: int,
     n_workers: int,
     n_eval_examples: int | None,
+    apply_chat_template: bool = False,
 ) -> None:
     """Single-GPU worker: collect residuals for this worker's slice."""
     spec    = get_spec(model_name)
@@ -215,7 +222,10 @@ def run_worker(
         return
 
     log.info("[w%d] Collecting residuals for %d prompts...", worker_index, len(records))
-    residuals = collect_residuals(records, model, tokenizer, adapter, spec, device)
+    residuals = collect_residuals(
+        records, model, tokenizer, adapter, spec, device,
+        variant=variant, apply_chat_template=apply_chat_template,
+    )
 
     np.savez_compressed(out_path, **residuals)
     log.info("[w%d] Saved %d residuals → %s", worker_index, len(residuals), out_path)
@@ -282,6 +292,10 @@ def main() -> None:
     parser.add_argument("--worker-index",    type=int, default=0)
     parser.add_argument("--n-workers",       type=int, default=1)
     parser.add_argument("--out-dir",         default=None)
+    parser.add_argument("--apply-chat-template", action="store_true", default=False,
+                        help="Apply native chat template for IT variants")
+    parser.add_argument("--no-chat-template", action="store_true", default=False,
+                        help="Explicitly disable chat template (ablation mode)")
     parser.add_argument(
         "--merge-only", action="store_true",
         help="Skip collection; merge NPZ files and run TwoNN.",
@@ -296,6 +310,11 @@ def main() -> None:
         merge_and_estimate(out_dir, args.model, args.variant, args.n_workers)
         return
 
+    use_chat_template = args.apply_chat_template and not args.no_chat_template
+    if args.variant == "it" and not args.no_chat_template:
+        use_chat_template = True
+    log.info("Chat template: %s (variant=%s)", use_chat_template, args.variant)
+
     run_worker(
         model_name=args.model,
         variant=args.variant,
@@ -305,6 +324,7 @@ def main() -> None:
         worker_index=args.worker_index,
         n_workers=args.n_workers,
         n_eval_examples=args.n_eval_examples,
+        apply_chat_template=use_chat_template,
     )
 
 

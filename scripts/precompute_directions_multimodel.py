@@ -562,7 +562,7 @@ def phase_merge(model_name: str) -> None:
             "early": list(range(1, spec.phase_boundary)),
         },
         "token_positions": f"generated_only (min(IT_gen_len, PT_gen_len, {get_steering_adapter(model_name).max_gen_tokens}) per record)",
-        "chat_template": False,
+        "chat_template": True,
         "n_total_records": 1400,
         "n_selected_records": total_recs,
         "tokens_per_record": {"min": min_k, "max": max_k, "mean": round(mean_k, 1)},

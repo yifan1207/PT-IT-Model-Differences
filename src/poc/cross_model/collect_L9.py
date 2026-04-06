@@ -64,6 +64,7 @@ from src.poc.cross_model.utils import (
     load_model_and_tokenizer,
     load_dataset,
     get_raw_prompt,
+    get_prompt_for_variant,
     read_done_ids,
     merge_worker_jsonls,
 )
@@ -151,6 +152,7 @@ def run_worker(
     worker_index: int,
     n_workers: int,
     n_eval_examples: int | None,
+    apply_chat_template: bool = False,
 ) -> None:
     """Single-GPU worker: collect attention entropy for this worker's slice."""
     spec    = get_spec(model_name)
@@ -181,7 +183,10 @@ def run_worker(
                 continue
 
             result = collect_prompt_L9(
-                raw_prompt=get_raw_prompt(rec),
+                raw_prompt=get_prompt_for_variant(
+                    rec, variant=variant, tokenizer=tokenizer,
+                    apply_chat_template=apply_chat_template,
+                ),
                 prompt_id=pid,
                 model=model,
                 tokenizer=tokenizer,
@@ -271,6 +276,10 @@ def main() -> None:
     parser.add_argument("--worker-index",    type=int, default=0)
     parser.add_argument("--n-workers",       type=int, default=1)
     parser.add_argument("--out-dir",         default=None)
+    parser.add_argument("--apply-chat-template", action="store_true", default=False,
+                        help="Apply native chat template for IT variants")
+    parser.add_argument("--no-chat-template", action="store_true", default=False,
+                        help="Explicitly disable chat template (ablation mode)")
     parser.add_argument(
         "--merge-only", action="store_true",
         help="Skip collection; merge JSONL files and compute summary.",
@@ -285,6 +294,11 @@ def main() -> None:
         merge_and_aggregate(out_dir, args.model, args.variant, args.n_workers)
         return
 
+    use_chat_template = args.apply_chat_template and not args.no_chat_template
+    if args.variant == "it" and not args.no_chat_template:
+        use_chat_template = True
+    log.info("Chat template: %s (variant=%s)", use_chat_template, args.variant)
+
     run_worker(
         model_name=args.model,
         variant=args.variant,
@@ -294,6 +308,7 @@ def main() -> None:
         worker_index=args.worker_index,
         n_workers=args.n_workers,
         n_eval_examples=args.n_eval_examples,
+        apply_chat_template=use_chat_template,
     )
 
 

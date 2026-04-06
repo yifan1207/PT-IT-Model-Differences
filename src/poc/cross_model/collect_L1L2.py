@@ -20,9 +20,10 @@ Collected in a single autoregressive generation pass per prompt.
   (forward scan; "no flip-back" requirement from plan §4.L2)
 
 ═══ Key design decisions ═════════════════════════════════════════════════
-  • NO CHAT TEMPLATE for either PT or IT.  Plan §4.L1: "No templates for
-    PT or IT. Raw text, identical tokenisation."  This isolates the
-    difference to model weights only.
+  • IT models use their native chat template by default (their trained
+    distribution); PT models always receive raw text. Use --no-chat-template
+    for the template-free ablation condition.
+    Previous runs without template are kept as ablation evidence.
   • Greedy decoding (do_sample=False, temperature not applied) for
     deterministic, reproducible results — same as exp2 setup.
   • Logit lens computed INLINE on GPU immediately after every layer's
@@ -70,6 +71,7 @@ from src.poc.cross_model.utils import (
     load_model_and_tokenizer,
     load_dataset,
     get_raw_prompt,
+    get_prompt_for_variant,
     read_done_ids,
     merge_worker_jsonls,
 )
@@ -245,6 +247,7 @@ def run_worker(
     n_workers: int,
     max_new_tokens: int,
     n_eval_examples: int | None,
+    apply_chat_template: bool = False,
 ) -> None:
     """Single-GPU worker: processes one slice of the dataset."""
     spec    = get_spec(model_name)
@@ -274,7 +277,10 @@ def run_worker(
             if pid in done_ids:
                 continue
 
-            raw_prompt = get_raw_prompt(rec)
+            raw_prompt = get_prompt_for_variant(
+                rec, variant=variant, tokenizer=tokenizer,
+                apply_chat_template=apply_chat_template,
+            )
             try:
                 result = collect_prompt_L1L2(
                     raw_prompt=raw_prompt,
@@ -358,6 +364,11 @@ def main() -> None:
     parser.add_argument("--n-workers",       type=int, default=1)
     parser.add_argument("--max-new-tokens",  type=int, default=512)
     parser.add_argument("--out-dir",         default=None)
+    parser.add_argument("--apply-chat-template", action="store_true", default=False,
+                        help="Apply native chat template for IT variants "
+                             "(recommended: IT models evaluated in trained distribution)")
+    parser.add_argument("--no-chat-template", action="store_true", default=False,
+                        help="Explicitly disable chat template (ablation mode)")
     parser.add_argument(
         "--merge-only", action="store_true",
         help="Skip collection; only merge existing worker JSONL files.",
@@ -372,6 +383,11 @@ def main() -> None:
         merge_and_aggregate(out_dir, args.n_workers, spec.n_layers)
         return
 
+    use_chat_template = args.apply_chat_template and not args.no_chat_template
+    if args.variant == "it" and not args.no_chat_template:
+        use_chat_template = True
+    log.info("Chat template: %s (variant=%s)", use_chat_template, args.variant)
+
     run_worker(
         model_name=args.model,
         variant=args.variant,
@@ -382,6 +398,7 @@ def main() -> None:
         n_workers=args.n_workers,
         max_new_tokens=args.max_new_tokens,
         n_eval_examples=args.n_eval_examples,
+        apply_chat_template=use_chat_template,
     )
 
 

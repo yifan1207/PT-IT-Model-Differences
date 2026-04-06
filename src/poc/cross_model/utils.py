@@ -122,13 +122,49 @@ def get_raw_prompt(record: dict) -> str:
     Uses format B (question + 'Answer:' suffix) if available, else format A
     (multiple-choice), else the 'prompt' field directly.
 
-    IMPORTANT: Cross-model L1/L8/L9 collection always uses RAW text — no
-    chat template for either PT or IT models.  The plan requires identical
-    tokenisation across PT and IT so the only difference is model weights.
-    Chat templates are only applied in exp6 governance steering experiments.
+    Returns raw text without any chat template wrapping.
     """
     formats = record.get("formats", {})
     return formats.get("B") or formats.get("A") or record.get("prompt", "")
+
+
+def get_prompt_for_variant(
+    record: dict,
+    *,
+    variant: str,
+    tokenizer=None,
+    apply_chat_template: bool = True,
+) -> str:
+    """Get prompt text appropriate for the model variant.
+
+    For PT models (or when apply_chat_template=False): returns raw text.
+    For IT models (when apply_chat_template=True): wraps with the model's
+    native chat template, which is the IT model's trained distribution.
+
+    Args:
+        record:              Dataset record with 'formats' and/or 'prompt' fields.
+        variant:             'pt' or 'it'.
+        tokenizer:           HuggingFace tokenizer (required for IT with chat template).
+        apply_chat_template: If False, always returns raw text (ablation mode).
+    """
+    raw = get_raw_prompt(record)
+
+    if variant == "pt" or not apply_chat_template:
+        return raw
+
+    # IT variant with chat template
+    if tokenizer is None:
+        raise ValueError("tokenizer required for IT variant with chat template")
+
+    messages = [{"role": "user", "content": raw}]
+    try:
+        templated = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+        return templated
+    except Exception as e:
+        log.warning("Chat template failed for record, falling back to raw: %s", e)
+        return raw
 
 
 # ── JSONL I/O ─────────────────────────────────────────────────────────────────
