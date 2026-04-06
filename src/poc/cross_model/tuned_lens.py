@@ -196,12 +196,16 @@ def collect_hidden_states_prefill(
     texts: list[str],
     device: torch.device,
     max_seq_len: int = 2048,
+    variant: str = "pt",
 ) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
     """Collect per-layer residual stream hidden states via single forward passes.
 
     For each text, runs a single forward pass (no generation) and captures
     the residual stream at all layers for all non-first token positions
     (skip position 0 to avoid BOS artifacts).
+
+    When variant="it", applies the model's chat template to each text before
+    encoding, so probes are trained on activations matching IT inference.
 
     Returns:
         hidden_by_layer: {layer_idx: [N_total_tokens, d_model] float32 on CPU}
@@ -233,8 +237,14 @@ def collect_hidden_states_prefill(
     gen_device = model.device if multi_gpu else device
 
     try:
+        is_it = variant == "it"
         for ti, text in enumerate(texts):
             captured.clear()
+
+            # Apply chat template for IT variant so probes train on
+            # activations matching how the IT model actually processes text
+            if is_it:
+                text = adapter.apply_template(tokenizer, text, is_it=True)
 
             input_ids = tokenizer.encode(
                 text, return_tensors="pt",
@@ -390,6 +400,7 @@ def _collect_all_layers_streaming(
     batch_tokens: int,
     device: torch.device,
     max_seq_len: int,
+    variant: str = "pt",
 ) -> tuple[dict[int, torch.Tensor], torch.Tensor]:
     """Collect hidden states for ALL layers in a single set of forward passes.
 
@@ -422,10 +433,14 @@ def _collect_all_layers_streaming(
     layer_acts: dict[int, list[torch.Tensor]] = {i: [] for i in range(n_layers)}
     n_tokens = 0
 
+    is_it = variant == "it"
     try:
         while n_tokens < batch_tokens:
             text = next(text_iter)
             captured.clear()
+
+            if is_it:
+                text = adapter.apply_template(tokenizer, text, is_it=True)
 
             input_ids = tokenizer.encode(
                 text, return_tensors="pt", max_length=max_seq_len, truncation=True,
@@ -486,6 +501,7 @@ def train_probes(
     max_seq_len: int = 2048,
     optimizer_type: str = "sgd_nesterov",
     streaming: bool = True,
+    variant: str = "pt",
 ) -> dict:
     """Train tuned-lens probes for all layers.
 
@@ -572,6 +588,7 @@ def train_probes(
     log.info("Collecting validation hidden states from %d texts...", len(val_texts_used))
     val_hidden, val_final = collect_hidden_states_prefill(
         model, tokenizer, adapter, spec, val_texts_used, device, max_seq_len,
+        variant=variant,
     )
     n_val_tokens = val_final.shape[0]
     log.info("Validation set: %d token activations.", n_val_tokens)
@@ -584,6 +601,7 @@ def train_probes(
         log.info("Pre-collecting training hidden states from %d texts...", len(train_texts))
         train_hidden, train_final = collect_hidden_states_prefill(
             model, tokenizer, adapter, spec, train_texts, device, max_seq_len,
+            variant=variant,
         )
         n_train_tokens = train_final.shape[0]
         log.info("Training set: %d token activations.", n_train_tokens)
@@ -671,6 +689,7 @@ def train_probes(
                 all_h, h_final = _collect_all_layers_streaming(
                     model, tokenizer, adapter, spec, text_iter,
                     micro_target, device, max_seq_len,
+                    variant=variant,
                 )
                 actual_tokens = h_final.shape[0]
                 if actual_tokens == 0:
@@ -1491,6 +1510,9 @@ def eval_commitment(
                 continue
 
             raw_prompt = get_raw_prompt(rec)
+            # Apply chat template for IT variant
+            if variant == "it":
+                raw_prompt = adapter.apply_template(tokenizer, raw_prompt, is_it=True)
 
             # Per-step accumulators
             step_commitment_raw: list[int] = []
@@ -2311,6 +2333,7 @@ def main() -> None:
         max_seq_len=args.max_seq_len,
         optimizer_type=args.optimizer,
         streaming=not args.no_streaming,
+        variant=args.variant,
     )
 
     del model
