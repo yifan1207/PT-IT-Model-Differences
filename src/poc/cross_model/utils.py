@@ -158,9 +158,17 @@ def get_prompt_for_variant(
 
     messages = [{"role": "user", "content": raw}]
     try:
-        templated = tokenizer.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
+        # Pass enable_thinking=False for Qwen models that support it.
+        # Without this, Qwen produces <think>...</think> tags that differ
+        # from adapter.apply_template() which correctly disables thinking.
+        kwargs = {"tokenize": False, "add_generation_prompt": True}
+        try:
+            templated = tokenizer.apply_chat_template(
+                messages, enable_thinking=False, **kwargs
+            )
+        except TypeError:
+            # Model doesn't support enable_thinking kwarg
+            templated = tokenizer.apply_chat_template(messages, **kwargs)
         return templated
     except Exception as e:
         log.warning("Chat template failed for record, falling back to raw: %s", e)
