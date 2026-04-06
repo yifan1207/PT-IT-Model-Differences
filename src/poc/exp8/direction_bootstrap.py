@@ -20,7 +20,7 @@ Output per model:
   results/cross_model/{model}/directions/bootstrap_stability.json
 
 Usage:
-  python scripts/phase0_direction_bootstrap.py --model-name llama31_8b --device cuda:2
+  uv run python -m src.poc.exp8.direction_bootstrap --model-name llama31_8b --device cuda:2
 """
 from __future__ import annotations
 

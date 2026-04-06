@@ -406,7 +406,7 @@ if [[ "$STEP" == "pca" ]]; then
         gpu=${AVAIL_GPUS[$gpu_idx]}
         gpu_idx=$(( (gpu_idx + 1) % N_GPUS ))
         echo "  [pca] $model on cuda:$gpu"
-        uv run python scripts/phase0_pca_direction.py \
+        uv run python -m src.poc.exp8.pca_rank1 \
             --model-name "$model" --device "cuda:${gpu}" \
             > "$LOG_DIR/${model}_pca.log" 2>&1 &
         pids+=($!)
@@ -441,7 +441,7 @@ if [[ "$STEP" == "id-steering" ]]; then
         gpu=${AVAIL_GPUS[$gpu_idx]}
         gpu_idx=$(( (gpu_idx + 1) % N_GPUS ))
         echo "  [id-steering] $model on cuda:$gpu"
-        uv run python scripts/phase0_id_under_steering.py \
+        uv run python -m src.poc.exp8.id_under_steering \
             --model-name "$model" --device "cuda:${gpu}" \
             > "$LOG_DIR/${model}_id_steering.log" 2>&1 &
         pids+=($!)
@@ -460,7 +460,7 @@ fi
 
 if [[ "$STEP" == "commitment" ]]; then
     echo "=== 1B: Commitment delay under steering (post-processing) ==="
-    uv run python scripts/phase0_commitment_vs_alpha.py
+    uv run python -m src.poc.exp8.commitment_vs_alpha
     echo "=== Commitment analysis complete ==="
     exit 0
 fi

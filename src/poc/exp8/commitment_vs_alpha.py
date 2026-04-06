@@ -12,8 +12,8 @@ Output per model:
   results/cross_model/{model}/exp6/commitment_vs_alpha.json
 
 Usage:
-  python scripts/phase0_commitment_vs_alpha.py --model-name llama31_8b
-  python scripts/phase0_commitment_vs_alpha.py  # all models
+  uv run python -m src.poc.exp8.commitment_vs_alpha --model-name llama31_8b
+  uv run python -m src.poc.exp8.commitment_vs_alpha  # all models
 """
 from __future__ import annotations
 

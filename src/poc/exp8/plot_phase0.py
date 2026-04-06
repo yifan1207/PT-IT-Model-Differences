@@ -857,7 +857,7 @@ def main():
     if stability_path.exists():
         plot_direction_stability(json.loads(stability_path.read_text()))
     else:
-        print(f"  [skip] direction stability — run phase0_direction_stability.py first")
+        print(f"  [skip] direction stability — run src.poc.exp8.direction_stability first")
 
     # §5.10: PCA spectrum
     pca_path = DATA_DIR / "phase0_pca_scree.json"

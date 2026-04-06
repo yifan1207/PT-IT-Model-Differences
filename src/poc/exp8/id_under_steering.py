@@ -12,8 +12,8 @@ Output per model:
   results/cross_model/{model}/exp6/id_under_steering.json
 
 Usage:
-  python scripts/phase0_id_under_steering.py --model-name llama31_8b --device cuda:2
-  python scripts/phase0_id_under_steering.py --model-name gemma3_4b --device cuda:3
+  uv run python -m src.poc.exp8.id_under_steering --model-name llama31_8b --device cuda:2
+  uv run python -m src.poc.exp8.id_under_steering --model-name gemma3_4b --device cuda:3
 """
 from __future__ import annotations
 

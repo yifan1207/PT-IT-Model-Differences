@@ -16,7 +16,7 @@ Output per model:
   results/cross_model/{model}/directions/pca_scree.json
 
 Usage:
-  python scripts/phase0_pca_direction.py --model-name llama31_8b --device cuda:2
+  uv run python -m src.poc.exp8.pca_rank1 --model-name llama31_8b --device cuda:2
 """
 from __future__ import annotations
 

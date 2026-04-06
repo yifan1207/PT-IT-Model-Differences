@@ -572,7 +572,7 @@ def pca_model(model_name: str) -> str:
     results_vol.reload()
 
     _run([
-        "python", "/root/scripts/phase0_pca_direction.py",
+        "python", "-m", "src.poc.exp8.pca_rank1",
         "--model-name", model_name,
         "--device", "cuda:0",
         "--max-records", "200",
@@ -603,7 +603,7 @@ def id_steering_model(model_name: str) -> str:
     results_vol.reload()
 
     _run([
-        "python", "/root/scripts/phase0_id_under_steering.py",
+        "python", "-m", "src.poc.exp8.id_under_steering",
         "--model-name", model_name,
         "--device", "cuda:0",
     ], timeout=6000)
@@ -626,7 +626,7 @@ def commitment_model(model_name: str) -> str:
     results_vol.reload()
 
     _run([
-        "python", "/root/scripts/phase0_commitment_vs_alpha.py",
+        "python", "-m", "src.poc.exp8.commitment_vs_alpha",
         "--model-name", model_name,
     ], timeout=1200)
 
@@ -655,7 +655,7 @@ def bootstrap_model(model_name: str) -> str:
     results_vol.reload()
 
     _run([
-        "python", "/root/scripts/phase0_direction_bootstrap.py",
+        "python", "-m", "src.poc.exp8.direction_bootstrap",
         "--model-name", model_name,
         "--device", "cuda:0",
         "--max-records", "200",
@@ -735,9 +735,9 @@ def smoke_test() -> str:
     scripts = [
         "/root/scripts/precompute_directions_multimodel.py",
         "/root/scripts/llm_judge_exp6.py",
-        "/root/scripts/phase0_pca_direction.py",
-        "/root/scripts/phase0_id_under_steering.py",
-        "/root/scripts/phase0_commitment_vs_alpha.py",
+        "/root/src/poc/exp8/pca_rank1.py",
+        "/root/src/poc/exp8/id_under_steering.py",
+        "/root/src/poc/exp8/commitment_vs_alpha.py",
         "/root/scripts/merge_exp6_workers.py",
     ]
     for s in scripts:

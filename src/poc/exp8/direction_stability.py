@@ -13,9 +13,9 @@ Output:
   results/exp8/plots/data/phase0_direction_stability.json
 
 Usage:
-  uv run python scripts/phase0_direction_stability.py
+  uv run python -m src.poc.exp8.direction_stability
   # Or on Modal (with volume):
-  python scripts/phase0_direction_stability.py --base-dir /results
+  python -m src.poc.exp8.direction_stability --base-dir /results
 """
 from __future__ import annotations
 

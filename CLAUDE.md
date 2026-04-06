@@ -74,9 +74,9 @@ bash scripts/run_phase0_multimodel.sh --step commitment
 ```
 
 **Piggybacked experiments (1A/1B/1C):**
-- **1A PCA**: `scripts/phase0_pca_direction.py` — Is PC1 > 60%? Rank-1 justified?
-- **1B Commitment**: `scripts/phase0_commitment_vs_alpha.py` — Commitment layer vs α (THE causal link)
-- **1C ID under steering**: `scripts/phase0_id_under_steering.py` — TwoNN ID at α=1.0, 0.0, -1.0
+- **1A PCA**: `src/poc/exp8/pca_rank1.py` — Is PC1 > 60%? Rank-1 justified?
+- **1B Commitment**: `src/poc/exp8/commitment_vs_alpha.py` — Commitment layer vs α (THE causal link)
+- **1C ID under steering**: `src/poc/exp8/id_under_steering.py` — TwoNN ID at α=1.0, 0.0, -1.0
 
 **Key design decisions:**
 - ALL experiments use `apply_chat_template=False` (raw format B) for cross-model consistency
