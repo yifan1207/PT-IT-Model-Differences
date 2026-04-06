@@ -2143,6 +2143,12 @@ def main() -> None:
     p.add_argument("--top5-max-prompts", type=int, default=200,
                    help="Only collect top5 for first N prompts (default: 200)")
 
+    # Data parallelism
+    p.add_argument("--n-workers", type=int, default=1,
+                   help="Number of data-parallel workers (splits prompts)")
+    p.add_argument("--worker-index", type=int, default=0,
+                   help="This worker's index (0-based)")
+
     # Transfer test
     p.add_argument("--transfer-test", action="store_true",
                    help="Run PT-probes-on-IT transfer test")
@@ -2211,12 +2217,26 @@ def main() -> None:
         probes = _load_probes(probe_dir, spec.d_model, probe_device)
         log.info("Loaded %d probes from %s.", len(probes), probe_dir)
 
-        records = load_dataset(
+        all_records = load_dataset(
             args.dataset, n_examples=args.n_eval_examples,
         )
+        if args.n_workers > 1:
+            records = all_records[args.worker_index::args.n_workers]
+            log.info("Worker %d/%d: %d records (of %d total)",
+                     args.worker_index, args.n_workers, len(records), len(all_records))
+            worker_suffix = f"_w{args.worker_index}"
+        else:
+            records = all_records
+            worker_suffix = ""
 
-        out_path = base_dir / "commitment" / f"tuned_lens_commitment_{args.variant}.jsonl"
-        arrays_dir = (base_dir / "commitment" / "arrays") if args.collect_full else None
+        if args.collect_full:
+            out_path = base_dir / "commitment" / f"tuned_lens_commitment_{args.variant}_arraycollect{worker_suffix}.jsonl"
+        else:
+            out_path = base_dir / "commitment" / f"tuned_lens_commitment_{args.variant}{worker_suffix}.jsonl"
+        if args.collect_full:
+            arrays_dir = base_dir / "commitment" / f"arrays_{args.variant}{worker_suffix}"
+        else:
+            arrays_dir = None
         summary = eval_commitment(
             model, tokenizer, adapter, spec, probes, records, device,
             output_path=out_path,
@@ -2228,9 +2248,12 @@ def main() -> None:
             arrays_dir=arrays_dir,
         )
 
-        # Save summary
+        # Save summary (skip overwrite when just collecting arrays)
         summary["variant"] = args.variant
-        summary_path = base_dir / "commitment" / f"summary_{args.variant}.json"
+        if args.collect_full:
+            summary_path = base_dir / "commitment" / f"summary_{args.variant}_arraycollect.json"
+        else:
+            summary_path = base_dir / "commitment" / f"summary_{args.variant}.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         with open(summary_path, "w") as f:
             json.dump(summary, f, indent=2)
