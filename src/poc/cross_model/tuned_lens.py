@@ -1511,10 +1511,9 @@ def eval_commitment(
             if pid in done_ids:
                 continue
 
-            raw_prompt = get_prompt_for_variant(
-                rec, variant=variant, tokenizer=tokenizer,
-                apply_chat_template=apply_chat_template,
-            )
+            raw_prompt = get_raw_prompt(rec)
+            if apply_chat_template and variant == "it":
+                raw_prompt = adapter.apply_template(tokenizer, raw_prompt, is_it=True)
 
             # Per-step accumulators
             step_commitment_raw: list[int] = []
