@@ -431,9 +431,9 @@ def collect_paired_data(
             if not raw_prompt.strip():
                 continue
 
-            # Step 1: IT generates naturally (greedy, NO chat template for either
-            # model — raw format B only, to eliminate template-induced confounds)
-            prompt_ids = tokenizer_it.encode(raw_prompt, return_tensors="pt").to(device)
+            # Step 1: IT generates naturally (greedy, with chat template for IT)
+            it_prompt = adapter.apply_template(tokenizer_it, raw_prompt, is_it=True)
+            prompt_ids = tokenizer_it.encode(it_prompt, return_tensors="pt").to(device)
             n_prompt_tokens = prompt_ids.shape[1]
 
             with torch.no_grad():

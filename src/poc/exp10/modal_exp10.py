@@ -319,7 +319,6 @@ def steer_one(model_name: str) -> str:
         "--corrective-direction-path", directions_path,
         "--run-name", run_name,
         "--output-dir", output_dir,
-        "--no-chat-template",
     ]
 
     env = os.environ.copy()
