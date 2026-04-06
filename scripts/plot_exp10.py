@@ -2,10 +2,10 @@
 Exp10 plots: Contrastive Activation Patching results.
 
 Generates 5 figures:
-  1. R² by layer (6-panel)
+  1. R² by layer (6-panel) — convergence-gap probe fit
   2. Probe magnitude ‖w‖ by layer (6-panel)
-  3. Cosine(d_commit, d_mean) by layer (6-panel) — THE key comparison
-  4. Patching Δc by condition (6-panel) — causal effect
+  3. Cosine(d_conv, d_mean) by layer (6-panel) — THE key comparison
+  4. Patching ΔKL by condition (6-panel) — causal effect on downstream KL
   5. PCA explained variance (6-panel) — rank diagnostic
 
 All data read from results/exp10/{model}/probes/probe_summary.json
@@ -42,7 +42,7 @@ PLOT_DIR = BASE / "plots"
 DATA_DIR = PLOT_DIR / "data"
 
 CONDITION_LABELS = {
-    "commit": r"$d_{\rm commit}$",
+    "commit": r"$d_{\rm conv}$",
     "full": r"Full $\Delta h$",
     "random": "Random",
     "mean": r"$d_{\rm mean}$",
@@ -106,7 +106,7 @@ def plot_r2_by_layer(probe_data: dict):
             ax.set_ylabel(r"$R^2$ (test)")
         ax.legend(fontsize=7)
 
-    fig.suptitle("Exp10: Commitment-Change Probe R² by Layer", fontsize=14)
+    fig.suptitle("Exp10: Convergence-Gap Probe R² by Layer", fontsize=14)
     plt.tight_layout()
     fig.savefig(PLOT_DIR / "r2_by_layer_6panel.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -137,7 +137,7 @@ def plot_probe_magnitude(probe_data: dict):
             ax.set_ylabel(r"$\|w\|$")
         ax.legend(fontsize=7)
 
-    fig.suptitle("Exp10: Commitment Probe Weight Magnitude by Layer", fontsize=14)
+    fig.suptitle("Exp10: Convergence-Gap Probe Weight Magnitude by Layer", fontsize=14)
     plt.tight_layout()
     fig.savefig(PLOT_DIR / "probe_magnitude_6panel.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -173,7 +173,7 @@ def plot_cosine_with_mean(probe_data: dict):
         ax.set_ylim(-0.3, 1.05)
         ax.legend(fontsize=6)
 
-    fig.suptitle("Exp10: Cosine of Commitment Direction with Mean / Gradient Direction", fontsize=13)
+    fig.suptitle("Exp10: Cosine of Convergence-Gap Direction with Mean / Gradient Direction", fontsize=13)
     plt.tight_layout()
     fig.savefig(PLOT_DIR / "cosine_with_mean_6panel.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -202,7 +202,8 @@ def plot_patching_effect(patching_data: dict):
             all_vals = []
             for layer_key, layer_data in pdata.items():
                 if cond in layer_data:
-                    mean_dc = layer_data[cond].get("mean_delta_c", 0)
+                    mean_dc = layer_data[cond].get("mean_delta_kl_downstream",
+                                                      layer_data[cond].get("mean_delta_c", 0))
                     n = layer_data[cond].get("n", 0)
                     if n > 0:
                         all_vals.append(mean_dc)
@@ -222,9 +223,9 @@ def plot_patching_effect(patching_data: dict):
         ax.axhline(0, color="black", ls="-", alpha=0.3)
         ax.set_title(MODEL_LABELS[m])
         if idx % 3 == 0:
-            ax.set_ylabel(r"Mean $\Delta c_{\rm causal}$")
+            ax.set_ylabel(r"Mean $\Delta$KL downstream (nats)")
 
-    fig.suptitle("Exp10: Causal Patching Effect on Commitment (Mean Across Top Layers)", fontsize=13)
+    fig.suptitle("Exp10: Causal Patching Effect on KL Convergence (Mean Across Top Layers)", fontsize=13)
     plt.tight_layout()
     fig.savefig(PLOT_DIR / "patching_causal_effect.png", dpi=200, bbox_inches="tight")
     plt.close(fig)
@@ -267,7 +268,7 @@ def plot_pca_rank(probe_data: dict):
         ax.set_ylim(0, 1.0)
         ax.legend(fontsize=7)
 
-    fig.suptitle("Exp10: PCA of Commitment-Weighted Δh (Corrective Layers Avg)", fontsize=13)
+    fig.suptitle("Exp10: PCA of KL-Excess-Weighted Δh (Corrective Layers Avg)", fontsize=13)
     plt.tight_layout()
     fig.savefig(PLOT_DIR / "pca_rank_6panel.png", dpi=200, bbox_inches="tight")
     plt.close(fig)

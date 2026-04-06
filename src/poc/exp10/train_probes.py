@@ -2,15 +2,18 @@
 Exp10 — Phase 2 + 2.5: Ridge-Regression Probes + Direction Comparison.
 
 For each layer ℓ, fits a ridge regression:
-    Δc ≈ w_ℓ · Δh_ℓ
+    Δkl_ℓ ≈ w_ℓ · Δh_ℓ
 
-The normalised weight vector d_commit[ℓ] = normalize(w_ℓ) is the
-commitment-change direction: the axis in activation space that best
-predicts whether commitment shifted between IT and PT.
+where Δkl_ℓ = KL_IT(ℓ) - KL_PT(ℓ) is the per-layer KL excess (continuous,
+threshold-free, layer-specific target). Each layer gets its own target.
 
-Phase 2.5 compares d_commit to the existing mean IT-PT direction d_mean
+The normalised weight vector d_conv[ℓ] = normalize(w_ℓ) is the
+convergence-gap direction: the axis in activation space that best
+predicts how much more uncertain IT is than PT at this layer.
+
+Phase 2.5 compares d_conv to the existing mean IT-PT direction d_mean
 and to the KL gradient direction d_grad.  If cosine > 0.95 at all
-corrective layers → go/no-go = "redundant" (d_commit ≈ d_mean).
+corrective layers → go/no-go = "redundant" (d_conv ≈ d_mean).
 """
 from __future__ import annotations
 
@@ -75,11 +78,15 @@ def _compute_r2(delta_h: torch.Tensor, delta_c: torch.Tensor,
 
 def _pca_explained_variance(delta_h: torch.Tensor, delta_c: torch.Tensor,
                             n_components: int = 10) -> list[float]:
-    """PCA of commitment-weighted Δh.
+    """PCA of KL-excess-weighted Δh.
+
+    Args:
+        delta_h: [n_tokens, d_model]
+        delta_c: [n_tokens] — per-layer Δkl (or legacy Δc)
 
     Returns explained variance ratios for top n_components PCs.
     """
-    # Weight each Δh by its Δc
+    # Weight each Δh by its target value
     weighted = delta_h * delta_c.unsqueeze(1)  # [n, d]
     # Centre
     weighted = weighted - weighted.mean(0, keepdim=True)
@@ -166,14 +173,19 @@ def train_probes(
 
     # ── Load PCA subsample (for R² evaluation and rank diagnostic) ────────────
     pca_dir = paired_data_dir / "pca_subsample"
-    pca_dc_path = pca_dir / "delta_c.npy"
-    delta_c_all = None
-    if pca_dc_path.exists():
-        delta_c_all = torch.from_numpy(np.load(pca_dc_path)).float()
-        log.info("PCA subsample: %d tokens", delta_c_all.shape[0])
+    pca_dkl_path = pca_dir / "delta_kl.npy"
+    delta_kl_all = None  # [n_tokens, n_layers]
+    if pca_dkl_path.exists():
+        delta_kl_all = torch.from_numpy(np.load(pca_dkl_path)).float()
+        log.info("PCA subsample: %d tokens, %d layers", *delta_kl_all.shape)
+    elif (pca_dir / "delta_c.npy").exists():
+        raise RuntimeError(
+            f"Found old delta_c.npy in {pca_dir} (scalar commitment target). "
+            "This data was collected with the old Δc code. Re-run collect_paired.py."
+        )
 
     # Train/test split indices (by token position in subsample)
-    n_pca = delta_c_all.shape[0] if delta_c_all is not None else 0
+    n_pca = delta_kl_all.shape[0] if delta_kl_all is not None else 0
     n_test = int(n_pca * test_fraction)
     n_train = n_pca - n_test
 
@@ -204,17 +216,17 @@ def train_probes(
             d_commit = torch.zeros(d_model)
         commitment_dir_arrays[f"layer_{li}"] = d_commit.numpy()
 
-        # R² on held-out PCA subsample
+        # R² on held-out PCA subsample (per-layer Δkl target)
         r2_test = 0.0
-        if delta_c_all is not None and n_test > 0:
+        if delta_kl_all is not None and n_test > 0:
             dh_path = pca_dir / f"delta_h_layer_{li}.npy"
             if dh_path.exists():
                 dh_subsample = torch.from_numpy(np.load(dh_path)).float()
                 # Use last `n_test` tokens as test
                 dh_test = dh_subsample[-n_test:]
-                dc_test = delta_c_all[-n_test:]
-                if dh_test.shape[0] == dc_test.shape[0] and dh_test.shape[0] > 0:
-                    r2_test = _compute_r2(dh_test, dc_test, w, intercept)
+                dkl_test = delta_kl_all[-n_test:, li]  # per-layer target
+                if dh_test.shape[0] == dkl_test.shape[0] and dh_test.shape[0] > 0:
+                    r2_test = _compute_r2(dh_test, dkl_test, w, intercept)
 
         # Cosine with mean direction
         cos_mean = 0.0
@@ -230,17 +242,17 @@ def train_probes(
             d_grad = d_grad / (d_grad.norm() + 1e-12)
             cos_grad = (d_commit @ d_grad).item()
 
-        # PCA rank diagnostic
+        # PCA rank diagnostic (per-layer Δkl target)
         pca_explained = [0.0] * 10
-        if delta_c_all is not None:
+        if delta_kl_all is not None:
             dh_path = pca_dir / f"delta_h_layer_{li}.npy"
             if dh_path.exists():
                 dh_subsample = torch.from_numpy(np.load(dh_path)).float()
                 # Use train portion for PCA
                 dh_train_pca = dh_subsample[:n_train]
-                dc_train_pca = delta_c_all[:n_train]
-                if dh_train_pca.shape[0] == dc_train_pca.shape[0] and dh_train_pca.shape[0] > 10:
-                    pca_explained = _pca_explained_variance(dh_train_pca, dc_train_pca)
+                dkl_train_pca = delta_kl_all[:n_train, li]  # per-layer target
+                if dh_train_pca.shape[0] == dkl_train_pca.shape[0] and dh_train_pca.shape[0] > 10:
+                    pca_explained = _pca_explained_variance(dh_train_pca, dkl_train_pca)
 
         # Δh norm mean (from accumulator)
         dh_norm_mean = 0.0
@@ -292,9 +304,16 @@ def train_probes(
 
     # ── Save outputs ──────────────────────────────────────────────────────────
 
-    # Commitment directions NPZ (compatible with load_directions_from_npz)
-    np.savez(output_dir / "commitment_directions.npz", **commitment_dir_arrays)
-    log.info("Saved commitment directions → %s", output_dir / "commitment_directions.npz")
+    # Convergence-gap directions NPZ (compatible with load_directions_from_npz)
+    np.savez(output_dir / "convergence_directions.npz", **commitment_dir_arrays)
+    log.info("Saved convergence-gap directions → %s", output_dir / "convergence_directions.npz")
+
+    # Backward-compat copy (unified pipeline references commitment_directions.npz)
+    import shutil
+    shutil.copy2(
+        output_dir / "convergence_directions.npz",
+        output_dir / "commitment_directions.npz",
+    )
 
     # KL gradient directions (copy for convenience)
     if grad_path.exists():
@@ -306,6 +325,7 @@ def train_probes(
         "model_name": model_name,
         "n_layers": n_layers,
         "d_model": d_model,
+        "regression_target": "delta_kl",
         "corrective_onset": corrective_onset,
         "ridge_lambda": ridge_lambda,
         "go_nogo": go_nogo,

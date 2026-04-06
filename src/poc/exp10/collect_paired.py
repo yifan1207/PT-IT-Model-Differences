@@ -2,13 +2,17 @@
 Exp10 — Phase 1: Forced-Decoding Paired Data Collection.
 
 For each prompt:
-  1. IT generates naturally (greedy, no chat template, format B).
+  1. IT generates naturally (greedy, with chat template for IT).
   2. Both IT and PT process the same token sequence (forced decoding).
-  3. At every (layer, generated-position) we compute:
-       Δh  = h_it - h_pt           (activation difference)
-       KL  = KL(logit_lens(h_ℓ) ‖ logit_lens(h_final))  for both models
-       c   = first layer where KL < threshold (continuous interpolation)
-       Δc  = c_it - c_pt           (commitment change)
+  3. At every (layer ℓ, generated-position t) we compute:
+       Δh_ℓ(t)  = h_it_ℓ(t) - h_pt_ℓ(t)     (activation difference)
+       KL_IT(ℓ) = KL(logit_lens(h_ℓ^IT) ‖ logit_lens(h_final^IT))
+       KL_PT(ℓ) = KL(logit_lens(h_ℓ^PT) ‖ logit_lens(h_final^PT))
+       Δkl_ℓ(t) = KL_IT(ℓ,t) - KL_PT(ℓ,t)   (per-layer KL excess)
+
+  The regression target is Δkl_ℓ — continuous, threshold-free, and
+  layer-specific. Positive Δkl means IT is further from its final
+  prediction at this layer than PT.
 
 Memory optimisation: Δh is NOT saved to disk.  Instead we stream-accumulate
 ridge-regression sufficient statistics (XᵀX, Xᵀy) for Phase 2, and save a
@@ -42,9 +46,11 @@ log = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
-KL_THRESHOLD = 0.1  # nats — commitment threshold (matches plan §1)
+KL_THRESHOLD = 0.1  # nats — commitment threshold (for CG summary stat)
 PCA_SUBSAMPLE_TOKENS = 5000  # max tokens stored per layer for PCA diagnostic
 CHECKPOINT_EVERY = 50  # commit accumulators to disk every N prompts
+WINSOR_LO = 0.05  # 5th percentile — winsorize Δkl to mitigate heavy tails (plan §9)
+WINSOR_HI = 0.95  # 95th percentile
 
 
 # ── Continuous commitment ──────────────────────────────────────────────────────
@@ -77,12 +83,15 @@ def commitment_continuous(kl_array: list[float] | np.ndarray, threshold: float =
 class LayerAccumulator:
     """Streaming sufficient statistics for ridge regression at one layer.
 
+    For layer ℓ, the target y = Δkl_ℓ (per-layer KL excess: KL_IT(ℓ) - KL_PT(ℓ)).
+    Each layer gets its own target, unlike the old Δc which was shared across layers.
+
     Maintains:
         XtX   [d, d]   — Σ Δh Δhᵀ
-        Xty   [d]      — Σ Δh · Δc
+        Xty   [d]      — Σ Δh · Δkl_ℓ
         Xsum  [d]      — Σ Δh        (for centering)
-        ysum  float     — Σ Δc
-        yty   float     — Σ Δc²
+        ysum  float     — Σ Δkl_ℓ
+        yty   float     — Σ Δkl_ℓ²
         n     int       — token count
     """
     d_model: int
@@ -395,20 +404,31 @@ def collect_paired_data(
 
     # ── Load or init accumulators ─────────────────────────────────────────────
     accumulators: dict[int, LayerAccumulator] = {}
+    # Check accumulator version sentinel (prevent mixing old Δc with new Δkl)
+    sentinel_path = acc_dir / "target_version.txt"
+    if sentinel_path.exists():
+        existing_target = sentinel_path.read_text().strip()
+        if existing_target != "delta_kl":
+            raise RuntimeError(
+                f"Accumulators in {acc_dir} were built with target='{existing_target}'. "
+                "Cannot resume — delete the directory and start fresh."
+            )
     for li in range(n_layers):
         accumulators[li] = LayerAccumulator.load(acc_dir, li, d_model)
+    # Write sentinel for future resume checks
+    sentinel_path.write_text("delta_kl\n")
 
     # ── PCA subsample buffers ─────────────────────────────────────────────────
-    # We store per-layer Δh and shared Δc for the first pca_subsample_tokens tokens
+    # Per-layer Δh and per-layer Δkl for the first pca_subsample_tokens tokens
     pca_dh: dict[int, list[torch.Tensor]] = {li: [] for li in range(n_layers)}
-    pca_dc: list[torch.Tensor] = []
+    pca_dkl: list[torch.Tensor] = []  # list of [n_take, n_layers] tensors
     pca_token_count = 0
     # If resuming, load existing PCA subsample
-    pca_dc_path = pca_dir / "delta_c.npy"
-    if pca_dc_path.exists():
-        existing_dc = np.load(pca_dc_path)
-        pca_dc = [torch.from_numpy(existing_dc)]
-        pca_token_count = existing_dc.shape[0]
+    pca_dkl_path = pca_dir / "delta_kl.npy"
+    if pca_dkl_path.exists():
+        existing_dkl = np.load(pca_dkl_path)  # [n_tokens, n_layers]
+        pca_dkl = [torch.from_numpy(existing_dkl)]
+        pca_token_count = existing_dkl.shape[0]
         for li in range(n_layers):
             p = pca_dir / f"delta_h_layer_{li}.npy"
             if p.exists():
@@ -495,7 +515,11 @@ def collect_paired_data(
                 )
             # kl_it, kl_pt: [n_layers, n_gen_tokens]
 
-            # Step 5: Commitment (continuous) per token
+            # Step 5: Per-layer KL excess (the regression target)
+            # delta_kl[ℓ, t] = KL_IT(ℓ, t) - KL_PT(ℓ, t)
+            delta_kl = (kl_it - kl_pt).float().cpu()  # [n_layers, n_gen_tokens]
+
+            # Keep commitment_continuous for CG summary stat (backward-compat)
             c_it_list = []
             c_pt_list = []
             delta_c_list = []
@@ -506,24 +530,37 @@ def collect_paired_data(
                 c_pt_list.append(c_pt)
                 delta_c_list.append(c_it - c_pt)
 
-            delta_c_tensor = torch.tensor(delta_c_list, dtype=torch.float32)
+            # Convergence gap: mean Δkl over final 50% of layers, per token
+            half_layers = n_layers // 2
+            cg_per_token = delta_kl[half_layers:, :].mean(0).tolist()  # [n_gen_tokens]
 
             # Step 6: Compute Δh and update accumulators per layer
             for li in range(n_layers):
                 dh = (h_it_stack[li] - h_pt_stack[li]).float().cpu()  # [n_gen, d]
-                accumulators[li].update(dh, delta_c_tensor)
 
-                # PCA subsample
+                # Per-layer regression target: Δkl at THIS layer
+                dkl_li = delta_kl[li]  # [n_gen_tokens]
+
+                # Winsorize per-prompt to mitigate heavy tails (plan §9)
+                if dkl_li.numel() > 4:
+                    lo = torch.quantile(dkl_li, WINSOR_LO)
+                    hi = torch.quantile(dkl_li, WINSOR_HI)
+                    dkl_li = dkl_li.clamp(lo, hi)
+
+                accumulators[li].update(dh, dkl_li)
+
+                # PCA subsample (Δh per layer)
                 if pca_token_count < pca_subsample_tokens:
                     remaining = pca_subsample_tokens - pca_token_count
                     n_take = min(dh.shape[0], remaining)
                     pca_dh[li].append(dh[:n_take])
 
-            # PCA Δc subsample (shared across layers, only count once)
+            # PCA Δkl subsample: [n_tokens, n_layers]
             if pca_token_count < pca_subsample_tokens:
                 remaining = pca_subsample_tokens - pca_token_count
                 n_take = min(n_gen_tokens, remaining)
-                pca_dc.append(delta_c_tensor[:n_take])
+                # delta_kl is [n_layers, n_gen_tokens], transpose to [n_gen_tokens, n_layers]
+                pca_dkl.append(delta_kl[:, :n_take].T)
                 pca_token_count += n_take
 
             # Step 7: KL gradient (bonus)
@@ -533,13 +570,15 @@ def collect_paired_data(
                     grad_accum, grad_count,
                 )
 
-            # Step 8: Write commitment record
+            # Step 8: Write convergence record
             commit_record = {
                 "prompt_id": prompt_id,
                 "n_gen_tokens": n_gen_tokens,
+                "target": "delta_kl",
                 "c_it": c_it_list,
                 "c_pt": c_pt_list,
                 "delta_c": delta_c_list,
+                "convergence_gap": cg_per_token,
                 "kl_it": kl_it.cpu().tolist(),   # [n_layers, n_gen_tokens]
                 "kl_pt": kl_pt.cpu().tolist(),
                 "use_tuned": use_tuned,
@@ -567,11 +606,11 @@ def collect_paired_data(
             if n_processed % checkpoint_every == 0:
                 _save_checkpoint(
                     accumulators, acc_dir, n_layers,
-                    pca_dh, pca_dc, pca_dir, n_layers,
+                    pca_dh, pca_dkl, pca_dir, n_layers,
                 )
 
     # ── Final save ────────────────────────────────────────────────────────────
-    _save_checkpoint(accumulators, acc_dir, n_layers, pca_dh, pca_dc, pca_dir, n_layers)
+    _save_checkpoint(accumulators, acc_dir, n_layers, pca_dh, pca_dkl, pca_dir, n_layers)
 
     # Save KL gradient directions
     if compute_kl_gradient and grad_accum:
@@ -592,6 +631,8 @@ def collect_paired_data(
         "model_name": model_name,
         "n_layers": n_layers,
         "d_model": d_model,
+        "regression_target": "delta_kl",
+        "winsorize_percentiles": [WINSOR_LO, WINSOR_HI],
         "n_prompts_processed": n_processed + len(done_ids),
         "n_prompts_total": len(records),
         "total_tokens": total_tokens,
@@ -618,7 +659,7 @@ def _save_checkpoint(
     acc_dir: Path,
     n_layers: int,
     pca_dh: dict[int, list[torch.Tensor]],
-    pca_dc: list[torch.Tensor],
+    pca_dkl: list[torch.Tensor],
     pca_dir: Path,
     n_layers_for_pca: int,
 ):
@@ -627,9 +668,9 @@ def _save_checkpoint(
         accumulators[li].save(acc_dir, li)
 
     # Save PCA subsample
-    if pca_dc:
-        dc_cat = torch.cat(pca_dc, dim=0)
-        np.save(pca_dir / "delta_c.npy", dc_cat.numpy())
+    if pca_dkl:
+        dkl_cat = torch.cat(pca_dkl, dim=0)  # [n_tokens, n_layers]
+        np.save(pca_dir / "delta_kl.npy", dkl_cat.numpy())
         for li in range(n_layers_for_pca):
             if pca_dh[li]:
                 dh_cat = torch.cat(pca_dh[li], dim=0)

@@ -3,9 +3,12 @@ Modal script for Exp10: Contrastive Activation Patching.
 
 Runs the full Exp10 pipeline on Modal cloud H100 GPUs:
   Phase 1: Forced-decoding paired data collection (6 models in parallel)
+            Regression target: per-layer KL excess (Δkl_ℓ), winsorized.
   Phase 2: Ridge regression probes + direction comparison (CPU-heavy)
+            Outputs: convergence_directions.npz (+ backward-compat commitment_directions.npz)
   Phase 3: Causal activation patching (6 models in parallel)
-  Phase 4B: Steering with commitment directions (conditional on go/no-go)
+            Metric: ΔKL at downstream layers (not scalar commitment)
+  Phase 4B: Steering with convergence-gap directions (conditional on go/no-go)
 
 Setup:
     modal run --detach src/poc/exp10/modal_exp10.py
@@ -30,7 +33,7 @@ import modal
 app = modal.App("exp10-contrastive-patching")
 
 results_vol = modal.Volume.from_name("exp10-results", create_if_missing=True)
-tuned_lens_vol = modal.Volume.from_name("tuned-lens-0g-results")  # read-only, pre-trained probes
+tuned_lens_vol = modal.Volume.from_name("0g-probes-v3")  # read-only, tuned lens probes (v3: IT trained with chat template)
 phase0_vol = modal.Volume.from_name("phase0-results")  # read-only, corrective_directions.npz
 
 # All model IDs needed (PT + IT for forced decoding)
@@ -157,10 +160,10 @@ def collect_one(model_name: str) -> str:
 
     output_dir = f"/root/results/exp10/{model_name}/paired_data"
 
-    # Tuned lens probes are on the tuned-lens-0g-results volume
+    # Tuned lens probes (v3, IT trained with chat template) on 0g-probes-v3 volume
     # Mounted at /root/tuned_lens_probes, with structure:
-    # cross_model/{model}/tuned_lens/{variant}/probe_layer_*.pt
-    tuned_lens_dir = "/root/tuned_lens_probes/cross_model"
+    # {model}/{variant}/probe_layer_*.pt
+    tuned_lens_dir = "/root/tuned_lens_probes"
 
     metadata = collect_paired_data(
         model_name=model_name,
@@ -250,7 +253,7 @@ def patch_one(model_name: str) -> str:
 
     from src.poc.exp10.patching import validate_patching
 
-    tuned_lens_dir = "/root/tuned_lens_probes/cross_model"
+    tuned_lens_dir = "/root/tuned_lens_probes"
     mean_dir_path = f"/root/phase0_results/cross_model/{model_name}/directions/corrective_directions.npz"
 
     validate_patching(
@@ -315,7 +318,7 @@ def steer_one(model_name: str) -> str:
         "--experiment", "A1",
         "--variant", "it",
         "--device", "cuda:0",
-        "--model-family", model_name,
+        "--model-name", model_name,
         "--corrective-direction-path", directions_path,
         "--run-name", run_name,
         "--output-dir", output_dir,
