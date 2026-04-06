@@ -248,6 +248,8 @@ def validate_patching(
     use_tuned = False
     if model_name != "gemma3_4b" and tuned_lens_dir is not None:
         pt_probe_dir = Path(tuned_lens_dir) / model_name / "tuned_lens" / "pt"
+        if not pt_probe_dir.exists():
+            pt_probe_dir = Path(tuned_lens_dir) / model_name / "pt"
         if pt_probe_dir.exists():
             probes_pt_tuned = _load_probes(pt_probe_dir, d_model, device)
             if probes_pt_tuned:

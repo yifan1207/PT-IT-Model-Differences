@@ -52,7 +52,7 @@ app = modal.App("unified-pipeline-v2")
 
 results_vol = modal.Volume.from_name("phase0-results-v2", create_if_missing=True)
 exp10_vol = modal.Volume.from_name("exp10-results", create_if_missing=True)
-probes_vol = modal.Volume.from_name("0g-probes-v2")  # read-only, tuned lens probes
+probes_vol = modal.Volume.from_name("0g-probes-v3")  # read-only, tuned lens probes (v3: IT trained with chat template)
 
 # All 12 model weights (PT + IT) baked into image
 _HF_MODELS_TO_BAKE = [

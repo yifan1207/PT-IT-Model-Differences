@@ -358,8 +358,14 @@ def collect_paired_data(
         log.info("Gemma: using raw logit lens only (tuned probes did not converge)")
     elif tuned_lens_dir is not None:
         tl_dir = Path(tuned_lens_dir)
+        # Support both layouts:
+        #   v2: {tuned_lens_dir}/{model}/tuned_lens/{variant}/probe_layer_*.pt
+        #   v3: {tuned_lens_dir}/{model}/{variant}/probe_layer_*.pt
         it_probe_dir = tl_dir / model_name / "tuned_lens" / "it"
         pt_probe_dir = tl_dir / model_name / "tuned_lens" / "pt"
+        if not it_probe_dir.exists():
+            it_probe_dir = tl_dir / model_name / "it"
+            pt_probe_dir = tl_dir / model_name / "pt"
         if it_probe_dir.exists() and pt_probe_dir.exists():
             probes_it = _load_probes(it_probe_dir, d_model, device)
             probes_pt = _load_probes(pt_probe_dir, d_model, device)
