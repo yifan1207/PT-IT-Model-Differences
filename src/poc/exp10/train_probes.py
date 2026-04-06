@@ -261,9 +261,26 @@ def train_probes(
             trace_xtx = acc.XtX.diagonal().sum().item()
             dh_norm_mean = (trace_xtx / acc.n) ** 0.5
 
+        # Bootstrap R² stability: 5 random 80/20 splits on PCA subsample
+        r2_splits = []
+        if delta_kl_all is not None and n_pca > 20:
+            dh_path = pca_dir / f"delta_h_layer_{li}.npy"
+            if dh_path.exists():
+                dh_full = torch.from_numpy(np.load(dh_path)).float()
+                dkl_full = delta_kl_all[:, li]
+                rng = np.random.RandomState(42 + li)
+                for _ in range(5):
+                    perm = rng.permutation(n_pca)
+                    split = int(n_pca * 0.8)
+                    dh_tr, dh_te = dh_full[perm[:split]], dh_full[perm[split:]]
+                    dkl_te = dkl_full[perm[split:]]
+                    r2_splits.append(_compute_r2(dh_te, dkl_te, w, intercept))
+
         result = {
             "layer": li,
             "r2_test": r2_test,
+            "r2_splits": r2_splits,  # 5 random splits for stability check
+            "r2_std": float(np.std(r2_splits)) if r2_splits else 0.0,
             "probe_magnitude": w_norm,
             "cosine_with_mean_dir": cos_mean,
             "cosine_with_kl_gradient": cos_grad,
@@ -343,6 +360,8 @@ def _empty_layer_result(layer: int) -> dict:
     return {
         "layer": layer,
         "r2_test": 0.0,
+        "r2_splits": [],
+        "r2_std": 0.0,
         "probe_magnitude": 0.0,
         "cosine_with_mean_dir": 0.0,
         "cosine_with_kl_gradient": 0.0,
