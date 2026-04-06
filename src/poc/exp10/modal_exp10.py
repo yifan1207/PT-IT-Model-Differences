@@ -1,16 +1,23 @@
 """
 Modal script for Exp10: Contrastive Activation Patching.
 
-Runs the full Exp10 pipeline on Modal cloud H100 GPUs:
+Runs the full Exp10 pipeline on Modal cloud B200 GPUs:
   Phase 1: Forced-decoding paired data collection (6 models in parallel)
             Regression target: per-layer KL excess (Δkl_ℓ), winsorized.
-  Phase 2: Ridge regression probes + direction comparison (CPU-heavy)
+  Phase 2: Ridge regression probes + direction comparison (CPU — no GPU needed)
             Outputs: convergence_directions.npz (+ backward-compat commitment_directions.npz)
   Phase 3: Causal activation patching (6 models in parallel)
             Metric: ΔKL at downstream layers (not scalar commitment)
   Phase 4B: Steering with convergence-gap directions (conditional on go/no-go)
 
-Setup:
+Usage:
+    # Smoke test (1 model, 5 prompts — validates full pipeline end-to-end)
+    modal run src/poc/exp10/modal_exp10.py::run_smoke
+
+    # Prototype (2 models in parallel, 10 prompts — real validation)
+    modal run src/poc/exp10/modal_exp10.py::run_prototype
+
+    # Full run (6 models, 600 prompts)
     modal run --detach src/poc/exp10/modal_exp10.py
 
 Monitor:
@@ -85,12 +92,18 @@ image = (
     )
 )
 
-# ── Constants ────────────────────────────────────────────────────────────��───
+# ── Constants ─────────────────────────────────────────────────────────────────
 
 MODELS = [
     "gemma3_4b", "llama31_8b", "qwen3_4b",
     "mistral_7b", "deepseek_v2_lite", "olmo2_7b",
 ]
+
+# Per-model info for max_gen_tokens (MoE models capped at 64)
+MODEL_MAX_GEN = {
+    "gemma3_4b": 128, "llama31_8b": 128, "qwen3_4b": 128,
+    "mistral_7b": 128, "deepseek_v2_lite": 64, "olmo2_7b": 128,
+}
 
 VOLUME_MOUNTS = {
     "/root/results": results_vol,
@@ -101,7 +114,7 @@ VOLUME_MOUNTS = {
 GPU_RETRIES = modal.Retries(max_retries=3, initial_delay=15.0, backoff_coefficient=2.0)
 
 
-# ── Helpers ─────────────���─────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _setup():
     """Common container setup."""
@@ -134,10 +147,22 @@ def _setup_sigterm_handler():
     atexit.register(_shutdown)
 
 
+def _find_mean_dir(model_name: str) -> str | None:
+    """Locate corrective_directions.npz for a model, checking multiple paths."""
+    candidates = [
+        f"/root/phase0_results/cross_model/{model_name}/directions/corrective_directions.npz",
+        f"/root/tuned_lens_probes/{model_name}/directions/corrective_directions.npz",
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return None
+
+
 # ── Phase 1: Forced-decoding data collection ─────────────────────────────────
 
 @app.function(
-    gpu="H100",
+    gpu="B200",
     timeout=3600,  # 60 min
     retries=GPU_RETRIES,
     image=image,
@@ -145,14 +170,14 @@ def _setup_sigterm_handler():
     secrets=[modal.Secret.from_name("huggingface-token")],
     memory=65536,
 )
-def collect_one(model_name: str) -> str:
+def collect_one(model_name: str, n_prompts: int = 600) -> str:
     """Phase 1: Collect forced-decoding paired data for one model."""
     _setup()
     _setup_sigterm_handler()
 
     import torch
-    print(f"=== Phase 1 collect: {model_name} ===")
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"=== Phase 1 collect: {model_name} (n_prompts={n_prompts}) ===")
+    print(f"GPU: {torch.cuda.get_device_name(0)}, VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.0f} GB")
 
     results_vol.reload()
 
@@ -161,16 +186,17 @@ def collect_one(model_name: str) -> str:
     output_dir = f"/root/results/exp10/{model_name}/paired_data"
 
     # Tuned lens probes (v3, IT trained with chat template) on 0g-probes-v3 volume
-    # Mounted at /root/tuned_lens_probes, with structure:
     # {model}/{variant}/probe_layer_*.pt
     tuned_lens_dir = "/root/tuned_lens_probes"
+
+    max_gen = MODEL_MAX_GEN.get(model_name, 128)
 
     metadata = collect_paired_data(
         model_name=model_name,
         device="cuda:0",
         output_dir=output_dir,
-        n_prompts=600,
-        max_gen_tokens=128,
+        n_prompts=n_prompts,
+        max_gen_tokens=max_gen,
         dataset_path="/root/data/eval_dataset_v2.jsonl",
         tuned_lens_dir=tuned_lens_dir,
         compute_kl_gradient=True,
@@ -183,7 +209,8 @@ def collect_one(model_name: str) -> str:
 # ── Phase 2+2.5: Probe training + direction comparison ───────────────────────
 
 @app.function(
-    gpu="H100",  # GPU needed for PCA subsample SVD on large matrices
+    # CPU only — ridge solve is O(d³) on d_model≤4096, PCA SVD on ≤10k tokens.
+    # No GPU needed. Saves cost and avoids GPU queue contention.
     timeout=1800,  # 30 min
     retries=modal.Retries(max_retries=1),
     image=image,
@@ -201,20 +228,10 @@ def train_probes_one(model_name: str) -> str:
 
     from src.poc.exp10.train_probes import train_probes
 
-    # Existing mean directions are on the phase0-results volume
-    # Mounted at /root/phase0_results/cross_model/{model}/directions/
-    mean_dir_path = f"/root/phase0_results/cross_model/{model_name}/directions/corrective_directions.npz"
-
-    import os
-    if not os.path.exists(mean_dir_path):
-        # Fallback: check tuned-lens volume
-        alt_path = f"/root/tuned_lens_probes/cross_model/{model_name}/directions/corrective_directions.npz"
-        if os.path.exists(alt_path):
-            mean_dir_path = alt_path
-            print(f"[warn] Using fallback mean_dir_path: {alt_path}")
-        else:
-            print(f"[ERROR] No corrective_directions.npz found for {model_name}")
-            return f"probes {model_name}: FAILED — no mean directions found"
+    mean_dir_path = _find_mean_dir(model_name)
+    if mean_dir_path is None:
+        print(f"[WARN] No corrective_directions.npz for {model_name} — cosine comparison will be 0")
+        mean_dir_path = "/dev/null"  # train_probes handles missing file gracefully
 
     summary = train_probes(
         model_name=model_name,
@@ -232,7 +249,7 @@ def train_probes_one(model_name: str) -> str:
 # ── Phase 3: Causal patching ─────────────────────────────────────────────────
 
 @app.function(
-    gpu="H100",
+    gpu="B200",
     timeout=5400,  # 90 min
     retries=GPU_RETRIES,
     image=image,
@@ -240,21 +257,22 @@ def train_probes_one(model_name: str) -> str:
     secrets=[modal.Secret.from_name("huggingface-token")],
     memory=65536,
 )
-def patch_one(model_name: str) -> str:
+def patch_one(model_name: str, n_test_prompts: int = 120,
+              max_tokens_per_prompt: int = 5) -> str:
     """Phase 3: Causal activation patching for one model."""
     _setup()
     _setup_sigterm_handler()
 
     import torch
-    print(f"=== Phase 3 patching: {model_name} ===")
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"=== Phase 3 patching: {model_name} (n_test={n_test_prompts}) ===")
+    print(f"GPU: {torch.cuda.get_device_name(0)}, VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.0f} GB")
 
     results_vol.reload()
 
     from src.poc.exp10.patching import validate_patching
 
     tuned_lens_dir = "/root/tuned_lens_probes"
-    mean_dir_path = f"/root/phase0_results/cross_model/{model_name}/directions/corrective_directions.npz"
+    mean_dir_path = _find_mean_dir(model_name)
 
     validate_patching(
         model_name=model_name,
@@ -263,8 +281,8 @@ def patch_one(model_name: str) -> str:
         paired_data_dir=f"/root/results/exp10/{model_name}/paired_data",
         output_dir=f"/root/results/exp10/{model_name}/patching",
         mean_dir_path=mean_dir_path,
-        n_test_prompts=120,
-        max_tokens_per_prompt=5,
+        n_test_prompts=n_test_prompts,
+        max_tokens_per_prompt=max_tokens_per_prompt,
         top_k_layers=10,
         dataset_path="/root/data/eval_dataset_v2.jsonl",
         tuned_lens_dir=tuned_lens_dir,
@@ -277,7 +295,7 @@ def patch_one(model_name: str) -> str:
 # ── Phase 4B: Steering with commitment directions ────────────────────────────
 
 @app.function(
-    gpu="H100",
+    gpu="B200",
     timeout=10800,  # 3h
     retries=GPU_RETRIES,
     image=image,
@@ -341,7 +359,300 @@ def steer_one(model_name: str) -> str:
     return f"steer {model_name} done"
 
 
-# ── GCS sync helper ───��──────────────────────────────────────────────────────
+# ── Smoke test: end-to-end validation with 1 model, 5 prompts ───────────────
+
+@app.function(
+    gpu="B200",
+    timeout=1800,  # 30 min
+    retries=modal.Retries(max_retries=1),
+    image=image,
+    volumes=VOLUME_MOUNTS,
+    secrets=[modal.Secret.from_name("huggingface-token")],
+    memory=65536,
+)
+def smoke_test_gpu(model_name: str) -> str:
+    """End-to-end smoke test: Phases 1→2→3 on one GPU, 5 prompts.
+
+    Validates:
+      1. Volume mounts & tuned lens probes exist
+      2. Chat template works for this model
+      3. Phase 1: collect 5 prompts → accumulators, delta_kl.npy, JSONL
+      4. Phase 2: ridge probes → convergence_directions.npz, probe_summary.json
+      5. Phase 3: patching 3 prompts × 2 tokens → patching_summary.json
+      6. Output shapes & values are sane
+    """
+    _setup()
+    _setup_sigterm_handler()
+
+    import json
+    import time
+    import numpy as np
+    import torch
+
+    t0 = time.time()
+    gpu_name = torch.cuda.get_device_name(0)
+    vram_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    print(f"=== SMOKE TEST: {model_name} on {gpu_name} ({vram_gb:.0f} GB) ===\n")
+
+    checks = []
+    errors = []
+
+    def check(name, condition, detail=""):
+        status = "PASS" if condition else "FAIL"
+        msg = f"  [{status}] {name}"
+        if detail:
+            msg += f" — {detail}"
+        print(msg)
+        checks.append((name, condition, detail))
+        if not condition:
+            errors.append(name)
+
+    # ── 0. Imports ────────────────────────────────────────────────────────────
+    print("[Step 0] Imports & volumes")
+    from src.poc.cross_model.config import get_spec, model_id_for_variant
+    from src.poc.cross_model.adapters import get_adapter
+    from src.poc.exp10.collect_paired import collect_paired_data
+    from src.poc.exp10.train_probes import train_probes
+    from src.poc.exp10.patching import validate_patching
+    check("core imports", True)
+
+    spec = get_spec(model_name)
+    check("model spec", spec is not None, f"n_layers={spec.n_layers}, d_model={spec.d_model}")
+
+    # ── 1. Volume checks ─────────────────────────────────────────────────────
+    print("\n[Step 1] Volume & probe checks")
+    ds_path = Path("/root/data/eval_dataset_v2.jsonl")
+    check("dataset exists", ds_path.exists())
+    if ds_path.exists():
+        n_records = sum(1 for _ in open(ds_path))
+        check("dataset non-empty", n_records > 10, f"{n_records} records")
+
+    # Tuned lens probes
+    it_probe_dir = Path(f"/root/tuned_lens_probes/{model_name}/it")
+    pt_probe_dir = Path(f"/root/tuned_lens_probes/{model_name}/pt")
+    # Fallback to v2 layout
+    if not it_probe_dir.exists():
+        it_probe_dir = Path(f"/root/tuned_lens_probes/{model_name}/tuned_lens/it")
+        pt_probe_dir = Path(f"/root/tuned_lens_probes/{model_name}/tuned_lens/pt")
+    it_probes_exist = it_probe_dir.exists()
+    pt_probes_exist = pt_probe_dir.exists()
+    check("tuned lens IT probes", it_probes_exist, str(it_probe_dir))
+    check("tuned lens PT probes", pt_probes_exist, str(pt_probe_dir))
+    if it_probes_exist:
+        n_it = len(list(it_probe_dir.glob("probe_layer_*.pt")))
+        check("IT probe count", n_it == spec.n_layers, f"{n_it}/{spec.n_layers} layers")
+    if pt_probes_exist:
+        n_pt = len(list(pt_probe_dir.glob("probe_layer_*.pt")))
+        check("PT probe count", n_pt == spec.n_layers, f"{n_pt}/{spec.n_layers} layers")
+
+    # Mean directions (optional — not all models may have Phase 0 done)
+    mean_dir = _find_mean_dir(model_name)
+    check("mean directions", mean_dir is not None,
+          mean_dir if mean_dir else "not found (cosine comparison will be 0)")
+
+    # ── 2. Chat template ─────────────────────────────────────────────────────
+    print("\n[Step 2] Chat template")
+    from transformers import AutoTokenizer
+    adapter = get_adapter(model_name)
+    tok = AutoTokenizer.from_pretrained(spec.it_id)
+    raw = "Write a haiku about neural networks."
+    templated = adapter.apply_template(tok, raw, is_it=True)
+    check("chat template applied", len(templated) > len(raw),
+          f"raw={len(raw)} chars → templated={len(templated)} chars")
+
+    # ── 3. Phase 1: Collect 5 prompts ─────────────────────────────────────────
+    print("\n[Step 3] Phase 1: Collect forced-decoding data (5 prompts)")
+    output_dir = f"/root/results/exp10/_smoke_{model_name}/paired_data"
+    max_gen = MODEL_MAX_GEN.get(model_name, 128)
+
+    t1 = time.time()
+    metadata = collect_paired_data(
+        model_name=model_name,
+        device="cuda:0",
+        output_dir=output_dir,
+        n_prompts=5,
+        max_gen_tokens=max_gen,
+        dataset_path="/root/data/eval_dataset_v2.jsonl",
+        tuned_lens_dir="/root/tuned_lens_probes",
+        compute_kl_gradient=True,
+    )
+    t1_elapsed = time.time() - t1
+    print(f"  Phase 1 took {t1_elapsed:.1f}s")
+
+    check("phase1 completed", metadata is not None)
+    check("phase1 prompts", metadata["n_prompts_processed"] == 5,
+          f"{metadata['n_prompts_processed']} prompts")
+    check("phase1 tokens", metadata["total_tokens"] > 0,
+          f"{metadata['total_tokens']} tokens")
+    check("phase1 target", metadata.get("regression_target") == "delta_kl",
+          f"target={metadata.get('regression_target')}")
+    check("phase1 tuned_lens", metadata.get("use_tuned_lens", False),
+          f"use_tuned_lens={metadata.get('use_tuned_lens')}")
+
+    # Validate accumulator files
+    acc_dir = Path(output_dir) / "accumulators"
+    check("accumulators dir", acc_dir.exists())
+    sentinel = acc_dir / "target_version.txt"
+    check("version sentinel", sentinel.exists() and sentinel.read_text().strip() == "delta_kl")
+
+    # Check accumulator count matches n_layers
+    n_acc = len(list(acc_dir.glob("layer_*_XtX.npy")))
+    check("accumulator count", n_acc == spec.n_layers,
+          f"{n_acc}/{spec.n_layers} layers")
+
+    # Validate delta_kl.npy shape
+    pca_dir = Path(output_dir) / "pca_subsample"
+    dkl_path = pca_dir / "delta_kl.npy"
+    check("delta_kl.npy exists", dkl_path.exists())
+    if dkl_path.exists():
+        dkl = np.load(dkl_path)
+        check("delta_kl shape", dkl.ndim == 2 and dkl.shape[1] == spec.n_layers,
+              f"shape={dkl.shape}, expected (*, {spec.n_layers})")
+        # Sanity: values differ across layers (not the old shared Δc)
+        if dkl.shape[0] > 1:
+            col_means = dkl.mean(axis=0)
+            all_same = np.allclose(col_means, col_means[0], atol=1e-6)
+            check("delta_kl varies by layer", not all_same,
+                  "layer means differ (good)" if not all_same else "WARNING: all layer means identical")
+
+    # Sanity: accumulators at different layers have different ysum
+    # (proves per-layer target, not shared Δc)
+    if n_acc >= 2:
+        from src.poc.exp10.collect_paired import LayerAccumulator
+        acc_0 = LayerAccumulator.load(acc_dir, 0, spec.d_model)
+        acc_mid = LayerAccumulator.load(acc_dir, spec.n_layers // 2, spec.d_model)
+        check("accum ysum differs", abs(acc_0.ysum - acc_mid.ysum) > 1e-6,
+              f"layer0={acc_0.ysum:.4f}, layer{spec.n_layers//2}={acc_mid.ysum:.4f}")
+
+    # Check JSONL
+    jsonl_files = list(Path(output_dir).glob("forced_decoding_*.jsonl"))
+    check("JSONL output", len(jsonl_files) > 0)
+    if jsonl_files:
+        with open(jsonl_files[0]) as f:
+            first_record = json.loads(f.readline())
+        check("JSONL has target field", first_record.get("target") == "delta_kl")
+        check("JSONL has convergence_gap", "convergence_gap" in first_record)
+
+    # GPU memory after Phase 1 cleanup
+    torch.cuda.empty_cache()
+    mem_used = torch.cuda.memory_allocated() / 1e9
+    print(f"  GPU memory after Phase 1 cleanup: {mem_used:.2f} GB")
+
+    # ── 4. Phase 2: Ridge probes ──────────────────────────────────────────────
+    print("\n[Step 4] Phase 2: Ridge probes")
+    probes_dir = f"/root/results/exp10/_smoke_{model_name}/probes"
+    mean_dir_for_train = mean_dir if mean_dir else "/dev/null"
+
+    t2 = time.time()
+    summary = train_probes(
+        model_name=model_name,
+        paired_data_dir=output_dir,
+        mean_dir_path=mean_dir_for_train,
+        output_dir=probes_dir,
+    )
+    t2_elapsed = time.time() - t2
+    print(f"  Phase 2 took {t2_elapsed:.1f}s")
+
+    check("phase2 completed", summary is not None)
+    check("phase2 target", summary.get("regression_target") == "delta_kl")
+    check("phase2 go_nogo", summary.get("go_nogo") in ("proceed", "redundant"),
+          f"go_nogo={summary.get('go_nogo')}")
+
+    # Check output files
+    conv_dir = Path(probes_dir) / "convergence_directions.npz"
+    compat_dir = Path(probes_dir) / "commitment_directions.npz"
+    probe_json = Path(probes_dir) / "probe_summary.json"
+    check("convergence_directions.npz", conv_dir.exists())
+    check("commitment_directions.npz (compat)", compat_dir.exists())
+    check("probe_summary.json", probe_json.exists())
+
+    if conv_dir.exists():
+        dirs = np.load(conv_dir)
+        n_dir_layers = len([k for k in dirs.files if k.startswith("layer_")])
+        check("direction count", n_dir_layers == spec.n_layers,
+              f"{n_dir_layers}/{spec.n_layers}")
+        # Check a direction has unit norm (or zero for skipped layers)
+        d_mid = dirs[f"layer_{spec.n_layers // 2}"]
+        norm = np.linalg.norm(d_mid)
+        check("direction norm", abs(norm - 1.0) < 0.01 or norm < 1e-6,
+              f"layer {spec.n_layers//2} norm={norm:.4f}")
+
+    # Per-layer R² sanity
+    per_layer = summary.get("per_layer", [])
+    if per_layer:
+        r2_values = [r["r2_test"] for r in per_layer if r["r2_test"] > 0]
+        peak_r2 = max(r["r2_test"] for r in per_layer)
+        peak_layer = max(per_layer, key=lambda r: r["r2_test"])["layer"]
+        check("R² non-trivial", peak_r2 > 0.0,
+              f"peak R²={peak_r2:.4f} at layer {peak_layer}, {len(r2_values)} layers with R²>0")
+
+    # ── 5. Phase 3: Patching (3 prompts, 2 tokens) ───────────────────────────
+    print("\n[Step 5] Phase 3: Causal patching (3 prompts, 2 tokens)")
+    patching_dir = f"/root/results/exp10/_smoke_{model_name}/patching"
+
+    t3 = time.time()
+    validate_patching(
+        model_name=model_name,
+        device="cuda:0",
+        probes_dir=probes_dir,
+        paired_data_dir=output_dir,
+        output_dir=patching_dir,
+        mean_dir_path=mean_dir,
+        n_test_prompts=3,
+        max_tokens_per_prompt=2,
+        top_k_layers=3,  # only 3 layers to keep it fast
+        dataset_path="/root/data/eval_dataset_v2.jsonl",
+        tuned_lens_dir="/root/tuned_lens_probes",
+    )
+    t3_elapsed = time.time() - t3
+    print(f"  Phase 3 took {t3_elapsed:.1f}s")
+
+    patch_summary = Path(patching_dir) / "patching_summary.json"
+    check("patching_summary.json", patch_summary.exists())
+    if patch_summary.exists():
+        with open(patch_summary) as f:
+            pdata = json.load(f)
+        # Check we have results for multiple conditions
+        all_conditions = set()
+        for layer_key, layer_data in pdata.items():
+            if isinstance(layer_data, dict):
+                all_conditions.update(layer_data.keys())
+        expected_conds = {"commit", "full", "random"}
+        check("patching conditions", expected_conds.issubset(all_conditions),
+              f"found: {all_conditions}")
+        # Check mean_delta_kl_downstream exists in at least one condition
+        has_dkl = False
+        for layer_key, layer_data in pdata.items():
+            if isinstance(layer_data, dict):
+                for cond, cond_data in layer_data.items():
+                    if isinstance(cond_data, dict) and "mean_delta_kl_downstream" in cond_data:
+                        has_dkl = True
+                        break
+        check("ΔKL downstream metric", has_dkl)
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    total_time = time.time() - t0
+    n_pass = sum(1 for _, ok, _ in checks if ok)
+    n_fail = sum(1 for _, ok, _ in checks if not ok)
+
+    _commit_volumes()
+
+    print(f"\n{'='*60}")
+    print(f"SMOKE TEST: {n_pass} passed, {n_fail} failed ({total_time:.0f}s total)")
+    print(f"  Phase 1 (collect):  {t1_elapsed:.0f}s")
+    print(f"  Phase 2 (probes):   {t2_elapsed:.0f}s")
+    print(f"  Phase 3 (patching): {t3_elapsed:.0f}s")
+    if errors:
+        print(f"\nFAILED CHECKS:")
+        for e in errors:
+            print(f"  - {e}")
+    print(f"{'='*60}")
+
+    status = "PASS" if n_fail == 0 else f"FAIL ({n_fail} failures)"
+    return f"smoke {model_name}: {status} — {n_pass}/{n_pass+n_fail} checks, {total_time:.0f}s"
+
+
+# ── GCS sync helper ──────────────────────────────────────────────────────────
 
 @app.function(
     timeout=600,
@@ -365,14 +676,86 @@ def sync_to_gcs() -> str:
         return f"GCS sync failed: {e}"
 
 
-# ── Local entrypoint ─────────────────────────────────────────────────────────
+# ── Local entrypoints ────────────────────────────────────────────────────────
+
+@app.local_entrypoint()
+def run_smoke():
+    """Smoke test: 1 model (deepseek_v2_lite — smallest), 5 prompts, all phases.
+
+    Usage: modal run src/poc/exp10/modal_exp10.py::run_smoke
+    """
+    # deepseek_v2_lite: 27 layers, d=2048, MoE — smallest model, fastest to load
+    print("=" * 60)
+    print("EXP10 SMOKE TEST — deepseek_v2_lite, 5 prompts")
+    print("=" * 60)
+    result = smoke_test_gpu.remote("deepseek_v2_lite")
+    print(f"\n{result}")
+
+
+@app.local_entrypoint()
+def run_prototype():
+    """Prototype: 2 models in parallel, 10 prompts, Phases 1→2→3.
+
+    Uses 2 B200 GPUs simultaneously. Tests parallelism + cross-model correctness.
+    Models: deepseek_v2_lite (MoE, 27 layers) + gemma3_4b (dense, 34 layers).
+
+    Usage: modal run --detach src/poc/exp10/modal_exp10.py::run_prototype
+    """
+    proto_models = ["deepseek_v2_lite", "gemma3_4b"]
+
+    print("=" * 60)
+    print(f"EXP10 PROTOTYPE — {proto_models}, 10 prompts each")
+    print("=" * 60)
+
+    # Phase 1: 2 GPU jobs in parallel
+    print("\n[Phase 1] Collecting (2 models × 10 prompts, parallel)...")
+    results_1 = list(collect_one.map(proto_models, [10, 10]))
+    for r in results_1:
+        print(f"  {r}")
+
+    # Phase 2: 2 CPU jobs in parallel (no GPU contention)
+    print("\n[Phase 2] Ridge probes (parallel, CPU)...")
+    results_2 = list(train_probes_one.map(proto_models))
+    for r in results_2:
+        print(f"  {r}")
+
+    # Phase 3: 2 GPU jobs in parallel
+    print("\n[Phase 3] Patching (2 models × 5 prompts × 3 tokens, parallel)...")
+    results_3 = list(patch_one.map(
+        proto_models,
+        [5, 5],           # n_test_prompts
+        [3, 3],           # max_tokens_per_prompt
+    ))
+    for r in results_3:
+        print(f"  {r}")
+
+    # Quick validation of output structure
+    print("\n[Validate] Checking outputs on volume...")
+    for m in proto_models:
+        try:
+            subprocess.run([
+                "modal", "volume", "ls", "exp10-results",
+                f"exp10/{m}/probes/",
+            ], check=True, timeout=30)
+        except Exception as e:
+            print(f"  {m}: ls failed — {e}")
+
+    print("\n" + "=" * 60)
+    print("PROTOTYPE COMPLETE")
+    print("=" * 60)
+    print("\nDownload results:")
+    print("  modal volume get exp10-results exp10/_smoke_deepseek_v2_lite results/exp10/_smoke_deepseek_v2_lite")
+    print("  modal volume get exp10-results exp10/_smoke_gemma3_4b results/exp10/_smoke_gemma3_4b")
+
 
 @app.local_entrypoint()
 def main():
-    import json as _json
+    """Full run: 6 models, 600 prompts, all 4 phases.
 
+    Usage: modal run --detach src/poc/exp10/modal_exp10.py
+    """
     print("=" * 70)
-    print("EXP10: CONTRASTIVE ACTIVATION PATCHING")
+    print("EXP10: CONTRASTIVE ACTIVATION PATCHING (FULL RUN)")
     print("=" * 70)
 
     # ── Phase 1: 6 parallel collection jobs ───────────────────────────────────
@@ -381,7 +764,7 @@ def main():
     for r in results_1:
         print(f"  {r}")
 
-    # ── Phase 2+2.5: 6 parallel probe training ───���───────────────────────────
+    # ── Phase 2+2.5: 6 parallel probe training (CPU — no GPU queue) ──────────
     print("\n[Phase 2+2.5] Training ridge probes + direction comparison...")
     results_2 = list(train_probes_one.map(MODELS))
     for r in results_2:
