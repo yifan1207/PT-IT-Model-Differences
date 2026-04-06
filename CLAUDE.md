@@ -47,7 +47,7 @@ Extends causal steering from Gemma-only to all 6 models. Code changes DONE.
 - `src/poc/exp6/config.py` — Added `model_family` field, derives arch params from MODEL_REGISTRY
 - `src/poc/exp6/interventions.py` — `register_hooks()` accepts optional `adapter` param
 - `src/poc/exp6/runtime.py` — Generalized EOS tokens, logit-lens hooks, real_token_mask
-- `src/poc/exp6/run.py` — Added `--model-name` and `--no-chat-template` CLI args
+- `src/poc/exp6/run.py` — Added `--model-name` CLI arg (IT uses chat template by default; `--no-chat-template` available for ablation)
 
 **Run order:**
 ```bash
@@ -79,9 +79,10 @@ bash scripts/run_phase0_multimodel.sh --step commitment
 - **1C ID under steering**: `src/poc/exp8/id_under_steering.py` — TwoNN ID at α=1.0, 0.0, -1.0
 
 **Key design decisions:**
-- ALL experiments use `apply_chat_template=False` (raw format B) for cross-model consistency
-- Gemma directions reused from `results/exp5/precompute_v2/precompute/` (already no-template)
-- Gemma A1 rerun needed (existing A1_it_v4 used chat template)
+- ALL experiments use `apply_chat_template=True` for IT models (their native trained distribution); PT models get raw text
+- Previous no-template runs are kept as ablation evidence (template-free results confirm corrective stage is weight-encoded)
+- Gemma A1_it_v4 (with chat template) is the canonical Gemma steering result
+- Cross-model directions, steering, and commitment delay all being rerun with chat template
 - Output: `results/cross_model/{model}/directions/` and `results/cross_model/{model}/exp6/`
 - GPUs 0-1 reserved for other users; GPUs 2-7 available
 

@@ -55,6 +55,7 @@ def collect_per_record_acts(
     corrective_layers: list[int],
     device: str,
     max_gen: int,
+    is_it: bool = False,
 ) -> dict[int, np.ndarray]:
     """Generate each record, hook corrective layer MLPs, return per-record mean acts.
 
@@ -88,7 +89,11 @@ def collect_per_record_acts(
             handles.append(layers_list[li].mlp.register_forward_hook(make_hook(li)))
 
         try:
-            input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
+            if is_it:
+                templated = adapter.adapter.apply_template(tokenizer, prompt, is_it=True)
+                input_ids = tokenizer.encode(templated, return_tensors="pt").to(device)
+            else:
+                input_ids = tokenizer.encode(prompt, return_tensors="pt").to(device)
             with torch.no_grad():
                 model_raw.generate(
                     input_ids,
@@ -181,7 +186,8 @@ def run_model(model_name: str, device: str, max_records: int = 200) -> dict:
     it_model_id = model_id_for_variant(spec, "it")
     it_raw, tokenizer = _load_model(it_model_id, device)
     it_acts = collect_per_record_acts(
-        it_raw, tokenizer, adapter, records, corrective_layers, device, max_gen
+        it_raw, tokenizer, adapter, records, corrective_layers, device, max_gen,
+        is_it=True,
     )
     del it_raw; torch.cuda.empty_cache()
 
