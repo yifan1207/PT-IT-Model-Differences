@@ -6,7 +6,6 @@
   <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white">
   <img alt="PyTorch" src="https://img.shields.io/badge/pytorch-2.5+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white">
   <img alt="6 Model Families" src="https://img.shields.io/badge/models-6%20families-green?style=flat-square">
-  <img alt="NeurIPS 2026" src="https://img.shields.io/badge/venue-NeurIPS%202026-purple?style=flat-square">
 </p>
 
 ---
@@ -296,19 +295,6 @@ PT model ─┘              per corrective layer   IFEval compliance
 ```
 
 The adapter system provides a uniform interface (`model.layers`, `residual_from_output()`, MLP hooks) across all six architectures, including DeepSeek's MoE and Gemma's hybrid attention. Extending to a new model requires only registering its architecture in the adapter.
-
----
-
-## Citation
-
-```bibtex
-@inproceedings{anonymous2026commitment,
-  title={Instruction Tuning Delays Prediction Commitment: Late-Layer Corrective Computation Across Transformer Families},
-  author={Anonymous},
-  booktitle={NeurIPS},
-  year={2026}
-}
-```
 
 ---
 
