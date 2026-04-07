@@ -25,11 +25,21 @@ from pathlib import Path
 import nnsight
 from huggingface_hub import snapshot_download
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from circuit_tracer import ReplacementModel
-from circuit_tracer.transcoder.single_layer_transcoder import (
-    load_gemma_scope_2_transcoder,
-    TranscoderSet,
-)
+
+# circuit_tracer is only needed for transcoder experiments (B experiments).
+# Lazy-imported to avoid hard dependency in environments without it (e.g. Modal).
+ReplacementModel = None  # populated by _import_circuit_tracer()
+
+
+def _import_circuit_tracer():
+    global ReplacementModel
+    from circuit_tracer import ReplacementModel as _RM
+    from circuit_tracer.transcoder.single_layer_transcoder import (
+        load_gemma_scope_2_transcoder,
+        TranscoderSet,
+    )
+    ReplacementModel = _RM
+    return _RM, load_gemma_scope_2_transcoder, TranscoderSet
 
 # Hook names for Gemma 3 — must match gemma_3_mapping in tl_nnsight_mapping.py
 _FEATURE_INPUT_HOOK = "mlp.hook_in"    # pre_feedforward_layernorm output
@@ -39,7 +49,7 @@ _N_LAYERS = 34
 
 @dataclass
 class LoadedModel:
-    model: ReplacementModel
+    model: object  # ReplacementModel or nnsight.LanguageModel
     W_U: torch.Tensor  # [d_model, vocab_size] float32, on model device
     tokenizer: object  # HuggingFace tokenizer
     # SingleLayerTranscoder objects indexed by layer, extracted before nnsight wraps them
@@ -53,7 +63,7 @@ class LoadedModel:
     real_token_mask: torch.Tensor  # bool, shape [vocab_size], on model device
 
 
-def _load_transcoder_set(cfg) -> TranscoderSet:
+def _load_transcoder_set(cfg):
     """Download and assemble all 34 Gemma Scope 2 transcoders into a TranscoderSet.
 
     Downloads only the `params.safetensors` files for the chosen variant
@@ -65,6 +75,7 @@ def _load_transcoder_set(cfg) -> TranscoderSet:
     dtype = torch.float32 if cfg.dtype_str == "float32" else torch.bfloat16
     device = torch.device(cfg.device)
 
+    _, load_gemma_scope_2_transcoder, TranscoderSet = _import_circuit_tracer()
     pattern = f"transcoder_all/layer_*_{variant}/params.safetensors"
     print(f"  Downloading transcoders ({variant}, {_N_LAYERS} layers) from {repo_id} ...")
     local_dir = snapshot_download(repo_id, allow_patterns=[pattern])
@@ -120,8 +131,9 @@ def load_model(cfg) -> "LoadedModel":
         # the whole ModuleList via nnsight's proxy instead of a single SingleLayerTranscoder.
         transcoder_list = [transcoder_set[i] for i in range(len(transcoder_set))]
 
+        _RM, _, _ = _import_circuit_tracer()
         print(f"  Loading {cfg.model_name} via {cfg.backend} backend ...")
-        model = ReplacementModel.from_pretrained_and_transcoders(
+        model = _RM.from_pretrained_and_transcoders(
             model_name=cfg.model_name,
             transcoders=transcoder_set,
             backend=cfg.backend,

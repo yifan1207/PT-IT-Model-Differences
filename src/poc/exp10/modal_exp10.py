@@ -81,6 +81,7 @@ image = (
         "safetensors",
         "einops",
         "tqdm",
+        "nnsight",
     )
     .env({"HF_HOME": "/root/.cache/huggingface"})
     .run_commands(
@@ -340,14 +341,14 @@ def patch_one(model_name: str, n_test_prompts: int = 120,
     secrets=[modal.Secret.from_name("huggingface-token")],
     memory=65536,
 )
-def steer_one(model_name: str) -> str:
+def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
     """Phase 4B: A1 α-sweep with BOTH d_conv and d_mean directions.
 
     Runs two steering sweeps under identical conditions for fair comparison:
       1. d_conv (convergence-gap direction from exp10 ridge probes)
       2. d_mean (mean IT-PT direction from Phase 0 precompute)
 
-    Both use chat template (IT default), batch=16 on B200, same 1,400 prompts.
+    Both use chat template (IT default), batch=16 on B200, same prompts.
     """
     _setup()
     _setup_sigterm_handler()
@@ -387,6 +388,7 @@ def steer_one(model_name: str) -> str:
         "--run-name", f"A1_d_conv_{model_name}",
         "--output-base", output_base,
         "--batch-size", "16",
+        "--n-eval-examples", str(n_eval_examples),
     ]
     print(f"\n[Phase 4B] Steering with d_conv...")
     r1 = sp.run(cmd_conv, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
@@ -417,6 +419,7 @@ def steer_one(model_name: str) -> str:
             "--run-name", f"A1_d_mean_{model_name}",
             "--output-base", output_base,
             "--batch-size", "16",
+            "--n-eval-examples", str(n_eval_examples),
         ]
         print(f"\n[Phase 4B] Steering with d_mean...")
         r2 = sp.run(cmd_mean, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
@@ -759,12 +762,8 @@ def sync_to_gcs() -> str:
 
 # ── Local entrypoints ────────────────────────────────────────────────────────
 
-@app.local_entrypoint()
-def run_smoke():
-    """Smoke test: 1 model (deepseek_v2_lite — smallest), 5 prompts, all phases.
-
-    Usage: modal run src/poc/exp10/modal_exp10.py::run_smoke
-    """
+def _run_smoke():
+    """Smoke test: 1 model (deepseek_v2_lite — smallest), 5 prompts, all phases."""
     # deepseek_v2_lite: 27 layers, d=2048, MoE — smallest model, fastest to load
     print("=" * 60)
     print("EXP10 SMOKE TEST — deepseek_v2_lite, 5 prompts")
@@ -773,19 +772,21 @@ def run_smoke():
     print(f"\n{result}")
 
 
-@app.local_entrypoint()
-def run_prototype():
-    """Prototype: 2 models in parallel, 10 prompts, Phases 1→2→3.
+def _run_prototype():
+    """Prototype: 2 models in parallel, 10 prompts, ALL 4 phases.
 
-    Uses 2 B200 GPUs simultaneously. Tests parallelism + cross-model correctness.
+    Tests the complete pipeline end-to-end including the new batched patching
+    and dual-direction steering (d_conv + d_mean).
+
+    Uses up to 2 B200 GPUs simultaneously.
     Models: deepseek_v2_lite (MoE, 27 layers) + gemma3_4b (dense, 34 layers).
 
-    Usage: modal run --detach src/poc/exp10/modal_exp10.py::run_prototype
+    Usage: modal run --detach src/poc/exp10/modal_exp10.py --mode prototype
     """
     proto_models = ["deepseek_v2_lite", "gemma3_4b"]
 
     print("=" * 60)
-    print(f"EXP10 PROTOTYPE — {proto_models}, 10 prompts each")
+    print(f"EXP10 PROTOTYPE — {proto_models}, 10 prompts, ALL phases")
     print("=" * 60)
 
     # Phase 1: 2 GPU jobs in parallel
@@ -800,8 +801,8 @@ def run_prototype():
     for r in results_2:
         print(f"  {r}")
 
-    # Phase 3: 2 GPU jobs in parallel
-    print("\n[Phase 3] Patching (2 models × 5 prompts × 3 tokens, parallel)...")
+    # Phase 3: 2 GPU jobs in parallel (now with batched conditions — 5× faster)
+    print("\n[Phase 3] Patching (2 models × 5 prompts × 3 tokens, batched conditions)...")
     results_3 = list(patch_one.map(
         proto_models,
         [5, 5],           # n_test_prompts
@@ -810,30 +811,22 @@ def run_prototype():
     for r in results_3:
         print(f"  {r}")
 
-    # Quick validation of output structure
-    print("\n[Validate] Checking outputs on volume...")
-    for m in proto_models:
-        try:
-            subprocess.run([
-                "modal", "volume", "ls", "exp10-results",
-                f"exp10/{m}/probes/",
-            ], check=True, timeout=30)
-        except Exception as e:
-            print(f"  {m}: ls failed — {e}")
+    # Phase 4B: 2 GPU jobs in parallel (d_conv + d_mean steering each)
+    print("\n[Phase 4B] Steering with d_conv + d_mean (2 models, 10 prompts, parallel)...")
+    results_4 = list(steer_one.map(proto_models, [10, 10]))
+    for r in results_4:
+        print(f"  {r}")
 
     print("\n" + "=" * 60)
-    print("PROTOTYPE COMPLETE")
+    print("PROTOTYPE COMPLETE — ALL 4 PHASES")
     print("=" * 60)
     print("\nDownload results:")
-    print("  modal volume get exp10-results exp10/_smoke_deepseek_v2_lite results/exp10/_smoke_deepseek_v2_lite")
-    print("  modal volume get exp10-results exp10/_smoke_gemma3_4b results/exp10/_smoke_gemma3_4b")
+    for m in proto_models:
+        print(f"  modal volume get exp10-results exp10/{m} results/exp10/{m}")
 
 
-@app.local_entrypoint()
-def main():
+def _run_full():
     """Full run: 6 models, 600 prompts, all 4 phases.
-
-    Usage: modal run --detach src/poc/exp10/modal_exp10.py
     """
     print("=" * 70)
     print("EXP10: CONTRASTIVE ACTIVATION PATCHING (FULL RUN)")
@@ -882,3 +875,21 @@ def main():
     print("  uv run python scripts/plot_exp10.py")
     print("\nPush to GCS:")
     print("  gsutil -m rsync -r results/exp10/ gs://pt-vs-it-results/exp10/")
+
+
+@app.local_entrypoint()
+def main(mode: str = "full"):
+    """Unified entrypoint. Usage:
+
+    modal run --detach src/poc/exp10/modal_exp10.py --mode smoke
+    modal run --detach src/poc/exp10/modal_exp10.py --mode prototype
+    modal run --detach src/poc/exp10/modal_exp10.py --mode full
+    """
+    if mode == "smoke":
+        _run_smoke()
+    elif mode == "prototype":
+        _run_prototype()
+    elif mode == "full":
+        _run_full()
+    else:
+        print(f"Unknown mode: {mode}. Use 'smoke', 'prototype', or 'full'.")

@@ -191,9 +191,11 @@ class Exp6InterventionSpec:
                 and float(self.corrective_directions[i].norm()) < 1e-4
             )
             if degenerate:
-                raise ValueError(
-                    f"Corrective directions at layers {degenerate} have near-zero norm."
-                )
+                # Remove degenerate layers instead of erroring — last-layer probes
+                # often yield zero directions (KL to final = 0 by definition).
+                print(f"[interventions] WARNING: dropping layers {degenerate} "
+                      f"(near-zero corrective direction norm)")
+                self.layers -= set(degenerate)
         if self.method == "content_direction":
             missing = sorted(i for i in self.layers if i not in self.content_directions)
             if missing:
