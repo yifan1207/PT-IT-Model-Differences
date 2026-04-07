@@ -93,6 +93,12 @@ def _make_patch_hook(
 
     The hook modifies the PT model's activation at layer ℓ, position target_pos.
     """
+    # Cast all vectors to model dtype (bfloat16) to avoid dtype mismatches in hook
+    model_dtype = delta_h_token.dtype
+    d_commit = d_commit.to(model_dtype)
+    d_mean = d_mean.to(model_dtype)
+    d_random = d_random.to(model_dtype)
+
     def hook(module, inp, output):
         h = adapter.residual_from_output(output)
         # h: [1, seq_len, d_model]
@@ -315,6 +321,7 @@ def validate_patching(
     # ── Main patching loop ────────────────────────────────────────────────────
     t0 = time.time()
     n_patched = 0
+    proj_magnitudes = []  # diagnostic: projection magnitudes per (layer, token)
     layer_modules_pt = adapter.layers(model_pt)
 
     with open(results_path, "a") as f_out:
@@ -379,6 +386,20 @@ def validate_patching(
                     d_mean_l = mean_dirs.get(layer, torch.zeros(d_model, device=device))
                     d_random_l = random_dirs.get(layer, torch.zeros(d_model, device=device))
 
+                    # Projection magnitude diagnostic (Δh projected onto each direction)
+                    dh_norm = delta_h_token.float().norm().item()
+                    proj_commit = abs((delta_h_token.float() @ d_commit_l.float()).item())
+                    proj_mean = abs((delta_h_token.float() @ d_mean_l.float()).item())
+                    proj_ratio = proj_commit / (dh_norm + 1e-12)
+                    log.debug(
+                        "L%d t%d: ‖Δh‖=%.3f, |proj(d_conv)|=%.3f, |proj(d_mean)|=%.3f, ratio=%.4f",
+                        layer, t_idx, dh_norm, proj_commit, proj_mean, proj_ratio,
+                    )
+                    proj_magnitudes.append({
+                        "layer": layer, "dh_norm": dh_norm,
+                        "proj_commit": proj_commit, "proj_mean": proj_mean,
+                    })
+
                     for condition in CONDITIONS:
                         key = f"{prompt_id}_{t_idx}_{layer}_{condition}"
                         if key in done_keys:
@@ -438,6 +459,28 @@ def validate_patching(
                     "[Phase 3] %s: %d/%d prompts, %d patches, %.1f sec",
                     model_name, ri + 1, len(test_records), n_patched, elapsed,
                 )
+
+    # ── Projection magnitude summary ────────────────────────────────────────
+    if proj_magnitudes:
+        pm = np.array([(p["dh_norm"], p["proj_commit"], p["proj_mean"]) for p in proj_magnitudes])
+        mean_dh = pm[:, 0].mean()
+        mean_proj_c = pm[:, 1].mean()
+        mean_proj_m = pm[:, 2].mean()
+        log.info(
+            "Projection magnitudes: mean ‖Δh‖=%.3f, mean |proj(d_conv)|=%.4f (%.2f%%), "
+            "mean |proj(d_mean)|=%.4f (%.2f%%)",
+            mean_dh, mean_proj_c, 100 * mean_proj_c / (mean_dh + 1e-12),
+            mean_proj_m, 100 * mean_proj_m / (mean_dh + 1e-12),
+        )
+        # Save for analysis
+        with open(output_dir / "projection_magnitudes.json", "w") as f:
+            json.dump({"per_token": proj_magnitudes, "summary": {
+                "mean_dh_norm": float(mean_dh),
+                "mean_proj_commit": float(mean_proj_c),
+                "mean_proj_mean": float(mean_proj_m),
+                "pct_commit": float(100 * mean_proj_c / (mean_dh + 1e-12)),
+                "pct_mean": float(100 * mean_proj_m / (mean_dh + 1e-12)),
+            }}, f, indent=2)
 
     # ── Aggregate results ─────────────────────────────────────────────────────
     _aggregate_patching_results(results_path, output_dir / "patching_summary.json", top_layers)

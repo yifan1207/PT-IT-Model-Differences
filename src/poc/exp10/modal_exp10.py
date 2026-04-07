@@ -465,6 +465,13 @@ def smoke_test_gpu(model_name: str) -> str:
     output_dir = f"/root/results/exp10/_smoke_{model_name}/paired_data"
     max_gen = MODEL_MAX_GEN.get(model_name, 128)
 
+    # Clean old smoke data to avoid resume-from-stale-data
+    import shutil
+    smoke_root = Path(f"/root/results/exp10/_smoke_{model_name}")
+    if smoke_root.exists():
+        shutil.rmtree(smoke_root)
+        print("  Cleaned old smoke data")
+
     t1 = time.time()
     metadata = collect_paired_data(
         model_name=model_name,
