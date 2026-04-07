@@ -48,7 +48,7 @@ image = (
         "/root/.cache/huggingface": hf_cache_vol,
     },
     secrets=[modal.Secret.from_name("huggingface-token")],
-    max_containers=6,  # leave GPUs for training + other tasks
+    max_containers=5,
     memory=65536,
     cpu=8.0,
 )

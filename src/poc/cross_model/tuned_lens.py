@@ -2159,9 +2159,14 @@ def eval_commitment_fast(
                 log.warning("Prompt %s generation failed: %s", pid, e)
                 continue
 
-            n_steps = out_ids.shape[1] - prompt_len
-            if n_steps == 0:
+            n_total_gen = out_ids.shape[1] - prompt_len
+            if n_total_gen <= 1:
                 continue
+            # In autoregressive mode, hooks skip the prefill pass (shape != 1).
+            # The first generated token is produced during prefill — not captured.
+            # So original captures n_total_gen - 1 steps.
+            # We capture all n_total_gen from prefill, then slice off the first one.
+            n_steps = n_total_gen - 1
 
             # ── Phase 2: Prefill with hooks (all positions at once) ───────
             captured: dict[int, torch.Tensor] = {}
@@ -2169,7 +2174,8 @@ def eval_commitment_fast(
             def make_hook(layer_idx: int):
                 def hook(module, inp, output):
                     h = adapter.residual_from_output(output)
-                    # h: [1, full_seq_len, d_model] — keep only generated positions
+                    # h: [1, full_seq_len, d_model]
+                    # Capture all generated positions including the first one
                     captured[layer_idx] = h[0, prompt_len:, :].detach()
                 return hook
 
@@ -2187,14 +2193,19 @@ def eval_commitment_fast(
                     hh.remove()
 
             # ── Phase 2b: Batched metric computation ──────────────────────
-            # Stack all layers: [n_layers, n_steps, d_model]
-            all_h = torch.stack([
+            # Stack all layers: [n_layers, n_total_gen, d_model]
+            # Then slice off position 0 (the prefill-produced first token,
+            # which is skipped by hooks in autoregressive mode).
+            all_h_full = torch.stack([
                 captured[li] if li in captured else torch.zeros(
-                    n_steps, captured[0].shape[1], device=compute_device, dtype=model_dtype)
+                    n_total_gen, captured[0].shape[1], device=compute_device, dtype=model_dtype)
                 for li in range(n_layers)
             ], dim=0).to(device=compute_device, dtype=model_dtype)
+            # Slice: skip first generated position → [n_layers, n_steps, d_model]
+            all_h = all_h_full[:, 1:, :]
+            del all_h_full
 
-            generated_tokens = out_ids[0, prompt_len:].tolist()
+            generated_tokens = out_ids[0, prompt_len + 1:].tolist()
             prompt_start_step = global_step_counter
             should_collect_top5 = collect_full and collect_top5 and top5_prompts_collected < top5_max_prompts
 
