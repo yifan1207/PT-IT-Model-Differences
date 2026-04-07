@@ -341,7 +341,14 @@ def patch_one(model_name: str, n_test_prompts: int = 120,
     memory=65536,
 )
 def steer_one(model_name: str) -> str:
-    """Phase 4B: A1 α-sweep using commitment directions (conditional on go/no-go)."""
+    """Phase 4B: A1 α-sweep with BOTH d_conv and d_mean directions.
+
+    Runs two steering sweeps under identical conditions for fair comparison:
+      1. d_conv (convergence-gap direction from exp10 ridge probes)
+      2. d_mean (mean IT-PT direction from Phase 0 precompute)
+
+    Both use chat template (IT default), batch=16 on B200, same 1,400 prompts.
+    """
     _setup()
     _setup_sigterm_handler()
 
@@ -362,40 +369,68 @@ def steer_one(model_name: str) -> str:
         print(f"[Phase 4B] {model_name}: SKIP — go_nogo=redundant (d_commit ≈ d_mean)")
         return f"steer {model_name}: SKIPPED (redundant)"
 
-    # Run exp6 A1 sweep with commitment directions
     import subprocess as sp
-    directions_path = f"/root/results/exp10/{model_name}/probes/commitment_directions.npz"
-    run_name = f"A1_commitment_dir_{model_name}"
-    output_dir = f"/root/results/exp10/{model_name}/steering"
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "/root"
+    output_base = f"/root/results/exp10/{model_name}/steering"
+    results = []
 
-    # B200 (192GB) comfortably handles batch=16 for all models
-    cmd = [
+    # ── Run 1: Steer with d_conv (convergence-gap direction from exp10) ──────
+    d_conv_path = f"/root/results/exp10/{model_name}/probes/commitment_directions.npz"
+    cmd_conv = [
         "python", "-m", "src.poc.exp6.run",
         "--experiment", "A1",
         "--variant", "it",
         "--device", "cuda:0",
         "--model-name", model_name,
-        "--corrective-direction-path", directions_path,
-        "--run-name", run_name,
-        "--output-dir", output_dir,
+        "--corrective-direction-path", d_conv_path,
+        "--run-name", f"A1_d_conv_{model_name}",
+        "--output-base", output_base,
         "--batch-size", "16",
     ]
-
-    env = os.environ.copy()
-    env["PYTHONPATH"] = "/root"
-    result = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
-
-    if result.stdout:
-        print(result.stdout[-3000:])
-    if result.returncode != 0:
-        err = result.stderr[-2000:] if result.stderr else "(no stderr)"
-        print(f"STDERR:\n{err}")
-        # Don't raise — steering is optional. Log the error.
-        _commit_volumes()
-        return f"steer {model_name}: FAILED — {err[:200]}"
+    print(f"\n[Phase 4B] Steering with d_conv...")
+    r1 = sp.run(cmd_conv, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
+    if r1.stdout:
+        print(r1.stdout[-2000:])
+    if r1.returncode != 0:
+        err = r1.stderr[-1000:] if r1.stderr else "(no stderr)"
+        print(f"[d_conv] FAILED:\n{err}")
+        results.append(f"d_conv=FAIL")
+    else:
+        results.append(f"d_conv=OK")
 
     _commit_volumes()
-    return f"steer {model_name} done"
+
+    # ── Run 2: Steer with d_mean (Phase 0 precomputed IT-PT mean direction) ──
+    d_mean_path = _find_mean_dir(model_name)
+    if d_mean_path is None:
+        print(f"[Phase 4B] No d_mean directions for {model_name} — skipping d_mean steering")
+        results.append("d_mean=SKIP(no_dirs)")
+    else:
+        cmd_mean = [
+            "python", "-m", "src.poc.exp6.run",
+            "--experiment", "A1",
+            "--variant", "it",
+            "--device", "cuda:0",
+            "--model-name", model_name,
+            "--corrective-direction-path", d_mean_path,
+            "--run-name", f"A1_d_mean_{model_name}",
+            "--output-base", output_base,
+            "--batch-size", "16",
+        ]
+        print(f"\n[Phase 4B] Steering with d_mean...")
+        r2 = sp.run(cmd_mean, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
+        if r2.stdout:
+            print(r2.stdout[-2000:])
+        if r2.returncode != 0:
+            err = r2.stderr[-1000:] if r2.stderr else "(no stderr)"
+            print(f"[d_mean] FAILED:\n{err}")
+            results.append("d_mean=FAIL")
+        else:
+            results.append("d_mean=OK")
+
+    _commit_volumes()
+    return f"steer {model_name}: {', '.join(results)}"
 
 
 # ── Smoke test: end-to-end validation with 1 model, 5 prompts ───────────────
