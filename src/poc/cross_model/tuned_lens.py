@@ -2016,6 +2016,529 @@ def eval_commitment(
     return summary
 
 
+# ── Fast 2-phase eval ──────────────────────────────────────────────────────
+
+STEP_CHUNK = 64  # Process this many generation steps at once for memory safety
+
+
+@torch.no_grad()
+def eval_commitment_fast(
+    model: nn.Module,
+    tokenizer,
+    adapter,
+    spec,
+    probes: dict[int, TunedLensProbe],
+    records: list[dict],
+    device: torch.device,
+    output_path: Path,
+    variant: str = "?",
+    max_new_tokens: int = 512,
+    collect_full: bool = False,
+    collect_top5: bool = False,
+    top5_max_prompts: int = 200,
+    arrays_dir: Path | None = None,
+    apply_chat_template: bool = False,
+) -> dict:
+    """2-phase eval: generate first (fast), then prefill to collect metrics.
+
+    Drop-in replacement for eval_commitment(). Produces identical output.
+    ~10x faster because:
+      Phase 1: model.generate() without hooks (full GPU throughput)
+      Phase 2: single prefill pass collects all hidden states at once
+      Phase 2b: batched metric computation across all steps simultaneously
+
+    Mathematical equivalence: causal attention mask ensures h_ℓ[t] in prefill
+    equals h_ℓ[t] in autoregressive for all layers ℓ and positions t.
+    Requires deterministic generation (do_sample=False).
+    """
+    n_layers = spec.n_layers
+    multi_gpu = spec.multi_gpu
+
+    final_norm_mod = adapter.final_norm(model)
+    model_dtype = next(final_norm_mod.parameters()).dtype
+    lm_head_weight = adapter.lm_head(model).weight.detach().float()
+    W_U = lm_head_weight.T  # [d_model, vocab]
+
+    if multi_gpu:
+        compute_device = next(final_norm_mod.parameters()).device
+    else:
+        compute_device = device
+
+    W_U = W_U.to(compute_device)
+    for probe in probes.values():
+        probe.to(compute_device)
+
+    layer_modules = adapter.layers(model)
+    stop_ids = list(adapter.stop_token_ids(tokenizer))
+
+    # Resume support (same as eval_commitment)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if collect_full:
+        if output_path.exists():
+            output_path.unlink()
+        done_ids: set[str] = set()
+        log.info("collect_full=True: processing all %d prompts (no resume)", len(records))
+        if arrays_dir is None:
+            arrays_dir = output_path.parent / "arrays"
+        arrays_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        done_ids = read_done_ids(output_path)
+        if done_ids:
+            log.info("Resuming: %d/%d already done", len(done_ids), len(records))
+
+    # Array accumulators (same structure as eval_commitment)
+    arr_raw_top1: list[list[int]] = []
+    arr_tuned_top1: list[list[int]] = []
+    arr_generated_ids: list[int] = []
+    arr_raw_kl_final: list[list[float]] = []
+    arr_tuned_kl_final: list[list[float]] = []
+    arr_raw_kl_adj: list[list[float]] = []
+    arr_tuned_kl_adj: list[list[float]] = []
+    arr_raw_ntprob: list[list[float]] = []
+    arr_tuned_ntprob: list[list[float]] = []
+    arr_raw_ntrank: list[list[float]] = []
+    arr_tuned_ntrank: list[list[float]] = []
+    arr_raw_entropy: list[list[float]] = []
+    arr_tuned_entropy: list[list[float]] = []
+    arr_delta_cosine: list[list[float]] = []
+    arr_cosine_final: list[list[float]] = []
+    arr_raw_top5_ids: list[list[list[int]]] = []
+    arr_raw_top5_probs: list[list[list[float]]] = []
+    arr_tuned_top5_ids: list[list[list[int]]] = []
+    arr_tuned_top5_probs: list[list[list[float]]] = []
+    step_index_records: list[dict] = []
+    top5_step_index_records: list[dict] = []
+    global_step_counter = 0
+    top5_prompts_collected = 0
+
+    # Aggregated commitment stats
+    all_commitment_raw: list[list[int]] = []
+    all_commitment_raw_kl: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
+    all_commitment_tuned: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
+    all_commitment_majority: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
+    all_commitment_raw_majority: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
+    all_commitment_top1_tuned: list[list[int]] = []
+    all_commitment_cosine: dict[float, list[list[int]]] = {t: [] for t in COSINE_THRESHOLDS}
+    all_commitment_entropy: dict[float, list[list[int]]] = {t: [] for t in KL_THRESHOLDS}
+    all_commitment_raw_top1_qual: dict[int, list[list[int]]] = {k: [] for k in TOPK_QUALIFICATIONS}
+    all_commitment_tuned_top1_qual: dict[int, list[list[int]]] = {k: [] for k in TOPK_QUALIFICATIONS}
+    all_commitment_raw_kl_qual: dict[str, list[list[int]]] = {}
+    all_commitment_tuned_kl_qual: dict[str, list[list[int]]] = {}
+    for _t in KL_THRESHOLDS:
+        for _m in KL_QUALIFICATION_MULTIPLIERS:
+            all_commitment_raw_kl_qual[f"{_t}_{_m}x"] = []
+            all_commitment_tuned_kl_qual[f"{_t}_{_m}x"] = []
+    n_prompts_done = 0
+
+    gen_device = model.device if multi_gpu else device
+
+    with open(output_path, "a") as fout:
+        for ri, rec in enumerate(records):
+            pid = rec.get("id", f"rec_{ri}")
+            if pid in done_ids:
+                continue
+
+            raw_prompt = get_raw_prompt(rec)
+            if apply_chat_template and variant == "it":
+                raw_prompt = adapter.apply_template(tokenizer, raw_prompt, is_it=True)
+
+            input_ids = tokenizer.encode(raw_prompt, return_tensors="pt").to(gen_device)
+            prompt_len = input_ids.shape[1]
+
+            # ── Phase 1: Generate WITHOUT hooks (fast) ────────────────────
+            try:
+                out_ids = model.generate(
+                    input_ids,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    temperature=1.0,
+                    eos_token_id=stop_ids or None,
+                    pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                )
+            except Exception as e:
+                log.warning("Prompt %s generation failed: %s", pid, e)
+                continue
+
+            n_steps = out_ids.shape[1] - prompt_len
+            if n_steps == 0:
+                continue
+
+            # ── Phase 2: Prefill with hooks (all positions at once) ───────
+            captured: dict[int, torch.Tensor] = {}
+
+            def make_hook(layer_idx: int):
+                def hook(module, inp, output):
+                    h = adapter.residual_from_output(output)
+                    # h: [1, full_seq_len, d_model] — keep only generated positions
+                    captured[layer_idx] = h[0, prompt_len:, :].detach()
+                return hook
+
+            handles = [layer_modules[i].register_forward_hook(make_hook(i))
+                       for i in range(n_layers)]
+            try:
+                model(out_ids)  # single forward pass, all positions at once
+            except Exception as e:
+                log.warning("Prompt %s prefill failed: %s", pid, e)
+                for hh in handles:
+                    hh.remove()
+                continue
+            finally:
+                for hh in handles:
+                    hh.remove()
+
+            # ── Phase 2b: Batched metric computation ──────────────────────
+            # Stack all layers: [n_layers, n_steps, d_model]
+            all_h = torch.stack([
+                captured[li] if li in captured else torch.zeros(
+                    n_steps, captured[0].shape[1], device=compute_device, dtype=model_dtype)
+                for li in range(n_layers)
+            ], dim=0).to(device=compute_device, dtype=model_dtype)
+
+            generated_tokens = out_ids[0, prompt_len:].tolist()
+            prompt_start_step = global_step_counter
+            should_collect_top5 = collect_full and collect_top5 and top5_prompts_collected < top5_max_prompts
+
+            # Per-step accumulators for this prompt
+            step_commitment_raw: list[int] = []
+            step_commitment_raw_kl: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
+            step_commitment_tuned: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
+            step_commitment_top1_tuned: list[int] = []
+            step_commitment_majority: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
+            step_commitment_raw_majority: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
+            step_commitment_cosine: dict[float, list[int]] = {t: [] for t in COSINE_THRESHOLDS}
+            step_commitment_entropy: dict[float, list[int]] = {t: [] for t in KL_THRESHOLDS}
+            step_commitment_raw_top1_qual: dict[int, list[int]] = {k: [] for k in TOPK_QUALIFICATIONS}
+            step_commitment_tuned_top1_qual: dict[int, list[int]] = {k: [] for k in TOPK_QUALIFICATIONS}
+            step_commitment_raw_kl_qual: dict[str, list[int]] = {}
+            step_commitment_tuned_kl_qual: dict[str, list[int]] = {}
+            for _t in KL_THRESHOLDS:
+                for _m in KL_QUALIFICATION_MULTIPLIERS:
+                    step_commitment_raw_kl_qual[f"{_t}_{_m}x"] = []
+                    step_commitment_tuned_kl_qual[f"{_t}_{_m}x"] = []
+
+            # Process in chunks to limit memory for vocab-dimension intermediates
+            for chunk_start in range(0, n_steps, STEP_CHUNK):
+                chunk_end = min(chunk_start + STEP_CHUNK, n_steps)
+                cs = chunk_end - chunk_start  # chunk size
+
+                chunk_h = all_h[:, chunk_start:chunk_end, :]  # [N, cs, d]
+
+                # ── Raw logit-lens (batched) ──────────────────────────────
+                flat_raw = chunk_h.reshape(-1, chunk_h.shape[-1])  # [N*cs, d]
+                flat_raw_normed = final_norm_mod(flat_raw.unsqueeze(1)).squeeze(1)
+                flat_raw_logits = flat_raw_normed.float() @ W_U  # [N*cs, V]
+                raw_logits = flat_raw_logits.reshape(n_layers, cs, -1)  # [N, cs, V]
+                del flat_raw, flat_raw_normed, flat_raw_logits
+
+                raw_top1 = raw_logits.argmax(dim=-1)  # [N, cs]
+                log_p_final = F.log_softmax(raw_logits[-1], dim=-1)  # [cs, V]
+
+                raw_log_q = F.log_softmax(raw_logits, dim=-1)  # [N, cs, V]
+                raw_kl = F.kl_div(
+                    raw_log_q, log_p_final.unsqueeze(0).expand_as(raw_log_q),
+                    reduction="none", log_target=True,
+                ).sum(dim=-1).clamp(min=0.0)  # [N, cs]
+
+                raw_probs = F.softmax(raw_logits, dim=-1)
+                raw_entropy = -(raw_probs * F.log_softmax(raw_logits, dim=-1)).sum(dim=-1)  # [N, cs]
+
+                # ── Tuned logit-lens (batched) ────────────────────────────
+                tuned_parts = []
+                for li in range(n_layers):
+                    h_li = chunk_h[li]  # [cs, d]
+                    if li in probes:
+                        tuned_parts.append(probes[li](h_li.float()).to(model_dtype))
+                    else:
+                        tuned_parts.append(h_li)
+                tuned_h = torch.stack(tuned_parts, dim=0)  # [N, cs, d]
+
+                flat_tuned = tuned_h.reshape(-1, tuned_h.shape[-1])
+                flat_tuned_normed = final_norm_mod(flat_tuned.unsqueeze(1)).squeeze(1)
+                flat_tuned_logits = flat_tuned_normed.float() @ W_U
+                tuned_logits = flat_tuned_logits.reshape(n_layers, cs, -1)
+                del flat_tuned, flat_tuned_normed, flat_tuned_logits
+
+                tuned_top1 = tuned_logits.argmax(dim=-1)  # [N, cs]
+                tuned_log_q = F.log_softmax(tuned_logits, dim=-1)
+                tuned_kl = F.kl_div(
+                    tuned_log_q, log_p_final.unsqueeze(0).expand_as(tuned_log_q),
+                    reduction="none", log_target=True,
+                ).sum(dim=-1).clamp(min=0.0)  # [N, cs]
+
+                tuned_probs = F.softmax(tuned_logits, dim=-1)
+                tuned_entropy = -(tuned_probs * F.log_softmax(tuned_logits, dim=-1)).sum(dim=-1)
+
+                # ── Cosine metrics ────────────────────────────────────────
+                h_final_vec = chunk_h[-1].float()  # [cs, d]
+                h_final_norm = F.normalize(h_final_vec, dim=-1)
+                all_h_norm = F.normalize(chunk_h.float(), dim=-1)  # [N, cs, d]
+                cosine_vals = (all_h_norm * h_final_norm.unsqueeze(0)).sum(dim=-1)  # [N, cs]
+
+                # ── Move to CPU for commitment computation ────────────────
+                raw_top1_np = raw_top1.cpu().numpy()  # [N, cs]
+                tuned_top1_np = tuned_top1.cpu().numpy()
+                raw_kl_np = raw_kl.cpu().numpy()
+                tuned_kl_np = tuned_kl.cpu().numpy()
+                cosine_np = cosine_vals.cpu().numpy()
+                raw_entropy_np = raw_entropy.cpu().numpy()
+                tuned_entropy_np = tuned_entropy.cpu().numpy()
+
+                # ── Per-step commitment (sequential scan, cheap on CPU) ───
+                for t in range(cs):
+                    final_top1 = int(raw_top1_np[-1, t])
+
+                    raw_top1_row = raw_top1_np[:, t].tolist()
+                    tuned_top1_row = tuned_top1_np[:, t].tolist()
+                    raw_kl_row = raw_kl_np[:, t].tolist()
+                    kl_row = tuned_kl_np[:, t].tolist()
+                    cosine_row = cosine_np[:, t].tolist()
+                    entropy_row_raw = raw_entropy_np[:, t].tolist()
+
+                    # Commitment metrics (reuse existing helpers exactly)
+                    step_commitment_raw.append(_commitment_from_top1(raw_top1_row))
+                    step_commitment_top1_tuned.append(_commitment_from_top1(tuned_top1_row))
+
+                    for thresh in KL_THRESHOLDS:
+                        step_commitment_raw_kl[thresh].append(_commitment_from_kl(raw_kl_row, thresh))
+                        step_commitment_tuned[thresh].append(_commitment_from_kl(kl_row, thresh))
+                        step_commitment_majority[thresh].append(_commitment_majority(kl_row, thresh))
+                        step_commitment_raw_majority[thresh].append(_commitment_majority(raw_kl_row, thresh))
+
+                    for thresh in COSINE_THRESHOLDS:
+                        step_commitment_cosine[thresh].append(_commitment_from_cosine(cosine_row, thresh))
+
+                    final_entropy = entropy_row_raw[-1]
+                    entropy_diff_row = [abs(entropy_row_raw[li] - final_entropy) for li in range(n_layers)]
+                    for thresh in KL_THRESHOLDS:
+                        step_commitment_entropy[thresh].append(_commitment_from_entropy(entropy_diff_row, thresh))
+
+                    # Qualified: rank of final token at each layer
+                    raw_ranks = []
+                    tuned_ranks = []
+                    for li in range(n_layers):
+                        raw_r = int((raw_logits[li, t] > raw_logits[li, t, final_top1]).sum().item()) + 1
+                        tuned_r = int((tuned_logits[li, t] > tuned_logits[li, t, final_top1]).sum().item()) + 1
+                        raw_ranks.append(raw_r)
+                        tuned_ranks.append(tuned_r)
+
+                    for k in TOPK_QUALIFICATIONS:
+                        step_commitment_raw_top1_qual[k].append(
+                            _commitment_from_top1_qualified(raw_top1_row, raw_ranks, k))
+                        step_commitment_tuned_top1_qual[k].append(
+                            _commitment_from_top1_qualified(tuned_top1_row, tuned_ranks, k))
+
+                    for _thresh in KL_THRESHOLDS:
+                        for _mult in KL_QUALIFICATION_MULTIPLIERS:
+                            key = f"{_thresh}_{_mult}x"
+                            step_commitment_raw_kl_qual[key].append(
+                                _commitment_from_kl_qualified(raw_kl_row, _thresh, _mult))
+                            step_commitment_tuned_kl_qual[key].append(
+                                _commitment_from_kl_qualified(kl_row, _thresh, _mult))
+
+                    # ── Collect arrays (Groups B-G) ───────────────────────
+                    if collect_full:
+                        arr_raw_top1.append(raw_top1_np[:, t].tolist())
+                        arr_tuned_top1.append(tuned_top1_np[:, t].tolist())
+                        arr_generated_ids.append(generated_tokens[chunk_start + t])
+                        arr_raw_kl_final.append(raw_kl_row)
+                        arr_tuned_kl_final.append(kl_row)
+
+                        # Adjacent-layer KL
+                        raw_adj = [float("nan")]
+                        tuned_adj = [float("nan")]
+                        for li in range(1, n_layers):
+                            raw_li_log = F.log_softmax(raw_logits[li, t], dim=-1)
+                            raw_prev_log = F.log_softmax(raw_logits[li - 1, t], dim=-1)
+                            raw_adj.append(max(F.kl_div(raw_li_log, raw_prev_log, reduction="sum", log_target=True).item(), 0.0))
+                            tuned_li_log = F.log_softmax(tuned_logits[li, t], dim=-1)
+                            tuned_prev_log = F.log_softmax(tuned_logits[li - 1, t], dim=-1)
+                            tuned_adj.append(max(F.kl_div(tuned_li_log, tuned_prev_log, reduction="sum", log_target=True).item(), 0.0))
+                        arr_raw_kl_adj.append(raw_adj)
+                        arr_tuned_kl_adj.append(tuned_adj)
+
+                        # Next-token prob and rank
+                        arr_raw_ntprob.append([float(raw_probs[li, t, final_top1].item()) for li in range(n_layers)])
+                        arr_tuned_ntprob.append([float(tuned_probs[li, t, final_top1].item()) for li in range(n_layers)])
+                        arr_raw_ntrank.append(raw_ranks)
+                        arr_tuned_ntrank.append(tuned_ranks)
+
+                        arr_raw_entropy.append(entropy_row_raw)
+                        arr_tuned_entropy.append(tuned_entropy_np[:, t].tolist())
+
+                        # Delta-cosine and cosine-to-final
+                        dc = [float("nan")]
+                        for li in range(1, n_layers):
+                            delta = chunk_h[li, t].float() - chunk_h[li - 1, t].float()
+                            prev = chunk_h[li - 1, t].float()
+                            if prev.norm() > 0 and delta.norm() > 0:
+                                dc.append(float(F.cosine_similarity(delta.unsqueeze(0), prev.unsqueeze(0)).item()))
+                            else:
+                                dc.append(float("nan"))
+                        arr_delta_cosine.append(dc)
+                        arr_cosine_final.append(cosine_row)
+
+                        # Top-5 (conditional)
+                        if should_collect_top5:
+                            for logits_src, ids_list, probs_list in [
+                                (raw_logits, arr_raw_top5_ids, arr_raw_top5_probs),
+                                (tuned_logits, arr_tuned_top5_ids, arr_tuned_top5_probs),
+                            ]:
+                                top5_v, top5_i = torch.topk(logits_src[:, t, :], 5, dim=-1)
+                                ids_list.append(top5_i.cpu().tolist())
+                                p5 = F.softmax(logits_src[:, t, :], dim=-1)
+                                probs_list.append(torch.gather(p5, 1, top5_i).cpu().tolist())
+
+                # Free chunk GPU memory
+                del raw_logits, tuned_logits, raw_top1, tuned_top1
+                del raw_kl, tuned_kl, raw_probs, tuned_probs
+                del raw_entropy, tuned_entropy, cosine_vals
+                del chunk_h, tuned_h
+                torch.cuda.empty_cache()
+
+            # Free all_h
+            del all_h, captured
+            torch.cuda.empty_cache()
+
+            # ── Write JSONL result (identical format to eval_commitment) ──
+            result = {
+                "prompt_id": pid,
+                "model": spec.name,
+                "variant": variant,
+                "n_steps": n_steps,
+                "commitment_layer_raw": step_commitment_raw,
+            }
+            for thresh in KL_THRESHOLDS:
+                result[f"commitment_layer_raw_kl_{thresh}"] = step_commitment_raw_kl[thresh]
+            for thresh in KL_THRESHOLDS:
+                result[f"commitment_layer_tuned_{thresh}"] = step_commitment_tuned[thresh]
+            result["commitment_layer_top1_tuned"] = step_commitment_top1_tuned
+            for thresh in KL_THRESHOLDS:
+                result[f"commitment_layer_majority_{thresh}"] = step_commitment_majority[thresh]
+            for thresh in KL_THRESHOLDS:
+                result[f"commitment_layer_raw_majority_{thresh}"] = step_commitment_raw_majority[thresh]
+            for thresh in COSINE_THRESHOLDS:
+                result[f"commitment_layer_cosine_{thresh}"] = step_commitment_cosine[thresh]
+            for thresh in KL_THRESHOLDS:
+                result[f"commitment_layer_entropy_{thresh}"] = step_commitment_entropy[thresh]
+            for k in TOPK_QUALIFICATIONS:
+                result[f"commitment_layer_raw_top1_qual_top{k}"] = step_commitment_raw_top1_qual[k]
+                result[f"commitment_layer_tuned_top1_qual_top{k}"] = step_commitment_tuned_top1_qual[k]
+            for key in step_commitment_raw_kl_qual:
+                result[f"commitment_layer_raw_kl_qual_{key}"] = step_commitment_raw_kl_qual[key]
+                result[f"commitment_layer_tuned_kl_qual_{key}"] = step_commitment_tuned_kl_qual[key]
+
+            fout.write(json.dumps(result) + "\n")
+            fout.flush()
+
+            # Aggregate
+            all_commitment_raw.append(step_commitment_raw)
+            for thresh in KL_THRESHOLDS:
+                all_commitment_raw_kl[thresh].append(step_commitment_raw_kl[thresh])
+                all_commitment_tuned[thresh].append(step_commitment_tuned[thresh])
+                all_commitment_majority[thresh].append(step_commitment_majority[thresh])
+                all_commitment_raw_majority[thresh].append(step_commitment_raw_majority[thresh])
+            all_commitment_top1_tuned.append(step_commitment_top1_tuned)
+            for thresh in COSINE_THRESHOLDS:
+                all_commitment_cosine[thresh].append(step_commitment_cosine[thresh])
+            for thresh in KL_THRESHOLDS:
+                all_commitment_entropy[thresh].append(step_commitment_entropy[thresh])
+            for k in TOPK_QUALIFICATIONS:
+                all_commitment_raw_top1_qual[k].append(step_commitment_raw_top1_qual[k])
+                all_commitment_tuned_top1_qual[k].append(step_commitment_tuned_top1_qual[k])
+            for key in step_commitment_raw_kl_qual:
+                all_commitment_raw_kl_qual[key].append(step_commitment_raw_kl_qual[key])
+                all_commitment_tuned_kl_qual[key].append(step_commitment_tuned_kl_qual[key])
+
+            if collect_full and n_steps > 0:
+                category = rec.get("question_type", rec.get("category", "unknown"))
+                step_index_records.append({
+                    "prompt_id": pid,
+                    "start_step": prompt_start_step,
+                    "end_step": prompt_start_step + n_steps,
+                    "category": category,
+                    "n_steps": n_steps,
+                })
+                if should_collect_top5:
+                    top5_step_index_records.append({
+                        "prompt_id": pid,
+                        "start_step": prompt_start_step,
+                        "end_step": prompt_start_step + n_steps,
+                    })
+                    top5_prompts_collected += 1
+                global_step_counter += n_steps
+
+            n_prompts_done += 1
+            if n_prompts_done % 50 == 0:
+                log.info("[eval-fast] %d/%d prompts done", n_prompts_done, len(records))
+
+            if collect_full and n_prompts_done % 500 == 0:
+                _save_arrays_checkpoint(
+                    arrays_dir, n_layers,
+                    arr_raw_top1, arr_tuned_top1, arr_generated_ids,
+                    arr_raw_kl_final, arr_tuned_kl_final,
+                    arr_raw_kl_adj, arr_tuned_kl_adj,
+                    arr_raw_ntprob, arr_tuned_ntprob,
+                    arr_raw_ntrank, arr_tuned_ntrank,
+                    arr_raw_entropy, arr_tuned_entropy,
+                    arr_delta_cosine, arr_cosine_final,
+                    arr_raw_top5_ids, arr_raw_top5_probs,
+                    arr_tuned_top5_ids, arr_tuned_top5_probs,
+                    step_index_records, top5_step_index_records,
+                )
+                log.info("[arrays] Checkpoint saved at %d prompts (%d steps)",
+                         n_prompts_done, global_step_counter)
+
+    # Final array save
+    if collect_full and global_step_counter > 0:
+        _save_arrays_checkpoint(
+            arrays_dir, n_layers,
+            arr_raw_top1, arr_tuned_top1, arr_generated_ids,
+            arr_raw_kl_final, arr_tuned_kl_final,
+            arr_raw_kl_adj, arr_tuned_kl_adj,
+            arr_raw_ntprob, arr_tuned_ntprob,
+            arr_raw_ntrank, arr_tuned_ntrank,
+            arr_raw_entropy, arr_tuned_entropy,
+            arr_delta_cosine, arr_cosine_final,
+            arr_raw_top5_ids, arr_raw_top5_probs,
+            arr_tuned_top5_ids, arr_tuned_top5_probs,
+            step_index_records, top5_step_index_records,
+        )
+        log.info("[arrays] Final save: %d steps across %d prompts → %s",
+                 global_step_counter, len(step_index_records), arrays_dir)
+
+    # Summary (identical to eval_commitment)
+    def _flatten_median(nested: list[list[int]]) -> float:
+        flat = [v for row in nested for v in row]
+        return float(np.median(flat)) if flat else float("nan")
+
+    summary = {
+        "model": spec.name,
+        "n_prompts": n_prompts_done + len(done_ids),
+        "n_layers": n_layers,
+        "median_commitment_raw": _flatten_median(all_commitment_raw),
+    }
+    for thresh in KL_THRESHOLDS:
+        summary[f"median_commitment_raw_kl_{thresh}"] = _flatten_median(all_commitment_raw_kl[thresh])
+    for thresh in KL_THRESHOLDS:
+        summary[f"median_commitment_tuned_{thresh}"] = _flatten_median(all_commitment_tuned[thresh])
+    summary["median_commitment_top1_tuned"] = _flatten_median(all_commitment_top1_tuned)
+    for thresh in KL_THRESHOLDS:
+        summary[f"median_commitment_majority_{thresh}"] = _flatten_median(all_commitment_majority[thresh])
+        summary[f"median_commitment_raw_majority_{thresh}"] = _flatten_median(all_commitment_raw_majority[thresh])
+    for thresh in COSINE_THRESHOLDS:
+        summary[f"median_commitment_cosine_{thresh}"] = _flatten_median(all_commitment_cosine[thresh])
+    for thresh in KL_THRESHOLDS:
+        summary[f"median_commitment_entropy_{thresh}"] = _flatten_median(all_commitment_entropy[thresh])
+    for k in TOPK_QUALIFICATIONS:
+        summary[f"median_commitment_raw_top1_qual_top{k}"] = _flatten_median(all_commitment_raw_top1_qual[k])
+        summary[f"median_commitment_tuned_top1_qual_top{k}"] = _flatten_median(all_commitment_tuned_top1_qual[k])
+    for key in all_commitment_raw_kl_qual:
+        summary[f"median_commitment_raw_kl_qual_{key}"] = _flatten_median(all_commitment_raw_kl_qual[key])
+        summary[f"median_commitment_tuned_kl_qual_{key}"] = _flatten_median(all_commitment_tuned_kl_qual[key])
+
+    return summary
+
+
 # ── Transfer test ───────────────────────────────────────────────────────────
 
 @torch.no_grad()
@@ -2154,6 +2677,8 @@ def main() -> None:
     # Eval args
     p.add_argument("--eval-only", action="store_true",
                    help="Skip training, evaluate commitment with existing probes")
+    p.add_argument("--fast", action="store_true",
+                   help="Use 2-phase eval (generate then prefill) for ~10x speedup")
     p.add_argument("--n-eval-examples", type=int, default=None,
                    help="Cap number of evaluation examples")
     p.add_argument("--max-new-tokens", type=int, default=512)
@@ -2273,7 +2798,9 @@ def main() -> None:
             use_chat_template = True
         log.info("Chat template: %s (variant=%s)", use_chat_template, args.variant)
 
-        summary = eval_commitment(
+        eval_fn = eval_commitment_fast if args.fast else eval_commitment
+        log.info("Eval mode: %s", "fast (2-phase)" if args.fast else "standard (hooks)")
+        summary = eval_fn(
             model, tokenizer, adapter, spec, probes, records, device,
             output_path=out_path,
             variant=args.variant,
