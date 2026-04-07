@@ -294,6 +294,41 @@ def _forward_capture_all_layers(
     return captured
 
 
+@torch.no_grad()
+def _forward_capture_all_layers_batched(
+    model: nn.Module,
+    adapter: ModelAdapter,
+    input_ids: torch.Tensor,  # [B, seq_len]
+    n_layers: int,
+) -> dict[int, torch.Tensor]:
+    """Batched forward pass, captures residual at ALL layers for ALL positions.
+
+    Returns: {layer_idx: [B, seq_len, d_model]} on GPU.
+    Unlike _forward_capture_all_layers, preserves the batch dimension.
+    """
+    layer_modules = adapter.layers(model)
+    captured: dict[int, torch.Tensor] = {}
+
+    def make_hook(layer_idx: int):
+        def hook(module, inp, output):
+            h = adapter.residual_from_output(output)
+            # h: [B, seq_len, d_model]
+            captured[layer_idx] = h.detach()
+        return hook
+
+    handles = [
+        layer_modules[i].register_forward_hook(make_hook(i))
+        for i in range(n_layers)
+    ]
+    try:
+        model(input_ids)
+    finally:
+        for h in handles:
+            h.remove()
+
+    return captured
+
+
 # ── Main collection function ──────────────────────────────────────────────────
 
 def collect_paired_data(

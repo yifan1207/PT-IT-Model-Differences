@@ -33,6 +33,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import threading
+
 import modal
 
 # ── Modal app & infrastructure ────────────────────────────────────────────────
@@ -147,6 +149,29 @@ def _setup_sigterm_handler():
     atexit.register(_shutdown)
 
 
+def _start_periodic_commit(interval: int = 120) -> tuple[threading.Event, threading.Thread]:
+    """Start a daemon thread that commits the results volume periodically.
+
+    Returns (stop_event, thread). Call stop_event.set() then thread.join()
+    when the long-running function completes.
+    """
+    stop = threading.Event()
+
+    def _loop():
+        while not stop.is_set():
+            stop.wait(interval)
+            if not stop.is_set():
+                try:
+                    results_vol.commit()
+                    print(f"[volume] periodic commit OK")
+                except Exception as e:
+                    print(f"[volume] periodic commit warn: {e}")
+
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+    return stop, t
+
+
 def _find_mean_dir(model_name: str) -> str | None:
     """Locate corrective_directions.npz for a model, checking multiple paths."""
     candidates = [
@@ -191,16 +216,22 @@ def collect_one(model_name: str, n_prompts: int = 600) -> str:
 
     max_gen = MODEL_MAX_GEN.get(model_name, 128)
 
-    metadata = collect_paired_data(
-        model_name=model_name,
-        device="cuda:0",
-        output_dir=output_dir,
-        n_prompts=n_prompts,
-        max_gen_tokens=max_gen,
-        dataset_path="/root/data/eval_dataset_v2.jsonl",
-        tuned_lens_dir=tuned_lens_dir,
-        compute_kl_gradient=True,
-    )
+    # Periodic volume commits (every 2 min) to survive preemption
+    stop_commit, commit_thread = _start_periodic_commit(interval=120)
+    try:
+        metadata = collect_paired_data(
+            model_name=model_name,
+            device="cuda:0",
+            output_dir=output_dir,
+            n_prompts=n_prompts,
+            max_gen_tokens=max_gen,
+            dataset_path="/root/data/eval_dataset_v2.jsonl",
+            tuned_lens_dir=tuned_lens_dir,
+            compute_kl_gradient=True,
+        )
+    finally:
+        stop_commit.set()
+        commit_thread.join(timeout=5)
 
     _commit_volumes()
     return f"collect {model_name}: {metadata['n_prompts_processed']} prompts, {metadata['total_tokens']} tokens"
@@ -274,19 +305,25 @@ def patch_one(model_name: str, n_test_prompts: int = 120,
     tuned_lens_dir = "/root/tuned_lens_probes"
     mean_dir_path = _find_mean_dir(model_name)
 
-    validate_patching(
-        model_name=model_name,
-        device="cuda:0",
-        probes_dir=f"/root/results/exp10/{model_name}/probes",
-        paired_data_dir=f"/root/results/exp10/{model_name}/paired_data",
-        output_dir=f"/root/results/exp10/{model_name}/patching",
-        mean_dir_path=mean_dir_path,
-        n_test_prompts=n_test_prompts,
-        max_tokens_per_prompt=max_tokens_per_prompt,
-        top_k_layers=10,
-        dataset_path="/root/data/eval_dataset_v2.jsonl",
-        tuned_lens_dir=tuned_lens_dir,
-    )
+    # Periodic volume commits (every 2 min) to survive preemption
+    stop_commit, commit_thread = _start_periodic_commit(interval=120)
+    try:
+        validate_patching(
+            model_name=model_name,
+            device="cuda:0",
+            probes_dir=f"/root/results/exp10/{model_name}/probes",
+            paired_data_dir=f"/root/results/exp10/{model_name}/paired_data",
+            output_dir=f"/root/results/exp10/{model_name}/patching",
+            mean_dir_path=mean_dir_path,
+            n_test_prompts=n_test_prompts,
+            max_tokens_per_prompt=max_tokens_per_prompt,
+            top_k_layers=10,
+            dataset_path="/root/data/eval_dataset_v2.jsonl",
+            tuned_lens_dir=tuned_lens_dir,
+        )
+    finally:
+        stop_commit.set()
+        commit_thread.join(timeout=5)
 
     _commit_volumes()
     return f"patching {model_name} done"
@@ -331,6 +368,7 @@ def steer_one(model_name: str) -> str:
     run_name = f"A1_commitment_dir_{model_name}"
     output_dir = f"/root/results/exp10/{model_name}/steering"
 
+    # B200 (192GB) comfortably handles batch=16 for all models
     cmd = [
         "python", "-m", "src.poc.exp6.run",
         "--experiment", "A1",
@@ -340,6 +378,7 @@ def steer_one(model_name: str) -> str:
         "--corrective-direction-path", directions_path,
         "--run-name", run_name,
         "--output-dir", output_dir,
+        "--batch-size", "16",
     ]
 
     env = os.environ.copy()

@@ -641,6 +641,7 @@ def _run_condition_A(
     samples_jsonl: Path,
     done_benchmarks: set[str],
     adapter: Any = None,
+    batch_size: int = 8,
 ) -> list[dict]:
     """Run one A-experiment condition (nnsight trace).
 
@@ -657,7 +658,7 @@ def _run_condition_A(
                                    if b in _ALL_RECORDS_BENCHMARKS and b not in done_benchmarks]
     cached_all_outputs: list[GeneratedSample6] | None = None
 
-    BATCH_SIZE = 8
+    BATCH_SIZE = batch_size
 
     if all_records_benchmarks_todo:
         print(f"[exp6] {name}: generating all-records outputs (batch={BATCH_SIZE}, shared for {all_records_benchmarks_todo})", flush=True)
@@ -982,6 +983,9 @@ def main() -> None:
                    help="Path to JSON file with list of record IDs to evaluate on. "
                         "Only records whose 'record_id' is in this list will be used. "
                         "Used by 0H to restrict evaluation to held-out-800 records.")
+    p.add_argument("--batch-size", type=int, default=None,
+                   help="Override generation batch size (default: 8). "
+                        "Increase on GPUs with more VRAM (e.g. 16 on B200 192GB).")
 
     args = p.parse_args()
 
@@ -1139,6 +1143,7 @@ def main() -> None:
                 condition_name, condition_cfg, records, loaded,
                 scores_jsonl, samples_jsonl, done_benchmarks,
                 adapter=steering_adapter,
+                batch_size=getattr(args, 'batch_size', None) or 8,
             )
 
         print(f"[exp6] {condition_name} done", flush=True)

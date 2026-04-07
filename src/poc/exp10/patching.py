@@ -37,6 +37,7 @@ from src.poc.cross_model.utils import (
 from src.poc.exp10.collect_paired import (
     commitment_continuous,
     _forward_capture_all_layers,
+    _forward_capture_all_layers_batched,
     _compute_kl_to_final_raw,
     _compute_kl_to_final_tuned,
     KL_THRESHOLD,
@@ -188,6 +189,88 @@ def _measure_commitment_at_position(
         model, adapter, input_ids, target_pos, n_layers, final_norm, W_U, probes,
     )
     return commitment_continuous(kl.cpu().tolist(), kl_threshold)
+
+
+# ── Batched patching (5 conditions in one forward pass) ──────────────────────
+
+@torch.no_grad()
+def _batch_patching_conditions(
+    model_pt: nn.Module,
+    adapter: ModelAdapter,
+    full_ids: torch.Tensor,        # [1, seq_len]
+    target_pos: int,
+    layer: int,
+    delta_h_token: torch.Tensor,   # [d_model] — Δh at this (layer, position)
+    d_commit: torch.Tensor,        # [d_model] unit vector
+    d_mean: torch.Tensor,          # [d_model] unit vector
+    d_random: torch.Tensor,        # [d_model] unit vector
+    n_layers: int,
+    final_norm: nn.Module,
+    W_U: torch.Tensor,
+    probes: dict[int, nn.Module] | None = None,
+) -> dict[str, torch.Tensor]:
+    """Run all 5 patching conditions in a single batched forward pass.
+
+    Instead of 5 separate forward passes (one per condition), replicates the
+    input to batch=5 and applies each condition's additive patch at the target
+    layer via a single hook. All conditions modify the SAME (layer, position).
+
+    Returns: {condition_name: kl_profile [n_layers]} for each condition.
+    """
+    model_dtype = delta_h_token.dtype
+    d_c = d_commit.to(model_dtype)
+    d_m = d_mean.to(model_dtype)
+    d_r = d_random.to(model_dtype)
+    dh = delta_h_token  # already model_dtype
+
+    proj_c = dh @ d_c   # scalar
+    proj_m = dh @ d_m   # scalar
+
+    # Precompute additive patches for each condition: [5, d_model]
+    # These are what gets ADDED to h_pt at (layer, target_pos)
+    patches = torch.stack([
+        proj_c * d_c,              # commit: convergence-gap component of Δh
+        dh,                        # full: entire Δh (replaces h_pt with h_it)
+        proj_c * d_r,              # random: same magnitude, random direction
+        proj_m * d_m,              # mean: mean-direction component of Δh
+        dh - proj_c * d_c,         # orthogonal: everything EXCEPT d_commit
+    ])  # [5, d_model]
+
+    B = 5
+    batched_ids = full_ids.expand(B, -1)  # [5, seq_len]
+    layer_modules = adapter.layers(model_pt)
+
+    def patch_hook(module, inp, output):
+        h = adapter.residual_from_output(output)
+        # h: [5, seq_len, d_model]
+        h[:, target_pos] = h[:, target_pos] + patches
+        if isinstance(output, tuple):
+            return (h,) + output[1:]
+        return h
+
+    handle = layer_modules[layer].register_forward_hook(patch_hook)
+    try:
+        captured = _forward_capture_all_layers_batched(
+            model_pt, adapter, batched_ids, n_layers,
+        )
+    finally:
+        handle.remove()
+
+    # Compute per-layer KL profile for each condition
+    conditions = ["commit", "full", "random", "mean", "orthogonal"]
+    results: dict[str, torch.Tensor] = {}
+    for bi, cond in enumerate(conditions):
+        h_layers = torch.stack([captured[li][bi, target_pos] for li in range(n_layers)])
+        h_final = captured[n_layers - 1][bi, target_pos]
+        h_3d = h_layers.unsqueeze(1)   # [n_layers, 1, d_model]
+        h_f_2d = h_final.unsqueeze(0)  # [1, d_model]
+        if probes:
+            kl = _compute_kl_to_final_tuned(h_3d, h_f_2d, final_norm, W_U, probes)
+        else:
+            kl = _compute_kl_to_final_raw(h_3d, h_f_2d, final_norm, W_U)
+        results[cond] = kl[:, 0]  # [n_layers]
+
+    return results
 
 
 # ── Main patching function ─────────────────────────────────────────────────────
@@ -400,28 +483,28 @@ def validate_patching(
                         "proj_commit": proj_commit, "proj_mean": proj_mean,
                     })
 
-                    for condition in CONDITIONS:
-                        key = f"{prompt_id}_{t_idx}_{layer}_{condition}"
-                        if key in done_keys:
-                            continue
+                    # Check which conditions still need running for this (prompt, token, layer)
+                    pending_conditions = [
+                        c for c in CONDITIONS
+                        if f"{prompt_id}_{t_idx}_{layer}_{c}" not in done_keys
+                    ]
+                    if not pending_conditions:
+                        continue
 
-                        # Register patching hook on this layer
-                        hook_fn = _make_patch_hook(
-                            adapter, condition, t_pos,
-                            delta_h_token, h_it_token,
-                            d_commit_l, d_mean_l, d_random_l,
-                        )
-                        handle = layer_modules_pt[layer].register_forward_hook(hook_fn)
+                    # Run all 5 conditions in a single batched forward pass
+                    # (even if some are already done — the batch overhead is
+                    # negligible vs. running partial batches, and it keeps the
+                    # code simple)
+                    kl_by_cond = _batch_patching_conditions(
+                        model_pt, adapter, full_ids, t_pos, layer,
+                        delta_h_token,
+                        d_commit_l, d_mean_l, d_random_l,
+                        n_layers, final_norm_pt, W_U_pt,
+                        probes_pt_tuned if use_tuned else None,
+                    )
 
-                        try:
-                            # Forward PT with patch active → measure KL profile
-                            kl_patched = _measure_kl_profile_at_position(
-                                model_pt, adapter, full_ids, t_pos,
-                                n_layers, final_norm_pt, W_U_pt,
-                                probes_pt_tuned if use_tuned else None,
-                            )
-                        finally:
-                            handle.remove()
+                    for condition in pending_conditions:
+                        kl_patched = kl_by_cond[condition]
 
                         # Per-layer causal effect
                         delta_kl_causal = (kl_patched - kl_baseline).cpu().tolist()
