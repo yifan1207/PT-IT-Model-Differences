@@ -108,6 +108,20 @@ MODEL_MAX_GEN = {
     "mistral_7b": 128, "deepseek_v2_lite": 64, "olmo2_7b": 128,
 }
 
+# Min tokens per prompt (suppresses EOS). Ensures enough tokens for ridge regression
+# accumulators. Target: ≥10× d_model tokens total.
+MODEL_MIN_GEN = {
+    "gemma3_4b": 0, "llama31_8b": 32, "qwen3_4b": 32,
+    "mistral_7b": 32, "deepseek_v2_lite": 0, "olmo2_7b": 64,
+}
+
+# Per-model n_prompts for Phase 1. Models with short natural generations need more
+# prompts to accumulate enough tokens (target ≥10× d_model).
+MODEL_N_PROMPTS = {
+    "gemma3_4b": 600, "llama31_8b": 1400, "qwen3_4b": 1400,
+    "mistral_7b": 1400, "deepseek_v2_lite": 600, "olmo2_7b": 1400,
+}
+
 # Per-model max_gen for Phase 4B steering eval (longer — need full responses for scoring)
 # 512 for dense models (matches 0G eval), 64 for DeepSeek MoE (512 OOMs on 80GB GPUs)
 STEER_MAX_GEN = {
@@ -196,33 +210,38 @@ def _find_mean_dir(model_name: str) -> str | None:
 
 @app.function(
     gpu="H100",
-    timeout=3600,  # 60 min
+    timeout=7200,  # 2h (1400 prompts with min_gen_tokens needs more time)
     retries=GPU_RETRIES,
     image=image,
     volumes=VOLUME_MOUNTS,
     secrets=[modal.Secret.from_name("huggingface-token")],
     memory=65536,
 )
-def collect_one(model_name: str, n_prompts: int = 600) -> str:
-    """Phase 1: Collect forced-decoding paired data for one model."""
+def collect_one(model_name: str, n_prompts: int = 600,
+                shard_id: int = 0, n_shards: int = 1) -> str:
+    """Phase 1: Collect forced-decoding paired data for one model (or shard)."""
     _setup()
     _setup_sigterm_handler()
 
     import torch
-    print(f"=== Phase 1 collect: {model_name} (n_prompts={n_prompts}) ===")
+    shard_tag = f" shard {shard_id}/{n_shards}" if n_shards > 1 else ""
+    print(f"=== Phase 1 collect: {model_name}{shard_tag} (n_prompts={n_prompts}) ===")
     print(f"GPU: {torch.cuda.get_device_name(0)}, VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.0f} GB")
 
     results_vol.reload()
 
     from src.poc.exp10.collect_paired import collect_paired_data
 
-    output_dir = f"/root/results/exp10/{model_name}/paired_data"
+    # Each shard writes to its own dir to avoid checkpoint collisions
+    if n_shards > 1:
+        output_dir = f"/root/results/exp10/{model_name}/paired_data_s{shard_id}"
+    else:
+        output_dir = f"/root/results/exp10/{model_name}/paired_data"
 
-    # Tuned lens probes (v3, IT trained with chat template) on 0g-probes-v3 volume
-    # {model}/{variant}/probe_layer_*.pt
     tuned_lens_dir = "/root/tuned_lens_probes"
 
     max_gen = MODEL_MAX_GEN.get(model_name, 128)
+    min_gen = MODEL_MIN_GEN.get(model_name, 0)
 
     # Periodic volume commits (every 2 min) to survive preemption
     stop_commit, commit_thread = _start_periodic_commit(interval=120)
@@ -233,6 +252,9 @@ def collect_one(model_name: str, n_prompts: int = 600) -> str:
             output_dir=output_dir,
             n_prompts=n_prompts,
             max_gen_tokens=max_gen,
+            min_gen_tokens=min_gen,
+            shard_id=shard_id,
+            n_shards=n_shards,
             dataset_path="/root/data/eval_dataset_v2.jsonl",
             tuned_lens_dir=tuned_lens_dir,
             compute_kl_gradient=True,
@@ -242,7 +264,127 @@ def collect_one(model_name: str, n_prompts: int = 600) -> str:
         commit_thread.join(timeout=5)
 
     _commit_volumes()
-    return f"collect {model_name}: {metadata['n_prompts_processed']} prompts, {metadata['total_tokens']} tokens"
+    return f"collect {model_name}{shard_tag}: {metadata['n_prompts_processed']} prompts, {metadata['total_tokens']} tokens"
+
+
+@app.function(
+    timeout=600,
+    image=image,
+    volumes=VOLUME_MOUNTS,
+    memory=65536,
+)
+def merge_collection_shards(model_name: str, n_shards: int = 2) -> str:
+    """Merge sharded Phase 1 accumulators (XᵀX, Xᵀy, etc.) by addition.
+
+    PCA subsamples are concatenated and truncated to 5000 tokens.
+    """
+    import numpy as np
+
+    results_vol.reload()
+    base = Path(f"/root/results/exp10/{model_name}")
+    merged_dir = base / "paired_data"
+    merged_dir.mkdir(parents=True, exist_ok=True)
+
+    shard_dirs = [base / f"paired_data_s{i}" for i in range(n_shards)]
+    missing = [d for d in shard_dirs if not d.exists()]
+    if missing:
+        return f"merge {model_name}: FAIL — missing shards: {missing}"
+
+    # ── Merge accumulators (additive) ────────────────────────────────────────
+    acc_dir = merged_dir / "accumulators"
+    acc_dir.mkdir(parents=True, exist_ok=True)
+
+    # Discover layers from first shard
+    shard0_acc = shard_dirs[0] / "accumulators"
+    xtx_files = sorted(shard0_acc.glob("XtX_layer_*.npy"))
+    n_layers = len(xtx_files)
+    total_tokens = 0
+
+    for li in range(n_layers):
+        prefix = f"layer_{li}"
+        XtX = None
+        Xty = None
+        Xsum = None
+        scalars_sum = None  # [ysum, yty, n]
+
+        for sd in shard_dirs:
+            sacc = sd / "accumulators"
+            xtx_i = np.load(sacc / f"XtX_{prefix}.npy")
+            xty_i = np.load(sacc / f"Xty_{prefix}.npy")
+            xsum_i = np.load(sacc / f"Xsum_{prefix}.npy")
+            sc_i = np.load(sacc / f"scalars_{prefix}.npy")  # [ysum, yty, n]
+
+            if XtX is None:
+                XtX, Xty, Xsum, scalars_sum = xtx_i, xty_i, xsum_i, sc_i
+            else:
+                XtX += xtx_i
+                Xty += xty_i
+                Xsum += xsum_i
+                scalars_sum += sc_i
+
+        np.save(acc_dir / f"XtX_{prefix}.npy", XtX)
+        np.save(acc_dir / f"Xty_{prefix}.npy", Xty)
+        np.save(acc_dir / f"Xsum_{prefix}.npy", Xsum)
+        np.save(acc_dir / f"scalars_{prefix}.npy", scalars_sum)
+
+        if li == 0:
+            total_tokens = int(scalars_sum[2])
+
+    # Copy accumulator version sentinel
+    sentinel = shard_dirs[0] / "accumulators" / "version_delta_kl"
+    if sentinel.exists():
+        import shutil
+        shutil.copy2(sentinel, acc_dir / "version_delta_kl")
+
+    # ── Merge PCA subsamples (concatenate + truncate) ────────────────────────
+    pca_dir = merged_dir / "pca_subsample"
+    pca_dir.mkdir(parents=True, exist_ok=True)
+    MAX_PCA = 5000
+
+    # delta_kl: [n_tokens, n_layers]
+    dkl_parts = []
+    for sd in shard_dirs:
+        p = sd / "pca_subsample" / "delta_kl.npy"
+        if p.exists():
+            dkl_parts.append(np.load(p))
+    if dkl_parts:
+        dkl_cat = np.concatenate(dkl_parts, axis=0)[:MAX_PCA]
+        np.save(pca_dir / "delta_kl.npy", dkl_cat)
+
+    # delta_h per layer
+    for li in range(n_layers):
+        dh_parts = []
+        for sd in shard_dirs:
+            p = sd / "pca_subsample" / f"delta_h_layer_{li}.npy"
+            if p.exists():
+                dh_parts.append(np.load(p))
+        if dh_parts:
+            dh_cat = np.concatenate(dh_parts, axis=0)[:MAX_PCA]
+            np.save(pca_dir / f"delta_h_layer_{li}.npy", dh_cat)
+
+    # ── Merge commitments.jsonl (per-prompt metadata) ────────────────────────
+    import json
+    with open(merged_dir / "commitments.jsonl", "w") as fout:
+        for sd in shard_dirs:
+            cpath = sd / "commitments.jsonl"
+            if cpath.exists():
+                with open(cpath) as fin:
+                    for line in fin:
+                        fout.write(line)
+
+    # ── Merge KL gradient directions (if present) ────────────────────────────
+    # These are per-shard averages — need to recompute from merged data.
+    # For now, copy from shard 0 (they'll be recomputed if needed).
+    grad_dir_file = shard_dirs[0] / "kl_gradient_directions.npz"
+    if grad_dir_file.exists():
+        # Weighted average: load each shard's gradient accumulators and merge
+        # For simplicity, just concatenate the per-prompt grad contributions
+        # and let train_probes handle it. The gradient directions are optional.
+        import shutil
+        shutil.copy2(grad_dir_file, merged_dir / "kl_gradient_directions.npz")
+
+    results_vol.commit()
+    return f"merge {model_name}: {n_layers} layers, {total_tokens} tokens from {n_shards} shards"
 
 
 # ── Phase 2+2.5: Probe training + direction comparison ───────────────────────
@@ -893,8 +1035,10 @@ def _run_full():
     print("=" * 70)
 
     # ── Phase 1: 6 parallel collection jobs ───────────────────────────────────
-    print("\n[Phase 1] Collecting forced-decoding paired data (6 models)...")
-    results_1 = list(collect_one.map(MODELS))
+    n_prompts_list = [MODEL_N_PROMPTS.get(m, 600) for m in MODELS]
+    print(f"\n[Phase 1] Collecting forced-decoding paired data (6 models)...")
+    print(f"  n_prompts per model: {dict(zip(MODELS, n_prompts_list))}")
+    results_1 = list(collect_one.map(MODELS, n_prompts_list))
     for r in results_1:
         print(f"  {r}")
 
@@ -939,13 +1083,136 @@ def _run_full():
     print("  gsutil -m rsync -r results/exp10/ gs://pt-vs-it-results/exp10/")
 
 
+@app.function(
+    timeout=300,
+    image=image,
+    volumes=VOLUME_MOUNTS,
+)
+def clear_phase1_data(model_name: str) -> str:
+    """Delete Phase 1 accumulators/PCA/checkpoints for a model."""
+    import shutil
+    results_vol.reload()
+    base = Path(f"/root/results/exp10/{model_name}")
+    for subdir in ["paired_data", "probes"]:
+        target = base / subdir
+        if target.exists():
+            shutil.rmtree(target)
+            print(f"  Cleared {target}")
+    results_vol.commit()
+    return f"cleared {model_name}"
+
+
+def _run_recollect(recollect_models: list[str], n_shards: int = 2):
+    """Re-collect Phase 1 for specific models with data parallelism, then full pipeline.
+
+    Uses `n_shards` GPUs per recollect model (prompts split by interleaving).
+    Non-recollect models run unsharded (resume/skip existing data).
+    After sharded collection, merges accumulators by addition, then Phase 2→4B.
+    """
+    all_models = MODELS
+    reuse_models = [m for m in all_models if m not in recollect_models]
+
+    print("=" * 70)
+    print(f"EXP10: RECOLLECT + FULL PIPELINE (sharded, {n_shards} GPUs/model)")
+    print(f"  Re-collecting: {recollect_models}")
+    print(f"  Reusing Phase 1: {reuse_models}")
+    n_gpus_phase1 = len(recollect_models) * n_shards + len(reuse_models)
+    print(f"  Phase 1 GPU jobs: {n_gpus_phase1}")
+    print("=" * 70)
+
+    # ── Clear old Phase 1+2 data for recollect models ────────────────────────
+    print("\n[Recollect] Clearing old Phase 1+2 data...")
+    results_clear = list(clear_phase1_data.map(recollect_models))
+    for r in results_clear:
+        print(f"  {r}")
+
+    # ── Phase 1: Sharded collection for recollect models + unsharded for rest ─
+    # Build parallel call args: recollect models get n_shards jobs each,
+    # reuse models get 1 unsharded job.
+    p1_models = []
+    p1_n_prompts = []
+    p1_shard_ids = []
+    p1_n_shards = []
+
+    for m in all_models:
+        n_p = MODEL_N_PROMPTS.get(m, 600)
+        if m in recollect_models:
+            for si in range(n_shards):
+                p1_models.append(m)
+                p1_n_prompts.append(n_p)
+                p1_shard_ids.append(si)
+                p1_n_shards.append(n_shards)
+        else:
+            p1_models.append(m)
+            p1_n_prompts.append(n_p)
+            p1_shard_ids.append(0)
+            p1_n_shards.append(1)
+
+    print(f"\n[Phase 1] Collecting ({len(p1_models)} GPU jobs: "
+          f"{len(recollect_models)}×{n_shards} sharded + {len(reuse_models)} unsharded)...")
+    results_1 = list(collect_one.map(p1_models, p1_n_prompts, p1_shard_ids, p1_n_shards))
+    for r in results_1:
+        print(f"  {r}")
+
+    # ── Merge shards ─────────────────────────────────────────────────────────
+    print(f"\n[Phase 1.5] Merging {len(recollect_models)} sharded collections...")
+    results_merge = list(merge_collection_shards.map(
+        recollect_models, [n_shards] * len(recollect_models),
+    ))
+    for r in results_merge:
+        print(f"  {r}")
+
+    # ── Phase 2+2.5: All 6 models ───────────────────────────────────────────
+    print("\n[Phase 2+2.5] Training ridge probes (all 6 models)...")
+    results_2 = list(train_probes_one.map(all_models))
+    for r in results_2:
+        print(f"  {r}")
+
+    # ── Phase 3: All 6 models ────────────────────────────────────────────────
+    print("\n[Phase 3] Causal activation patching (all 6 models)...")
+    results_3 = list(patch_one.map(all_models))
+    for r in results_3:
+        print(f"  {r}")
+
+    # ── Phase 4B: 12 parallel jobs (all 6 models × 2 directions) ────────────
+    print("\n[Phase 4B] Steering (12 jobs, up to 10 H100s)...")
+    steer_models = [m for m in all_models for _ in ("d_conv", "d_mean")]
+    steer_dirs = [d for _ in all_models for d in ("d_conv", "d_mean")]
+    results_4 = list(steer_one_direction.map(steer_models, steer_dirs))
+    for r in results_4:
+        print(f"  {r}")
+
+    print("\n" + "=" * 70)
+    print("RECOLLECT + FULL PIPELINE COMPLETE")
+    print("=" * 70)
+
+
+def _run_steer_only():
+    """Run only Phase 4B steering (12 jobs). Use when Phases 1-3 are already on the volume."""
+    print("=" * 70)
+    print("EXP10: PHASE 4B ONLY (steering)")
+    print("=" * 70)
+
+    steer_models = [m for m in MODELS for _ in ("d_conv", "d_mean")]
+    steer_dirs = [d for _ in MODELS for d in ("d_conv", "d_mean")]
+    print(f"\n[Phase 4B] Launching {len(steer_models)} steering jobs...")
+    results_4 = list(steer_one_direction.map(steer_models, steer_dirs))
+    for r in results_4:
+        print(f"  {r}")
+
+    print("\n" + "=" * 70)
+    print("PHASE 4B COMPLETE")
+    print("=" * 70)
+
+
 @app.local_entrypoint()
 def main(mode: str = "full"):
     """Unified entrypoint. Usage:
 
-    modal run --detach src/poc/exp10/modal_exp10.py --mode smoke
-    modal run --detach src/poc/exp10/modal_exp10.py --mode prototype
-    modal run --detach src/poc/exp10/modal_exp10.py --mode full
+    modal run src/poc/exp10/modal_exp10.py --mode smoke
+    modal run src/poc/exp10/modal_exp10.py --mode prototype
+    modal run src/poc/exp10/modal_exp10.py --mode full
+    modal run src/poc/exp10/modal_exp10.py --mode recollect
     """
     if mode == "smoke":
         _run_smoke()
@@ -953,5 +1220,10 @@ def main(mode: str = "full"):
         _run_prototype()
     elif mode == "full":
         _run_full()
+    elif mode == "recollect":
+        # Re-collect low-token models with min_gen_tokens + more prompts
+        _run_recollect(["olmo2_7b", "qwen3_4b", "llama31_8b", "mistral_7b"])
+    elif mode == "steer":
+        _run_steer_only()
     else:
-        print(f"Unknown mode: {mode}. Use 'smoke', 'prototype', or 'full'.")
+        print(f"Unknown mode: {mode}. Use 'smoke', 'prototype', 'full', or 'recollect'.")

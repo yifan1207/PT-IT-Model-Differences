@@ -338,6 +338,9 @@ def collect_paired_data(
     *,
     n_prompts: int = 600,
     max_gen_tokens: int = 128,
+    min_gen_tokens: int = 0,
+    shard_id: int = 0,
+    n_shards: int = 1,
     dataset_path: str | Path = "data/eval_dataset_v2.jsonl",
     tuned_lens_dir: str | Path | None = None,
     pca_subsample_tokens: int = PCA_SUBSAMPLE_TOKENS,
@@ -353,6 +356,7 @@ def collect_paired_data(
         output_dir: Where to write results.
         n_prompts: Number of prompts to process.
         max_gen_tokens: Max tokens IT generates per prompt.
+        min_gen_tokens: Min tokens IT must generate (suppresses EOS until reached).
         dataset_path: Path to eval_dataset_v2.jsonl.
         tuned_lens_dir: Root dir containing tuned lens probes. Expected structure:
             {tuned_lens_dir}/{model_name}/tuned_lens/{variant}/probe_layer_*.pt
@@ -437,7 +441,11 @@ def collect_paired_data(
 
     # ── Load dataset ──────────────────────────────────────────────────────────
     records = load_dataset(dataset_path, n_examples=n_prompts)
-    log.info("Loaded %d prompts from %s", len(records), dataset_path)
+    if n_shards > 1:
+        records = records[shard_id::n_shards]
+        log.info("Shard %d/%d: %d prompts from %s", shard_id, n_shards, len(records), dataset_path)
+    else:
+        log.info("Loaded %d prompts from %s", len(records), dataset_path)
 
     # ── Resume support ────────────────────────────────────────────────────────
     commitments_path = output_dir / "commitments.jsonl"
@@ -505,14 +513,16 @@ def collect_paired_data(
             n_prompt_tokens = prompt_ids.shape[1]
 
             with torch.no_grad():
-                gen_output = model_it.generate(
-                    prompt_ids,
+                gen_kwargs = dict(
                     max_new_tokens=max_gen_tokens,
                     do_sample=False,
                     temperature=1.0,
                     eos_token_id=stop_ids or None,
                     pad_token_id=tokenizer_it.pad_token_id or tokenizer_it.eos_token_id,
                 )
+                if min_gen_tokens > 0:
+                    gen_kwargs["min_new_tokens"] = min_gen_tokens
+                gen_output = model_it.generate(prompt_ids, **gen_kwargs)
             # gen_output: [1, prompt_len + gen_len]
             n_gen_tokens = gen_output.shape[1] - n_prompt_tokens
             if n_gen_tokens < 2:
