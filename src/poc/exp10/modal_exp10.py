@@ -102,10 +102,17 @@ MODELS = [
     "mistral_7b", "deepseek_v2_lite", "olmo2_7b",
 ]
 
-# Per-model info for max_gen_tokens (MoE models capped at 64)
+# Per-model max_gen for Phase 1 data collection (shorter — just need hidden states)
 MODEL_MAX_GEN = {
     "gemma3_4b": 128, "llama31_8b": 128, "qwen3_4b": 128,
     "mistral_7b": 128, "deepseek_v2_lite": 64, "olmo2_7b": 128,
+}
+
+# Per-model max_gen for Phase 4B steering eval (longer — need full responses for scoring)
+# 512 for dense models (matches 0G eval), 64 for DeepSeek MoE (512 OOMs even on B200)
+STEER_MAX_GEN = {
+    "gemma3_4b": 512, "llama31_8b": 512, "qwen3_4b": 512,
+    "mistral_7b": 512, "deepseek_v2_lite": 64, "olmo2_7b": 512,
 }
 
 VOLUME_MOUNTS = {
@@ -334,7 +341,7 @@ def patch_one(model_name: str, n_test_prompts: int = 120,
 
 @app.function(
     gpu="B200",
-    timeout=10800,  # 3h
+    timeout=21600,  # 6h (512 tokens × 17 conditions × 2 directions × 1400 prompts)
     retries=GPU_RETRIES,
     image=image,
     volumes=VOLUME_MOUNTS,
@@ -374,6 +381,7 @@ def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
     env = os.environ.copy()
     env["PYTHONPATH"] = "/root"
     output_base = f"/root/results/exp10/{model_name}/steering"
+    max_gen = STEER_MAX_GEN.get(model_name, 512)
     results = []
 
     # ── Run 1: Steer with d_conv (convergence-gap direction from exp10) ──────
@@ -389,6 +397,7 @@ def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
         "--output-base", output_base,
         "--batch-size", "16",
         "--n-eval-examples", str(n_eval_examples),
+        "--max-gen-tokens", str(max_gen),
     ]
     print(f"\n[Phase 4B] Steering with d_conv...")
     r1 = sp.run(cmd_conv, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
@@ -420,6 +429,7 @@ def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
             "--output-base", output_base,
             "--batch-size", "16",
             "--n-eval-examples", str(n_eval_examples),
+            "--max-gen-tokens", str(max_gen),
         ]
         print(f"\n[Phase 4B] Steering with d_mean...")
         r2 = sp.run(cmd_mean, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)

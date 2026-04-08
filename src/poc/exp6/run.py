@@ -93,7 +93,7 @@ def _A1_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     layers — shows the governance effect is direction-specific, not just noise injection.
     """
     ALPHA_VALUES = [5.0, 3.0, 2.0, 1.5, 1.0, 0.75, 0.5, 0.25, 0.0, -0.5, -1.0, -2.0, -3.0, -5.0]
-    CTRL_BETAS   = [0.0, 1.0, 3.0]   # injection magnitudes for direction-specificity controls
+    CTRL_BETAS   = [0.0, 1.0]   # injection magnitudes for direction-specificity controls (β=3 redundant with α=±3)
     CORR_LAYERS  = list(range(cfg.proposal_boundary, cfg.n_layers))   # layers 20-33
 
     specs = [("A1_baseline", replace(cfg, method="none", directional_alpha=1.0))]
@@ -115,7 +115,7 @@ def _A1_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
             directional_beta=beta,
         )))
 
-    return specs  # 1 + 14 + 3 = 18 conditions
+    return specs  # 1 + 14 + 2 = 17 conditions
 
 
 def _A1_notmpl_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
