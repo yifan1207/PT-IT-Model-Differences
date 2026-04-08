@@ -82,6 +82,7 @@ image = (
         "einops",
         "tqdm",
         "nnsight",
+        "openai",  # for LLM judge via OpenRouter
     )
     .env({"HF_HOME": "/root/.cache/huggingface"})
     .run_commands(
@@ -89,6 +90,7 @@ image = (
         secrets=[modal.Secret.from_name("huggingface-token")],
     )
     .add_local_dir("src", remote_path="/root/src")
+    .add_local_dir("scripts", remote_path="/root/scripts")
     .add_local_file(
         "data/eval_dataset_v2.jsonl",
         remote_path="/root/data/eval_dataset_v2.jsonl",
@@ -485,7 +487,7 @@ def patch_one(model_name: str, n_test_prompts: int = 120,
 
 @app.function(
     gpu="H100",
-    timeout=10800,  # 3h per direction (512 tokens × 17 conditions × 1400 prompts)
+    timeout=28800,  # 8h per direction (512 tokens × 17 conditions × 1400 prompts)
     retries=GPU_RETRIES,
     image=image,
     volumes=VOLUME_MOUNTS,
@@ -550,7 +552,7 @@ def steer_one_direction(model_name: str, direction: str,
         "--max-gen-tokens", str(max_gen),
     ]
     print(f"\n[Phase 4B] Steering with {direction}...")
-    r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
+    r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=25000)
     if r.stdout:
         print(r.stdout[-2000:])
     if r.returncode != 0:
@@ -561,6 +563,68 @@ def steer_one_direction(model_name: str, direction: str,
 
     _commit_volumes()
     return f"steer {model_name}/{direction}: OK"
+
+
+# ── Phase 5: LLM Judge (CPU, no GPU) ────────────────────────────────────────
+
+@app.function(
+    timeout=7200,  # 2h per model (API-bound, not compute-bound)
+    image=image,
+    volumes=VOLUME_MOUNTS,
+    secrets=[modal.Secret.from_name("OPENROUTER_API_KEY")],
+    memory=4096,
+    cpu=2,
+)
+def judge_one(model_name: str) -> str:
+    """Run LLM judge (G1/G2/S1/S2) on a model's steering sample_outputs.
+
+    Runs on CPU — no GPU needed. Uses OpenRouter API (Gemini 2.5 Flash).
+    Has built-in resume: already-scored entries are skipped.
+    """
+    _setup()
+
+    import subprocess as sp
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "/root"
+
+    results_vol.reload()
+
+    steering_base = f"/root/results/exp10/{model_name}/steering"
+    directions = ["d_conv", "d_mean"]
+    results = []
+
+    for direction in directions:
+        merged_dir = f"{steering_base}/A1_{direction}_{model_name}"
+        samples = f"{merged_dir}/sample_outputs.jsonl"
+        if not os.path.exists(samples):
+            results.append(f"{direction}: SKIP (no samples)")
+            continue
+
+        cmd = [
+            "python", "scripts/llm_judge_exp6.py",
+            "--merged-dir", merged_dir,
+            "--dataset", "/root/data/eval_dataset_v2.jsonl",
+            "--model", "google/gemini-2.5-flash-preview",
+            "--workers", "16",
+            "--tasks", "g1", "g2", "s1", "s2",
+        ]
+        print(f"\n[Judge] {model_name}/{direction}: starting G1/G2/S1/S2...")
+        try:
+            r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=3600)
+            if r.stdout:
+                print(r.stdout[-2000:])
+            if r.returncode != 0:
+                err = r.stderr[-500:] if r.stderr else "(no stderr)"
+                print(f"[Judge] {direction} FAILED:\n{err}")
+                results.append(f"{direction}: FAIL")
+            else:
+                results.append(f"{direction}: OK")
+        except sp.TimeoutExpired:
+            print(f"[Judge] {direction} timed out after 3600s")
+            results.append(f"{direction}: TIMEOUT")
+
+    _commit_volumes()
+    return f"judge {model_name}: {', '.join(results)}"
 
 
 # Keep steer_one as convenience wrapper for prototype (both directions sequentially on 1 GPU)
@@ -624,7 +688,7 @@ def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
             "--max-gen-tokens", str(max_gen),
         ]
         print(f"\n[Phase 4B] Steering with {direction}...")
-        r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
+        r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=25000)
         if r.stdout:
             print(r.stdout[-2000:])
         if r.returncode != 0:
@@ -1188,20 +1252,74 @@ def _run_recollect(recollect_models: list[str], n_shards: int = 2):
 
 
 def _run_steer_only():
-    """Run only Phase 4B steering (12 jobs). Use when Phases 1-3 are already on the volume."""
+    """Run Phase 4B steering + Phase 5 LLM judge.
+
+    Launches all steering jobs in parallel. As soon as BOTH directions of a model
+    finish, immediately spawns the LLM judge for that model (CPU, no GPU).
+    This overlaps judge API calls with remaining steering GPU work.
+    """
     print("=" * 70)
-    print("EXP10: PHASE 4B ONLY (steering)")
+    print("EXP10: PHASE 4B + 5 (steering + LLM judge)")
     print("=" * 70)
 
-    steer_models = [m for m in MODELS for _ in ("d_conv", "d_mean")]
-    steer_dirs = [d for _ in MODELS for d in ("d_conv", "d_mean")]
-    print(f"\n[Phase 4B] Launching {len(steer_models)} steering jobs...")
-    results_4 = list(steer_one_direction.map(steer_models, steer_dirs))
-    for r in results_4:
-        print(f"  {r}")
+    active_models = list(MODELS)  # all 6 models (contamination cleaned)
+
+    # Spawn all steering jobs (2 per model = 12 GPU jobs)
+    print(f"\n[Phase 4B] Spawning {len(active_models) * 2} steering jobs...")
+    # {model: {"d_conv": FunctionCall, "d_mean": FunctionCall}}
+    steer_calls: dict[str, dict[str, object]] = {}
+    for model in active_models:
+        steer_calls[model] = {
+            "d_conv": steer_one_direction.spawn(model, "d_conv"),
+            "d_mean": steer_one_direction.spawn(model, "d_mean"),
+        }
+        print(f"  spawned: {model}/d_conv, {model}/d_mean")
+
+    # Poll: when both directions of a model finish, spawn judge immediately
+    import time
+    judge_calls: dict[str, object] = {}
+    model_steer_results: dict[str, dict[str, str]] = {}  # model -> {dir: result_str}
+    pending = set(active_models)
+
+    while pending:
+        for model in list(pending):
+            if model in model_steer_results and len(model_steer_results[model]) == 2:
+                continue  # already handled
+            model_steer_results.setdefault(model, {})
+
+            for direction, call in steer_calls[model].items():
+                if direction in model_steer_results[model]:
+                    continue  # already resolved
+                try:
+                    result = call.get(timeout=0)
+                    model_steer_results[model][direction] = result
+                    print(f"  [done] {result}")
+                except TimeoutError:
+                    pass
+                except Exception as e:
+                    model_steer_results[model][direction] = f"steer {model}/{direction}: FAIL ({e})"
+                    print(f"  [fail] steer {model}/{direction}: {e}")
+
+            # Both directions done? Spawn judge
+            if len(model_steer_results[model]) == 2:
+                pending.discard(model)
+                print(f"\n[Phase 5] Both directions done for {model}, spawning LLM judge...")
+                judge_calls[model] = judge_one.spawn(model)
+
+        if pending:
+            time.sleep(30)
+
+    # Collect judge results
+    print(f"\n[Phase 5] Waiting for {len(judge_calls)} judge jobs...")
+    for model, jcall in judge_calls.items():
+        try:
+            result = jcall.get()
+            print(f"  {result}")
+        except Exception as e:
+            print(f"  judge {model}: FAIL ({e})")
 
     print("\n" + "=" * 70)
-    print("PHASE 4B COMPLETE")
+    print("PHASE 4B + 5 COMPLETE (steering + LLM judge)")
     print("=" * 70)
 
 
