@@ -14,6 +14,13 @@ layers (i.e., convergence slows).
 
 Causal metric: ΔKL_causal(ℓ') = KL_patched(ℓ') - KL_baseline(ℓ') at
 downstream layers. Positive = patch slowed convergence.
+
+Note on expected results: The commit condition (d_conv projection) captures
+only ~1% of ‖Δh‖, so its causal effect is expected to be small and may not
+reach statistical significance vs. the random baseline. This is an informative
+null: d_conv predicts KL excess (high R²) but does not *cause* it when
+patched in isolation. The paper should frame this as "d_conv does not produce
+causal effects distinguishable from random perturbation of matched magnitude."
 """
 from __future__ import annotations
 

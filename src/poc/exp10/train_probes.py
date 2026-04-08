@@ -12,8 +12,9 @@ convergence-gap direction: the axis in activation space that best
 predicts how much more uncertain IT is than PT at this layer.
 
 Phase 2.5 compares d_conv to the existing mean IT-PT direction d_mean
-and to the KL gradient direction d_grad.  If cosine > 0.95 at all
-corrective layers → go/no-go = "redundant" (d_conv ≈ d_mean).
+and to the KL gradient direction d_grad.  If |cos| > 0.95 at ALL
+corrective layers → go/no-go = "redundant" (d_conv spans the same
+subspace as d_mean, whether aligned or anti-aligned).
 """
 from __future__ import annotations
 
@@ -261,7 +262,9 @@ def train_probes(
             trace_xtx = acc.XtX.diagonal().sum().item()
             dh_norm_mean = (trace_xtx / acc.n) ** 0.5
 
-        # Bootstrap R² stability: 5 random 80/20 splits on PCA subsample
+        # R² stability check: 5× random 80/20 splits on PCA subsample.
+        # NOT k-fold CV — streaming accumulators don't store individual samples,
+        # so we resample from the PCA subsample (which is a random subset of tokens).
         r2_splits = []
         if delta_kl_all is not None and n_pca > 20:
             dh_path = pca_dir / f"delta_h_layer_{li}.npy"
@@ -279,7 +282,7 @@ def train_probes(
         result = {
             "layer": li,
             "r2_test": r2_test,
-            "r2_splits": r2_splits,  # 5 random splits for stability check
+            "r2_splits": r2_splits,  # 5× random 80/20 splits (stability, not CV)
             "r2_std": float(np.std(r2_splits)) if r2_splits else 0.0,
             "probe_magnitude": w_norm,
             "cosine_with_mean_dir": cos_mean,
@@ -298,6 +301,10 @@ def train_probes(
             )
 
     # ── Go/No-Go decision ─────────────────────────────────────────────────────
+    # Uses |cos| (absolute value) because a probe weight vector w and -w predict
+    # the same scalar Δkl equally well (just with flipped sign on the coefficient).
+    # Anti-aligned d_conv (cos ≈ -1 with d_mean) is therefore equally redundant
+    # as aligned (cos ≈ +1): both span the same 1-D subspace.
     corrective_layers = list(range(corrective_onset, n_layers))
     corrective_cosines = [
         r["cosine_with_mean_dir"] for r in per_layer_results
