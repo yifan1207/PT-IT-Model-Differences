@@ -15,7 +15,7 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 log = logging.getLogger("merge_plot")
 
-SRC = Path("/tmp/modal_v3")
+SRC = Path("results/cross_model_v3")
 OUT = Path("results/exp9/plots")
 OUT.mkdir(parents=True, exist_ok=True)
 
