@@ -112,7 +112,7 @@ run_a1_held_out() {
 
     src_dirs=()
     for i in $(seq 0 $((NW-1))); do src_dirs+=("results/exp7/0H/${RUN_NAME}_w${i}"); done
-    uv run python scripts/merge_exp6_workers.py \
+    uv run python scripts/merge_steering_workers.py \
         --experiment A1 --variant it --n-workers "$NW" \
         --merged-name "$RUN_NAME" \
         --output-base "results/exp7/0H" \

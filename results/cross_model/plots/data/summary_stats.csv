@@ -1,7 +1,0 @@
-model,model_label,n_layers,phase_boundary_layer,corrective_onset_layer,L3_max_mlp_change_layer,L3_max_attn_change_layer,L3_corrective_mlp_mean_norm,L8_min_id_layer_it,L8_min_id_value_it,L8_normalized_min_id_depth,L9_max_div_layer,L9_max_div_value,L9_normalized_max_div_depth,L9_mean_div_corrective_region
-gemma3_4b,Gemma 3 4B,34,11,20,16,33,1.0436,5,10.94,0.147,17,-0.1984,0.5,-0.0483
-llama31_8b,Llama 3.1 8B,32,11,19,28,30,1.0797,2,13.52,0.062,13,-0.196,0.406,0.0067
-qwen3_4b,Qwen 3 4B,36,12,22,20,26,1.1122,13,13.26,0.361,17,-0.3492,0.472,-0.0256
-mistral_7b,Mistral 7B v0.3,32,11,19,17,23,1.0021,7,12.11,0.219,3,-0.2248,0.094,-0.1055
-deepseek_v2_lite,DeepSeek-V2-Lite,27,9,16,23,19,1.0345,0,12.95,0.0,1,0.3571,0.037,0.0956
-olmo2_7b,OLMo 2 7B,32,11,19,27,24,1.0186,0,14.21,0.0,5,0.1788,0.156,0.0629

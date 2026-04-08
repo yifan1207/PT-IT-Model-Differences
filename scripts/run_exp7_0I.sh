@@ -68,7 +68,7 @@ echo "=== [0I] Merging worker results... ==="
 src_dirs=()
 for i in $(seq 0 $((NW-1))); do src_dirs+=("${OUTPUT_BASE}/${RUN_NAME}_w${i}"); done
 
-uv run python scripts/merge_exp6_workers.py \
+uv run python scripts/merge_steering_workers.py \
     --experiment A1_formula \
     --variant it \
     --n-workers "$NW" \

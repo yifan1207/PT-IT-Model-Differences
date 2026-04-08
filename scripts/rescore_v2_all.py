@@ -64,7 +64,7 @@ def main() -> None:
         already_has = out_file.exists() and out_file.stat().st_size > 0
 
         cmd = [
-            "uv", "run", "python", "scripts/llm_judge_exp6.py",
+            "uv", "run", "python", "scripts/llm_judge.py",
             "--merged-dir", merged_dir,
             "--dataset", dataset,
             "--model", args.model,

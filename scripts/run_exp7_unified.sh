@@ -234,7 +234,7 @@ if run_phase 4; then
         done
         for pid in "${pids[@]}"; do wait "$pid"; done
         src_dirs=(); for i in $(seq 0 $((NW-1))); do src_dirs+=("results/exp7/0H/A1_it_random_dir_w${i}"); done
-        uv run python scripts/merge_exp6_workers.py \
+        uv run python scripts/merge_steering_workers.py \
             --experiment A1 --variant it --n-workers "$NW" \
             --merged-name "A1_it_random_dir" --output-base "results/exp7/0H" \
             --source-dirs "${src_dirs[@]}"
@@ -255,7 +255,7 @@ if run_phase 4; then
         done
         for pid in "${pids[@]}"; do wait "$pid"; done
         src_dirs=(); for i in $(seq 0 $((NW-1))); do src_dirs+=("results/exp7/0H/A1_it_bottom_dir_w${i}"); done
-        uv run python scripts/merge_exp6_workers.py \
+        uv run python scripts/merge_steering_workers.py \
             --experiment A1 --variant it --n-workers "$NW" \
             --merged-name "A1_it_bottom_dir" --output-base "results/exp7/0H" \
             --source-dirs "${src_dirs[@]}"
@@ -286,7 +286,7 @@ fi
 if run_phase 6; then
     echo ""
     echo "████ Phase 6: Generating all Tier 0 figures ████"
-    uv run python scripts/plot_exp7_tier0.py
+    uv run python scripts/plot_validation_tier0.py
 fi
 
 echo ""

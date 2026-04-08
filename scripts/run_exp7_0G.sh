@@ -113,11 +113,11 @@ cp results/exp7/0D/ci_cross_model.json results/exp7/plots/data/ci_cross_model.js
 echo "[$(date '+%H:%M')] === CIs regenerated ==="
 
 echo "[$(date '+%H:%M')] === Generating commitment plots ==="
-uv run python scripts/plot_tuned_lens_commitment.py \
+uv run python scripts/plot_commitment_delay.py \
     > logs/exp7/0G/plot_commitment.log 2>&1 || echo "[0G] plot had errors"
 
 echo "[$(date '+%H:%M')] === Regenerating all Tier 0 plots ==="
-uv run python scripts/plot_exp7_tier0.py \
+uv run python scripts/plot_validation_tier0.py \
     > logs/exp7/0G/plot_tier0.log 2>&1 || echo "[0G] tier0 plots had errors"
 
 echo "[$(date '+%H:%M')] === 0G ALL DONE ==="

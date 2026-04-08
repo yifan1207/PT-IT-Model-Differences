@@ -8,7 +8,7 @@ Removed vs v1:
   turn_structure — broken (PT scored higher than IT), measuring length not quality
 
 These are the in-loop programmatic scorers. The LLM judge (G1/G2/S1/S2) is
-handled separately by scripts/llm_judge_exp6.py.
+handled separately by scripts/llm_judge.py.
 """
 from __future__ import annotations
 

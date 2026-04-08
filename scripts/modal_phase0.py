@@ -427,7 +427,7 @@ def merge_workers(model_name: str) -> str:
     ]
 
     _run([
-        "python", "/root/scripts/merge_exp6_workers.py",
+        "python", "/root/scripts/merge_steering_workers.py",
         "--experiment", "A1",
         "--variant", "it",
         "--n-workers", str(N_WORKERS),
@@ -537,7 +537,7 @@ def judge_model(model_name: str) -> str:
     merged_dir = f"results/cross_model/{model_name}/exp6/merged_{run_name}"
 
     _run([
-        "python", "/root/scripts/llm_judge_exp6.py",
+        "python", "/root/scripts/llm_judge.py",
         "--merged-dir", merged_dir,
         "--model", "google/gemini-2.5-flash",
         "--workers", "16",
@@ -733,11 +733,11 @@ def smoke_test() -> str:
     # 7. Scripts accessible
     scripts = [
         "/root/scripts/precompute_directions_multimodel.py",
-        "/root/scripts/llm_judge_exp6.py",
+        "/root/scripts/llm_judge.py",
         "/root/src/poc/exp8/pca_rank1.py",
         "/root/src/poc/exp8/id_under_steering.py",
         "/root/src/poc/exp8/commitment_vs_alpha.py",
-        "/root/scripts/merge_exp6_workers.py",
+        "/root/scripts/merge_steering_workers.py",
     ]
     for s in scripts:
         status = "OK" if Path(s).exists() else "MISSING"
@@ -1050,4 +1050,4 @@ def main(
     print("  gsutil -m rsync -r results/cross_model/ gs://pt-vs-it-results/cross_model/")
     print("\nGenerate plots locally:")
     print("  uv run python scripts/plot_phase0_multimodel_dose_response.py")
-    print("  uv run python scripts/plot_exp7_tier0.py")
+    print("  uv run python scripts/plot_validation_tier0.py")

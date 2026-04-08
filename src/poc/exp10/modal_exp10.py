@@ -601,7 +601,7 @@ def judge_one(model_name: str) -> str:
             continue
 
         cmd = [
-            "python", "scripts/llm_judge_exp6.py",
+            "python", "scripts/llm_judge.py",
             "--merged-dir", merged_dir,
             "--dataset", "/root/data/eval_dataset_v2.jsonl",
             "--model", "google/gemini-2.5-flash-preview",

@@ -307,7 +307,7 @@ steer_model() {
     done
 
     echo "  [merge] $model..."
-    uv run python scripts/merge_exp6_workers.py \
+    uv run python scripts/merge_steering_workers.py \
         --experiment A1 --variant it --n-workers "$N_WORKERS" \
         --merged-name "merged_${run_name}" \
         --output-base "$out_base" \
@@ -370,7 +370,7 @@ if [[ "$STEP" == "judge" ]]; then
             continue
         fi
         echo "=== LLM Judge: $model ==="
-        uv run python scripts/llm_judge_exp6.py \
+        uv run python scripts/llm_judge.py \
             --merged-dir "$merged" \
             --model "$JUDGE_MODEL" --workers 16 --tasks g1 g2 s1 s2 \
             > "$LOG_DIR/${model}_judge.log" 2>&1 &

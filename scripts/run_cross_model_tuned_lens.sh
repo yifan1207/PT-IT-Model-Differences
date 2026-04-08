@@ -227,4 +227,4 @@ echo "  Probes:     results/cross_model/{model}/tuned_lens/{pt,it}/probe_layer_*
 echo "  Commitment: results/cross_model/{model}/tuned_lens/commitment/"
 echo "  Transfer:   results/cross_model/{model}/tuned_lens/commitment/transfer_test.json"
 echo ""
-echo "Next step: uv run python scripts/plot_tuned_lens_commitment.py"
+echo "Next step: uv run python scripts/plot_commitment_delay.py"

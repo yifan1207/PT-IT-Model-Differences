@@ -63,7 +63,7 @@ run_0c_experiment() {
     # exp6/run.py appends _w{worker_index} to run_name → dir is ${RUN_NAME}_w${i}
     src_dirs=()
     for i in $(seq 0 $((NW-1))); do src_dirs+=("${OUTPUT_BASE}/${RUN_NAME}_w${i}"); done
-    uv run python scripts/merge_exp6_workers.py \
+    uv run python scripts/merge_steering_workers.py \
         --experiment "$EXPERIMENT" --variant it --n-workers "$NW" \
         --merged-name "merged_${RUN_NAME}" --output-base "$OUTPUT_BASE" \
         --source-dirs "${src_dirs[@]}"

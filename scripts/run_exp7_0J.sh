@@ -129,7 +129,7 @@ run_gemma_a1() {
 
     src_dirs=()
     for i in $(seq 0 $((NW-1))); do src_dirs+=("${OUTPUT_DIR}/${RUN_NAME}_w${i}"); done
-    uv run python scripts/merge_exp6_workers.py \
+    uv run python scripts/merge_steering_workers.py \
         --experiment A1 --variant it --n-workers "$NW" \
         --merged-name "${RUN_NAME}" \
         --output-base "$OUTPUT_DIR" \
@@ -148,7 +148,7 @@ run_gemma_a1 "narrower_2sig"  "$ONSET_2"
 # ── Step 4: Plot all results ──────────────────────────────────────────────────
 echo ""
 echo "=== [0J] Step 4: Generating plots ==="
-uv run python scripts/plot_exp7_tier0.py --experiments 0J --output-dir results/exp7/plots/
+uv run python scripts/plot_validation_tier0.py --experiments 0J --output-dir results/exp7/plots/
 
 echo ""
 echo "=== [0J] Done. Results in $OUTPUT_DIR/ ==="
