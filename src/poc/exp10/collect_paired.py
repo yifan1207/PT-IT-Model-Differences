@@ -391,6 +391,13 @@ def collect_paired_data(
         spec.pt_id, device, eager_attn=is_moe,
     )
 
+    # Tokenizer compatibility: IT and PT must share the same vocabulary so that
+    # token-level Δh and Δkl comparisons are meaningful.
+    assert tokenizer_it.vocab_size == tokenizer_pt.vocab_size, (
+        f"Tokenizer vocab mismatch: IT ({spec.it_id}) has {tokenizer_it.vocab_size}, "
+        f"PT ({spec.pt_id}) has {tokenizer_pt.vocab_size}"
+    )
+
     # ── Load tuned lens probes (if available) ─────────────────────────────────
     from src.poc.cross_model.tuned_lens import TunedLensProbe, _load_probes
 
@@ -591,11 +598,19 @@ def collect_paired_data(
                     pca_dh[li].append(dh[:n_take])
 
             # PCA Δkl subsample: [n_tokens, n_layers]
+            # Apply same per-layer winsorization as accumulators for consistency.
             if pca_token_count < pca_subsample_tokens:
                 remaining = pca_subsample_tokens - pca_token_count
                 n_take = min(n_gen_tokens, remaining)
-                # delta_kl is [n_layers, n_gen_tokens], transpose to [n_gen_tokens, n_layers]
-                pca_dkl.append(delta_kl[:, :n_take].T)
+                # Winsorize each layer's Δkl to match accumulator targets
+                dkl_winsorized = delta_kl.clone()
+                for li in range(n_layers):
+                    col = dkl_winsorized[li]
+                    if col.numel() > 4:
+                        lo = torch.quantile(col, WINSOR_LO)
+                        hi = torch.quantile(col, WINSOR_HI)
+                        dkl_winsorized[li] = col.clamp(lo, hi)
+                pca_dkl.append(dkl_winsorized[:, :n_take].T)
                 pca_token_count += n_take
 
             # Step 7: KL gradient (bonus)

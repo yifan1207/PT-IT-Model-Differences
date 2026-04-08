@@ -1,7 +1,7 @@
 """
 Modal script for Exp10: Contrastive Activation Patching.
 
-Runs the full Exp10 pipeline on Modal cloud B200 GPUs:
+Runs the full Exp10 pipeline on Modal cloud H100 GPUs:
   Phase 1: Forced-decoding paired data collection (6 models in parallel)
             Regression target: per-layer KL excess (Δkl_ℓ), winsorized.
   Phase 2: Ridge regression probes + direction comparison (CPU — no GPU needed)
@@ -109,7 +109,7 @@ MODEL_MAX_GEN = {
 }
 
 # Per-model max_gen for Phase 4B steering eval (longer — need full responses for scoring)
-# 512 for dense models (matches 0G eval), 64 for DeepSeek MoE (512 OOMs even on B200)
+# 512 for dense models (matches 0G eval), 64 for DeepSeek MoE (512 OOMs on 80GB GPUs)
 STEER_MAX_GEN = {
     "gemma3_4b": 512, "llama31_8b": 512, "qwen3_4b": 512,
     "mistral_7b": 512, "deepseek_v2_lite": 64, "olmo2_7b": 512,
@@ -195,7 +195,7 @@ def _find_mean_dir(model_name: str) -> str | None:
 # ── Phase 1: Forced-decoding data collection ─────────────────────────────────
 
 @app.function(
-    gpu="B200",
+    gpu="H100",
     timeout=3600,  # 60 min
     retries=GPU_RETRIES,
     image=image,
@@ -288,7 +288,7 @@ def train_probes_one(model_name: str) -> str:
 # ── Phase 3: Causal patching ─────────────────────────────────────────────────
 
 @app.function(
-    gpu="B200",
+    gpu="H100",
     timeout=5400,  # 90 min
     retries=GPU_RETRIES,
     image=image,
@@ -338,10 +338,93 @@ def patch_one(model_name: str, n_test_prompts: int = 120,
 
 
 # ── Phase 4B: Steering with commitment directions ────────────────────────────
+# Split into per-direction jobs so we can run up to 12 in parallel (6 models × 2 directions).
+# With 10 H100 GPUs, this cuts Phase 4B wall time nearly in half vs sequential.
 
 @app.function(
-    gpu="B200",
-    timeout=21600,  # 6h (512 tokens × 17 conditions × 2 directions × 1400 prompts)
+    gpu="H100",
+    timeout=10800,  # 3h per direction (512 tokens × 17 conditions × 1400 prompts)
+    retries=GPU_RETRIES,
+    image=image,
+    volumes=VOLUME_MOUNTS,
+    secrets=[modal.Secret.from_name("huggingface-token")],
+    memory=65536,
+)
+def steer_one_direction(model_name: str, direction: str,
+                        n_eval_examples: int = 1400) -> str:
+    """Phase 4B: A1 α-sweep with a SINGLE direction on one GPU.
+
+    Args:
+        direction: "d_conv" or "d_mean"
+    """
+    _setup()
+    _setup_sigterm_handler()
+
+    import json
+    import torch
+    print(f"=== Phase 4B steering: {model_name} / {direction} ===")
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
+
+    results_vol.reload()
+
+    # Check go/no-go (only relevant for d_conv — d_mean always runs)
+    summary_path = f"/root/results/exp10/{model_name}/probes/probe_summary.json"
+    with open(summary_path) as f:
+        summary = json.load(f)
+
+    go_nogo = summary.get("go_nogo", "unknown")
+    if direction == "d_conv" and go_nogo == "redundant":
+        print(f"[Phase 4B] {model_name}/{direction}: SKIP — go_nogo=redundant (d_conv ≈ d_mean)")
+        return f"steer {model_name}/{direction}: SKIPPED (redundant)"
+
+    # Resolve direction path
+    if direction == "d_conv":
+        dir_path = f"/root/results/exp10/{model_name}/probes/commitment_directions.npz"
+    elif direction == "d_mean":
+        dir_path = _find_mean_dir(model_name)
+        if dir_path is None:
+            print(f"[Phase 4B] No d_mean directions for {model_name}")
+            return f"steer {model_name}/{direction}: SKIP (no_dirs)"
+    else:
+        return f"steer {model_name}/{direction}: FAIL (unknown direction)"
+
+    import subprocess as sp
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "/root"
+    output_base = f"/root/results/exp10/{model_name}/steering"
+    max_gen = STEER_MAX_GEN.get(model_name, 512)
+
+    cmd = [
+        "python", "-m", "src.poc.exp6.run",
+        "--experiment", "A1",
+        "--variant", "it",
+        "--device", "cuda:0",
+        "--model-name", model_name,
+        "--corrective-direction-path", dir_path,
+        "--run-name", f"A1_{direction}_{model_name}",
+        "--output-base", output_base,
+        "--batch-size", "8",
+        "--n-eval-examples", str(n_eval_examples),
+        "--max-gen-tokens", str(max_gen),
+    ]
+    print(f"\n[Phase 4B] Steering with {direction}...")
+    r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
+    if r.stdout:
+        print(r.stdout[-2000:])
+    if r.returncode != 0:
+        err = r.stderr[-1000:] if r.stderr else "(no stderr)"
+        print(f"[{direction}] FAILED:\n{err}")
+        _commit_volumes()
+        return f"steer {model_name}/{direction}: FAIL"
+
+    _commit_volumes()
+    return f"steer {model_name}/{direction}: OK"
+
+
+# Keep steer_one as convenience wrapper for prototype (both directions sequentially on 1 GPU)
+@app.function(
+    gpu="H100",
+    timeout=21600,  # 6h
     retries=GPU_RETRIES,
     image=image,
     volumes=VOLUME_MOUNTS,
@@ -349,32 +432,24 @@ def patch_one(model_name: str, n_test_prompts: int = 120,
     memory=65536,
 )
 def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
-    """Phase 4B: A1 α-sweep with BOTH d_conv and d_mean directions.
-
-    Runs two steering sweeps under identical conditions for fair comparison:
-      1. d_conv (convergence-gap direction from exp10 ridge probes)
-      2. d_mean (mean IT-PT direction from Phase 0 precompute)
-
-    Both use chat template (IT default), batch=16 on B200, same prompts.
-    """
+    """Phase 4B wrapper: runs BOTH d_conv and d_mean sequentially (for prototype/smoke)."""
     _setup()
     _setup_sigterm_handler()
 
     import json
     import torch
-    print(f"=== Phase 4B steering: {model_name} ===")
+    print(f"=== Phase 4B steering: {model_name} (both directions) ===")
     print(f"GPU: {torch.cuda.get_device_name(0)}")
 
     results_vol.reload()
 
-    # Check go/no-go
     summary_path = f"/root/results/exp10/{model_name}/probes/probe_summary.json"
     with open(summary_path) as f:
         summary = json.load(f)
 
     go_nogo = summary.get("go_nogo", "unknown")
     if go_nogo == "redundant":
-        print(f"[Phase 4B] {model_name}: SKIP — go_nogo=redundant (d_commit ≈ d_mean)")
+        print(f"[Phase 4B] {model_name}: SKIP — go_nogo=redundant (d_conv ≈ d_mean)")
         return f"steer {model_name}: SKIPPED (redundant)"
 
     import subprocess as sp
@@ -384,72 +459,47 @@ def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
     max_gen = STEER_MAX_GEN.get(model_name, 512)
     results = []
 
-    # ── Run 1: Steer with d_conv (convergence-gap direction from exp10) ──────
-    d_conv_path = f"/root/results/exp10/{model_name}/probes/commitment_directions.npz"
-    cmd_conv = [
-        "python", "-m", "src.poc.exp6.run",
-        "--experiment", "A1",
-        "--variant", "it",
-        "--device", "cuda:0",
-        "--model-name", model_name,
-        "--corrective-direction-path", d_conv_path,
-        "--run-name", f"A1_d_conv_{model_name}",
-        "--output-base", output_base,
-        "--batch-size", "16",
-        "--n-eval-examples", str(n_eval_examples),
-        "--max-gen-tokens", str(max_gen),
-    ]
-    print(f"\n[Phase 4B] Steering with d_conv...")
-    r1 = sp.run(cmd_conv, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
-    if r1.stdout:
-        print(r1.stdout[-2000:])
-    if r1.returncode != 0:
-        err = r1.stderr[-1000:] if r1.stderr else "(no stderr)"
-        print(f"[d_conv] FAILED:\n{err}")
-        results.append(f"d_conv=FAIL")
-    else:
-        results.append(f"d_conv=OK")
+    for direction in ["d_conv", "d_mean"]:
+        if direction == "d_conv":
+            dir_path = f"/root/results/exp10/{model_name}/probes/commitment_directions.npz"
+        else:
+            dir_path = _find_mean_dir(model_name)
+            if dir_path is None:
+                results.append("d_mean=SKIP(no_dirs)")
+                continue
 
-    _commit_volumes()
-
-    # ── Run 2: Steer with d_mean (Phase 0 precomputed IT-PT mean direction) ──
-    d_mean_path = _find_mean_dir(model_name)
-    if d_mean_path is None:
-        print(f"[Phase 4B] No d_mean directions for {model_name} — skipping d_mean steering")
-        results.append("d_mean=SKIP(no_dirs)")
-    else:
-        cmd_mean = [
+        cmd = [
             "python", "-m", "src.poc.exp6.run",
             "--experiment", "A1",
             "--variant", "it",
             "--device", "cuda:0",
             "--model-name", model_name,
-            "--corrective-direction-path", d_mean_path,
-            "--run-name", f"A1_d_mean_{model_name}",
+            "--corrective-direction-path", dir_path,
+            "--run-name", f"A1_{direction}_{model_name}",
             "--output-base", output_base,
-            "--batch-size", "16",
+            "--batch-size", "8",
             "--n-eval-examples", str(n_eval_examples),
             "--max-gen-tokens", str(max_gen),
         ]
-        print(f"\n[Phase 4B] Steering with d_mean...")
-        r2 = sp.run(cmd_mean, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
-        if r2.stdout:
-            print(r2.stdout[-2000:])
-        if r2.returncode != 0:
-            err = r2.stderr[-1000:] if r2.stderr else "(no stderr)"
-            print(f"[d_mean] FAILED:\n{err}")
-            results.append("d_mean=FAIL")
+        print(f"\n[Phase 4B] Steering with {direction}...")
+        r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=10000)
+        if r.stdout:
+            print(r.stdout[-2000:])
+        if r.returncode != 0:
+            err = r.stderr[-1000:] if r.stderr else "(no stderr)"
+            print(f"[{direction}] FAILED:\n{err}")
+            results.append(f"{direction}=FAIL")
         else:
-            results.append("d_mean=OK")
+            results.append(f"{direction}=OK")
+        _commit_volumes()
 
-    _commit_volumes()
     return f"steer {model_name}: {', '.join(results)}"
 
 
 # ── Smoke test: end-to-end validation with 1 model, 5 prompts ───────────────
 
 @app.function(
-    gpu="B200",
+    gpu="H100",
     timeout=1800,  # 30 min
     retries=modal.Retries(max_retries=1),
     image=image,
@@ -788,7 +838,7 @@ def _run_prototype():
     Tests the complete pipeline end-to-end including the new batched patching
     and dual-direction steering (d_conv + d_mean).
 
-    Uses up to 2 B200 GPUs simultaneously.
+    Uses up to 2 H100 GPUs simultaneously.
     Models: deepseek_v2_lite (MoE, 27 layers) + gemma3_4b (dense, 34 layers).
 
     Usage: modal run --detach src/poc/exp10/modal_exp10.py --mode prototype
@@ -860,9 +910,11 @@ def _run_full():
     for r in results_3:
         print(f"  {r}")
 
-    # ── Phase 4B: Conditional steering ────────────────────────────────────────
-    print("\n[Phase 4B] Steering with commitment directions (conditional)...")
-    results_4 = list(steer_one.map(MODELS))
+    # ── Phase 4B: Conditional steering (12 parallel jobs: 6 models × 2 dirs) ─
+    print("\n[Phase 4B] Steering with d_conv + d_mean (12 jobs, up to 10 H100s)...")
+    steer_models = [m for m in MODELS for _ in ("d_conv", "d_mean")]
+    steer_dirs = [d for _ in MODELS for d in ("d_conv", "d_mean")]
+    results_4 = list(steer_one_direction.map(steer_models, steer_dirs))
     for r in results_4:
         print(f"  {r}")
 

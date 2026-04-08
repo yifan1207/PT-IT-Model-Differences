@@ -217,7 +217,12 @@ def train_probes(
             d_commit = torch.zeros(d_model)
         commitment_dir_arrays[f"layer_{li}"] = d_commit.numpy()
 
-        # R² on held-out PCA subsample (per-layer Δkl target)
+        # R² on PCA subsample tokens. NOTE: these tokens were also included
+        # in the streaming accumulators (XᵀX, Xᵀy) used to fit w, so this is
+        # an IN-SAMPLE metric, not true held-out R². With ridge λ=1.0, the
+        # optimistic bias is small, but should be reported as "training R²"
+        # in the paper, not "test R²". The 5× random splits below provide
+        # a more honest stability estimate.
         r2_test = 0.0
         if delta_kl_all is not None and n_test > 0:
             dh_path = pca_dir / f"delta_h_layer_{li}.npy"

@@ -196,6 +196,12 @@ class Exp6InterventionSpec:
                 print(f"[interventions] WARNING: dropping layers {degenerate} "
                       f"(near-zero corrective direction norm)")
                 self.layers -= set(degenerate)
+                if not self.layers:
+                    raise ValueError(
+                        f"ALL corrective layers have near-zero direction norm "
+                        f"(dropped {degenerate}). Cannot steer — probe training "
+                        f"likely failed. Check probe_summary.json."
+                    )
         if self.method == "content_direction":
             missing = sorted(i for i in self.layers if i not in self.content_directions)
             if missing:
