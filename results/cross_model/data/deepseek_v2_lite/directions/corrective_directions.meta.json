@@ -1,0 +1,82 @@
+{
+  "model_name": "deepseek_v2_lite",
+  "pt_model_id": "deepseek-ai/DeepSeek-V2-Lite",
+  "it_model_id": "deepseek-ai/DeepSeek-V2-Lite-Chat",
+  "dataset_path": "data/eval_dataset_v2.jsonl",
+  "layers": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26
+  ],
+  "n_layers": 27,
+  "d_model": 2048,
+  "layer_groups": {
+    "corrective": [
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26
+    ],
+    "mid": [
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "early": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  "token_positions": "generated_only (min(IT_gen_len, PT_gen_len, 64) per record)",
+  "chat_template": false,
+  "n_total_records": 1400,
+  "n_selected_records": 600,
+  "tokens_per_record": {
+    "min": 5,
+    "max": 64,
+    "mean": 45.7
+  },
+  "total_token_pairs_per_layer": 27395,
+  "contrast_signal": "G1_judge + STR_contrast + norm_PT_NLL(IT_output)",
+  "direction_formula": "normalize(mean_IT_gen_acts - mean_PT_gen_acts) over high-contrast records"
+}

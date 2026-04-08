@@ -1,0 +1,182 @@
+{
+  "A1_alpha_-0.5": {
+    "condition": "A1_alpha_-0.5",
+    "alpha": -0.5,
+    "mean_commitment": 26.08244477172312,
+    "median_commitment": 28.0,
+    "std_commitment": 4.650564084695533,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_-2": {
+    "condition": "A1_alpha_-2",
+    "alpha": -2.0,
+    "mean_commitment": 26.212893961708396,
+    "median_commitment": 28.0,
+    "std_commitment": 4.6107441780426095,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_-5": {
+    "condition": "A1_alpha_-5",
+    "alpha": -5.0,
+    "mean_commitment": 26.60415316642121,
+    "median_commitment": 29.0,
+    "std_commitment": 4.300175406236884,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_0.25": {
+    "condition": "A1_alpha_0.25",
+    "alpha": 0.25,
+    "mean_commitment": 26.039315169366716,
+    "median_commitment": 27.0,
+    "std_commitment": 4.656041173914453,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_0.75": {
+    "condition": "A1_alpha_0.75",
+    "alpha": 0.75,
+    "mean_commitment": 25.9969734904271,
+    "median_commitment": 27.0,
+    "std_commitment": 4.68264724742046,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_1.5": {
+    "condition": "A1_alpha_1.5",
+    "alpha": 1.5,
+    "mean_commitment": 26.09166789396171,
+    "median_commitment": 28.0,
+    "std_commitment": 4.739031497083933,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_3": {
+    "condition": "A1_alpha_3",
+    "alpha": 3.0,
+    "mean_commitment": 29.699966863033872,
+    "median_commitment": 31.0,
+    "std_commitment": 2.727229735702977,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_baseline": {
+    "condition": "A1_baseline",
+    "alpha": 1.0,
+    "mean_commitment": 26.008910162002945,
+    "median_commitment": 27.0,
+    "std_commitment": 4.694358017048091,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_ctrl_random_b1": {
+    "condition": "A1_ctrl_random_b1",
+    "alpha": 1.0,
+    "mean_commitment": 26.274808541973492,
+    "median_commitment": 28.0,
+    "std_commitment": 4.718976215712802,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_-1": {
+    "condition": "A1_alpha_-1",
+    "alpha": -1.0,
+    "mean_commitment": 26.1584941089838,
+    "median_commitment": 28.0,
+    "std_commitment": 4.6425404972250615,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_-3": {
+    "condition": "A1_alpha_-3",
+    "alpha": -3.0,
+    "mean_commitment": 26.2939764359352,
+    "median_commitment": 28.0,
+    "std_commitment": 4.549629670410946,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_0.5": {
+    "condition": "A1_alpha_0.5",
+    "alpha": 0.5,
+    "mean_commitment": 26.01181148748159,
+    "median_commitment": 27.0,
+    "std_commitment": 4.671610002716641,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_0": {
+    "condition": "A1_alpha_0",
+    "alpha": 0.0,
+    "mean_commitment": 26.094491899852724,
+    "median_commitment": 28.0,
+    "std_commitment": 4.644723580841311,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_1": {
+    "condition": "A1_alpha_1",
+    "alpha": 1.0,
+    "mean_commitment": 26.008840206185567,
+    "median_commitment": 27.0,
+    "std_commitment": 4.692023820867199,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_2": {
+    "condition": "A1_alpha_2",
+    "alpha": 2.0,
+    "mean_commitment": 26.27412739322533,
+    "median_commitment": 28.0,
+    "std_commitment": 4.7662254439229175,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_alpha_5": {
+    "condition": "A1_alpha_5",
+    "alpha": 5.0,
+    "mean_commitment": 30.977547864506626,
+    "median_commitment": 31.0,
+    "std_commitment": 0.35620466472648354,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_ctrl_random_b0": {
+    "condition": "A1_ctrl_random_b0",
+    "alpha": 1.0,
+    "mean_commitment": 26.008840206185567,
+    "median_commitment": 27.0,
+    "std_commitment": 4.692023820867199,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  },
+  "A1_ctrl_random_b3": {
+    "condition": "A1_ctrl_random_b3",
+    "alpha": 1.0,
+    "mean_commitment": 29.741984536082473,
+    "median_commitment": 30.0,
+    "std_commitment": 0.5364684688059658,
+    "n_tokens": 271600,
+    "n_layers": 32,
+    "skip_first_n": 5
+  }
+}

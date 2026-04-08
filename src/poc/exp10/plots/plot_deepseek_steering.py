@@ -9,13 +9,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-RESULTS_BASE = Path("results/exp10/deepseek_v2_lite/steering/steering")
-OUT_DIR = Path("results/exp10/deepseek_v2_lite/plots")
+RESULTS_BASE = Path("results/exp10/data")
+OUT_DIR = Path("results/exp10/plots")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_scores(direction: str) -> list[dict]:
-    path = RESULTS_BASE / f"A1_{direction}_deepseek_v2_lite" / "scores.json"
+    path = RESULTS_BASE / f"deepseek_{direction}_scores.json"
     with open(path) as f:
         return json.load(f)
 

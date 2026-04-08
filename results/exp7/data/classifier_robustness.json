@@ -1,0 +1,40 @@
+{
+  "perturbation_tests": {
+    "structural_discourse_to_STRUCTURAL": {
+      "n_tokens_reclassified": 52,
+      "target_category": "STRUCTURAL",
+      "delta_str_mean": 0.09394291413566075,
+      "delta_str_std": 0.04595320788938612,
+      "delta_str_max_abs": 0.14526828180109017,
+      "n_conditions_tested": 18
+    },
+    "structural_discourse_reverse_to_CONTENT": {
+      "n_tokens_reclassified": 52,
+      "target_category": "CONTENT",
+      "delta_str_mean": -0.0019148856107100293,
+      "delta_str_std": 0.0009554948691908308,
+      "delta_str_max_abs": 0.0037012270540218647,
+      "n_conditions_tested": 18
+    },
+    "function_content_to_FUNCTION": {
+      "n_tokens_reclassified": 500,
+      "target_category": "FUNCTION",
+      "delta_str_mean": -5.085368285266062e-07,
+      "delta_str_std": 1.583785280563826e-06,
+      "delta_str_max_abs": 6.5656711950509705e-06,
+      "n_conditions_tested": 18
+    },
+    "function_content_reverse_to_CONTENT": {
+      "n_tokens_reclassified": 500,
+      "target_category": "CONTENT",
+      "delta_str_mean": -5.085368285266062e-07,
+      "delta_str_std": 1.583785280563826e-06,
+      "delta_str_max_abs": 6.5656711950509705e-06,
+      "n_conditions_tested": 18
+    }
+  },
+  "max_delta_str": 0.14526828180109017,
+  "n_conditions": 18,
+  "n_total_texts": 41400,
+  "n_perturb": 500
+}

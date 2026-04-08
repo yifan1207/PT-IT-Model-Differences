@@ -1,0 +1,1047 @@
+{
+  "description": "0D key metrics: CIs, effect sizes, monotonicity",
+  "confidence_intervals": {
+    "structural_token_ratio": [
+      {
+        "condition": "A1_alpha_-0.5",
+        "mean": 0.0552,
+        "ci": [
+          0.0513,
+          0.0596
+        ],
+        "ci_width": 0.0082
+      },
+      {
+        "condition": "A1_alpha_-1",
+        "mean": 0.0535,
+        "ci": [
+          0.0497,
+          0.058
+        ],
+        "ci_width": 0.0083
+      },
+      {
+        "condition": "A1_alpha_-2",
+        "mean": 0.0744,
+        "ci": [
+          0.069,
+          0.0802
+        ],
+        "ci_width": 0.0111
+      },
+      {
+        "condition": "A1_alpha_-3",
+        "mean": 0.0979,
+        "ci": [
+          0.0905,
+          0.1061
+        ],
+        "ci_width": 0.0156
+      },
+      {
+        "condition": "A1_alpha_-5",
+        "mean": 0.0663,
+        "ci": [
+          0.0604,
+          0.0728
+        ],
+        "ci_width": 0.0124
+      },
+      {
+        "condition": "A1_alpha_0",
+        "mean": 0.0536,
+        "ci": [
+          0.0507,
+          0.0569
+        ],
+        "ci_width": 0.0062
+      },
+      {
+        "condition": "A1_alpha_0.25",
+        "mean": 0.0527,
+        "ci": [
+          0.05,
+          0.0558
+        ],
+        "ci_width": 0.0059
+      },
+      {
+        "condition": "A1_alpha_0.5",
+        "mean": 0.056,
+        "ci": [
+          0.0528,
+          0.0596
+        ],
+        "ci_width": 0.0067
+      },
+      {
+        "condition": "A1_alpha_0.75",
+        "mean": 0.0474,
+        "ci": [
+          0.0451,
+          0.0499
+        ],
+        "ci_width": 0.0048
+      },
+      {
+        "condition": "A1_alpha_1",
+        "mean": 0.0453,
+        "ci": [
+          0.0432,
+          0.0477
+        ],
+        "ci_width": 0.0045
+      },
+      {
+        "condition": "A1_alpha_1.5",
+        "mean": 0.0445,
+        "ci": [
+          0.0423,
+          0.0469
+        ],
+        "ci_width": 0.0046
+      },
+      {
+        "condition": "A1_alpha_2",
+        "mean": 0.0482,
+        "ci": [
+          0.0458,
+          0.0507
+        ],
+        "ci_width": 0.005
+      },
+      {
+        "condition": "A1_alpha_3",
+        "mean": 0.2754,
+        "ci": [
+          0.2628,
+          0.2882
+        ],
+        "ci_width": 0.0254
+      },
+      {
+        "condition": "A1_alpha_5",
+        "mean": 0.53,
+        "ci": [
+          0.5141,
+          0.5463
+        ],
+        "ci_width": 0.0322
+      },
+      {
+        "condition": "A1_baseline",
+        "mean": 0.0453,
+        "ci": [
+          0.0432,
+          0.0477
+        ],
+        "ci_width": 0.0045
+      },
+      {
+        "condition": "A1_ctrl_random_b0",
+        "mean": 0.0453,
+        "ci": [
+          0.0432,
+          0.0477
+        ],
+        "ci_width": 0.0045
+      },
+      {
+        "condition": "A1_ctrl_random_b1",
+        "mean": 0.0397,
+        "ci": [
+          0.0363,
+          0.0437
+        ],
+        "ci_width": 0.0073
+      },
+      {
+        "condition": "A1_ctrl_random_b3",
+        "mean": 0.1853,
+        "ci": [
+          0.1731,
+          0.1977
+        ],
+        "ci_width": 0.0245
+      }
+    ],
+    "mmlu_accuracy": [
+      {
+        "condition": "A1_alpha_-0.5",
+        "mean": 0.2217,
+        "ci": [
+          0.1883,
+          0.255
+        ],
+        "ci_width": 0.0667
+      },
+      {
+        "condition": "A1_alpha_-1",
+        "mean": 0.1917,
+        "ci": [
+          0.1617,
+          0.225
+        ],
+        "ci_width": 0.0633
+      },
+      {
+        "condition": "A1_alpha_-2",
+        "mean": 0.145,
+        "ci": [
+          0.1183,
+          0.1754
+        ],
+        "ci_width": 0.0571
+      },
+      {
+        "condition": "A1_alpha_-3",
+        "mean": 0.095,
+        "ci": [
+          0.0733,
+          0.12
+        ],
+        "ci_width": 0.0467
+      },
+      {
+        "condition": "A1_alpha_-5",
+        "mean": 0.0617,
+        "ci": [
+          0.045,
+          0.0833
+        ],
+        "ci_width": 0.0383
+      },
+      {
+        "condition": "A1_alpha_0",
+        "mean": 0.2417,
+        "ci": [
+          0.2083,
+          0.2767
+        ],
+        "ci_width": 0.0683
+      },
+      {
+        "condition": "A1_alpha_0.25",
+        "mean": 0.2517,
+        "ci": [
+          0.2167,
+          0.2867
+        ],
+        "ci_width": 0.07
+      },
+      {
+        "condition": "A1_alpha_0.5",
+        "mean": 0.2533,
+        "ci": [
+          0.2183,
+          0.2883
+        ],
+        "ci_width": 0.07
+      },
+      {
+        "condition": "A1_alpha_0.75",
+        "mean": 0.2483,
+        "ci": [
+          0.2133,
+          0.2833
+        ],
+        "ci_width": 0.07
+      },
+      {
+        "condition": "A1_alpha_1",
+        "mean": 0.2517,
+        "ci": [
+          0.2183,
+          0.2867
+        ],
+        "ci_width": 0.0683
+      },
+      {
+        "condition": "A1_alpha_1.5",
+        "mean": 0.2483,
+        "ci": [
+          0.215,
+          0.2833
+        ],
+        "ci_width": 0.0683
+      },
+      {
+        "condition": "A1_alpha_2",
+        "mean": 0.275,
+        "ci": [
+          0.24,
+          0.31
+        ],
+        "ci_width": 0.07
+      },
+      {
+        "condition": "A1_alpha_3",
+        "mean": 0.305,
+        "ci": [
+          0.2683,
+          0.3417
+        ],
+        "ci_width": 0.0733
+      },
+      {
+        "condition": "A1_alpha_5",
+        "mean": 0.2383,
+        "ci": [
+          0.205,
+          0.2733
+        ],
+        "ci_width": 0.0683
+      },
+      {
+        "condition": "A1_baseline",
+        "mean": 0.2517,
+        "ci": [
+          0.2183,
+          0.2867
+        ],
+        "ci_width": 0.0683
+      },
+      {
+        "condition": "A1_ctrl_random_b0",
+        "mean": 0.2517,
+        "ci": [
+          0.2183,
+          0.2867
+        ],
+        "ci_width": 0.0683
+      },
+      {
+        "condition": "A1_ctrl_random_b1",
+        "mean": 0.285,
+        "ci": [
+          0.25,
+          0.3217
+        ],
+        "ci_width": 0.0717
+      },
+      {
+        "condition": "A1_ctrl_random_b3",
+        "mean": 0.0533,
+        "ci": [
+          0.0367,
+          0.0733
+        ],
+        "ci_width": 0.0367
+      }
+    ],
+    "reasoning_em": [
+      {
+        "condition": "A1_alpha_-0.5",
+        "mean": 0.4225,
+        "ci": [
+          0.375,
+          0.4725
+        ],
+        "ci_width": 0.0975
+      },
+      {
+        "condition": "A1_alpha_-1",
+        "mean": 0.315,
+        "ci": [
+          0.27,
+          0.3625
+        ],
+        "ci_width": 0.0925
+      },
+      {
+        "condition": "A1_alpha_-2",
+        "mean": 0.12,
+        "ci": [
+          0.09,
+          0.155
+        ],
+        "ci_width": 0.065
+      },
+      {
+        "condition": "A1_alpha_-3",
+        "mean": 0.055,
+        "ci": [
+          0.035,
+          0.08
+        ],
+        "ci_width": 0.045
+      },
+      {
+        "condition": "A1_alpha_-5",
+        "mean": 0.04,
+        "ci": [
+          0.0225,
+          0.0625
+        ],
+        "ci_width": 0.04
+      },
+      {
+        "condition": "A1_alpha_0",
+        "mean": 0.5175,
+        "ci": [
+          0.4675,
+          0.565
+        ],
+        "ci_width": 0.0975
+      },
+      {
+        "condition": "A1_alpha_0.25",
+        "mean": 0.555,
+        "ci": [
+          0.505,
+          0.6025
+        ],
+        "ci_width": 0.0975
+      },
+      {
+        "condition": "A1_alpha_0.5",
+        "mean": 0.5775,
+        "ci": [
+          0.5275,
+          0.6275
+        ],
+        "ci_width": 0.1
+      },
+      {
+        "condition": "A1_alpha_0.75",
+        "mean": 0.5425,
+        "ci": [
+          0.4911,
+          0.59
+        ],
+        "ci_width": 0.0989
+      },
+      {
+        "condition": "A1_alpha_1",
+        "mean": 0.54,
+        "ci": [
+          0.49,
+          0.5875
+        ],
+        "ci_width": 0.0975
+      },
+      {
+        "condition": "A1_alpha_1.5",
+        "mean": 0.545,
+        "ci": [
+          0.495,
+          0.5925
+        ],
+        "ci_width": 0.0975
+      },
+      {
+        "condition": "A1_alpha_2",
+        "mean": 0.495,
+        "ci": [
+          0.445,
+          0.5425
+        ],
+        "ci_width": 0.0975
+      },
+      {
+        "condition": "A1_alpha_3",
+        "mean": 0.1225,
+        "ci": [
+          0.0925,
+          0.1575
+        ],
+        "ci_width": 0.065
+      },
+      {
+        "condition": "A1_alpha_5",
+        "mean": 0.0,
+        "ci": [
+          NaN,
+          NaN
+        ],
+        "ci_width": NaN
+      },
+      {
+        "condition": "A1_baseline",
+        "mean": 0.54,
+        "ci": [
+          0.49,
+          0.5875
+        ],
+        "ci_width": 0.0975
+      },
+      {
+        "condition": "A1_ctrl_random_b0",
+        "mean": 0.54,
+        "ci": [
+          0.49,
+          0.5875
+        ],
+        "ci_width": 0.0975
+      },
+      {
+        "condition": "A1_ctrl_random_b1",
+        "mean": 0.0675,
+        "ci": [
+          0.045,
+          0.095
+        ],
+        "ci_width": 0.05
+      },
+      {
+        "condition": "A1_ctrl_random_b3",
+        "mean": 0.0,
+        "ci": [
+          NaN,
+          NaN
+        ],
+        "ci_width": NaN
+      }
+    ],
+    "gsm8k_em": [
+      {
+        "condition": "A1_alpha_-0.5",
+        "mean": 0.2475,
+        "ci": [
+          0.2075,
+          0.29
+        ],
+        "ci_width": 0.0825
+      },
+      {
+        "condition": "A1_alpha_-1",
+        "mean": 0.17,
+        "ci": [
+          0.135,
+          0.21
+        ],
+        "ci_width": 0.075
+      },
+      {
+        "condition": "A1_alpha_-2",
+        "mean": 0.0275,
+        "ci": [
+          0.015,
+          0.0475
+        ],
+        "ci_width": 0.0325
+      },
+      {
+        "condition": "A1_alpha_-3",
+        "mean": 0.0125,
+        "ci": [
+          0.005,
+          0.0275
+        ],
+        "ci_width": 0.0225
+      },
+      {
+        "condition": "A1_alpha_-5",
+        "mean": 0.005,
+        "ci": [
+          0.0,
+          0.0175
+        ],
+        "ci_width": 0.0175
+      },
+      {
+        "condition": "A1_alpha_0",
+        "mean": 0.3825,
+        "ci": [
+          0.3375,
+          0.4325
+        ],
+        "ci_width": 0.095
+      },
+      {
+        "condition": "A1_alpha_0.25",
+        "mean": 0.4175,
+        "ci": [
+          0.37,
+          0.465
+        ],
+        "ci_width": 0.095
+      },
+      {
+        "condition": "A1_alpha_0.5",
+        "mean": 0.445,
+        "ci": [
+          0.395,
+          0.495
+        ],
+        "ci_width": 0.1
+      },
+      {
+        "condition": "A1_alpha_0.75",
+        "mean": 0.3875,
+        "ci": [
+          0.34,
+          0.435
+        ],
+        "ci_width": 0.095
+      },
+      {
+        "condition": "A1_alpha_1",
+        "mean": 0.4175,
+        "ci": [
+          0.37,
+          0.465
+        ],
+        "ci_width": 0.095
+      },
+      {
+        "condition": "A1_alpha_1.5",
+        "mean": 0.4075,
+        "ci": [
+          0.36,
+          0.455
+        ],
+        "ci_width": 0.095
+      },
+      {
+        "condition": "A1_alpha_2",
+        "mean": 0.33,
+        "ci": [
+          0.285,
+          0.3775
+        ],
+        "ci_width": 0.0925
+      },
+      {
+        "condition": "A1_alpha_3",
+        "mean": 0.0625,
+        "ci": [
+          0.0425,
+          0.09
+        ],
+        "ci_width": 0.0475
+      },
+      {
+        "condition": "A1_alpha_5",
+        "mean": 0.0,
+        "ci": [
+          NaN,
+          NaN
+        ],
+        "ci_width": NaN
+      },
+      {
+        "condition": "A1_baseline",
+        "mean": 0.4175,
+        "ci": [
+          0.37,
+          0.465
+        ],
+        "ci_width": 0.095
+      },
+      {
+        "condition": "A1_ctrl_random_b0",
+        "mean": 0.4175,
+        "ci": [
+          0.37,
+          0.465
+        ],
+        "ci_width": 0.095
+      },
+      {
+        "condition": "A1_ctrl_random_b1",
+        "mean": 0.0175,
+        "ci": [
+          0.0075,
+          0.035
+        ],
+        "ci_width": 0.0275
+      },
+      {
+        "condition": "A1_ctrl_random_b3",
+        "mean": 0.0,
+        "ci": [
+          NaN,
+          NaN
+        ],
+        "ci_width": NaN
+      }
+    ],
+    "format_compliance_v2": [
+      {
+        "condition": "A1_alpha_-0.5",
+        "mean": 0.2225,
+        "ci": [
+          0.1813,
+          0.2665
+        ],
+        "ci_width": 0.0852
+      },
+      {
+        "condition": "A1_alpha_-1",
+        "mean": 0.239,
+        "ci": [
+          0.1978,
+          0.2857
+        ],
+        "ci_width": 0.0879
+      },
+      {
+        "condition": "A1_alpha_-2",
+        "mean": 0.1868,
+        "ci": [
+          0.1511,
+          0.2308
+        ],
+        "ci_width": 0.0797
+      },
+      {
+        "condition": "A1_alpha_-3",
+        "mean": 0.1703,
+        "ci": [
+          0.1346,
+          0.2115
+        ],
+        "ci_width": 0.0769
+      },
+      {
+        "condition": "A1_alpha_-5",
+        "mean": 0.1758,
+        "ci": [
+          0.1401,
+          0.217
+        ],
+        "ci_width": 0.0769
+      },
+      {
+        "condition": "A1_alpha_0",
+        "mean": 0.3242,
+        "ci": [
+          0.2775,
+          0.3736
+        ],
+        "ci_width": 0.0962
+      },
+      {
+        "condition": "A1_alpha_0.25",
+        "mean": 0.4121,
+        "ci": [
+          0.3626,
+          0.4643
+        ],
+        "ci_width": 0.1016
+      },
+      {
+        "condition": "A1_alpha_0.5",
+        "mean": 0.4148,
+        "ci": [
+          0.3654,
+          0.467
+        ],
+        "ci_width": 0.1016
+      },
+      {
+        "condition": "A1_alpha_0.75",
+        "mean": 0.4533,
+        "ci": [
+          0.4038,
+          0.5055
+        ],
+        "ci_width": 0.1016
+      },
+      {
+        "condition": "A1_alpha_1",
+        "mean": 0.4835,
+        "ci": [
+          0.4341,
+          0.5357
+        ],
+        "ci_width": 0.1016
+      },
+      {
+        "condition": "A1_alpha_1.5",
+        "mean": 0.4451,
+        "ci": [
+          0.3929,
+          0.4973
+        ],
+        "ci_width": 0.1044
+      },
+      {
+        "condition": "A1_alpha_2",
+        "mean": 0.4451,
+        "ci": [
+          0.3956,
+          0.4973
+        ],
+        "ci_width": 0.1016
+      },
+      {
+        "condition": "A1_alpha_3",
+        "mean": 0.3819,
+        "ci": [
+          0.3324,
+          0.4341
+        ],
+        "ci_width": 0.1016
+      },
+      {
+        "condition": "A1_alpha_5",
+        "mean": 0.3251,
+        "ci": [
+          0.2755,
+          0.3777
+        ],
+        "ci_width": 0.1022
+      },
+      {
+        "condition": "A1_baseline",
+        "mean": 0.4835,
+        "ci": [
+          0.4341,
+          0.5357
+        ],
+        "ci_width": 0.1016
+      },
+      {
+        "condition": "A1_ctrl_random_b0",
+        "mean": 0.4835,
+        "ci": [
+          0.4341,
+          0.5357
+        ],
+        "ci_width": 0.1016
+      },
+      {
+        "condition": "A1_ctrl_random_b1",
+        "mean": 0.3066,
+        "ci": [
+          0.2624,
+          0.3564
+        ],
+        "ci_width": 0.0939
+      },
+      {
+        "condition": "A1_ctrl_random_b3",
+        "mean": 0.3438,
+        "ci": [
+          0.2955,
+          0.3949
+        ],
+        "ci_width": 0.0994
+      }
+    ],
+    "alignment_behavior": [
+      {
+        "condition": "A1_alpha_-0.5",
+        "mean": 0.6533,
+        "ci": [
+          0.5733,
+          0.7267
+        ],
+        "ci_width": 0.1533
+      },
+      {
+        "condition": "A1_alpha_-1",
+        "mean": 0.3333,
+        "ci": [
+          0.26,
+          0.4133
+        ],
+        "ci_width": 0.1533
+      },
+      {
+        "condition": "A1_alpha_-2",
+        "mean": 0.0133,
+        "ci": [
+          0.0,
+          0.0467
+        ],
+        "ci_width": 0.0467
+      },
+      {
+        "condition": "A1_alpha_-3",
+        "mean": 0.0133,
+        "ci": [
+          0.0,
+          0.0467
+        ],
+        "ci_width": 0.0467
+      },
+      {
+        "condition": "A1_alpha_-5",
+        "mean": 0.0267,
+        "ci": [
+          0.0067,
+          0.0667
+        ],
+        "ci_width": 0.06
+      },
+      {
+        "condition": "A1_alpha_0",
+        "mean": 0.8067,
+        "ci": [
+          0.74,
+          0.8667
+        ],
+        "ci_width": 0.1267
+      },
+      {
+        "condition": "A1_alpha_0.25",
+        "mean": 0.9067,
+        "ci": [
+          0.8533,
+          0.9467
+        ],
+        "ci_width": 0.0933
+      },
+      {
+        "condition": "A1_alpha_0.5",
+        "mean": 0.9333,
+        "ci": [
+          0.88,
+          0.9667
+        ],
+        "ci_width": 0.0867
+      },
+      {
+        "condition": "A1_alpha_0.75",
+        "mean": 0.9267,
+        "ci": [
+          0.8733,
+          0.96
+        ],
+        "ci_width": 0.0867
+      },
+      {
+        "condition": "A1_alpha_1",
+        "mean": 0.9067,
+        "ci": [
+          0.8533,
+          0.9467
+        ],
+        "ci_width": 0.0933
+      },
+      {
+        "condition": "A1_alpha_1.5",
+        "mean": 0.6933,
+        "ci": [
+          0.62,
+          0.7667
+        ],
+        "ci_width": 0.1467
+      },
+      {
+        "condition": "A1_alpha_2",
+        "mean": 0.8133,
+        "ci": [
+          0.7467,
+          0.8733
+        ],
+        "ci_width": 0.1267
+      },
+      {
+        "condition": "A1_alpha_3",
+        "mean": 0.6867,
+        "ci": [
+          0.6067,
+          0.7533
+        ],
+        "ci_width": 0.1467
+      },
+      {
+        "condition": "A1_alpha_5",
+        "mean": 0.8533,
+        "ci": [
+          0.7933,
+          0.9067
+        ],
+        "ci_width": 0.1133
+      },
+      {
+        "condition": "A1_baseline",
+        "mean": 0.9067,
+        "ci": [
+          0.8533,
+          0.9467
+        ],
+        "ci_width": 0.0933
+      },
+      {
+        "condition": "A1_ctrl_random_b0",
+        "mean": 0.9067,
+        "ci": [
+          0.8533,
+          0.9467
+        ],
+        "ci_width": 0.0933
+      },
+      {
+        "condition": "A1_ctrl_random_b1",
+        "mean": 0.58,
+        "ci": [
+          0.5,
+          0.6533
+        ],
+        "ci_width": 0.1533
+      },
+      {
+        "condition": "A1_ctrl_random_b3",
+        "mean": 0.0,
+        "ci": [
+          NaN,
+          NaN
+        ],
+        "ci_width": NaN
+      }
+    ]
+  },
+  "monotonicity_spearman": {
+    "structural_token_ratio": {
+      "rho": -0.1604,
+      "p": 0.583753
+    },
+    "mmlu_accuracy": {
+      "rho": 0.7753,
+      "p": 0.001122
+    },
+    "reasoning_em": {
+      "rho": 0.2396,
+      "p": 0.40943
+    },
+    "gsm8k_em": {
+      "rho": 0.2464,
+      "p": 0.395723
+    },
+    "format_compliance_v2": {
+      "rho": 0.7393,
+      "p": 0.002516
+    },
+    "alignment_behavior": {
+      "rho": 0.6145,
+      "p": 0.019362
+    }
+  },
+  "max_effect_sizes": {
+    "structural_token_ratio": {
+      "d": 1.737,
+      "magnitude": "large",
+      "comparison": "A1_alpha_5_vs_A1_baseline"
+    },
+    "mmlu_accuracy": {
+      "d": -0.573,
+      "magnitude": "medium",
+      "comparison": "A1_ctrl_random_b3_vs_A1_baseline"
+    },
+    "reasoning_em": {
+      "d": -1.53,
+      "magnitude": "large",
+      "comparison": "A1_ctrl_random_b3_vs_A1_baseline"
+    },
+    "gsm8k_em": {
+      "d": -1.196,
+      "magnitude": "large",
+      "comparison": "A1_alpha_5_vs_A1_baseline"
+    },
+    "format_compliance_v2": {
+      "d": -0.707,
+      "magnitude": "medium",
+      "comparison": "A1_alpha_-3_vs_A1_baseline"
+    },
+    "alignment_behavior": {
+      "d": -4.393,
+      "magnitude": "large",
+      "comparison": "A1_ctrl_random_b3_vs_A1_baseline"
+    }
+  }
+}
