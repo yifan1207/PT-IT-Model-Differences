@@ -1,7 +1,7 @@
 # CLAUDE.md — Project Context for Claude Code
 
 ## Core directive
-Always implement 100% as planned. Overcome engineering difficulties — don't bypass by cutting down the plan or fool yourself that a shortcut is still rigorous. This is a NeurIPS submission.
+Always implement 100% as planned. Overcome engineering difficulties — don't bypass by cutting down the plan or fool yourself that a shortcut is still rigorous.
 
 ## Project overview
 Mechanistic interpretability study on instruction-tuned LLMs. We find a "corrective direction" in MLP outputs (layers ~20-33) that instruction tuning introduces. Removing this direction from generation degrades governance/structural formatting while preserving content quality — evidence of a distinct structural control mechanism.

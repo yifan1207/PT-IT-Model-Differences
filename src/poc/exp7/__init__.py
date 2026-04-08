@@ -1,4 +1,4 @@
-"""Exp7: Tier-0 methodology fixes for NeurIPS 2026 submission.
+"""Exp7: Tier-0 methodology validation.
 
 Experiments:
   0A  Direction calibration sensitivity (bootstrap)

@@ -257,3 +257,5 @@ results/*
 paper_draft/*
 
 .DS_Store
+cache/
+docs/

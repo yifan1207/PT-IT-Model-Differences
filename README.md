@@ -6,7 +6,7 @@
   <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white">
   <img alt="PyTorch" src="https://img.shields.io/badge/pytorch-2.5+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white">
   <img alt="6 Model Families" src="https://img.shields.io/badge/models-6%20families-green?style=flat-square">
-  <img alt="NeurIPS 2026" src="https://img.shields.io/badge/NeurIPS-2026-purple?style=flat-square">
+
 </p>
 
 > **TL;DR** &mdash; We compare pretrained and instruction-tuned variants of six transformer families and find that instruction tuning universally introduces a **late-layer corrective stage**: IT's MLPs oppose the residual stream, slowing prediction convergence by 1&ndash;6 layers. This corrective stage selectively controls **format and register** while leaving content knowledge intact.
@@ -98,7 +98,7 @@ IT representations in late layers occupy more independent dimensions than PT. Ge
 We extract the dominant IT&ndash;PT MLP activation difference at corrective layers and modulate it with a scalar &alpha;. Removing the direction (&alpha;&rarr;0) degrades formatting while content metrics stay flat:
 
 <p align="center">
-  <img src="results/exp6/merged_A1_it_v4/plots/A1_dose_response_v5.png" width="95%">
+  <img src="results/exp6/plots/merged_A1_it_v4_A1_dose_response_v5.png" width="95%">
   <br>
   <sub><b>Figure 7.</b> Dose-response for Gemma 3 4B. Format metrics (top) degrade monotonically as the corrective direction is removed/reversed. Content metrics (bottom: MMLU, GSM8K, reasoning) remain flat in the moderate range. Shaded bands = 95% BCa bootstrap CIs.</sub>
 </p>
@@ -114,7 +114,7 @@ The dissociation is validated by multiple controls:
 | Calibration split (0H) | Prompt selection artifact | Three disjoint prompt sets produce identical dose-response |
 
 <p align="center">
-  <img src="results/exp6/merged_A1_it_v4/plots/A1_layer_specificity_v5.png" width="85%">
+  <img src="results/exp6/plots/merged_A1_it_v4_A1_layer_specificity_v5.png" width="85%">
   <br>
   <sub><b>Figure 8.</b> Layer specificity. Only the corrective layers (20&ndash;33, red) produce governance effects. Early (blue) and mid (green) layers produce nothing.</sub>
 </p>
@@ -305,10 +305,9 @@ The adapter system provides a uniform interface across all six architectures, in
 ## Citation
 
 ```bibtex
-@inproceedings{anonymous2026corrective,
+@article{anonymous2026corrective,
   title={Instruction Tuning Slows Prediction Convergence: Late-Layer Corrective Computation Across Transformer Families},
   author={Anonymous},
-  booktitle={NeurIPS},
   year={2026}
 }
 ```
