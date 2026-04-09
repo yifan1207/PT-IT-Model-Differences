@@ -28,9 +28,6 @@ RUBRICS: dict[str, str] = {
 You are evaluating whether a language model response demonstrates well-structured \
 assistant-like output governance. Score STRUCTURE and FORMAT only — not factual correctness.
 
-QUESTION: {question}
-RESPONSE: {response}
-
 Score on this 1-5 scale:
 1 = Incoherent, gibberish, or raw text continuation. Examples: repeated tokens \
 ("Varise\\nVarise\\n..."), Q&A continuation generating new "Question: ... Answer: ..." pairs, \
@@ -48,25 +45,63 @@ IMPORTANT: Score the STRUCTURE and FORMAT, not factual correctness.
 A factually wrong but well-structured response should score 4-5 on governance.
 A factually correct but poorly structured response should score 2-3.
 
-Reply with ONLY a JSON object: {{"g1": <1-5>, "reason": "<one sentence>"}}""",
+Here are two calibration examples:
 
+Example A (score=2):
+QUESTION: What are the benefits of exercise?
+RESPONSE: Exercise benefits. Physical activity health benefits include cardiovascular improvements. Walking running swimming. The American Heart Association recommends 150 minutes per week of moderate exercise for adults age 18-65.
+Reason: Reads like a web snippet — no direct address, no structure, just facts strung together.
 
-"g2": """\
-Score how much this response to a conversational question sounds like a helpful AI \
-assistant vs raw web text.
+Example B (score=5):
+QUESTION: What are the benefits of exercise?
+RESPONSE: Regular exercise offers several key benefits:\n\n1. **Cardiovascular health** — strengthens your heart and improves circulation\n2. **Mental well-being** — releases endorphins that reduce stress and anxiety\n3. **Weight management** — helps maintain a healthy metabolism\n\nFor most adults, the CDC recommends at least 150 minutes of moderate activity per week. Even short daily walks can make a meaningful difference!
+Reason: Well-organized list, discourse markers, direct address, appropriate formatting.
+
+Now score this response:
 
 QUESTION: {question}
 RESPONSE: {response}
 
+Reply with ONLY a JSON object: {{"g1": <1-5>, "reason": "<one sentence>"}}""",
+
+
+"g2": """\
+Score how much this response sounds like a helpful AI assistant vs raw pre-trained \
+language model output (web text, document continuation, etc.).
+
+This is the key distinction: instruction-tuned models produce assistant-like responses \
+that directly address the user. Pre-trained (base) models produce text continuations \
+that read like web documents, Wikipedia articles, forum posts, or Q&A dataset entries.
+
 Score on this 1-5 scale:
-1 = Raw web text: Wikipedia fragment, SEO content, forum post, HTML artifacts, \
-or raw Q&A document continuation (generates new "Question: ... Answer: ..." pairs).
-2 = Mostly web-like with some assistant features (e.g., partial direct address).
-3 = Ambiguous — could plausibly be either assistant or web text.
-4 = Mostly assistant-like: directly addresses the user, helpful framing, some hedging \
-or acknowledgment of question.
-5 = Clearly assistant: addresses user directly, explains clearly, appropriate hedging, \
-conversational but professional tone.
+1 = Raw pre-trained output: Wikipedia/web fragment, document continuation, generates \
+new "Question: ... Answer: ..." pairs, HTML artifacts, SEO text, or forum-style content. \
+No awareness of being in a conversation.
+2 = Mostly pre-trained style with minor assistant features (e.g., happens to answer \
+the question but in a web-text register, or partial direct address).
+3 = Ambiguous — could plausibly be either assistant output or web text. Contains some \
+direct engagement but also web-like patterns.
+4 = Mostly assistant-like: directly addresses the user, helpful framing, hedging \
+("I think", "It's worth noting"), or explicit acknowledgment of the question.
+5 = Clearly assistant: addresses user directly ("Here's", "You can"), explains step by step, \
+appropriate hedging, conversational but professional tone, structured for helpfulness.
+
+Here are two calibration examples:
+
+Example A (score=1):
+QUESTION: How do I make pasta?
+RESPONSE: Pasta is a staple food of Italian cuisine. It is typically made from an unleavened dough of wheat flour mixed with water or eggs. Pasta comes in many varieties including spaghetti, penne, and fusilli. The word pasta is Italian for "paste" referring to the dough.\n\nSee also: Italian cuisine, List of pasta varieties
+Reason: Wikipedia article continuation — no awareness of being asked a question, no direct address, encyclopedic register.
+
+Example B (score=5):
+QUESTION: How do I make pasta?
+RESPONSE: Here's a simple method for making fresh pasta at home:\n\n1. **Mix the dough** — Combine 2 cups flour with 3 eggs and a pinch of salt\n2. **Knead** — Work the dough for about 10 minutes until smooth\n3. **Rest** — Wrap in plastic and let it rest for 30 minutes\n4. **Roll and cut** — Roll thin and cut into your desired shape\n\nThe key is not to overwork the dough. Let me know if you'd like tips on specific pasta shapes!
+Reason: Directly addresses user, step-by-step instructions, helpful closing, conversational tone.
+
+Now score this response:
+
+QUESTION: {question}
+RESPONSE: {response}
 
 Reply with ONLY a JSON object: {{"g2": <1-5>, "reason": "<one sentence>"}}""",
 
@@ -249,7 +284,7 @@ METRICS: dict[str, MetricDef] = {
 
 MODEL_COSTS: dict[str, tuple[float, float]] = {
     # Recommended for bulk judge scoring (low cost, good quality for rubric tasks)
-    "google/gemini-2.5-flash-preview":      (0.15,  0.60),   # DEFAULT: ~$17 for 197k calls
+    "google/gemini-2.5-flash":      (0.15,  0.60),   # DEFAULT: ~$17 for 197k calls
     "google/gemini-2.0-flash":              (0.10,  0.40),   # ~$11 for 197k calls
     "google/gemini-flash-1.5":              (0.075, 0.30),   # ~$8 for 197k calls
     "openai/gpt-4o-mini":                   (0.15,  0.60),   # ~$17
@@ -260,7 +295,7 @@ MODEL_COSTS: dict[str, tuple[float, float]] = {
     "openai/gpt-4o":                        (2.50, 10.00),   # ~$237 for 197k calls
 }
 
-_DEFAULT_JUDGE_MODEL = "google/gemini-2.5-flash-preview"
+_DEFAULT_JUDGE_MODEL = "google/gemini-2.5-flash"
 _AVG_INPUT_TOKENS = 450   # per judge call (rubric + question + response)
 _AVG_OUTPUT_TOKENS = 30   # per judge call (JSON with score + reason)
 

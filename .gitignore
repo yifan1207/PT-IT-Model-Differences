@@ -249,6 +249,7 @@ results/*
 !results/exp9/data/
 !results/exp9/data/**
 !results/exp10/
+results/exp10/*
 !results/exp10/plots/
 !results/exp10/plots/**
 !results/exp10/data/

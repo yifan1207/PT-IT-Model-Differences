@@ -128,8 +128,40 @@ MODEL_N_PROMPTS = {
 # 512 for dense models (matches 0G eval), 64 for DeepSeek MoE (512 OOMs on 80GB GPUs)
 STEER_MAX_GEN = {
     "gemma3_4b": 512, "llama31_8b": 512, "qwen3_4b": 512,
-    "mistral_7b": 512, "deepseek_v2_lite": 64, "olmo2_7b": 512,
+    "mistral_7b": 512, "deepseek_v2_lite": 512, "olmo2_7b": 512,
 }
+
+# Per-model batch sizes — generation is memory-bandwidth-bound, so fill VRAM.
+# Greedy decoding (do_sample=False) → deterministic regardless of batch size.
+# All models: max_gen=512 tokens, avg prompt ~256 tokens → ~768 total seq len.
+#
+# Memory per sequence ≈ KV_cache + activations + hook_captures:
+#   4B  models (34-36 layers, d=2560): ~150 MB/seq (GQA reduces KV)
+#   7-8B models (32 layers, d=4096):   ~250 MB/seq
+#   16B  MoE   (27 layers, d=2048):    ~200 MB/seq (MLA compresses KV, but MoE experts large)
+#
+# Batch = (target_vram - weights - 8GB_overhead) / per_seq_mem
+# Target: 85% VRAM utilization (15% safety for spikes, fragmentation)
+STEER_BATCH_SIZE = {
+    "H100": {  # 80 GB → target 68 GB
+        "gemma3_4b": 64, "qwen3_4b": 64,       # (68-8-8)/0.15 ≈ 346, cap at 64 (H100 BW saturates)
+        "llama31_8b": 32, "mistral_7b": 32, "olmo2_7b": 32,  # (68-16-8)/0.25 ≈ 176, cap at 32
+        "deepseek_v2_lite": 20,                  # (68-32-8)/0.20 ≈ 140, cap at 20 (512 tokens now)
+    },
+    "B200": {  # 192 GB → target 163 GB
+        "gemma3_4b": 128, "qwen3_4b": 128,      # (163-8-8)/0.15 ≈ 980, cap at 128 (diminishing returns)
+        "llama31_8b": 56, "mistral_7b": 56, "olmo2_7b": 56,  # (163-16-8)/0.25 ≈ 556, cap at 56
+        "deepseek_v2_lite": 40,                   # (163-32-8)/0.20 ≈ 615, cap at 40
+    },
+}
+
+# GPU type for steering — "B200" for max throughput, "H100" for availability
+STEER_GPU = os.environ.get("EXP10_GPU", "B200")
+
+
+def _get_batch_size(model_name: str) -> int:
+    gpu = STEER_GPU if STEER_GPU in STEER_BATCH_SIZE else "H100"
+    return STEER_BATCH_SIZE[gpu].get(model_name, 16)
 
 VOLUME_MOUNTS = {
     "/root/results": results_vol,
@@ -486,8 +518,8 @@ def patch_one(model_name: str, n_test_prompts: int = 120,
 # With 10 H100 GPUs, this cuts Phase 4B wall time nearly in half vs sequential.
 
 @app.function(
-    gpu="H100",
-    timeout=28800,  # 8h per direction (512 tokens × 17 conditions × 1400 prompts)
+    gpu=STEER_GPU,
+    timeout=86400,  # 24h max — resume logic means we don't lose progress on timeout
     retries=GPU_RETRIES,
     image=image,
     volumes=VOLUME_MOUNTS,
@@ -506,8 +538,11 @@ def steer_one_direction(model_name: str, direction: str,
 
     import json
     import torch
+    gpu_name = torch.cuda.get_device_name(0)
+    gpu_mem_gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    batch_size = _get_batch_size(model_name)
     print(f"=== Phase 4B steering: {model_name} / {direction} ===")
-    print(f"GPU: {torch.cuda.get_device_name(0)}")
+    print(f"GPU: {gpu_name} ({gpu_mem_gb:.0f} GB), batch={batch_size}")
 
     results_vol.reload()
 
@@ -537,6 +572,7 @@ def steer_one_direction(model_name: str, direction: str,
     env["PYTHONPATH"] = "/root"
     output_base = f"/root/results/exp10/{model_name}/steering"
     max_gen = STEER_MAX_GEN.get(model_name, 512)
+    batch_size = _get_batch_size(model_name)
 
     cmd = [
         "python", "-m", "src.poc.exp6.run",
@@ -547,17 +583,55 @@ def steer_one_direction(model_name: str, direction: str,
         "--corrective-direction-path", dir_path,
         "--run-name", f"A1_{direction}_{model_name}",
         "--output-base", output_base,
-        "--batch-size", "8",
+        "--batch-size", str(batch_size),
         "--n-eval-examples", str(n_eval_examples),
         "--max-gen-tokens", str(max_gen),
     ]
-    print(f"\n[Phase 4B] Steering with {direction}...")
-    r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=25000)
-    if r.stdout:
-        print(r.stdout[-2000:])
-    if r.returncode != 0:
-        err = r.stderr[-1000:] if r.stderr else "(no stderr)"
-        print(f"[{direction}] FAILED:\n{err}")
+    print(f"\n[Phase 4B] Steering with {direction} (batch={batch_size})...", flush=True)
+
+    # GPU memory monitor — logs peak usage every 5 min for tuning batch sizes
+    mem_stop = threading.Event()
+    def _gpu_mem_monitor():
+        import torch
+        peak = 0.0
+        while not mem_stop.is_set():
+            mem_stop.wait(300)  # every 5 min
+            if mem_stop.is_set():
+                break
+            used = torch.cuda.max_memory_allocated() / 1e9
+            if used > peak:
+                peak = used
+                print(f"[gpu-mem] {model_name}/{direction}: peak={peak:.1f}GB / {gpu_mem_gb:.0f}GB "
+                      f"({peak/gpu_mem_gb*100:.0f}% used, batch={batch_size})", flush=True)
+        # Final report
+        final = torch.cuda.max_memory_allocated() / 1e9
+        print(f"[gpu-mem] FINAL {model_name}/{direction}: peak={final:.1f}GB / {gpu_mem_gb:.0f}GB "
+              f"({final/gpu_mem_gb*100:.0f}%)", flush=True)
+
+    mem_thread = threading.Thread(target=_gpu_mem_monitor, daemon=True)
+    mem_thread.start()
+
+    # Stream stdout/stderr live so Modal logs show progress
+    proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT,
+                    text=True, cwd="/root", env=env, bufsize=1)
+    try:
+        for line in proc.stdout:
+            print(line, end="", flush=True)
+        proc.wait(timeout=82800)  # 23h — just under Modal's 24h function timeout
+    except sp.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        print(f"[{direction}] TIMEOUT after 82800s")
+        mem_stop.set()
+        mem_thread.join(timeout=5)
+        _commit_volumes()
+        return f"steer {model_name}/{direction}: TIMEOUT"
+
+    mem_stop.set()
+    mem_thread.join(timeout=5)
+
+    if proc.returncode != 0:
+        print(f"[{direction}] FAILED (exit code {proc.returncode})")
         _commit_volumes()
         return f"steer {model_name}/{direction}: FAIL"
 
@@ -568,7 +642,7 @@ def steer_one_direction(model_name: str, direction: str,
 # ── Phase 5: LLM Judge (CPU, no GPU) ────────────────────────────────────────
 
 @app.function(
-    timeout=7200,  # 2h per model (API-bound, not compute-bound)
+    timeout=43200,  # 12h per model (API-bound, rate-limited by OpenRouter)
     image=image,
     volumes=VOLUME_MOUNTS,
     secrets=[modal.Secret.from_name("OPENROUTER_API_KEY")],
@@ -604,22 +678,25 @@ def judge_one(model_name: str) -> str:
             "python", "scripts/llm_judge.py",
             "--merged-dir", merged_dir,
             "--dataset", "/root/data/eval_dataset_v2.jsonl",
-            "--model", "google/gemini-2.5-flash-preview",
+            "--model", "google/gemini-2.5-flash",
             "--workers", "16",
             "--tasks", "g1", "g2", "s1", "s2",
         ]
-        print(f"\n[Judge] {model_name}/{direction}: starting G1/G2/S1/S2...")
+        print(f"\n[Judge] {model_name}/{direction}: starting G1/G2/S1/S2...", flush=True)
         try:
-            r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=3600)
-            if r.stdout:
-                print(r.stdout[-2000:])
-            if r.returncode != 0:
-                err = r.stderr[-500:] if r.stderr else "(no stderr)"
-                print(f"[Judge] {direction} FAILED:\n{err}")
+            proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT,
+                            text=True, cwd="/root", env=env, bufsize=1)
+            for line in proc.stdout:
+                print(line, end="", flush=True)
+            proc.wait(timeout=21600)
+            if proc.returncode != 0:
+                print(f"[Judge] {direction} FAILED (exit code {proc.returncode})")
                 results.append(f"{direction}: FAIL")
             else:
                 results.append(f"{direction}: OK")
         except sp.TimeoutExpired:
+            proc.kill()
+            proc.wait()
             print(f"[Judge] {direction} timed out after 3600s")
             results.append(f"{direction}: TIMEOUT")
 
@@ -629,8 +706,8 @@ def judge_one(model_name: str) -> str:
 
 # Keep steer_one as convenience wrapper for prototype (both directions sequentially on 1 GPU)
 @app.function(
-    gpu="H100",
-    timeout=21600,  # 6h
+    gpu=STEER_GPU,
+    timeout=86400,  # 24h
     retries=GPU_RETRIES,
     image=image,
     volumes=VOLUME_MOUNTS,
@@ -663,6 +740,7 @@ def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
     env["PYTHONPATH"] = "/root"
     output_base = f"/root/results/exp10/{model_name}/steering"
     max_gen = STEER_MAX_GEN.get(model_name, 512)
+    batch_size = _get_batch_size(model_name)
     results = []
 
     for direction in ["d_conv", "d_mean"]:
@@ -683,17 +761,27 @@ def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
             "--corrective-direction-path", dir_path,
             "--run-name", f"A1_{direction}_{model_name}",
             "--output-base", output_base,
-            "--batch-size", "8",
+            "--batch-size", str(batch_size),
             "--n-eval-examples", str(n_eval_examples),
             "--max-gen-tokens", str(max_gen),
         ]
-        print(f"\n[Phase 4B] Steering with {direction}...")
-        r = sp.run(cmd, capture_output=True, text=True, cwd="/root", env=env, timeout=25000)
-        if r.stdout:
-            print(r.stdout[-2000:])
-        if r.returncode != 0:
-            err = r.stderr[-1000:] if r.stderr else "(no stderr)"
-            print(f"[{direction}] FAILED:\n{err}")
+        print(f"\n[Phase 4B] Steering with {direction}...", flush=True)
+        proc = sp.Popen(cmd, stdout=sp.PIPE, stderr=sp.STDOUT,
+                        text=True, cwd="/root", env=env, bufsize=1)
+        try:
+            for line in proc.stdout:
+                print(line, end="", flush=True)
+            proc.wait(timeout=25000)
+        except sp.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            print(f"[{direction}] TIMEOUT after 25000s")
+            results.append(f"{direction}=TIMEOUT")
+            _commit_volumes()
+            continue
+
+        if proc.returncode != 0:
+            print(f"[{direction}] FAILED (exit code {proc.returncode})")
             results.append(f"{direction}=FAIL")
         else:
             results.append(f"{direction}=OK")
@@ -1323,14 +1411,66 @@ def _run_steer_only():
     print("=" * 70)
 
 
+def _run_steer_single_model(model_name: str):
+    """Steer a single model (both directions) + LLM judge."""
+    import time
+
+    if model_name not in MODELS:
+        print(f"Unknown model: {model_name}. Choose from: {MODELS}")
+        return
+
+    print("=" * 70)
+    print(f"STEERING SINGLE MODEL: {model_name}")
+    print("=" * 70)
+
+    # Spawn both directions
+    calls = {
+        "d_conv": steer_one_direction.spawn(model_name, "d_conv"),
+        "d_mean": steer_one_direction.spawn(model_name, "d_mean"),
+    }
+    print(f"  spawned: {model_name}/d_conv, {model_name}/d_mean")
+
+    # Wait for both
+    results = {}
+    pending = set(calls.keys())
+    while pending:
+        for direction in list(pending):
+            try:
+                result = calls[direction].get(timeout=0)
+                results[direction] = result
+                pending.discard(direction)
+                print(f"  [done] {result}")
+            except TimeoutError:
+                pass
+            except Exception as e:
+                results[direction] = f"steer {model_name}/{direction}: FAIL ({e})"
+                pending.discard(direction)
+                print(f"  [fail] steer {model_name}/{direction}: {e}")
+        if pending:
+            time.sleep(30)
+
+    # LLM judge
+    print(f"\n[Phase 5] Spawning LLM judge for {model_name}...")
+    try:
+        judge_result = judge_one.remote(model_name)
+        print(f"  {judge_result}")
+    except Exception as e:
+        print(f"  judge {model_name}: FAIL ({e})")
+
+    print(f"\nDONE: {model_name}")
+    for d, r in results.items():
+        print(f"  {d}: {r}")
+
+
 @app.local_entrypoint()
-def main(mode: str = "full"):
+def main(mode: str = "full", model: str = ""):
     """Unified entrypoint. Usage:
 
     modal run src/poc/exp10/modal_exp10.py --mode smoke
     modal run src/poc/exp10/modal_exp10.py --mode prototype
     modal run src/poc/exp10/modal_exp10.py --mode full
     modal run src/poc/exp10/modal_exp10.py --mode recollect
+    modal run src/poc/exp10/modal_exp10.py --mode steer-model --model olmo2_7b
     """
     if mode == "smoke":
         _run_smoke()
@@ -1343,5 +1483,18 @@ def main(mode: str = "full"):
         _run_recollect(["olmo2_7b", "qwen3_4b", "llama31_8b", "mistral_7b"])
     elif mode == "steer":
         _run_steer_only()
+    elif mode.startswith("steer-model"):
+        _run_steer_single_model(model)
+    elif mode == "judge":
+        # Run LLM judge for specific models (comma-separated) or all
+        models = [m.strip() for m in model.split(",")] if model else MODELS
+        print(f"Running LLM judge for: {models}")
+        calls = {m: judge_one.spawn(m) for m in models}
+        for m, call in calls.items():
+            try:
+                result = call.get()
+                print(f"  {result}")
+            except Exception as e:
+                print(f"  judge {m}: FAIL ({e})")
     else:
-        print(f"Unknown mode: {mode}. Use 'smoke', 'prototype', 'full', or 'recollect'.")
+        print(f"Unknown mode: {mode}. Use 'smoke', 'prototype', 'full', 'recollect', 'steer', 'steer-model', or 'judge'.")

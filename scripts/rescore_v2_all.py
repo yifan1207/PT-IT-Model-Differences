@@ -41,7 +41,7 @@ def main() -> None:
     p.add_argument("--overwrite", action="store_true", help="Overwrite existing v2 judge scores")
     p.add_argument("--workers", type=int, default=16)
     p.add_argument("--tasks", nargs="+", default=["g1", "g2", "s1", "s2"])
-    p.add_argument("--model", default="google/gemini-2.5-flash-preview")
+    p.add_argument("--model", default="google/gemini-2.5-flash")
     args = p.parse_args()
 
     dataset = "data/eval_dataset_v2.jsonl"

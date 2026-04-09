@@ -169,10 +169,10 @@ def score_outputs(
         seen_cond_rec.add(cr_key)
 
         # Get question from dataset record formats, or fall back to sample prompt
-        question = s.get("prompt", "")[:600]
+        question = s.get("prompt", "")[:800]
         if rec and rec.get("formats"):
-            question = list(rec["formats"].values())[0][:600]
-        response = s.get("generated_text", "")[:1500]
+            question = list(rec["formats"].values())[0][:800]
+        response = s.get("generated_text", "")[:2500]
 
         for task in tasks:
             # Category filter
@@ -204,13 +204,13 @@ def score_outputs(
 
     # ── Cost estimate (uses registry costs table) ──────────────────────────────
     in_cost, out_cost = _REGISTRY_COSTS.get(model, (1.0, 3.0))
-    est_input_tok = n_todo * 450 / 1e6   # ~450 tok/call
+    est_input_tok = n_todo * 750 / 1e6   # ~750 tok/call (rubric + examples + I/O pair)
     est_output_tok = n_todo * 30 / 1e6   # ~30 tok/call
     est_cost = est_input_tok * in_cost + est_output_tok * out_cost
     print(f"Estimated cost ({model}): ${est_cost:.2f}  "
           f"({est_input_tok*1e6/n_todo:.0f} in + {est_output_tok*1e6/n_todo:.0f} out tokens/call)")
     if est_cost > 5.0:
-        print(f"WARNING: Cost > $5. Consider --model google/gemini-2.5-flash-preview (~${ n_todo * (0.15*450 + 0.60*30) / 1e6:.2f})")
+        print(f"WARNING: Cost > $5. Consider --model google/gemini-2.5-flash (~${ n_todo * (0.15*450 + 0.60*30) / 1e6:.2f})")
     # ─────────────────────────────────────────────────────────────────────────
 
     if not todo:
@@ -336,7 +336,7 @@ def main() -> None:
     p.add_argument("--merged-dir", required=True)
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl",
                    help="Path to eval_dataset_v2.jsonl")
-    p.add_argument("--model", default="google/gemini-2.5-flash-preview",
+    p.add_argument("--model", default="google/gemini-2.5-flash",
                    help="OpenRouter model name (default: Gemini 2.5 Flash ~$0.15/M — ~20x cheaper than Claude Sonnet)")
     p.add_argument("--workers", type=int, default=16)
     p.add_argument("--overwrite", action="store_true",
