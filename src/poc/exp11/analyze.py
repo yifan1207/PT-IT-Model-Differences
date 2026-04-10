@@ -73,7 +73,7 @@ def main() -> None:
         "structural_mass_prob_tier12",
         "entropy",
     ]
-    cross_metrics = ["cross_kl", "residual_cosine", "residual_divergence"]
+    cross_metrics = ["cross_kl", "kl_to_pt_final", "residual_cosine", "residual_divergence"]
     trajectory: dict[str, dict[str, list[float | None]]] = {}
     by_pipeline: dict[str, list[dict]] = defaultdict(list)
     for row in step_rows:
