@@ -1,0 +1,1107 @@
+[
+  {
+    "condition": "A5aearly_baseline",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.58,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "none",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": []
+  },
+  {
+    "condition": "A5aearly_baseline",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.53,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "none",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": []
+  },
+  {
+    "condition": "A5aearly_baseline",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.4835164835164835,
+    "n": 182,
+    "experiment": "A5a_early",
+    "method": "none",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": []
+  },
+  {
+    "condition": "A5aearly_baseline",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.5066666666666667,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "none",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": []
+  },
+  {
+    "condition": "A5aearly_baseline",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.04936480542251297,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "none",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": []
+  },
+  {
+    "condition": "A5aearly_skip_from_1",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.5,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_1",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.02,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_1",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.10989010989010989,
+    "n": 182,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_1",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.14333333333333334,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_1",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.020098142334527107,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_10",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.9,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_10",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.475,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_10",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.3241758241758242,
+    "n": 182,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_10",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.27666666666666667,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_10",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.05427554552872621,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_11",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.7466666666666667,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_11",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.475,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_11",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.45054945054945056,
+    "n": 182,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_11",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.4633333333333333,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_11",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.0493374388805519,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_2",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.5,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_2",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.03,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_2",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.09340659340659341,
+    "n": 182,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_2",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.12333333333333334,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_2",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.05467084025434013,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_3",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.5,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_3",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.02,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_3",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.13736263736263737,
+    "n": 182,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_3",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.17666666666666667,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_3",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.02911589325788622,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_4",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.5,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_4",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.015,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_4",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.15384615384615385,
+    "n": 182,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_4",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.17,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_4",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.016750814153811976,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_5",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.5,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_5",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.0,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_5",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.2122905027932961,
+    "n": 179,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_5",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.14666666666666667,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_5",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.1703475211218401,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_6",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.49333333333333335,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_6",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.0,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_6",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.28104575163398693,
+    "n": 153,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_6",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.11666666666666667,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_6",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.04909609747614757,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_7",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.5,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_7",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.09,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_7",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.2471264367816092,
+    "n": 174,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_7",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.16333333333333333,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_7",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.022273459051532045,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      7,
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_8",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.58,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_8",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.06,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_8",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.24725274725274726,
+    "n": 182,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_8",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.12,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_8",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.0307080622654348,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      8,
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_9",
+    "benchmark": "exp3_alignment_behavior",
+    "metric": "behavior_match",
+    "value": 0.9,
+    "n": 150,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_9",
+    "benchmark": "exp3_reasoning_em",
+    "metric": "contains_em",
+    "value": 0.155,
+    "n": 200,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_9",
+    "benchmark": "format_compliance_v2",
+    "metric": "compliance_rate",
+    "value": 0.34615384615384615,
+    "n": 182,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_9",
+    "benchmark": "mmlu_forced_choice",
+    "metric": "accuracy",
+    "value": 0.24666666666666667,
+    "n": 300,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      9,
+      10,
+      11
+    ]
+  },
+  {
+    "condition": "A5aearly_skip_from_9",
+    "benchmark": "structural_token_ratio",
+    "metric": "ratio",
+    "value": 0.052243937136910806,
+    "n": 1400,
+    "experiment": "A5a_early",
+    "method": "progressive_skip",
+    "alpha": 1.0,
+    "beta": 0.0,
+    "layers": [
+      9,
+      10,
+      11
+    ]
+  }
+]
