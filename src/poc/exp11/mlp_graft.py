@@ -14,8 +14,6 @@ class LayerStepMetrics:
     entropy: list[float]
     structural_mass_logit_tier1: list[float]
     structural_mass_prob_tier1: list[float]
-    structural_mass_logit_tier12: list[float]
-    structural_mass_prob_tier12: list[float]
     kl_to_own_final: list[float]
     top1_match_own_final: list[bool]
     next_token_prob: list[float]
@@ -73,6 +71,14 @@ class BatchedStepTensors:
 class CaptureSpec:
     mode: str
     module: torch.nn.Module
+
+
+@dataclass(frozen=True)
+class ReadoutSpec:
+    name: str
+    final_norm: torch.nn.Module
+    lm_head: torch.nn.Module
+    probes: dict[int, torch.nn.Module] | None = None
 
 
 class ArchitectureProbe:
@@ -145,7 +151,7 @@ class PipelineCapture:
                 raise RuntimeError(f"Missing exp11 capture for {key} at layers {missing}")
             return [v for v in vals if v is not None]
 
-        step = BatchedStepTensors(
+        return BatchedStepTensors(
             pre_mlp_residual=_require("pre_mlp_residual"),
             normed_mlp_input=_require("normed_mlp_input"),
             mlp_output=_require("mlp_output"),
@@ -154,7 +160,6 @@ class PipelineCapture:
             pt_mlp_norm=_require("pt_mlp_norm"),
             relative_diff=_require("relative_diff"),
         )
-        return step
 
     def _register(self) -> list:
         handles: list = []
@@ -206,11 +211,30 @@ class PipelineCapture:
         return handles
 
 
-def logits_from_residuals(final_norm, lm_head, residuals: list[torch.Tensor]) -> torch.Tensor:
-    """Return raw logit-lens logits with shape [batch, n_layers, vocab]."""
-    stacked = torch.stack(residuals, dim=0)  # [layers, batch, d_model]
-    normed = final_norm(stacked)
-    logits = lm_head(normed).float()  # [layers, batch, vocab]
+def _module_dtype(module: torch.nn.Module) -> torch.dtype:
+    for param in module.parameters():
+        return param.dtype
+    return torch.float32
+
+
+def logits_from_residuals(readout: ReadoutSpec, residuals: list[torch.Tensor]) -> torch.Tensor:
+    """Return readout logits with shape [batch, n_layers, vocab]."""
+    stacked = torch.stack(residuals, dim=0)
+    target_dtype = _module_dtype(readout.final_norm)
+    if readout.probes:
+        tuned_parts = []
+        for layer_idx in range(stacked.shape[0]):
+            layer_hidden = stacked[layer_idx]
+            probe = readout.probes.get(layer_idx)
+            if probe is None:
+                tuned_parts.append(layer_hidden.to(dtype=target_dtype))
+            else:
+                tuned_parts.append(probe(layer_hidden.float()).to(dtype=target_dtype))
+        stacked = torch.stack(tuned_parts, dim=0)
+    else:
+        stacked = stacked.to(dtype=target_dtype)
+    normed = readout.final_norm(stacked)
+    logits = readout.lm_head(normed).float()
     return logits.permute(1, 0, 2).contiguous()
 
 
@@ -262,7 +286,6 @@ def compute_layer_metrics(
     step_tensors: StepTensors,
     chosen_token_id: int,
     tier1_mask: torch.Tensor,
-    tier12_mask: torch.Tensor,
     baseline_logits: torch.Tensor | None = None,
     baseline_residuals: list[torch.Tensor] | None = None,
 ) -> LayerStepMetrics:
@@ -288,8 +311,6 @@ def compute_layer_metrics(
         entropy=[float(x) for x in ent.tolist()],
         structural_mass_logit_tier1=[float(x) for x in pipeline_logits[:, tier1_mask].sum(dim=-1).tolist()],
         structural_mass_prob_tier1=[float(x) for x in probs[:, tier1_mask].sum(dim=-1).tolist()],
-        structural_mass_logit_tier12=[float(x) for x in pipeline_logits[:, tier12_mask].sum(dim=-1).tolist()],
-        structural_mass_prob_tier12=[float(x) for x in probs[:, tier12_mask].sum(dim=-1).tolist()],
         kl_to_own_final=[float(x) for x in kl_to_own_final.tolist()],
         top1_match_own_final=[bool(x) for x in (top1 == top1[-1]).tolist()],
         next_token_prob=[float(x) for x in next_probs.tolist()],

@@ -6,6 +6,12 @@ from collections import defaultdict
 from pathlib import Path
 
 
+def _read_json(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    return json.loads(path.read_text())
+
+
 def _read_jsonl(path: Path) -> list[dict]:
     if not path.exists():
         return []
@@ -23,14 +29,120 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values)
 
 
+def _mean_trajectory(step_metrics_path: Path, metric_names: list[str]) -> dict[str, dict[str, list[float | None]]]:
+    sums: dict[str, dict[str, list[float]]] = {}
+    counts: dict[str, dict[str, list[float]]] = {}
+    with open(step_metrics_path) as f:
+        for line in f:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            pipeline = row["pipeline"]
+            metrics = row["metrics"]
+            pipeline_sums = sums.setdefault(pipeline, {})
+            pipeline_counts = counts.setdefault(pipeline, {})
+            for metric_name in metric_names:
+                values = metrics.get(metric_name)
+                if values is None:
+                    continue
+                metric_sums = pipeline_sums.setdefault(metric_name, [0.0] * len(values))
+                metric_counts = pipeline_counts.setdefault(metric_name, [0.0] * len(values))
+                for idx, value in enumerate(values):
+                    if value is None:
+                        continue
+                    metric_sums[idx] += float(value)
+                    metric_counts[idx] += 1.0
+
+    trajectory: dict[str, dict[str, list[float | None]]] = {}
+    for pipeline, pipeline_sums in sums.items():
+        pipeline_summary: dict[str, list[float | None]] = {}
+        for metric_name, metric_sums in pipeline_sums.items():
+            metric_counts = counts[pipeline][metric_name]
+            pipeline_summary[metric_name] = [
+                (total / count) if count else None
+                for total, count in zip(metric_sums, metric_counts, strict=False)
+            ]
+        trajectory[pipeline] = pipeline_summary
+    return trajectory
+
+
+def _secondary_means(stats: dict) -> dict[str, dict[str, list[float | None]]]:
+    result: dict[str, dict[str, list[float | None]]] = {}
+    metrics = stats.get("metrics", {})
+    for pipeline, pipeline_metrics in metrics.items():
+        result[pipeline] = {}
+        for metric_name, metric_stats in pipeline_metrics.items():
+            sums = metric_stats.get("sum", [])
+            counts = metric_stats.get("count", [])
+            means: list[float | None] = []
+            for total, count in zip(sums, counts, strict=False):
+                means.append((total / count) if count else None)
+            result[pipeline][metric_name] = means
+    return result
+
+
+def _plot_panel(
+    *,
+    plot_dir: Path,
+    model_name: str,
+    primary: dict[str, dict[str, list[float | None]]],
+    secondary: dict[str, dict[str, list[float | None]]] | None,
+    prompt_summary: dict,
+) -> None:
+    try:
+        import matplotlib.pyplot as plt
+    except Exception:
+        return
+
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+    ax_mass, ax_kl, ax_delta, ax_cross = axes.flat
+
+    def _plot_metric(ax, metric_name: str, title: str, ylabel: str) -> None:
+        for pipeline, color in (("A", "#1f77b4"), ("B", "#d62728")):
+            values = primary.get(pipeline, {}).get(metric_name)
+            if values is not None:
+                ax.plot(values, label=f"{pipeline} primary", color=color, linewidth=2)
+        if secondary is not None:
+            for pipeline, color in (("A", "#7f7f7f"), ("B", "#ff9896")):
+                values = secondary.get(pipeline, {}).get(metric_name)
+                if values is not None:
+                    ax.plot(values, label=f"{pipeline} native", color=color, linestyle="--", linewidth=1.5)
+        ax.set_title(title)
+        ax.set_xlabel("Layer")
+        ax.set_ylabel(ylabel)
+        ax.grid(alpha=0.2)
+
+    _plot_metric(ax_mass, "structural_mass_prob_tier1", "Mean Tier 1 Probability Mass", "Probability mass")
+    _plot_metric(ax_kl, "kl_to_own_final", "KL To Actual Final Output", "KL")
+    _plot_metric(ax_delta, "delta_cosine", "Delta Cosine", "Cosine")
+    _plot_metric(ax_cross, "cross_kl", "Cross-Pipeline KL", "KL")
+
+    summary = prompt_summary.get("overall", {})
+    title = (
+        f"{model_name} | prompts={summary.get('n_prompts', '?')} | "
+        f"mean divergence={summary.get('mean_divergence_step', 'n/a')}"
+    )
+    fig.suptitle(title)
+    handles, labels = ax_mass.get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False)
+    fig.tight_layout(rect=[0, 0.05, 1, 0.96])
+    fig.savefig(plot_dir / "panel.png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Analyze exp11 outputs.")
     parser.add_argument("--run-dir", required=True)
+    parser.add_argument("--plot-dir", default=None)
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir)
+    plot_dir = Path(args.plot_dir) if args.plot_dir else run_dir / "plots"
+    config = _read_json(run_dir / "config.json")
     prompt_rows = _read_jsonl(run_dir / "prompt_summaries.jsonl")
-    step_rows = _read_jsonl(run_dir / "step_metrics.jsonl")
+    secondary_stats = _read_json(run_dir / "secondary_trajectory_stats.json")
     seen = set()
     for row in prompt_rows:
         key = row["prompt_id"]
@@ -47,11 +159,11 @@ def main() -> None:
         "mean_divergence_step": _mean([row["divergence_step"] for row in prompt_rows if row["divergence_step"] is not None]),
         "pipeline_a_mean_length": _mean([row["pipeline_a"]["generated_text_length"] for row in prompt_rows]),
         "pipeline_b_mean_length": _mean([row["pipeline_b"]["generated_text_length"] for row in prompt_rows]),
-        "pipeline_a_mean_structural_ratio_tier12_proxy": _mean(
-            [row["pipeline_a"]["structural_token_ratio_tier12_proxy"] for row in prompt_rows]
+        "pipeline_a_mean_structural_ratio_tier1_proxy": _mean(
+            [row["pipeline_a"]["structural_token_ratio_tier1_proxy"] for row in prompt_rows]
         ),
-        "pipeline_b_mean_structural_ratio_tier12_proxy": _mean(
-            [row["pipeline_b"]["structural_token_ratio_tier12_proxy"] for row in prompt_rows]
+        "pipeline_b_mean_structural_ratio_tier1_proxy": _mean(
+            [row["pipeline_b"]["structural_token_ratio_tier1_proxy"] for row in prompt_rows]
         ),
     }
     per_category = {}
@@ -66,39 +178,40 @@ def main() -> None:
     summary = {"overall": overall, "per_category": per_category}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
-    layer_metrics = [
+    primary_metric_names = [
         "delta_cosine",
         "kl_to_own_final",
         "structural_mass_prob_tier1",
-        "structural_mass_prob_tier12",
         "entropy",
+        "cross_kl",
+        "kl_to_pt_final",
+        "residual_cosine",
+        "residual_divergence",
     ]
-    cross_metrics = ["cross_kl", "kl_to_pt_final", "residual_cosine", "residual_divergence"]
-    trajectory: dict[str, dict[str, list[float | None]]] = {}
-    by_pipeline: dict[str, list[dict]] = defaultdict(list)
-    for row in step_rows:
-        by_pipeline[row["pipeline"]].append(row)
+    primary_trajectory = _mean_trajectory(run_dir / "step_metrics.jsonl", primary_metric_names)
+    (run_dir / "trajectory_summary.json").write_text(json.dumps(primary_trajectory, indent=2))
 
-    for pipeline, rows in by_pipeline.items():
-        if not rows:
-            continue
-        metrics = rows[0]["metrics"]
-        n_layers = len(metrics["delta_cosine"])
-        pipeline_summary: dict[str, list[float | None]] = {}
-        for metric_name in layer_metrics + cross_metrics:
-            means: list[float | None] = []
-            for layer_idx in range(n_layers):
-                vals = []
-                for row in rows:
-                    metric = row["metrics"].get(metric_name)
-                    if metric is None:
-                        continue
-                    vals.append(metric[layer_idx])
-                means.append(_mean(vals) if vals else None)
-            pipeline_summary[metric_name] = means
-        trajectory[pipeline] = pipeline_summary
+    secondary_trajectory = None
+    if secondary_stats:
+        secondary_trajectory = _secondary_means(secondary_stats)
+        (run_dir / "secondary_trajectory_summary.json").write_text(
+            json.dumps(secondary_trajectory, indent=2)
+        )
 
-    (run_dir / "trajectory_summary.json").write_text(json.dumps(trajectory, indent=2))
+    readout_summary = {
+        "primary_readout_name": config.get("primary_readout_name"),
+        "secondary_readout_name": config.get("secondary_readout_name"),
+        "readout_mode": config.get("readout_mode"),
+    }
+    (run_dir / "readout_summary.json").write_text(json.dumps(readout_summary, indent=2))
+
+    _plot_panel(
+        plot_dir=plot_dir,
+        model_name=config.get("model", run_dir.name),
+        primary=primary_trajectory,
+        secondary=secondary_trajectory,
+        prompt_summary=summary,
+    )
 
 
 if __name__ == "__main__":
