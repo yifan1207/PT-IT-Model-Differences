@@ -1,0 +1,55 @@
+model,model_label,n_layers,threshold,onset_layer,normalized_depth
+deepseek_v2_lite,DeepSeek-V2-Lite,27,0.5σ,15,0.556
+deepseek_v2_lite,DeepSeek-V2-Lite,27,0.75σ,15,0.556
+deepseek_v2_lite,DeepSeek-V2-Lite,27,1.0σ,,
+deepseek_v2_lite,DeepSeek-V2-Lite,27,1.5σ,,
+deepseek_v2_lite,DeepSeek-V2-Lite,27,2.0σ,,
+deepseek_v2_lite,DeepSeek-V2-Lite,27,abs0.02,15,0.556
+deepseek_v2_lite,DeepSeek-V2-Lite,27,abs0.05,15,0.556
+deepseek_v2_lite,DeepSeek-V2-Lite,27,abs0.1,15,0.556
+deepseek_v2_lite,DeepSeek-V2-Lite,27,abs0.15,,
+gemma3_4b,Gemma 3 4B,34,0.5σ,16,0.471
+gemma3_4b,Gemma 3 4B,34,0.75σ,16,0.471
+gemma3_4b,Gemma 3 4B,34,1.0σ,20,0.588
+gemma3_4b,Gemma 3 4B,34,1.5σ,20,0.588
+gemma3_4b,Gemma 3 4B,34,2.0σ,20,0.588
+gemma3_4b,Gemma 3 4B,34,abs0.02,16,0.471
+gemma3_4b,Gemma 3 4B,34,abs0.05,20,0.588
+gemma3_4b,Gemma 3 4B,34,abs0.1,20,0.588
+gemma3_4b,Gemma 3 4B,34,abs0.15,21,0.618
+llama31_8b,Llama 3.1 8B,32,0.5σ,15,0.469
+llama31_8b,Llama 3.1 8B,32,0.75σ,16,0.5
+llama31_8b,Llama 3.1 8B,32,1.0σ,16,0.5
+llama31_8b,Llama 3.1 8B,32,1.5σ,,
+llama31_8b,Llama 3.1 8B,32,2.0σ,,
+llama31_8b,Llama 3.1 8B,32,abs0.02,,
+llama31_8b,Llama 3.1 8B,32,abs0.05,,
+llama31_8b,Llama 3.1 8B,32,abs0.1,,
+llama31_8b,Llama 3.1 8B,32,abs0.15,,
+mistral_7b,Mistral 7B v0.3,32,0.5σ,15,0.469
+mistral_7b,Mistral 7B v0.3,32,0.75σ,15,0.469
+mistral_7b,Mistral 7B v0.3,32,1.0σ,18,0.562
+mistral_7b,Mistral 7B v0.3,32,1.5σ,18,0.562
+mistral_7b,Mistral 7B v0.3,32,2.0σ,19,0.594
+mistral_7b,Mistral 7B v0.3,32,abs0.02,15,0.469
+mistral_7b,Mistral 7B v0.3,32,abs0.05,19,0.594
+mistral_7b,Mistral 7B v0.3,32,abs0.1,30,0.938
+mistral_7b,Mistral 7B v0.3,32,abs0.15,,
+olmo2_7b,OLMo 2 7B,32,0.5σ,19,0.594
+olmo2_7b,OLMo 2 7B,32,0.75σ,19,0.594
+olmo2_7b,OLMo 2 7B,32,1.0σ,19,0.594
+olmo2_7b,OLMo 2 7B,32,1.5σ,19,0.594
+olmo2_7b,OLMo 2 7B,32,2.0σ,20,0.625
+olmo2_7b,OLMo 2 7B,32,abs0.02,30,0.938
+olmo2_7b,OLMo 2 7B,32,abs0.05,30,0.938
+olmo2_7b,OLMo 2 7B,32,abs0.1,,
+olmo2_7b,OLMo 2 7B,32,abs0.15,,
+qwen3_4b,Qwen 3 4B,36,0.5σ,,
+qwen3_4b,Qwen 3 4B,36,0.75σ,,
+qwen3_4b,Qwen 3 4B,36,1.0σ,,
+qwen3_4b,Qwen 3 4B,36,1.5σ,,
+qwen3_4b,Qwen 3 4B,36,2.0σ,,
+qwen3_4b,Qwen 3 4B,36,abs0.02,,
+qwen3_4b,Qwen 3 4B,36,abs0.05,,
+qwen3_4b,Qwen 3 4B,36,abs0.1,,
+qwen3_4b,Qwen 3 4B,36,abs0.15,,

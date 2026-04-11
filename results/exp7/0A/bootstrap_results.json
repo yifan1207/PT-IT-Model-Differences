@@ -1,0 +1,1191 @@
+{
+  "summary": {
+    "corrective_mean_cosine": 0.9965961071919125,
+    "mid_mean_cosine": 0.9958806394289799,
+    "early_mean_cosine": 0.9962789709618282,
+    "corrective_canonical_cosine": 0.9982706447794023,
+    "mid_canonical_cosine": 0.9978021784871232,
+    "early_canonical_cosine": 0.9980917164410638,
+    "pairwise_cosine_mean_corrective": 0.9965961071919125,
+    "pairwise_cosine_min_corrective": 0.988363349544155,
+    "canonical_cosine_mean_corrective": 0.9982706447794023,
+    "canonical_cosine_min_corrective": 0.9939740527321291,
+    "n_records": 600,
+    "n_bootstrap": 50,
+    "seed": 42,
+    "convergence_sizes": [
+      100,
+      200,
+      300,
+      400,
+      500,
+      600,
+      1000,
+      1400
+    ]
+  },
+  "layer_group_summaries": {
+    "early": {
+      "pairwise_cosine": {
+        "mean": 0.9962789709618282,
+        "min": 0.9930315955174334,
+        "std": 0.0021209332861561294
+      },
+      "canonical_cosine": {
+        "mean": 0.9980917164410638,
+        "min": 0.99639864103322,
+        "std": 0.001077962200804626
+      }
+    },
+    "mid": {
+      "pairwise_cosine": {
+        "mean": 0.9958806394289799,
+        "min": 0.989377177477899,
+        "std": 0.003056771818079935
+      },
+      "canonical_cosine": {
+        "mean": 0.9978021784871232,
+        "min": 0.9946030976737077,
+        "std": 0.001692991377176208
+      }
+    },
+    "corrective": {
+      "pairwise_cosine": {
+        "mean": 0.9965961071919125,
+        "min": 0.988363349544155,
+        "std": 0.0035892292324886947
+      },
+      "canonical_cosine": {
+        "mean": 0.9982706447794023,
+        "min": 0.9939740527321291,
+        "std": 0.0018287578789290407
+      }
+    }
+  },
+  "per_layer": {
+    "1": {
+      "pairwise_cosine_mean": 0.9939109325077096,
+      "pairwise_cosine_std": 0.006655305659643068,
+      "pairwise_cosine_min": 0.9446259290013154,
+      "canonical_cosine_mean": 0.9968699949027189,
+      "canonical_cosine_std": 0.0036699793763096625,
+      "canonical_cosine_min": 0.9805352833828525
+    },
+    "2": {
+      "pairwise_cosine_mean": 0.997427739809282,
+      "pairwise_cosine_std": 0.0027401112535123252,
+      "pairwise_cosine_min": 0.9806051664267681,
+      "canonical_cosine_mean": 0.9987317281194159,
+      "canonical_cosine_std": 0.0012044650464924332,
+      "canonical_cosine_min": 0.9944220963359454
+    },
+    "3": {
+      "pairwise_cosine_mean": 0.9988338865482346,
+      "pairwise_cosine_std": 0.0008562647603925267,
+      "pairwise_cosine_min": 0.9936736267299665,
+      "canonical_cosine_mean": 0.9994191051153447,
+      "canonical_cosine_std": 0.00035933490749940516,
+      "canonical_cosine_min": 0.9980775972527701
+    },
+    "4": {
+      "pairwise_cosine_mean": 0.9964932192715594,
+      "pairwise_cosine_std": 0.0026872596754257253,
+      "pairwise_cosine_min": 0.9779875669197913,
+      "canonical_cosine_mean": 0.998238955981506,
+      "canonical_cosine_std": 0.0013670035274702009,
+      "canonical_cosine_min": 0.9935171963860763
+    },
+    "5": {
+      "pairwise_cosine_mean": 0.9983663992995604,
+      "pairwise_cosine_std": 0.0008966952981421672,
+      "pairwise_cosine_min": 0.9910026092284598,
+      "canonical_cosine_mean": 0.9990128638776301,
+      "canonical_cosine_std": 0.0007015550444336446,
+      "canonical_cosine_min": 0.9952943695334209
+    },
+    "6": {
+      "pairwise_cosine_mean": 0.9995146778050027,
+      "pairwise_cosine_std": 0.00026128132487612376,
+      "pairwise_cosine_min": 0.9977809050475197,
+      "canonical_cosine_mean": 0.9997487611776374,
+      "canonical_cosine_std": 0.00012416525000530422,
+      "canonical_cosine_min": 0.9992579227893837
+    },
+    "7": {
+      "pairwise_cosine_mean": 0.9940497956372006,
+      "pairwise_cosine_std": 0.003821012494734709,
+      "pairwise_cosine_min": 0.9710581035364656,
+      "canonical_cosine_mean": 0.9969951557499074,
+      "canonical_cosine_std": 0.001838825994425323,
+      "canonical_cosine_min": 0.9909045351141781
+    },
+    "8": {
+      "pairwise_cosine_mean": 0.994086183898692,
+      "pairwise_cosine_std": 0.004544498135272989,
+      "pairwise_cosine_min": 0.961686555475628,
+      "canonical_cosine_mean": 0.997003221579497,
+      "canonical_cosine_std": 0.0026448943213517803,
+      "canonical_cosine_min": 0.9838378646840054
+    },
+    "9": {
+      "pairwise_cosine_mean": 0.9930315955174334,
+      "pairwise_cosine_std": 0.00482281294586321,
+      "pairwise_cosine_min": 0.961458830739741,
+      "canonical_cosine_mean": 0.99639864103322,
+      "canonical_cosine_std": 0.0023218948236611997,
+      "canonical_cosine_min": 0.9883307866265123
+    },
+    "10": {
+      "pairwise_cosine_mean": 0.9961701874158083,
+      "pairwise_cosine_std": 0.003001366155753539,
+      "pairwise_cosine_min": 0.967307813990579,
+      "canonical_cosine_mean": 0.9980077762229631,
+      "canonical_cosine_std": 0.0018860551237801395,
+      "canonical_cosine_min": 0.9864692020939785
+    },
+    "11": {
+      "pairwise_cosine_mean": 0.9971840628696269,
+      "pairwise_cosine_std": 0.0014552102214804748,
+      "pairwise_cosine_min": 0.9902270882901358,
+      "canonical_cosine_mean": 0.9985826770918607,
+      "canonical_cosine_std": 0.000660540588413757,
+      "canonical_cosine_min": 0.9969162757795951
+    },
+    "12": {
+      "pairwise_cosine_mean": 0.9985301350053909,
+      "pairwise_cosine_std": 0.001096435063529429,
+      "pairwise_cosine_min": 0.9883389730499317,
+      "canonical_cosine_mean": 0.9992576444446487,
+      "canonical_cosine_std": 0.000597485761809933,
+      "canonical_cosine_min": 0.9962092524118636
+    },
+    "13": {
+      "pairwise_cosine_mean": 0.9925829871783858,
+      "pairwise_cosine_std": 0.005430039362251277,
+      "pairwise_cosine_min": 0.9593370145800758,
+      "canonical_cosine_mean": 0.9953610212049968,
+      "canonical_cosine_std": 0.004042282508779229,
+      "canonical_cosine_min": 0.9756633789902315
+    },
+    "14": {
+      "pairwise_cosine_mean": 0.9972061200497094,
+      "pairwise_cosine_std": 0.001374699907085166,
+      "pairwise_cosine_min": 0.9869522871910299,
+      "canonical_cosine_mean": 0.9985943788282248,
+      "canonical_cosine_std": 0.0006366489189109033,
+      "canonical_cosine_min": 0.9960109824121427
+    },
+    "15": {
+      "pairwise_cosine_mean": 0.9979360820045785,
+      "pairwise_cosine_std": 0.0012467551665299875,
+      "pairwise_cosine_min": 0.9913672288013943,
+      "canonical_cosine_mean": 0.9989682181098078,
+      "canonical_cosine_std": 0.0005894132231641044,
+      "canonical_cosine_min": 0.9969026177134196
+    },
+    "16": {
+      "pairwise_cosine_mean": 0.9984157895827257,
+      "pairwise_cosine_std": 0.0008175343253889513,
+      "pairwise_cosine_min": 0.9926120425452448,
+      "canonical_cosine_mean": 0.9991850329679011,
+      "canonical_cosine_std": 0.0004541912893926346,
+      "canonical_cosine_min": 0.9968676863489686
+    },
+    "17": {
+      "pairwise_cosine_mean": 0.9973319172060199,
+      "pairwise_cosine_std": 0.0012009232381307885,
+      "pairwise_cosine_min": 0.9914296345578424,
+      "canonical_cosine_mean": 0.9986498095501077,
+      "canonical_cosine_std": 0.0005319713091116692,
+      "canonical_cosine_min": 0.9966304126031074
+    },
+    "18": {
+      "pairwise_cosine_mean": 0.989377177477899,
+      "pairwise_cosine_std": 0.010023423508178288,
+      "pairwise_cosine_min": 0.9113328902206508,
+      "canonical_cosine_mean": 0.9946030976737077,
+      "canonical_cosine_std": 0.004825918032275037,
+      "canonical_cosine_min": 0.9743444535648609
+    },
+    "19": {
+      "pairwise_cosine_mean": 0.9956649069271303,
+      "pairwise_cosine_std": 0.00350287953515349,
+      "pairwise_cosine_min": 0.9725915827100364,
+      "canonical_cosine_mean": 0.997798225117591,
+      "canonical_cosine_std": 0.0016633622026257324,
+      "canonical_cosine_min": 0.9903878847360316
+    },
+    "20": {
+      "pairwise_cosine_mean": 0.9905143658772828,
+      "pairwise_cosine_std": 0.007375430851071472,
+      "pairwise_cosine_min": 0.9396257049271981,
+      "canonical_cosine_mean": 0.995249631052097,
+      "canonical_cosine_std": 0.003527005344373156,
+      "canonical_cosine_min": 0.9784639156458601
+    },
+    "21": {
+      "pairwise_cosine_mean": 0.9929031430936225,
+      "pairwise_cosine_std": 0.006037321229244241,
+      "pairwise_cosine_min": 0.9448192710948509,
+      "canonical_cosine_mean": 0.9964384431103038,
+      "canonical_cosine_std": 0.0031728519571043883,
+      "canonical_cosine_min": 0.9837705285592043
+    },
+    "22": {
+      "pairwise_cosine_mean": 0.988363349544155,
+      "pairwise_cosine_std": 0.008653756638764772,
+      "pairwise_cosine_min": 0.9397082842644298,
+      "canonical_cosine_mean": 0.9939740527321291,
+      "canonical_cosine_std": 0.0038278989895560696,
+      "canonical_cosine_min": 0.983174879023843
+    },
+    "23": {
+      "pairwise_cosine_mean": 0.995556988052355,
+      "pairwise_cosine_std": 0.0032654266446951333,
+      "pairwise_cosine_min": 0.9747977918878417,
+      "canonical_cosine_mean": 0.997747662592188,
+      "canonical_cosine_std": 0.0015864915396193598,
+      "canonical_cosine_min": 0.9930903004525964
+    },
+    "24": {
+      "pairwise_cosine_mean": 0.9994576421007956,
+      "pairwise_cosine_std": 0.00024335806492591878,
+      "pairwise_cosine_min": 0.9982858996624568,
+      "canonical_cosine_mean": 0.999727043156057,
+      "canonical_cosine_std": 0.00010674330602013965,
+      "canonical_cosine_min": 0.9994535630944812
+    },
+    "25": {
+      "pairwise_cosine_mean": 0.9943691817318295,
+      "pairwise_cosine_std": 0.002628899361592566,
+      "pairwise_cosine_min": 0.9780435628890817,
+      "canonical_cosine_mean": 0.9971669002455547,
+      "canonical_cosine_std": 0.0012699249994494006,
+      "canonical_cosine_min": 0.9920773461236724
+    },
+    "26": {
+      "pairwise_cosine_mean": 0.9992372646454596,
+      "pairwise_cosine_std": 0.0003601496991245901,
+      "pairwise_cosine_min": 0.9966396701325531,
+      "canonical_cosine_mean": 0.9996143081989591,
+      "canonical_cosine_std": 0.00017963263393869442,
+      "canonical_cosine_min": 0.9989837296556323
+    },
+    "27": {
+      "pairwise_cosine_mean": 0.999254599437798,
+      "pairwise_cosine_std": 0.00029348203127786877,
+      "pairwise_cosine_min": 0.9974290592167598,
+      "canonical_cosine_mean": 0.9996180291716469,
+      "canonical_cosine_std": 0.00016682815203526428,
+      "canonical_cosine_min": 0.9989647748287963
+    },
+    "28": {
+      "pairwise_cosine_mean": 0.9992683035706968,
+      "pairwise_cosine_std": 0.0002264308571494286,
+      "pairwise_cosine_min": 0.9980728396656906,
+      "canonical_cosine_mean": 0.9996290572028949,
+      "canonical_cosine_std": 0.00010244417143739519,
+      "canonical_cosine_min": 0.9993304837879934
+    },
+    "29": {
+      "pairwise_cosine_mean": 0.9975597067253444,
+      "pairwise_cosine_std": 0.0012721552155262421,
+      "pairwise_cosine_min": 0.9889870598870181,
+      "canonical_cosine_mean": 0.9987638698981408,
+      "canonical_cosine_std": 0.0006030954491192679,
+      "canonical_cosine_min": 0.9964968106705172
+    },
+    "30": {
+      "pairwise_cosine_mean": 0.9995572380114459,
+      "pairwise_cosine_std": 0.0001350869180313856,
+      "pairwise_cosine_min": 0.9986664248151741,
+      "canonical_cosine_mean": 0.9997780034919779,
+      "canonical_cosine_std": 7.22709138187735e-05,
+      "canonical_cosine_min": 0.9994601845206723
+    },
+    "31": {
+      "pairwise_cosine_mean": 0.9974855394511748,
+      "pairwise_cosine_std": 0.001335395487925403,
+      "pairwise_cosine_min": 0.9901819642425549,
+      "canonical_cosine_mean": 0.9987017065584343,
+      "canonical_cosine_std": 0.0006979028751659114,
+      "canonical_cosine_min": 0.9961944370978542
+    },
+    "32": {
+      "pairwise_cosine_mean": 0.9997460987621073,
+      "pairwise_cosine_std": 7.60983386112455e-05,
+      "pairwise_cosine_min": 0.99929424558385,
+      "canonical_cosine_mean": 0.9998725126158567,
+      "canonical_cosine_std": 3.585874570640024e-05,
+      "canonical_cosine_min": 0.9997434378204569
+    },
+    "33": {
+      "pairwise_cosine_mean": 0.9990720796827077,
+      "pairwise_cosine_std": 0.0006969920160671362,
+      "pairwise_cosine_min": 0.9929311043006115,
+      "canonical_cosine_mean": 0.9995078068853935,
+      "canonical_cosine_std": 0.00039802551922917115,
+      "canonical_cosine_min": 0.9977297255852963
+    }
+  },
+  "convergence": {
+    "1": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9890032122904824,
+        "cosine_to_canonical_std": 0.008362719750180348
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9952191846858197,
+        "cosine_to_canonical_std": 0.0043851133286235576
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9969765345840622,
+        "cosine_to_canonical_std": 0.0026125857332937176
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9982635353530919,
+        "cosine_to_canonical_std": 0.0016139589454211242
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.998790358840122,
+        "cosine_to_canonical_std": 0.001466447530610661
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999428927575277,
+        "cosine_to_canonical_std": 0.0
+      }
+    },
+    "2": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9955343959397712,
+        "cosine_to_canonical_std": 0.004985104838787239
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9978567958267617,
+        "cosine_to_canonical_std": 0.001884305371400593
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9990572321970465,
+        "cosine_to_canonical_std": 0.0009250252593236515
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9995841047002367,
+        "cosine_to_canonical_std": 0.0003683214476343409
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9996541748550694,
+        "cosine_to_canonical_std": 0.0003234478824093276
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999710008056468,
+        "cosine_to_canonical_std": 2.220446049250313e-16
+      }
+    },
+    "3": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9962689141496031,
+        "cosine_to_canonical_std": 0.0031802267865956536
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.998450894441403,
+        "cosine_to_canonical_std": 0.0027377071197838185
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9991254110286123,
+        "cosine_to_canonical_std": 0.0005648778414641377
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9996717615107598,
+        "cosine_to_canonical_std": 0.00019120806249053407
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9998367268484213,
+        "cosine_to_canonical_std": 0.00012834539955010197
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.999992390529156,
+        "cosine_to_canonical_std": 2.220446049250313e-16
+      }
+    },
+    "4": {
+      "100": {
+        "cosine_to_canonical_mean": 0.993896434734407,
+        "cosine_to_canonical_std": 0.0026960378311054636
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9965071986227088,
+        "cosine_to_canonical_std": 0.0020542592772759107
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.998316347388841,
+        "cosine_to_canonical_std": 0.001045724668921636
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9992313121341574,
+        "cosine_to_canonical_std": 0.0005339359737179159
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9996972582960465,
+        "cosine_to_canonical_std": 0.00015060025295723123
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999650773772082,
+        "cosine_to_canonical_std": 0.0
+      }
+    },
+    "5": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9954738673091483,
+        "cosine_to_canonical_std": 0.001868413464589823
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9976082205491734,
+        "cosine_to_canonical_std": 0.001747105376214545
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9988332689796655,
+        "cosine_to_canonical_std": 0.000685905333908322
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9994542342501151,
+        "cosine_to_canonical_std": 0.00031019725380227185
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9997718496482069,
+        "cosine_to_canonical_std": 0.00011409715210035541
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999784208613379,
+        "cosine_to_canonical_std": 3.3306690738754696e-16
+      }
+    },
+    "6": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9984350784699056,
+        "cosine_to_canonical_std": 0.0011455013804812862
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.999445006780064,
+        "cosine_to_canonical_std": 0.00035585206389059993
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9997283138077405,
+        "cosine_to_canonical_std": 0.00018502179224330468
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9998670678385926,
+        "cosine_to_canonical_std": 0.00011267625260925497
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9999435559505863,
+        "cosine_to_canonical_std": 3.499523834806546e-05
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999962182037981,
+        "cosine_to_canonical_std": 0.0
+      }
+    },
+    "7": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9882224273879098,
+        "cosine_to_canonical_std": 0.00429447797626471
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9919329093790512,
+        "cosine_to_canonical_std": 0.007141747291244276
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9963624304404725,
+        "cosine_to_canonical_std": 0.002099485185219909
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9988425011951844,
+        "cosine_to_canonical_std": 0.00039666800456459125
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9992514903324621,
+        "cosine_to_canonical_std": 0.00047026551557702133
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999508076721104,
+        "cosine_to_canonical_std": 0.0
+      }
+    },
+    "8": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9873687662194797,
+        "cosine_to_canonical_std": 0.006228195365848215
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9954519310310979,
+        "cosine_to_canonical_std": 0.0021466199829428927
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9974423629487694,
+        "cosine_to_canonical_std": 0.0009334443619705136
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.99885150864285,
+        "cosine_to_canonical_std": 0.0003909850020662537
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9994074996214595,
+        "cosine_to_canonical_std": 0.0005245966385843857
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999640498713009,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "9": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9866943207881892,
+        "cosine_to_canonical_std": 0.0053061672523029525
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9921171335165926,
+        "cosine_to_canonical_std": 0.006332650458363072
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9969276624288902,
+        "cosine_to_canonical_std": 0.0016937136591017787
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9983358970711173,
+        "cosine_to_canonical_std": 0.0011865311129066946
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9991829254406509,
+        "cosine_to_canonical_std": 0.0005858336493648465
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999492086557386,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "10": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9908641353057576,
+        "cosine_to_canonical_std": 0.004971431255018819
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9963441606312392,
+        "cosine_to_canonical_std": 0.0016364391816831164
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9983836763165252,
+        "cosine_to_canonical_std": 0.0007331579404956085
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9990535083536315,
+        "cosine_to_canonical_std": 0.0005930305312267278
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9996836927605056,
+        "cosine_to_canonical_std": 0.0001370254591081308
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999763177569314,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "11": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9931913337142205,
+        "cosine_to_canonical_std": 0.0029591722066927536
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9974116230759902,
+        "cosine_to_canonical_std": 0.0010869840221101536
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9989365785960003,
+        "cosine_to_canonical_std": 0.00030724880922235415
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9994294373682727,
+        "cosine_to_canonical_std": 0.00015620021728465444
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.999740079435559,
+        "cosine_to_canonical_std": 8.900004510143303e-05
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999794125556182,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "12": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9957974572735914,
+        "cosine_to_canonical_std": 0.0025668848832636516
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9985337532956752,
+        "cosine_to_canonical_std": 0.0007636939323765536
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9991252612099822,
+        "cosine_to_canonical_std": 0.0007066923671654513
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.999658188608311,
+        "cosine_to_canonical_std": 0.0002896237382108343
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.99982447197081,
+        "cosine_to_canonical_std": 0.00010907023870961631
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999884860023336,
+        "cosine_to_canonical_std": 0.0
+      }
+    },
+    "13": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9789262195945649,
+        "cosine_to_canonical_std": 0.01482073056285218
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9928475758123186,
+        "cosine_to_canonical_std": 0.00454024022478772
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9950580466444092,
+        "cosine_to_canonical_std": 0.003878534557184143
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9983537634502856,
+        "cosine_to_canonical_std": 0.0010935519510036748
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9993879668066192,
+        "cosine_to_canonical_std": 0.00029193997661847545
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999364427859231,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "14": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9933581688645784,
+        "cosine_to_canonical_std": 0.0024745661370185524
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9972283235602635,
+        "cosine_to_canonical_std": 0.0012461403927371592
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9982045373530444,
+        "cosine_to_canonical_std": 0.001205489960232956
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9991030770529911,
+        "cosine_to_canonical_std": 0.0004628745979859031
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.999640919493963,
+        "cosine_to_canonical_std": 0.0003301433539435454
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999702807901313,
+        "cosine_to_canonical_std": 2.220446049250313e-16
+      }
+    },
+    "15": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9939996746237728,
+        "cosine_to_canonical_std": 0.0045353337239564554
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.998052405478618,
+        "cosine_to_canonical_std": 0.0010049331461562021
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9988556310182762,
+        "cosine_to_canonical_std": 0.0008835764586617954
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9993457659017888,
+        "cosine_to_canonical_std": 0.00031282133341498775
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9997254313151176,
+        "cosine_to_canonical_std": 0.00018667142043794622
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999785756338213,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "16": {
+      "100": {
+        "cosine_to_canonical_mean": 0.996562143603599,
+        "cosine_to_canonical_std": 0.0013956927642541747
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9983577592043792,
+        "cosine_to_canonical_std": 0.0011201604044873694
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9992781402746962,
+        "cosine_to_canonical_std": 0.0004559161796791661
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.999673001129814,
+        "cosine_to_canonical_std": 9.792032217019854e-05
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9998358438135313,
+        "cosine_to_canonical_std": 9.322573880637794e-05
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999885536976946,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "17": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9932690144067056,
+        "cosine_to_canonical_std": 0.005582016329547695
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9971667244823779,
+        "cosine_to_canonical_std": 0.0016598810207434954
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9988210146257719,
+        "cosine_to_canonical_std": 0.00045897595250338154
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9992702217041858,
+        "cosine_to_canonical_std": 0.0003380975468566755
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9996367049058318,
+        "cosine_to_canonical_std": 0.00021460531878824112
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999780721892284,
+        "cosine_to_canonical_std": 2.220446049250313e-16
+      }
+    },
+    "18": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9640561600299634,
+        "cosine_to_canonical_std": 0.025175042505061897
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9903594609135512,
+        "cosine_to_canonical_std": 0.009865689515565441
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9958911837442613,
+        "cosine_to_canonical_std": 0.004665810943904951
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9978181788656473,
+        "cosine_to_canonical_std": 0.001330310140668767
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9988897352471126,
+        "cosine_to_canonical_std": 0.001084454720849525
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999388076302997,
+        "cosine_to_canonical_std": 2.220446049250313e-16
+      }
+    },
+    "19": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9911592797719251,
+        "cosine_to_canonical_std": 0.007184220321294859
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9958431106702653,
+        "cosine_to_canonical_std": 0.003433125580833245
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9980973694531526,
+        "cosine_to_canonical_std": 0.0013558093875772955
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9986779750196316,
+        "cosine_to_canonical_std": 0.0009340800500398903
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9996474758655486,
+        "cosine_to_canonical_std": 0.00024010378803949483
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999718714097913,
+        "cosine_to_canonical_std": 0.0
+      }
+    },
+    "20": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9723688606508372,
+        "cosine_to_canonical_std": 0.01921530241480096
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9909507242145572,
+        "cosine_to_canonical_std": 0.00597481448327189
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9939501965984185,
+        "cosine_to_canonical_std": 0.004923305984509362
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9976617297429312,
+        "cosine_to_canonical_std": 0.0010714856670624641
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9991415280837359,
+        "cosine_to_canonical_std": 0.00046163482254199696
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999325614150395,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "21": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9881470146620043,
+        "cosine_to_canonical_std": 0.003995522524371741
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9935436997088394,
+        "cosine_to_canonical_std": 0.0035412042759738766
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9959618671319113,
+        "cosine_to_canonical_std": 0.003127364046080959
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.998529257751304,
+        "cosine_to_canonical_std": 0.0009921569559099448
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9994096214495057,
+        "cosine_to_canonical_std": 0.0002526745479430991
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999462683413995,
+        "cosine_to_canonical_std": 2.220446049250313e-16
+      }
+    },
+    "22": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9747021877976956,
+        "cosine_to_canonical_std": 0.013658769394562132
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9910964451513549,
+        "cosine_to_canonical_std": 0.004871236539655336
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9958287620181517,
+        "cosine_to_canonical_std": 0.0020474635551748182
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9966733955618732,
+        "cosine_to_canonical_std": 0.0023434674343234983
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9991900447643968,
+        "cosine_to_canonical_std": 0.0002661992424656034
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999262748605021,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "23": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9890760739650115,
+        "cosine_to_canonical_std": 0.006049752501298855
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9964559676973254,
+        "cosine_to_canonical_std": 0.0019450603717014977
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9977703926646692,
+        "cosine_to_canonical_std": 0.00140532224060421
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9986862609148657,
+        "cosine_to_canonical_std": 0.0007878348095132431
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9995823117207772,
+        "cosine_to_canonical_std": 0.000188566103312081
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.999963965066374,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "24": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9987869633062069,
+        "cosine_to_canonical_std": 0.0003403916131911121
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9995522766733776,
+        "cosine_to_canonical_std": 0.00014851645890860278
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9997629106447233,
+        "cosine_to_canonical_std": 7.41960619910911e-05
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9998773883990075,
+        "cosine_to_canonical_std": 3.448235719249164e-05
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9999516732971235,
+        "cosine_to_canonical_std": 8.94151642734354e-06
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999956652745775,
+        "cosine_to_canonical_std": 3.3306690738754696e-16
+      }
+    },
+    "25": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9844718999685795,
+        "cosine_to_canonical_std": 0.006656059402433712
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9947557262904319,
+        "cosine_to_canonical_std": 0.002476609002454671
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9971276012738028,
+        "cosine_to_canonical_std": 0.001250621137258969
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9985554437228732,
+        "cosine_to_canonical_std": 0.0006648223839342989
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9994040971419075,
+        "cosine_to_canonical_std": 0.00023296001618822054
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999556264987814,
+        "cosine_to_canonical_std": 0.0
+      }
+    },
+    "26": {
+      "100": {
+        "cosine_to_canonical_mean": 0.998584149930689,
+        "cosine_to_canonical_std": 0.00034835949722713063
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9992638578161575,
+        "cosine_to_canonical_std": 0.0002487905495793107
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9996910598027396,
+        "cosine_to_canonical_std": 6.273889421604605e-05
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9998273260908336,
+        "cosine_to_canonical_std": 5.589182253134679e-05
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.999919549565693,
+        "cosine_to_canonical_std": 4.124715958255516e-05
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999936251922877,
+        "cosine_to_canonical_std": 3.3306690738754696e-16
+      }
+    },
+    "27": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9981821157219475,
+        "cosine_to_canonical_std": 0.0006510638222944705
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9992244027278085,
+        "cosine_to_canonical_std": 0.0003118224103460334
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9996248080891783,
+        "cosine_to_canonical_std": 0.00012414291521864633
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9998094473791607,
+        "cosine_to_canonical_std": 5.491640534800399e-05
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9999203108893628,
+        "cosine_to_canonical_std": 3.824246870712535e-05
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999944068535361,
+        "cosine_to_canonical_std": 3.3306690738754696e-16
+      }
+    },
+    "28": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9979295435820305,
+        "cosine_to_canonical_std": 0.0010138962277706823
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9993115306369884,
+        "cosine_to_canonical_std": 0.00016057620353033723
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9996450930881349,
+        "cosine_to_canonical_std": 9.816634974359304e-05
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9997919163780006,
+        "cosine_to_canonical_std": 5.521547211466365e-05
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9999208255893437,
+        "cosine_to_canonical_std": 1.7922019060632442e-05
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999947834988635,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "29": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9935132555450774,
+        "cosine_to_canonical_std": 0.003220155089169169
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9975268708689118,
+        "cosine_to_canonical_std": 0.0011051455646987705
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9987756614995084,
+        "cosine_to_canonical_std": 0.000520998089595462
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9994597660764228,
+        "cosine_to_canonical_std": 0.00025934368008550087
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9997581017513314,
+        "cosine_to_canonical_std": 8.504349351547792e-05
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999857331006263,
+        "cosine_to_canonical_std": 0.0
+      }
+    },
+    "30": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9988953358217071,
+        "cosine_to_canonical_std": 0.00024178137188417354
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9995249979269483,
+        "cosine_to_canonical_std": 0.00018914237516787577
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9997806300226308,
+        "cosine_to_canonical_std": 4.31408336412395e-05
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9998792450744188,
+        "cosine_to_canonical_std": 3.043711959316343e-05
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9999494286631713,
+        "cosine_to_canonical_std": 8.914272517246995e-06
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999970198371699,
+        "cosine_to_canonical_std": 2.220446049250313e-16
+      }
+    },
+    "31": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9947956327943235,
+        "cosine_to_canonical_std": 0.00220904132063812
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9970644000610726,
+        "cosine_to_canonical_std": 0.0019053829706921134
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9985687564823265,
+        "cosine_to_canonical_std": 0.0009182579142861399
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9993762088068667,
+        "cosine_to_canonical_std": 0.00048707931643743926
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9996896896958717,
+        "cosine_to_canonical_std": 0.0001755645558917734
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999809926390629,
+        "cosine_to_canonical_std": 1.1102230246251565e-16
+      }
+    },
+    "32": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9993135087259386,
+        "cosine_to_canonical_std": 0.00020688909072536367
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9997033114768514,
+        "cosine_to_canonical_std": 0.00010814598077193182
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9998557217153718,
+        "cosine_to_canonical_std": 5.357104544373371e-05
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.9999335530738731,
+        "cosine_to_canonical_std": 2.4995338436159662e-05
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9999756133833966,
+        "cosine_to_canonical_std": 5.077207920886364e-06
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999980592776779,
+        "cosine_to_canonical_std": 3.3306690738754696e-16
+      }
+    },
+    "33": {
+      "100": {
+        "cosine_to_canonical_mean": 0.9971081508859561,
+        "cosine_to_canonical_std": 0.0031246592407538558
+      },
+      "200": {
+        "cosine_to_canonical_mean": 0.9990782712597047,
+        "cosine_to_canonical_std": 0.0006625775489079535
+      },
+      "300": {
+        "cosine_to_canonical_mean": 0.9993605127318508,
+        "cosine_to_canonical_std": 0.00043361640749537046
+      },
+      "400": {
+        "cosine_to_canonical_mean": 0.999630168689935,
+        "cosine_to_canonical_std": 0.0003155132969377167
+      },
+      "500": {
+        "cosine_to_canonical_mean": 0.9998712210978177,
+        "cosine_to_canonical_std": 9.30290963474208e-05
+      },
+      "600": {
+        "cosine_to_canonical_mean": 0.9999926583584404,
+        "cosine_to_canonical_std": 0.0
+      }
+    }
+  }
+}
