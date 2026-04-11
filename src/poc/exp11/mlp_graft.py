@@ -26,6 +26,7 @@ class LayerStepMetrics:
     pt_mlp_norm: list[float] | None = None
     relative_diff: list[float] | None = None
     cross_kl: list[float] | None = None
+    kl_to_pt_final: list[float] | None = None
     residual_cosine: list[float] | None = None
     residual_divergence: list[float] | None = None
 
@@ -43,7 +44,7 @@ class PipelineRun:
     generated_tokens: list[dict[str, Any]]
     generated_text: str
     step_records: list[PipelineStepRecord]
-    baseline_cache: list[tuple[torch.Tensor, list[torch.Tensor]]]
+    baseline_cache: list[list[torch.Tensor]]
 
 
 @dataclass
@@ -52,21 +53,44 @@ class StepTensors:
     normed_mlp_input: list[torch.Tensor]
     mlp_output: list[torch.Tensor]
     residual_output: list[torch.Tensor]
-    diff_norm: list[float | None]
-    pt_mlp_norm: list[float | None]
-    relative_diff: list[float | None]
+    diff_norm: list[float]
+    pt_mlp_norm: list[float]
+    relative_diff: list[float]
+
+
+@dataclass
+class BatchedStepTensors:
+    pre_mlp_residual: list[torch.Tensor]
+    normed_mlp_input: list[torch.Tensor]
+    mlp_output: list[torch.Tensor]
+    residual_output: list[torch.Tensor]
+    diff_norm: list[torch.Tensor]
+    pt_mlp_norm: list[torch.Tensor]
+    relative_diff: list[torch.Tensor]
+
+
+@dataclass(frozen=True)
+class CaptureSpec:
+    mode: str
+    module: torch.nn.Module
 
 
 class ArchitectureProbe:
     """Architecture-aware probe for locating the MLP-preceding norm module."""
 
-    def get_mlp_input_norm(self, layer) -> torch.nn.Module:
-        for attr in ("post_attention_layernorm", "pre_feedforward_layernorm", "ff_norm"):
-            if hasattr(layer, attr):
-                return getattr(layer, attr)
+    def get_capture_spec(self, layer) -> CaptureSpec:
+        if hasattr(layer, "pre_feedforward_layernorm"):
+            return CaptureSpec(mode="norm", module=getattr(layer, "pre_feedforward_layernorm"))
+        if hasattr(layer, "post_attention_layernorm") and not hasattr(layer, "post_feedforward_layernorm"):
+            return CaptureSpec(mode="norm", module=getattr(layer, "post_attention_layernorm"))
+        if hasattr(layer, "post_feedforward_layernorm"):
+            # OLMo2-style post-norm MLP block: MLP input is already the residual stream.
+            return CaptureSpec(mode="mlp_input_direct", module=layer.mlp)
+        if hasattr(layer, "ff_norm"):
+            return CaptureSpec(mode="norm", module=getattr(layer, "ff_norm"))
         raise ValueError(
             f"Unsupported layer structure for exp11: {layer.__class__.__name__} "
-            "does not expose a known MLP-input norm module."
+            "does not expose a known MLP capture path."
         )
 
 
@@ -113,7 +137,7 @@ class PipelineCapture:
         for handle in self._handles:
             handle.remove()
 
-    def snapshot(self) -> StepTensors:
+    def snapshot(self) -> BatchedStepTensors:
         def _require(key: str) -> list[torch.Tensor]:
             vals = self._current[key]
             if any(v is None for v in vals):
@@ -121,48 +145,55 @@ class PipelineCapture:
                 raise RuntimeError(f"Missing exp11 capture for {key} at layers {missing}")
             return [v for v in vals if v is not None]
 
-        step = StepTensors(
+        step = BatchedStepTensors(
             pre_mlp_residual=_require("pre_mlp_residual"),
             normed_mlp_input=_require("normed_mlp_input"),
             mlp_output=_require("mlp_output"),
             residual_output=_require("residual_output"),
-            diff_norm=list(self._current["diff_norm"]),
-            pt_mlp_norm=list(self._current["pt_mlp_norm"]),
-            relative_diff=list(self._current["relative_diff"]),
+            diff_norm=_require("diff_norm"),
+            pt_mlp_norm=_require("pt_mlp_norm"),
+            relative_diff=_require("relative_diff"),
         )
         return step
 
     def _register(self) -> list:
         handles: list = []
         for layer_idx, layer in enumerate(self.layers):
-            norm_module = self.arch_probe.get_mlp_input_norm(layer)
+            capture_spec = self.arch_probe.get_capture_spec(layer)
             mlp_module = layer.mlp
 
-            def norm_pre_hook(_module, args, li=layer_idx):
-                tensor = args[0]
-                self._current["pre_mlp_residual"][li] = tensor[:, -1, :].detach()
+            if capture_spec.mode == "norm":
+                norm_module = capture_spec.module
 
-            def norm_hook(_module, _args, output, li=layer_idx):
-                self._current["normed_mlp_input"][li] = output[:, -1, :].detach()
+                def norm_pre_hook(_module, args, li=layer_idx):
+                    tensor = args[0]
+                    self._current["pre_mlp_residual"][li] = tensor[:, -1, :].detach()
 
-            def mlp_hook(_module, args, output, li=layer_idx):
+                def norm_hook(_module, _args, output, li=layer_idx):
+                    self._current["normed_mlp_input"][li] = output[:, -1, :].detach()
+
+                handles.append(norm_module.register_forward_pre_hook(norm_pre_hook))
+                handles.append(norm_module.register_forward_hook(norm_hook))
+
+            def mlp_hook(_module, args, output, li=layer_idx, capture_mode=capture_spec.mode):
+                if capture_mode == "mlp_input_direct":
+                    self._current["pre_mlp_residual"][li] = args[0][:, -1, :].detach()
+                    self._current["normed_mlp_input"][li] = args[0][:, -1, :].detach()
                 pt_out = output
-                self._current["pt_mlp_norm"][li] = float(
-                    pt_out[:, -1, :].float().norm(dim=-1).mean().item()
-                )
+                pt_norm = pt_out[:, -1, :].float().norm(dim=-1).detach()
+                self._current["pt_mlp_norm"][li] = pt_norm
                 if self.graft_it_layers is not None and li >= self.onset_layer:
                     with torch.no_grad():
                         it_out = self.graft_it_layers[li].mlp(args[0])
                     diff = it_out[:, -1, :].float() - pt_out[:, -1, :].float()
-                    diff_norm = float(diff.norm(dim=-1).mean().item())
-                    pt_norm = max(self._current["pt_mlp_norm"][li], 1e-12)
+                    diff_norm = diff.norm(dim=-1).detach()
                     self._current["diff_norm"][li] = diff_norm
-                    self._current["relative_diff"][li] = float(diff_norm / pt_norm)
+                    self._current["relative_diff"][li] = (diff_norm / pt_norm.clamp_min(1e-12)).detach()
                     self._current["mlp_output"][li] = it_out[:, -1, :].detach()
                     return it_out
 
-                self._current["diff_norm"][li] = 0.0
-                self._current["relative_diff"][li] = 0.0
+                self._current["diff_norm"][li] = torch.zeros_like(pt_norm)
+                self._current["relative_diff"][li] = torch.zeros_like(pt_norm)
                 self._current["mlp_output"][li] = pt_out[:, -1, :].detach()
                 return output
 
@@ -170,17 +201,29 @@ class PipelineCapture:
                 resid = self.adapter.adapter.residual_from_output(output)
                 self._current["residual_output"][li] = resid[:, -1, :].detach()
 
-            handles.append(norm_module.register_forward_pre_hook(norm_pre_hook))
-            handles.append(norm_module.register_forward_hook(norm_hook))
             handles.append(mlp_module.register_forward_hook(mlp_hook))
             handles.append(layer.register_forward_hook(layer_hook))
         return handles
 
 
 def logits_from_residuals(final_norm, lm_head, residuals: list[torch.Tensor]) -> torch.Tensor:
-    stacked = torch.stack([x.squeeze(0) for x in residuals], dim=0)
+    """Return raw logit-lens logits with shape [batch, n_layers, vocab]."""
+    stacked = torch.stack(residuals, dim=0)  # [layers, batch, d_model]
     normed = final_norm(stacked)
-    return lm_head(normed).float()
+    logits = lm_head(normed).float()  # [layers, batch, vocab]
+    return logits.permute(1, 0, 2).contiguous()
+
+
+def select_row_step_tensors(step_tensors: BatchedStepTensors, row_idx: int) -> StepTensors:
+    return StepTensors(
+        pre_mlp_residual=[tensor[row_idx : row_idx + 1] for tensor in step_tensors.pre_mlp_residual],
+        normed_mlp_input=[tensor[row_idx : row_idx + 1] for tensor in step_tensors.normed_mlp_input],
+        mlp_output=[tensor[row_idx : row_idx + 1] for tensor in step_tensors.mlp_output],
+        residual_output=[tensor[row_idx : row_idx + 1] for tensor in step_tensors.residual_output],
+        diff_norm=[float(tensor[row_idx].item()) for tensor in step_tensors.diff_norm],
+        pt_mlp_norm=[float(tensor[row_idx].item()) for tensor in step_tensors.pt_mlp_norm],
+        relative_diff=[float(tensor[row_idx].item()) for tensor in step_tensors.relative_diff],
+    )
 
 
 def _entropy_from_probs(probs: torch.Tensor) -> torch.Tensor:
@@ -190,7 +233,22 @@ def _entropy_from_probs(probs: torch.Tensor) -> torch.Tensor:
 def _kl_to_final(log_probs: torch.Tensor) -> torch.Tensor:
     log_p_final = log_probs[-1].unsqueeze(0).expand_as(log_probs)
     probs = log_probs.exp()
-    return (probs * (log_probs - log_p_final)).sum(dim=-1)
+    terms = torch.where(
+        probs > 0,
+        probs * (log_probs - log_p_final),
+        torch.zeros_like(probs),
+    )
+    return torch.nan_to_num(terms.sum(dim=-1), nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def _kl_between(log_probs_p: torch.Tensor, log_probs_q: torch.Tensor) -> torch.Tensor:
+    probs_p = log_probs_p.exp()
+    terms = torch.where(
+        probs_p > 0,
+        probs_p * (log_probs_p - log_probs_q),
+        torch.zeros_like(probs_p),
+    )
+    return torch.nan_to_num(terms.sum(dim=-1), nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def _rank_of_token(logits: torch.Tensor, token_id: int) -> int:
@@ -238,14 +296,16 @@ def compute_layer_metrics(
         next_token_rank=[_rank_of_token(pipeline_logits[i], chosen_token_id) for i in range(pipeline_logits.shape[0])],
         delta_cosine=delta_cos,
         mlp_norm=mlp_norm,
-        diff_norm=[float(x) if x is not None else 0.0 for x in step_tensors.diff_norm],
-        pt_mlp_norm=[float(x) if x is not None else 0.0 for x in step_tensors.pt_mlp_norm],
-        relative_diff=[float(x) if x is not None else 0.0 for x in step_tensors.relative_diff],
+        diff_norm=[float(x) for x in step_tensors.diff_norm],
+        pt_mlp_norm=[float(x) for x in step_tensors.pt_mlp_norm],
+        relative_diff=[float(x) for x in step_tensors.relative_diff],
     )
 
     if baseline_logits is not None and baseline_residuals is not None:
         base_log_probs = torch.log_softmax(baseline_logits, dim=-1)
-        cross_kl = (log_probs.exp() * (log_probs - base_log_probs)).sum(dim=-1)
+        cross_kl = _kl_between(log_probs, base_log_probs)
+        base_final_log_probs = base_log_probs[-1].unsqueeze(0).expand_as(log_probs)
+        kl_to_pt_final = _kl_between(log_probs, base_final_log_probs)
         residual_cos = []
         residual_div = []
         for grafted, base in zip(step_tensors.residual_output, baseline_residuals, strict=False):
@@ -254,6 +314,7 @@ def compute_layer_metrics(
             residual_cos.append(float(F.cosine_similarity(g, b, dim=-1).mean().item()))
             residual_div.append(float(((g - b).norm(dim=-1) / b.norm(dim=-1).clamp_min(1e-12)).mean().item()))
         metrics.cross_kl = [float(x) for x in cross_kl.tolist()]
+        metrics.kl_to_pt_final = [float(x) for x in kl_to_pt_final.tolist()]
         metrics.residual_cosine = residual_cos
         metrics.residual_divergence = residual_div
 
