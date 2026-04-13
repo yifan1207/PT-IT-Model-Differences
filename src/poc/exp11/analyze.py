@@ -98,13 +98,30 @@ def _plot_panel(
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     ax_mass, ax_kl, ax_delta, ax_cross = axes.flat
 
+    primary_colors = [
+        ("A", "#1f77b4"),
+        ("B", "#d62728"),
+        ("C", "#2ca02c"),
+        ("A_prime", "#9467bd"),
+        ("A_prime_tmpl", "#c5b0d5"),
+        ("B2", "#ff7f0e"),
+    ]
+    secondary_colors = [
+        ("A", "#7f7f7f"),
+        ("B", "#ff9896"),
+        ("C", "#98df8a"),
+        ("A_prime", "#c5b0d5"),
+        ("A_prime_tmpl", "#ddd0ee"),
+        ("B2", "#ffbb78"),
+    ]
+
     def _plot_metric(ax, metric_name: str, title: str, ylabel: str) -> None:
-        for pipeline, color in (("A", "#1f77b4"), ("B", "#d62728")):
+        for pipeline, color in primary_colors:
             values = primary.get(pipeline, {}).get(metric_name)
             if values is not None:
                 ax.plot(values, label=f"{pipeline} primary", color=color, linewidth=2)
         if secondary is not None:
-            for pipeline, color in (("A", "#7f7f7f"), ("B", "#ff9896")):
+            for pipeline, color in secondary_colors:
                 values = secondary.get(pipeline, {}).get(metric_name)
                 if values is not None:
                     ax.plot(values, label=f"{pipeline} native", color=color, linestyle="--", linewidth=1.5)
@@ -154,26 +171,51 @@ def main() -> None:
     for row in prompt_rows:
         by_category[row.get("category", "")].append(row)
 
-    overall = {
+    teacher_forced = bool(config.get("teacher_forced"))
+    configured_pipelines = config.get("pipelines")
+    if configured_pipelines:
+        pipeline_keys = [f"pipeline_{name.lower()}" for name in configured_pipelines]
+    else:
+        pipeline_keys = ["pipeline_a", "pipeline_b"]
+        if teacher_forced:
+            pipeline_keys += ["pipeline_c", "pipeline_a_prime"]
+
+    def _mean_field(rows, pipeline_key, field):
+        return _mean(
+            [row[pipeline_key][field] for row in rows if pipeline_key in row and field in row[pipeline_key]]
+        )
+
+    overall: dict = {
         "n_prompts": len(prompt_rows),
-        "mean_divergence_step": _mean([row["divergence_step"] for row in prompt_rows if row["divergence_step"] is not None]),
-        "pipeline_a_mean_length": _mean([row["pipeline_a"]["generated_text_length"] for row in prompt_rows]),
-        "pipeline_b_mean_length": _mean([row["pipeline_b"]["generated_text_length"] for row in prompt_rows]),
-        "pipeline_a_mean_structural_ratio_tier1_proxy": _mean(
-            [row["pipeline_a"]["structural_token_ratio_tier1_proxy"] for row in prompt_rows]
-        ),
-        "pipeline_b_mean_structural_ratio_tier1_proxy": _mean(
-            [row["pipeline_b"]["structural_token_ratio_tier1_proxy"] for row in prompt_rows]
-        ),
+        "mean_divergence_step": _mean([row.get("divergence_step") for row in prompt_rows if row.get("divergence_step") is not None]),
     }
+    for key in pipeline_keys:
+        overall[f"{key}_mean_length"] = _mean_field(prompt_rows, key, "generated_text_length")
+        overall[f"{key}_mean_structural_ratio_tier1_proxy"] = _mean_field(
+            prompt_rows, key, "structural_token_ratio_tier1_proxy"
+        )
+        overall[f"{key}_mean_paragraph_count"] = _mean_field(prompt_rows, key, "paragraph_count")
+        overall[f"{key}_mean_header_count"] = _mean_field(prompt_rows, key, "header_count")
+        overall[f"{key}_mean_bullet_count"] = _mean_field(prompt_rows, key, "bullet_count")
+    if teacher_forced:
+        for div_key in (
+            "divergence_step_b_vs_c",
+            "divergence_step_a_prime_vs_c",
+            "divergence_step_a_prime_tmpl_vs_c",
+            "divergence_step_b2_vs_c",
+        ):
+            overall[f"mean_{div_key}"] = _mean(
+                [row[div_key] for row in prompt_rows if row.get(div_key) is not None]
+            )
     per_category = {}
     for category, rows in by_category.items():
-        per_category[category] = {
+        entry: dict = {
             "n_prompts": len(rows),
-            "mean_divergence_step": _mean([row["divergence_step"] for row in rows if row["divergence_step"] is not None]),
-            "pipeline_a_mean_length": _mean([row["pipeline_a"]["generated_text_length"] for row in rows]),
-            "pipeline_b_mean_length": _mean([row["pipeline_b"]["generated_text_length"] for row in rows]),
+            "mean_divergence_step": _mean([row.get("divergence_step") for row in rows if row.get("divergence_step") is not None]),
         }
+        for key in pipeline_keys:
+            entry[f"{key}_mean_length"] = _mean_field(rows, key, "generated_text_length")
+        per_category[category] = entry
 
     summary = {"overall": overall, "per_category": per_category}
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2))
@@ -201,6 +243,7 @@ def main() -> None:
     readout_summary = {
         "primary_readout_name": config.get("primary_readout_name"),
         "secondary_readout_name": config.get("secondary_readout_name"),
+        "secondary_readout_names_by_pipeline": config.get("secondary_readout_names_by_pipeline"),
         "readout_mode": config.get("readout_mode"),
     }
     (run_dir / "readout_summary.json").write_text(json.dumps(readout_summary, indent=2))

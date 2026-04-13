@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import re
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -13,7 +14,7 @@ from transformers.cache_utils import DynamicCache
 
 from src.poc.cross_model.config import get_spec, model_id_for_variant
 from src.poc.cross_model.tuned_lens import _load_probes
-from src.poc.cross_model.utils import load_dataset, load_model_and_tokenizer
+from src.poc.cross_model.utils import get_prompt_for_variant, load_dataset, load_model_and_tokenizer
 from src.poc.exp3.analysis.word_categories import classify_generated_tokens_by_word
 from src.poc.exp6.model_adapter import get_steering_adapter
 from src.poc.exp11.mlp_graft import (
@@ -32,7 +33,7 @@ from src.poc.exp11.mlp_graft import (
 from src.poc.exp11.structural_tokens import build_structural_token_masks
 
 
-VALID_MODELS = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b"]
+VALID_MODELS = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b", "deepseek_v2_lite"]
 KL_THRESHOLDS = [0.05, 0.1, 0.2, 0.5, 1.0]
 DEFAULT_BATCH_SIZE = {
     "gemma3_4b": 64,
@@ -40,7 +41,21 @@ DEFAULT_BATCH_SIZE = {
     "llama31_8b": 32,
     "mistral_7b": 32,
     "olmo2_7b": 32,
+    "deepseek_v2_lite": 48,
 }
+GOVERNANCE_PATTERNS = {
+    "paragraph_header_h1": r"\n\n# ",
+    "paragraph_header_h2": r"\n\n## ",
+    "bullet_dash": r"\n- ",
+    "ordered_1": r"\n1\. ",
+    "ordered_2": r"\n2\. ",
+    "lead_heres_apostrophe": r"\bHere's\b",
+    "lead_here_is": r"\bHere is\b",
+    "lead_sure": r"\bSure\b",
+    "lead_let_me": r"\bLet me\b",
+    "lead_the": r"\bThe ",
+}
+_WORD_INITIAL_RE = re.compile(r"[A-Za-z']+")
 TRAJECTORY_METRICS = [
     "delta_cosine",
     "kl_to_own_final",
@@ -63,6 +78,7 @@ class RequestState:
     generated_tokens: list[dict[str, Any]] = field(default_factory=list)
     step_records: list[PipelineStepRecord] = field(default_factory=list)
     baseline_cache: list[list[torch.Tensor]] = field(default_factory=list)
+    free_argmax_token_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -103,11 +119,19 @@ class TrajectoryAccumulator:
                 pipeline_stats[metric]["sum"][layer_idx] += float(value)
                 pipeline_stats[metric]["count"][layer_idx] += 1.0
 
-    def to_stats_dict(self, *, readout_name: str) -> dict[str, Any]:
-        return {
+    def to_stats_dict(
+        self,
+        *,
+        readout_name: str,
+        readout_name_by_pipeline: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        payload = {
             "readout_name": readout_name,
             "metrics": self._stats,
         }
+        if readout_name_by_pipeline is not None:
+            payload["readout_name_by_pipeline"] = dict(readout_name_by_pipeline)
+        return payload
 
 
 def _merge_trajectory_stats(existing: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:
@@ -117,6 +141,11 @@ def _merge_trajectory_stats(existing: dict[str, Any], update: dict[str, Any]) ->
         "readout_name": update.get("readout_name") or existing.get("readout_name"),
         "metrics": existing.get("metrics", {}),
     }
+    if existing.get("readout_name_by_pipeline") or update.get("readout_name_by_pipeline"):
+        merged["readout_name_by_pipeline"] = {
+            **existing.get("readout_name_by_pipeline", {}),
+            **update.get("readout_name_by_pipeline", {}),
+        }
     for pipeline, pipeline_metrics in update.get("metrics", {}).items():
         dst_pipeline = merged["metrics"].setdefault(pipeline, {})
         for metric_name, metric_stats in pipeline_metrics.items():
@@ -167,6 +196,25 @@ def parse_args() -> argparse.Namespace:
         "--tuned-lens-dir",
         default=None,
         help="Root dir containing tuned-lens probes with v3 layout {model}/{variant}/probe_layer_*.pt.",
+    )
+    parser.add_argument(
+        "--teacher-forced",
+        action="store_true",
+        help=(
+            "Enable v11.1 teacher-forced mode: run IT free teacher (C), PT teacher-forced "
+            "raw/template controls (A', A'_tmpl), and grafted raw/template branches "
+            "(B, B2). Cross-pipeline metrics for teacher-forced "
+            "branches are computed against C's residuals."
+        ),
+    )
+    parser.add_argument(
+        "--prompt-seed",
+        type=int,
+        default=None,
+        help=(
+            "If set, draw a uniform random subset of --n-prompts prompts from the full dataset "
+            "using this seed (overrides the stratified _sample_prompts behavior)."
+        ),
     )
     return parser.parse_args()
 
@@ -233,8 +281,22 @@ def _apply_prompt_shard(prompts: list[dict], shard_index: int, num_shards: int) 
     return prompts[shard_index::num_shards]
 
 
+def _random_subsample(records: list[dict], n_prompts: int, seed: int) -> list[dict]:
+    if n_prompts >= len(records):
+        return sorted(records, key=lambda r: r["id"])
+    rng = random.Random(seed)
+    pool = sorted(records, key=lambda r: r["id"])
+    picked = rng.sample(pool, n_prompts)
+    return sorted(picked, key=lambda r: r["id"])
+
+
 def _safe_decode(tokenizer, token_id: int) -> str:
     return tokenizer.decode([token_id], skip_special_tokens=False, clean_up_tokenization_spaces=False)
+
+
+def _safe_token_piece(tokenizer, token_id: int) -> str:
+    piece = tokenizer.convert_ids_to_tokens(int(token_id))
+    return piece if isinstance(piece, str) else _safe_decode(tokenizer, token_id)
 
 
 def _apply_real_token_mask(logits: torch.Tensor, real_token_mask: torch.Tensor) -> torch.Tensor:
@@ -258,13 +320,62 @@ def _ensure_pad_token(tokenizer) -> None:
             tokenizer.add_special_tokens({"pad_token": "<pad>"})
 
 
-def _make_request_states(prompts: list[dict], tokenizer, done_ids: set[str]) -> list[RequestState]:
+def _assert_used_token_ids_compatible(
+    tokenizer_src,
+    tokenizer_dst,
+    token_sequences: dict[str, list[int]] | list[list[int]],
+    *,
+    context: str,
+    max_examples: int = 8,
+) -> None:
+    sequences = token_sequences.values() if isinstance(token_sequences, dict) else token_sequences
+    seen: set[int] = set()
+    problems: list[str] = []
+    dst_vocab_size = len(tokenizer_dst)
+    for seq in sequences:
+        for token_id in seq:
+            token_id = int(token_id)
+            if token_id in seen:
+                continue
+            seen.add(token_id)
+            if token_id < 0 or token_id >= dst_vocab_size:
+                problems.append(f"id {token_id} out of range for target tokenizer (size={dst_vocab_size})")
+            else:
+                src_piece = _safe_token_piece(tokenizer_src, token_id)
+                dst_piece = _safe_token_piece(tokenizer_dst, token_id)
+                if src_piece != dst_piece:
+                    problems.append(f"id {token_id}: src={src_piece!r} dst={dst_piece!r}")
+            if len(problems) >= max_examples:
+                break
+        if len(problems) >= max_examples:
+            break
+    if problems:
+        joined = "; ".join(problems)
+        raise ValueError(f"Incompatible token IDs for {context}: {joined}")
+
+
+def _make_request_states(
+    prompts: list[dict],
+    tokenizer,
+    done_ids: set[str],
+    *,
+    prompt_text_by_id: dict[str, str] | None = None,
+    prompt_token_ids_by_id: dict[str, list[int]] | None = None,
+) -> list[RequestState]:
     requests: list[RequestState] = []
     for record in prompts:
         if record["id"] in done_ids:
             continue
-        prompt = record["formats"]["B"]
-        token_ids = tokenizer(prompt, add_special_tokens=True)["input_ids"]
+        prompt = (
+            prompt_text_by_id.get(record["id"], record["formats"]["B"])
+            if prompt_text_by_id is not None
+            else record["formats"]["B"]
+        )
+        token_ids = (
+            list(prompt_token_ids_by_id[record["id"]])
+            if prompt_token_ids_by_id is not None
+            else tokenizer(prompt, add_special_tokens=True)["input_ids"]
+        )
         requests.append(
             RequestState(
                 prompt_id=record["id"],
@@ -327,12 +438,15 @@ def _record_step(
     row_residuals: list[torch.Tensor],
     *,
     store_baseline: bool,
+    free_argmax_token_id: int | None = None,
 ) -> None:
     request.generated_token_ids.append(token_id)
     request.generated_tokens.append({"token_id": token_id, "token_str": token_str})
     request.step_records.append(PipelineStepRecord(token_id=token_id, token_str=token_str, metrics=metrics))
     if store_baseline:
         request.baseline_cache.append([tensor.detach().cpu() for tensor in row_residuals])
+    if free_argmax_token_id is not None:
+        request.free_argmax_token_ids.append(free_argmax_token_id)
 
 
 def _resolve_probe_dir(root: str | Path, model: str, variant: str) -> Path:
@@ -388,13 +502,13 @@ def _load_readouts(
             f"Incomplete IT tuned-lens probes for {args.model}: expected {spec.n_layers}, found {len(it_probes)}"
         )
     secondary_a = ReadoutSpec(
-        name="tuned_native",
+        name="tuned_native_pt",
         final_norm=final_norm_pt,
         lm_head=lm_head_pt,
         probes=pt_probes,
     )
     secondary_b = ReadoutSpec(
-        name="tuned_native",
+        name="tuned_native_it",
         final_norm=final_norm_it,
         lm_head=lm_head_it,
         probes=it_probes,
@@ -441,6 +555,7 @@ def _prefill_requests(
     baseline_primary_readout: ReadoutSpec | None,
     baseline_secondary_readout: ReadoutSpec | None,
     secondary_accumulator: TrajectoryAccumulator | None,
+    teacher_tokens_by_prompt: dict[str, list[int]] | None = None,
 ) -> FixedBatch | None:
     if not new_requests:
         return None
@@ -475,13 +590,28 @@ def _prefill_requests(
         primary_layer_logits=primary_layer_logits,
         real_token_mask=real_token_mask.to(device),
     )
-    next_token_ids = logits.argmax(dim=-1)
+    free_argmax_ids = logits.argmax(dim=-1)
+    next_token_ids = free_argmax_ids.clone()
+    forced_exhausted = [False] * len(new_requests)
+    if teacher_tokens_by_prompt is not None:
+        for row_idx, request in enumerate(new_requests):
+            teacher_seq = teacher_tokens_by_prompt.get(request.prompt_id)
+            step_idx = len(request.generated_token_ids)
+            if teacher_seq is None or step_idx >= len(teacher_seq):
+                forced_exhausted[row_idx] = True
+            else:
+                next_token_ids[row_idx] = teacher_seq[step_idx]
 
     next_inputs: list[int] = []
     finished_mask = torch.zeros((len(new_requests),), dtype=torch.bool, device=device)
     for row_idx, request in enumerate(new_requests):
+        if forced_exhausted[row_idx]:
+            finished_mask[row_idx] = True
+            next_inputs.append(inactive_token_id)
+            continue
         token_id = int(next_token_ids[row_idx].item())
         token_str = _safe_decode(tokenizer, token_id)
+        free_argmax_id = int(free_argmax_ids[row_idx].item()) if teacher_tokens_by_prompt is not None else None
         row_step_tensors = select_row_step_tensors(step_tensors, row_idx)
         metric_kwargs: dict[str, Any] = {}
         secondary_metric_kwargs: dict[str, Any] = {}
@@ -516,6 +646,7 @@ def _prefill_requests(
             metrics,
             row_step_tensors.residual_output,
             store_baseline=store_baseline,
+            free_argmax_token_id=free_argmax_id,
         )
         if secondary_accumulator is not None and secondary_layer_logits is not None:
             secondary_metrics = compute_layer_metrics(
@@ -526,7 +657,11 @@ def _prefill_requests(
                 **secondary_metric_kwargs,
             )
             secondary_accumulator.add(pipeline_name, secondary_metrics)
-        finished = token_id in eos_token_ids or len(request.generated_token_ids) >= max_new_tokens
+        finished = (
+            token_id in eos_token_ids
+            or len(request.generated_token_ids) >= max_new_tokens
+            or forced_exhausted[row_idx]
+        )
         finished_mask[row_idx] = finished
         next_inputs.append(inactive_token_id if finished else token_id)
 
@@ -563,6 +698,7 @@ def _decode_fixed_batch(
     baseline_primary_readout: ReadoutSpec | None,
     baseline_secondary_readout: ReadoutSpec | None,
     secondary_accumulator: TrajectoryAccumulator | None,
+    teacher_tokens_by_prompt: dict[str, list[int]] | None = None,
 ) -> FixedBatch | None:
     device = next(model_raw.parameters()).device
     attention_mask = _build_decode_attention_mask(active.valid_lengths, active.cache_len)
@@ -593,13 +729,30 @@ def _decode_fixed_batch(
         primary_layer_logits=primary_layer_logits,
         real_token_mask=real_token_mask.to(device),
     )
-    next_token_ids = logits.argmax(dim=-1)
+    free_argmax_ids = logits.argmax(dim=-1)
+    next_token_ids = free_argmax_ids.clone()
+    forced_exhausted: list[bool] = [False] * len(active.request_ids)
+    if teacher_tokens_by_prompt is not None:
+        for row_idx, prompt_id in enumerate(active.request_ids):
+            if bool(active.finished_mask[row_idx].item()):
+                continue
+            request = requests_by_id[prompt_id]
+            teacher_seq = teacher_tokens_by_prompt.get(prompt_id)
+            step_idx = len(request.generated_token_ids)
+            if teacher_seq is None or step_idx >= len(teacher_seq):
+                forced_exhausted[row_idx] = True
+            else:
+                next_token_ids[row_idx] = teacher_seq[step_idx]
 
     next_inputs: list[int] = []
-    updated_valid_lengths = active.valid_lengths + 1
+    updated_valid_lengths = active.valid_lengths.clone()
     next_finished_mask = active.finished_mask.clone()
     for row_idx, prompt_id in enumerate(active.request_ids):
         if bool(active.finished_mask[row_idx].item()):
+            next_inputs.append(inactive_token_id)
+            continue
+        if forced_exhausted[row_idx]:
+            next_finished_mask[row_idx] = True
             next_inputs.append(inactive_token_id)
             continue
 
@@ -607,6 +760,7 @@ def _decode_fixed_batch(
         step_idx = len(request.generated_token_ids)
         token_id = int(next_token_ids[row_idx].item())
         token_str = _safe_decode(tokenizer, token_id)
+        free_argmax_id = int(free_argmax_ids[row_idx].item()) if teacher_tokens_by_prompt is not None else None
         row_step_tensors = select_row_step_tensors(step_tensors, row_idx)
         metric_kwargs: dict[str, Any] = {}
         secondary_metric_kwargs: dict[str, Any] = {}
@@ -643,6 +797,7 @@ def _decode_fixed_batch(
             metrics,
             row_step_tensors.residual_output,
             store_baseline=store_baseline,
+            free_argmax_token_id=free_argmax_id,
         )
         if secondary_accumulator is not None and secondary_layer_logits is not None:
             secondary_metrics = compute_layer_metrics(
@@ -653,7 +808,12 @@ def _decode_fixed_batch(
                 **secondary_metric_kwargs,
             )
             secondary_accumulator.add(pipeline_name, secondary_metrics)
-        finished = token_id in eos_token_ids or len(request.generated_token_ids) >= max_new_tokens
+        finished = (
+            token_id in eos_token_ids
+            or len(request.generated_token_ids) >= max_new_tokens
+            or forced_exhausted[row_idx]
+        )
+        updated_valid_lengths[row_idx] += 1
         next_finished_mask[row_idx] = finished
         next_inputs.append(inactive_token_id if finished else token_id)
 
@@ -692,6 +852,7 @@ def _run_pipeline_fixed_batches(
     baseline_primary_readout: ReadoutSpec | None,
     baseline_secondary_readout: ReadoutSpec | None,
     secondary_accumulator: TrajectoryAccumulator | None,
+    teacher_tokens_by_prompt: dict[str, list[int]] | None = None,
 ) -> dict[str, PipelineRun]:
     requests_by_id = {request.prompt_id: request for request in requests}
     for start in range(0, len(requests), batch_size):
@@ -716,6 +877,7 @@ def _run_pipeline_fixed_batches(
             baseline_primary_readout=baseline_primary_readout,
             baseline_secondary_readout=baseline_secondary_readout,
             secondary_accumulator=secondary_accumulator,
+            teacher_tokens_by_prompt=teacher_tokens_by_prompt,
         )
 
         while active is not None:
@@ -738,6 +900,7 @@ def _run_pipeline_fixed_batches(
                 baseline_primary_readout=baseline_primary_readout,
                 baseline_secondary_readout=baseline_secondary_readout,
                 secondary_accumulator=secondary_accumulator,
+                teacher_tokens_by_prompt=teacher_tokens_by_prompt,
             )
 
     return {
@@ -747,6 +910,7 @@ def _run_pipeline_fixed_batches(
             generated_text=tokenizer.decode(request.generated_token_ids, skip_special_tokens=True),
             step_records=request.step_records,
             baseline_cache=request.baseline_cache,
+            free_argmax_token_ids=request.free_argmax_token_ids,
         )
         for request in requests
     }
@@ -778,6 +942,7 @@ def _run_pipeline_with_batch_fallback(
     baseline_primary_readout: ReadoutSpec | None,
     baseline_secondary_readout: ReadoutSpec | None,
     secondary_accumulator: TrajectoryAccumulator | None,
+    teacher_tokens_by_prompt: dict[str, list[int]] | None = None,
 ) -> tuple[dict[str, PipelineRun], int]:
     current_batch_size = max(1, batch_size)
     while True:
@@ -804,6 +969,7 @@ def _run_pipeline_with_batch_fallback(
                 baseline_primary_readout=baseline_primary_readout,
                 baseline_secondary_readout=baseline_secondary_readout,
                 secondary_accumulator=secondary_accumulator,
+                teacher_tokens_by_prompt=teacher_tokens_by_prompt,
             )
             return runs, current_batch_size
         except RuntimeError as exc:
@@ -813,6 +979,25 @@ def _run_pipeline_with_batch_fallback(
             current_batch_size = max(1, current_batch_size // 2)
         finally:
             capture.close()
+
+
+def _compute_governance_metrics(run: PipelineRun) -> dict[str, Any]:
+    text = run.generated_text or ""
+    first_token_str = run.generated_tokens[0].get("token_str", "") if run.generated_tokens else ""
+    first_word_match = _WORD_INITIAL_RE.search(text)
+    first_word_str = first_word_match.group(0) if first_word_match else ""
+    pattern_hits = {name: len(re.findall(pattern, text)) for name, pattern in GOVERNANCE_PATTERNS.items()}
+    paragraph_count = text.count("\n\n")
+    header_count = len(re.findall(r"(?m)^#{1,6} ", text))
+    bullet_count = len(re.findall(r"(?m)^(?:[-*] |\d+\. )", text))
+    return {
+        "first_token_str": first_token_str,
+        "first_word_str": first_word_str,
+        "structure_pattern_hits": pattern_hits,
+        "paragraph_count": paragraph_count,
+        "header_count": header_count,
+        "bullet_count": bullet_count,
+    }
 
 
 def _summarize_pipeline(run: PipelineRun) -> dict:
@@ -825,6 +1010,7 @@ def _summarize_pipeline(run: PipelineRun) -> dict:
         "generated_text_length": len(run.generated_token_ids),
         "structural_token_ratio_tier1_proxy": tier1_ratio,
     }
+    summary.update(_compute_governance_metrics(run))
     if not run.step_records:
         return summary
 
@@ -844,6 +1030,44 @@ def _summarize_pipeline(run: PipelineRun) -> dict:
     summary["mean_commitment_layer_top1"] = (sum(valid_top1) / len(valid_top1)) if valid_top1 else None
     summary["final_step_commitment_layer_top1"] = per_step_top1_layers[-1]
     return summary
+
+
+def _first_divergence_step(
+    teacher_tokens: list[int],
+    free_argmax_tokens: list[int],
+) -> int | None:
+    for idx, (teacher, free) in enumerate(zip(teacher_tokens, free_argmax_tokens, strict=False)):
+        if teacher != free:
+            return idx
+    return None
+
+
+def _first_divergence_vs_c(
+    model_tokens: list[int],
+    c_tokens: list[int],
+) -> int | None:
+    for idx, (m, c) in enumerate(zip(model_tokens, c_tokens, strict=False)):
+        if m != c:
+            return idx
+    if len(model_tokens) != len(c_tokens):
+        return min(len(model_tokens), len(c_tokens))
+    return None
+
+
+def _divergence_token_category(
+    run: PipelineRun,
+    divergence_step: int | None,
+) -> str | None:
+    if divergence_step is None or divergence_step >= len(run.generated_tokens):
+        return None
+    categories = classify_generated_tokens_by_word(run.generated_tokens)
+    if divergence_step >= len(categories):
+        return None
+    return categories[divergence_step]
+
+
+def _pipeline_summary_key(pipeline_name: str) -> str:
+    return f"pipeline_{pipeline_name.lower()}"
 
 
 def _write_jsonl(path: Path, rows: list[dict], *, append: bool) -> None:
@@ -869,7 +1093,14 @@ def main() -> None:
 
     dtype = _dtype_from_name(args.dtype)
     dataset = load_dataset(args.dataset)
-    prompts = _sample_prompts(dataset, args.n_prompts, args.seed, args.categories)
+    if args.prompt_seed is not None:
+        pool = dataset
+        if args.categories:
+            allowed = set(args.categories)
+            pool = [r for r in dataset if r.get("category") in allowed]
+        prompts = _random_subsample(pool, args.n_prompts, args.prompt_seed)
+    else:
+        prompts = _sample_prompts(dataset, args.n_prompts, args.seed, args.categories)
     prompts = _apply_prompt_shard(prompts, args.shard_index, args.num_shards)
     done_ids = set()
     if args.resume and (out_dir / "prompt_summaries.jsonl").exists():
@@ -880,17 +1111,25 @@ def main() -> None:
 
     pt_id = model_id_for_variant(spec, "pt")
     it_id = model_id_for_variant(spec, "it")
-    pt_model, tokenizer = load_model_and_tokenizer(pt_id, args.device, dtype=dtype)
-    it_model, _ = load_model_and_tokenizer(it_id, args.device, dtype=dtype)
-    _ensure_pad_token(tokenizer)
+    pt_model, tokenizer_pt = load_model_and_tokenizer(pt_id, args.device, dtype=dtype)
+    it_model, tokenizer_it = load_model_and_tokenizer(it_id, args.device, dtype=dtype)
+    _ensure_pad_token(tokenizer_pt)
+    _ensure_pad_token(tokenizer_it)
 
     steering_adapter = get_steering_adapter(args.model)
     model_raw_pt = pt_model
     model_raw_it = it_model
     device = next(model_raw_pt.parameters()).device
-    real_token_mask = steering_adapter.real_token_mask(tokenizer, device, model_raw=model_raw_pt)
-    logit_dim = steering_adapter.get_lm_head(model_raw_pt).weight.shape[0]
-    structural_masks = build_structural_token_masks(tokenizer, logit_dim, real_token_mask, device)
+    logit_dim_pt = steering_adapter.get_lm_head(model_raw_pt).weight.shape[0]
+    logit_dim_it = steering_adapter.get_lm_head(model_raw_it).weight.shape[0]
+    if logit_dim_pt != logit_dim_it:
+        raise ValueError(
+            f"PT/IT vocab mismatch in lm_head dim: {logit_dim_pt} != {logit_dim_it}; exp11 requires aligned vocab dims"
+        )
+    real_token_mask_pt = steering_adapter.real_token_mask(tokenizer_pt, device, model_raw=model_raw_pt)
+    real_token_mask_it = steering_adapter.real_token_mask(tokenizer_it, device, model_raw=model_raw_it)
+    structural_masks_pt = build_structural_token_masks(tokenizer_pt, logit_dim_pt, real_token_mask_pt, device)
+    structural_masks_it = build_structural_token_masks(tokenizer_it, logit_dim_it, real_token_mask_it, device)
     primary_readout, secondary_readout_a, secondary_readout_b = _load_readouts(
         args=args,
         spec=spec,
@@ -899,16 +1138,54 @@ def main() -> None:
         model_raw_it=model_raw_it,
         device=device,
     )
-    eos_ids = set(steering_adapter.eos_token_ids(tokenizer))
+    eos_ids_pt = set(steering_adapter.eos_token_ids(tokenizer_pt))
+    eos_ids_it = set(steering_adapter.eos_token_ids(tokenizer_it))
+    eos_ids_pt_or_it = eos_ids_pt | eos_ids_it
     arch_probe = ArchitectureProbe()
-    pad_token_id = tokenizer.pad_token_id
-    if pad_token_id is None:
-        raise ValueError("Tokenizer must have a pad token after _ensure_pad_token()")
-    inactive_token_id = min(eos_ids) if eos_ids else pad_token_id
+    pad_token_id_pt = tokenizer_pt.pad_token_id
+    pad_token_id_it = tokenizer_it.pad_token_id
+    if pad_token_id_pt is None or pad_token_id_it is None:
+        raise ValueError("Tokenizers must have pad tokens after _ensure_pad_token()")
+    inactive_token_id_pt = min(eos_ids_pt) if eos_ids_pt else pad_token_id_pt
+    inactive_token_id_it = min(eos_ids_it) if eos_ids_it else pad_token_id_it
 
     prompts_to_run = [record for record in prompts if record["id"] not in done_ids]
     if args.limit_prompts is not None:
         prompts_to_run = prompts_to_run[: args.limit_prompts]
+
+    raw_prompt_text_by_id = {
+        record["id"]: get_prompt_for_variant(
+            record,
+            variant="pt",
+            tokenizer=tokenizer_pt,
+            apply_chat_template=False,
+        )
+        for record in prompts_to_run
+    }
+    raw_prompt_token_ids_pt_by_id = {
+        prompt_id: tokenizer_pt(prompt_text, add_special_tokens=True)["input_ids"]
+        for prompt_id, prompt_text in raw_prompt_text_by_id.items()
+    }
+    it_chat_prompt_text_by_id = {
+        record["id"]: get_prompt_for_variant(
+            record,
+            variant="it",
+            tokenizer=tokenizer_it,
+            apply_chat_template=True,
+        )
+        for record in prompts_to_run
+    }
+    it_chat_prompt_token_ids_it_by_id = {
+        prompt_id: tokenizer_it(prompt_text, add_special_tokens=True)["input_ids"]
+        for prompt_id, prompt_text in it_chat_prompt_text_by_id.items()
+    }
+    if args.teacher_forced:
+        _assert_used_token_ids_compatible(
+            tokenizer_it,
+            tokenizer_pt,
+            it_chat_prompt_token_ids_it_by_id,
+            context="IT chat-template prompts on PT backbone",
+        )
 
     chunk_size = args.chunk_size if args.chunk_size else len(prompts_to_run) or 1
     secondary_accumulator = None
@@ -918,13 +1195,16 @@ def main() -> None:
     # Write config and prompts once before chunk loop
     batch_size_a = requested_batch_size
     batch_size_b = requested_batch_size
+    batch_size_by_pipeline: dict[str, int] = {}
     config = {
         "model": args.model,
+        "n_layers": spec.n_layers,
         "pt_model_id": pt_id,
         "it_model_id": it_id,
         "dataset": args.dataset,
         "n_prompts": args.n_prompts,
         "seed": args.seed,
+        "prompt_seed": args.prompt_seed,
         "onset_layer": onset_layer,
         "max_new_tokens": args.max_new_tokens,
         "categories": args.categories,
@@ -941,8 +1221,48 @@ def main() -> None:
         "n_prompts_sampled_after_sharding": len(prompts),
         "readout_mode": args.readout_mode,
         "primary_readout_name": primary_readout.name,
-        "secondary_readout_name": secondary_readout_b.name if secondary_readout_b is not None else None,
+        "secondary_readout_name": "mixed_by_pipeline" if secondary_readout_b is not None else None,
+        "secondary_readout_names_by_pipeline": (
+            {
+                "B": secondary_readout_b.name,
+                "C": secondary_readout_b.name,
+                "A_prime": secondary_readout_a.name,
+                "A_prime_tmpl": secondary_readout_a.name,
+                "B2": secondary_readout_b.name,
+            }
+            if secondary_readout_a is not None and secondary_readout_b is not None and args.teacher_forced
+            else (
+                {
+                    "A": secondary_readout_a.name,
+                    "B": secondary_readout_b.name if secondary_readout_b is not None else secondary_readout_a.name,
+                }
+                if secondary_readout_a is not None and args.readout_mode == "both"
+                else None
+            )
+        ),
         "tuned_lens_dir": args.tuned_lens_dir,
+        "teacher_forced": bool(args.teacher_forced),
+        "pipelines": ["C", "A_prime", "B", "A_prime_tmpl", "B2"] if args.teacher_forced else ["A", "B"],
+        "pipeline_prompt_modes": (
+            {
+                "C": "it_chat_template",
+                "A_prime": "raw_format_b",
+                "B": "raw_format_b",
+                "A_prime_tmpl": "it_chat_template",
+                "B2": "it_chat_template",
+            }
+            if args.teacher_forced
+            else {"A": "raw_format_b", "B": "raw_format_b"}
+        ),
+        "pipeline_aliases": (
+            {
+                "B": "B1_raw",
+                "A_prime": "A_prime_raw",
+                "B2": "B2_tmpl",
+            }
+            if args.teacher_forced
+            else {}
+        ),
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
     _write_jsonl(out_dir / "prompts.jsonl", prompts, append=False)
@@ -961,37 +1281,184 @@ def main() -> None:
     for chunk_start in range(0, total_to_run, chunk_size):
         chunk = prompts_to_run[chunk_start : chunk_start + chunk_size]
 
-        requests_a = _make_request_states(chunk, tokenizer, set())
-        runs_a, batch_size_a = _run_pipeline_with_batch_fallback(
-            pipeline_name="A",
-            requests=requests_a,
-            model_raw=model_raw_pt,
-            capture_factory=lambda: PipelineCapture(
+        runs_a: dict[str, PipelineRun] = {}
+        requests_a: list[RequestState] = []
+        if not args.teacher_forced:
+            requests_a = _make_request_states(
+                chunk,
+                tokenizer_pt,
+                set(),
+                prompt_text_by_id=raw_prompt_text_by_id,
+                prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
+            )
+            runs_a, batch_size_a = _run_pipeline_with_batch_fallback(
+                pipeline_name="A",
+                requests=requests_a,
                 model_raw=model_raw_pt,
-                adapter=steering_adapter,
-                arch_probe=arch_probe,
-                onset_layer=onset_layer,
-                graft_it_model_raw=None,
-            ),
-            tokenizer=tokenizer,
-            pad_token_id=pad_token_id,
-            real_token_mask=real_token_mask,
-            tier1_mask=structural_masks.tier1,
-            eos_token_ids=eos_ids,
-            max_new_tokens=args.max_new_tokens,
-            inactive_token_id=inactive_token_id,
-            batch_size=requested_batch_size,
-            store_baseline=True,
-            baseline_lookup=None,
-            primary_readout=primary_readout,
-            secondary_readout=secondary_readout_a,
-            baseline_primary_readout=None,
-            baseline_secondary_readout=None,
-            secondary_accumulator=secondary_accumulator,
-        )
-        baseline_lookup = {prompt_id: run.baseline_cache for prompt_id, run in runs_a.items()}
+                capture_factory=lambda: PipelineCapture(
+                    model_raw=model_raw_pt,
+                    adapter=steering_adapter,
+                    arch_probe=arch_probe,
+                    onset_layer=onset_layer,
+                    graft_it_model_raw=None,
+                ),
+                tokenizer=tokenizer_pt,
+                pad_token_id=pad_token_id_pt,
+                real_token_mask=real_token_mask_pt,
+                tier1_mask=structural_masks_pt.tier1,
+                eos_token_ids=eos_ids_pt,
+                max_new_tokens=args.max_new_tokens,
+                inactive_token_id=inactive_token_id_pt,
+                batch_size=requested_batch_size,
+                store_baseline=True,
+                baseline_lookup=None,
+                primary_readout=primary_readout,
+                secondary_readout=secondary_readout_a,
+                baseline_primary_readout=None,
+                baseline_secondary_readout=None,
+                secondary_accumulator=secondary_accumulator,
+            )
+            batch_size_by_pipeline["A"] = batch_size_a
 
-        requests_b = _make_request_states(chunk, tokenizer, set())
+        runs_c: dict[str, PipelineRun] = {}
+        runs_a_prime: dict[str, PipelineRun] = {}
+        runs_a_prime_tmpl: dict[str, PipelineRun] = {}
+        runs_b2: dict[str, PipelineRun] = {}
+        requests_c: list[RequestState] = []
+        requests_a_prime: list[RequestState] = []
+        requests_a_prime_tmpl: list[RequestState] = []
+        requests_b2: list[RequestState] = []
+        c_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None
+        teacher_tokens: dict[str, list[int]] | None = None
+
+        if args.teacher_forced:
+            requests_c = _make_request_states(
+                chunk,
+                tokenizer_it,
+                set(),
+                prompt_text_by_id=it_chat_prompt_text_by_id,
+                prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
+            )
+            runs_c, batch_size_c = _run_pipeline_with_batch_fallback(
+                pipeline_name="C",
+                requests=requests_c,
+                model_raw=model_raw_it,
+                capture_factory=lambda: PipelineCapture(
+                    model_raw=model_raw_it,
+                    adapter=steering_adapter,
+                    arch_probe=arch_probe,
+                    onset_layer=onset_layer,
+                    graft_it_model_raw=None,
+                ),
+                tokenizer=tokenizer_it,
+                pad_token_id=pad_token_id_it,
+                real_token_mask=real_token_mask_it,
+                tier1_mask=structural_masks_it.tier1,
+                eos_token_ids=eos_ids_it,
+                max_new_tokens=args.max_new_tokens,
+                inactive_token_id=inactive_token_id_it,
+                batch_size=requested_batch_size,
+                store_baseline=True,
+                baseline_lookup=None,
+                primary_readout=primary_readout,
+                secondary_readout=secondary_readout_b,
+                baseline_primary_readout=None,
+                baseline_secondary_readout=None,
+                secondary_accumulator=secondary_accumulator,
+            )
+            batch_size_by_pipeline["C"] = batch_size_c
+            c_baseline_lookup = {pid: run.baseline_cache for pid, run in runs_c.items()}
+            teacher_tokens = {pid: list(run.generated_token_ids) for pid, run in runs_c.items()}
+            _assert_used_token_ids_compatible(
+                tokenizer_it,
+                tokenizer_pt,
+                teacher_tokens,
+                context="IT teacher-forced continuation tokens on PT backbone",
+            )
+
+            requests_a_prime = _make_request_states(
+                chunk,
+                tokenizer_pt,
+                set(),
+                prompt_text_by_id=raw_prompt_text_by_id,
+                prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
+            )
+            runs_a_prime, batch_size_a_prime = _run_pipeline_with_batch_fallback(
+                pipeline_name="A_prime",
+                requests=requests_a_prime,
+                model_raw=model_raw_pt,
+                capture_factory=lambda: PipelineCapture(
+                    model_raw=model_raw_pt,
+                    adapter=steering_adapter,
+                    arch_probe=arch_probe,
+                    onset_layer=onset_layer,
+                    graft_it_model_raw=None,
+                ),
+                tokenizer=tokenizer_pt,
+                pad_token_id=pad_token_id_pt,
+                real_token_mask=real_token_mask_pt,
+                tier1_mask=structural_masks_pt.tier1,
+                eos_token_ids=eos_ids_pt_or_it,
+                max_new_tokens=args.max_new_tokens,
+                inactive_token_id=inactive_token_id_pt,
+                batch_size=batch_size_a,
+                store_baseline=False,
+                baseline_lookup=c_baseline_lookup,
+                primary_readout=primary_readout,
+                secondary_readout=secondary_readout_a,
+                baseline_primary_readout=primary_readout,
+                baseline_secondary_readout=secondary_readout_b,
+                secondary_accumulator=secondary_accumulator,
+                teacher_tokens_by_prompt=teacher_tokens,
+            )
+            batch_size_by_pipeline["A_prime"] = batch_size_a_prime
+
+            requests_a_prime_tmpl = _make_request_states(
+                chunk,
+                tokenizer_it,
+                set(),
+                prompt_text_by_id=it_chat_prompt_text_by_id,
+                prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
+            )
+            runs_a_prime_tmpl, batch_size_a_prime_tmpl = _run_pipeline_with_batch_fallback(
+                pipeline_name="A_prime_tmpl",
+                requests=requests_a_prime_tmpl,
+                model_raw=model_raw_pt,
+                capture_factory=lambda: PipelineCapture(
+                    model_raw=model_raw_pt,
+                    adapter=steering_adapter,
+                    arch_probe=arch_probe,
+                    onset_layer=onset_layer,
+                    graft_it_model_raw=None,
+                ),
+                tokenizer=tokenizer_pt,
+                pad_token_id=pad_token_id_pt,
+                real_token_mask=real_token_mask_pt,
+                tier1_mask=structural_masks_pt.tier1,
+                eos_token_ids=eos_ids_pt_or_it,
+                max_new_tokens=args.max_new_tokens,
+                inactive_token_id=inactive_token_id_pt,
+                batch_size=batch_size_a,
+                store_baseline=False,
+                baseline_lookup=c_baseline_lookup,
+                primary_readout=primary_readout,
+                secondary_readout=secondary_readout_a,
+                baseline_primary_readout=primary_readout,
+                baseline_secondary_readout=secondary_readout_b,
+                secondary_accumulator=secondary_accumulator,
+                teacher_tokens_by_prompt=teacher_tokens,
+            )
+            batch_size_by_pipeline["A_prime_tmpl"] = batch_size_a_prime_tmpl
+
+        baseline_lookup_b = c_baseline_lookup if args.teacher_forced else {pid: run.baseline_cache for pid, run in runs_a.items()}
+
+        requests_b = _make_request_states(
+            chunk,
+            tokenizer_pt,
+            set(),
+            prompt_text_by_id=raw_prompt_text_by_id,
+            prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
+        )
         runs_b, batch_size_b = _run_pipeline_with_batch_fallback(
             pipeline_name="B",
             requests=requests_b,
@@ -1003,65 +1470,204 @@ def main() -> None:
                 onset_layer=onset_layer,
                 graft_it_model_raw=model_raw_it,
             ),
-            tokenizer=tokenizer,
-            pad_token_id=pad_token_id,
-            real_token_mask=real_token_mask,
-            tier1_mask=structural_masks.tier1,
-            eos_token_ids=eos_ids,
+            tokenizer=tokenizer_pt,
+            pad_token_id=pad_token_id_pt,
+            real_token_mask=real_token_mask_pt,
+            tier1_mask=structural_masks_pt.tier1,
+            eos_token_ids=eos_ids_pt_or_it if args.teacher_forced else eos_ids_pt,
             max_new_tokens=args.max_new_tokens,
-            inactive_token_id=inactive_token_id,
+            inactive_token_id=inactive_token_id_pt,
             batch_size=batch_size_a,
             store_baseline=False,
-            baseline_lookup=baseline_lookup,
+            baseline_lookup=baseline_lookup_b,
             primary_readout=primary_readout,
             secondary_readout=secondary_readout_b,
             baseline_primary_readout=primary_readout,
-            baseline_secondary_readout=secondary_readout_a,
+            baseline_secondary_readout=secondary_readout_b if args.teacher_forced else secondary_readout_a,
             secondary_accumulator=secondary_accumulator,
+            teacher_tokens_by_prompt=teacher_tokens,
         )
+        batch_size_by_pipeline["B"] = batch_size_b
+
+        if args.teacher_forced:
+            requests_b2 = _make_request_states(
+                chunk,
+                tokenizer_it,
+                set(),
+                prompt_text_by_id=it_chat_prompt_text_by_id,
+                prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
+            )
+            runs_b2, batch_size_b2 = _run_pipeline_with_batch_fallback(
+                pipeline_name="B2",
+                requests=requests_b2,
+                model_raw=model_raw_pt,
+                capture_factory=lambda: PipelineCapture(
+                    model_raw=model_raw_pt,
+                    adapter=steering_adapter,
+                    arch_probe=arch_probe,
+                    onset_layer=onset_layer,
+                    graft_it_model_raw=model_raw_it,
+                ),
+                tokenizer=tokenizer_pt,
+                pad_token_id=pad_token_id_pt,
+                real_token_mask=real_token_mask_pt,
+                tier1_mask=structural_masks_pt.tier1,
+                eos_token_ids=eos_ids_pt_or_it,
+                max_new_tokens=args.max_new_tokens,
+                inactive_token_id=inactive_token_id_pt,
+                batch_size=batch_size_a,
+                store_baseline=False,
+                baseline_lookup=baseline_lookup_b,
+                primary_readout=primary_readout,
+                secondary_readout=secondary_readout_b,
+                baseline_primary_readout=primary_readout,
+                baseline_secondary_readout=secondary_readout_b,
+                secondary_accumulator=secondary_accumulator,
+                teacher_tokens_by_prompt=teacher_tokens,
+            )
+            batch_size_by_pipeline["B2"] = batch_size_b2
 
         for record in chunk:
-            run_a = runs_a[record["id"]]
+            run_a = runs_a.get(record["id"])
             run_b = runs_b[record["id"]]
+            run_c = runs_c.get(record["id"])
+            run_a_prime = runs_a_prime.get(record["id"])
+            run_a_prime_tmpl = runs_a_prime_tmpl.get(record["id"])
+            run_b2 = runs_b2.get(record["id"])
 
-            divergence_step = None
-            for idx, (tok_a, tok_b) in enumerate(zip(run_a.generated_token_ids, run_b.generated_token_ids, strict=False)):
-                if tok_a != tok_b:
-                    divergence_step = idx
-                    break
-            if divergence_step is None and len(run_a.generated_token_ids) != len(run_b.generated_token_ids):
-                divergence_step = min(len(run_a.generated_token_ids), len(run_b.generated_token_ids))
-
-            summary_row = {
+            summary_row: dict[str, Any] = {
                 "prompt_id": record["id"],
                 "category": record.get("category", ""),
-                "prompt": record["formats"]["B"],
-                "divergence_step": divergence_step,
-                "pipeline_a": _summarize_pipeline(run_a),
+                "prompt": raw_prompt_text_by_id[record["id"]],
+                "prompt_raw": raw_prompt_text_by_id[record["id"]],
+                "prompt_it_chat": it_chat_prompt_text_by_id[record["id"]],
                 "pipeline_b": _summarize_pipeline(run_b),
             }
+            if run_a is not None:
+                divergence_step = None
+                for idx, (tok_a, tok_b) in enumerate(zip(run_a.generated_token_ids, run_b.generated_token_ids, strict=False)):
+                    if tok_a != tok_b:
+                        divergence_step = idx
+                        break
+                if divergence_step is None and len(run_a.generated_token_ids) != len(run_b.generated_token_ids):
+                    divergence_step = min(len(run_a.generated_token_ids), len(run_b.generated_token_ids))
+                summary_row["divergence_step"] = divergence_step
+                summary_row["pipeline_a"] = _summarize_pipeline(run_a)
+            if args.teacher_forced and run_c is not None and run_a_prime is not None:
+                c_tokens = list(run_c.generated_token_ids)
+                div_b_vs_c = _first_divergence_step(c_tokens, list(run_b.free_argmax_token_ids))
+                div_a_prime_vs_c = _first_divergence_step(
+                    c_tokens, list(run_a_prime.free_argmax_token_ids)
+                )
+                div_a_prime_tmpl_vs_c = _first_divergence_step(
+                    c_tokens, list(run_a_prime_tmpl.free_argmax_token_ids)
+                ) if run_a_prime_tmpl is not None else None
+                div_b2_vs_c = _first_divergence_step(
+                    c_tokens, list(run_b2.free_argmax_token_ids)
+                ) if run_b2 is not None else None
+                summary_row["pipeline_c"] = _summarize_pipeline(run_c)
+                summary_row["pipeline_a_prime"] = _summarize_pipeline(run_a_prime)
+                if run_a_prime_tmpl is not None:
+                    summary_row[_pipeline_summary_key("A_prime_tmpl")] = _summarize_pipeline(run_a_prime_tmpl)
+                if run_b2 is not None:
+                    summary_row[_pipeline_summary_key("B2")] = _summarize_pipeline(run_b2)
+                summary_row["divergence_step_b_vs_c"] = div_b_vs_c
+                summary_row["divergence_step_a_prime_vs_c"] = div_a_prime_vs_c
+                summary_row["divergence_step_a_prime_tmpl_vs_c"] = div_a_prime_tmpl_vs_c
+                summary_row["divergence_step_b2_vs_c"] = div_b2_vs_c
+                summary_row["first_divergence_token_category_b_vs_c"] = (
+                    _divergence_token_category(run_c, div_b_vs_c)
+                )
+                summary_row["first_divergence_token_category_a_prime_tmpl_vs_c"] = (
+                    _divergence_token_category(run_c, div_a_prime_tmpl_vs_c)
+                    if div_a_prime_tmpl_vs_c is not None
+                    else None
+                )
+                summary_row["first_divergence_token_category_b2_vs_c"] = (
+                    _divergence_token_category(run_c, div_b2_vs_c)
+                    if div_b2_vs_c is not None
+                    else None
+                )
+
             _write_jsonl(out_dir / "prompt_summaries.jsonl", [summary_row], append=True)
-            _write_jsonl(
-                out_dir / "generated_texts.jsonl",
-                [
+
+            gen_rows: list[dict] = []
+            if run_a is not None:
+                gen_rows.append(
                     {
                         "prompt_id": record["id"],
                         "pipeline": "A",
                         "generated_text": run_a.generated_text,
                         "generated_tokens": run_a.generated_tokens,
-                    },
+                        "prompt_mode": "raw_format_b",
+                    }
+                )
+            gen_rows.append(
+                {
+                    "prompt_id": record["id"],
+                    "pipeline": "B",
+                    "generated_text": run_b.generated_text,
+                    "generated_tokens": run_b.generated_tokens,
+                    "free_argmax_token_ids": list(run_b.free_argmax_token_ids),
+                    "prompt_mode": "raw_format_b",
+                }
+            )
+            if args.teacher_forced and run_c is not None and run_a_prime is not None:
+                gen_rows.append(
                     {
                         "prompt_id": record["id"],
-                        "pipeline": "B",
-                        "generated_text": run_b.generated_text,
-                        "generated_tokens": run_b.generated_tokens,
-                    },
-                ],
-                append=True,
-            )
+                        "pipeline": "C",
+                        "generated_text": run_c.generated_text,
+                        "generated_tokens": run_c.generated_tokens,
+                        "prompt_mode": "it_chat_template",
+                    }
+                )
+                gen_rows.append(
+                    {
+                        "prompt_id": record["id"],
+                        "pipeline": "A_prime",
+                        "generated_text": run_a_prime.generated_text,
+                        "generated_tokens": run_a_prime.generated_tokens,
+                        "free_argmax_token_ids": list(run_a_prime.free_argmax_token_ids),
+                        "prompt_mode": "raw_format_b",
+                    }
+                )
+                if run_a_prime_tmpl is not None:
+                    gen_rows.append(
+                        {
+                            "prompt_id": record["id"],
+                            "pipeline": "A_prime_tmpl",
+                            "generated_text": run_a_prime_tmpl.generated_text,
+                            "generated_tokens": run_a_prime_tmpl.generated_tokens,
+                            "free_argmax_token_ids": list(run_a_prime_tmpl.free_argmax_token_ids),
+                            "prompt_mode": "it_chat_template",
+                        }
+                    )
+                if run_b2 is not None:
+                    gen_rows.append(
+                        {
+                            "prompt_id": record["id"],
+                            "pipeline": "B2",
+                            "generated_text": run_b2.generated_text,
+                            "generated_tokens": run_b2.generated_tokens,
+                            "free_argmax_token_ids": list(run_b2.free_argmax_token_ids),
+                            "prompt_mode": "it_chat_template",
+                        }
+                    )
+            _write_jsonl(out_dir / "generated_texts.jsonl", gen_rows, append=True)
 
             step_rows: list[dict] = []
-            for pipeline_name, run in (("A", run_a), ("B", run_b)):
+            pipelines_to_log: list[tuple[str, PipelineRun]] = [("B", run_b)]
+            if run_a is not None:
+                pipelines_to_log.insert(0, ("A", run_a))
+            if args.teacher_forced and run_c is not None and run_a_prime is not None:
+                pipelines_to_log.append(("C", run_c))
+                pipelines_to_log.append(("A_prime", run_a_prime))
+                if run_a_prime_tmpl is not None:
+                    pipelines_to_log.append(("A_prime_tmpl", run_a_prime_tmpl))
+                if run_b2 is not None:
+                    pipelines_to_log.append(("B2", run_b2))
+            for pipeline_name, run in pipelines_to_log:
                 for step_idx, step in enumerate(run.step_records):
                     step_rows.append(
                         {
@@ -1076,7 +1682,17 @@ def main() -> None:
             _write_jsonl(out_dir / "step_metrics.jsonl", step_rows, append=True)
 
         # Free baseline cache and generation state before next chunk
-        del runs_a, runs_b, baseline_lookup, requests_a, requests_b
+        del runs_b, requests_b
+        if not args.teacher_forced:
+            del runs_a, requests_a
+        if args.teacher_forced:
+            del runs_c, runs_a_prime, runs_a_prime_tmpl, runs_b2
+            del requests_c, requests_a_prime, requests_a_prime_tmpl, requests_b2
+            if c_baseline_lookup is not None:
+                del c_baseline_lookup
+            if teacher_tokens is not None:
+                del teacher_tokens
+        del baseline_lookup_b
         torch.cuda.empty_cache()
 
         n_done += len(chunk)
@@ -1085,15 +1701,20 @@ def main() -> None:
         # Write secondary trajectory stats after each chunk for crash safety
         if secondary_accumulator is not None:
             secondary_path = out_dir / "secondary_trajectory_stats.json"
+            secondary_readout_names_by_pipeline = config.get("secondary_readout_names_by_pipeline")
             merged_secondary = _merge_trajectory_stats(
                 existing_secondary_at_start,
-                secondary_accumulator.to_stats_dict(readout_name="tuned_native"),
+                secondary_accumulator.to_stats_dict(
+                    readout_name="mixed_by_pipeline",
+                    readout_name_by_pipeline=secondary_readout_names_by_pipeline,
+                ),
             )
             secondary_path.write_text(json.dumps(merged_secondary, indent=2))
 
     # Update config with actual batch sizes from the last chunk
-    config["batch_size_pipeline_a"] = batch_size_a
+    config["batch_size_pipeline_a"] = batch_size_a if not args.teacher_forced else None
     config["batch_size_pipeline_b"] = batch_size_b
+    config["batch_size_by_pipeline"] = batch_size_by_pipeline
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
 
 

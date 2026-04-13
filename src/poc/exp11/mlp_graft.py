@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import torch
@@ -43,6 +43,7 @@ class PipelineRun:
     generated_text: str
     step_records: list[PipelineStepRecord]
     baseline_cache: list[list[torch.Tensor]]
+    free_argmax_token_ids: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -188,6 +189,10 @@ class PipelineCapture:
                 pt_norm = pt_out[:, -1, :].float().norm(dim=-1).detach()
                 self._current["pt_mlp_norm"][li] = pt_norm
                 if self.graft_it_layers is not None and li >= self.onset_layer:
+                    # For dense backbones this swaps the late MLP block directly. For
+                    # DeepSeek-V2-Lite, `.mlp(...)` is the full MoE module, so the graft
+                    # also swaps router behavior plus shared/routed experts rather than
+                    # only a single dense feed-forward transformation.
                     with torch.no_grad():
                         it_out = self.graft_it_layers[li].mlp(args[0])
                     diff = it_out[:, -1, :].float() - pt_out[:, -1, :].float()

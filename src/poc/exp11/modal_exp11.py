@@ -24,10 +24,13 @@ import torch
 from src.poc.cross_model.config import get_spec, model_id_for_variant
 from src.poc.cross_model.tuned_lens import _load_probes
 from src.poc.cross_model.utils import load_dataset
-from src.poc.exp11.run import _apply_prompt_shard, _sample_prompts
+from src.poc.exp11.run import _apply_prompt_shard, _random_subsample, _sample_prompts
 
 
-VALID_MODELS = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b"]
+VALID_MODELS = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b", "deepseek_v2_lite"]
+# v10 models (legacy, without deepseek). Retained for the 5-model 10-GPU orchestrator
+# so existing v10 code paths don't suddenly pull deepseek.
+VALID_MODELS_V10 = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b"]
 SMOKE_MODEL = "gemma3_4b"
 DEFAULT_DATASET = "exp3"
 DEFAULT_TUNED_RUN_NAME = "exp11_exp3_all2936_tunedlens_v1"
@@ -55,13 +58,24 @@ BALANCED_8GPU_SHARDS = {
     "gemma3_4b": 1,
     "qwen3_4b": 1,
 }
-BALANCED_10GPU_SHARDS = {model: 2 for model in VALID_MODELS}
+BALANCED_10GPU_SHARDS = {model: 2 for model in VALID_MODELS_V10}
+# v11.1 teacher-forced layout: 6 models across 10 GPUs.
+# 2 GPUs per large model (data-parallel across prompts), 1 GPU per small model.
+BALANCED_10GPU_SHARDS_V11 = {
+    "gemma3_4b": 2,
+    "llama31_8b": 2,
+    "mistral_7b": 2,
+    "olmo2_7b": 2,
+    "qwen3_4b": 1,
+    "deepseek_v2_lite": 1,
+}
 FULL_BATCH_HINTS = {
     "gemma3_4b": 128,
     "qwen3_4b": 128,
     "llama31_8b": 64,
     "mistral_7b": 64,
     "olmo2_7b": 64,
+    "deepseek_v2_lite": 64,
 }
 # Tuned-lens runs load 2 models + probes + baseline cache; B200 192GB
 TUNED_BATCH_HINTS = {
@@ -70,6 +84,18 @@ TUNED_BATCH_HINTS = {
     "llama31_8b": 48,
     "mistral_7b": 48,
     "olmo2_7b": 48,
+    "deepseek_v2_lite": 48,
+}
+# v11.1: 5 teacher-forced pipelines per prompt (C, A', B, A'_tmpl, B2). C's residuals are
+# cached as teacher baseline for all teacher-forced branches. Smaller batches to
+# stay under B200 192 GB.
+TUNED_BATCH_HINTS_V11 = {
+    "gemma3_4b": 64,
+    "qwen3_4b": 64,
+    "llama31_8b": 48,
+    "mistral_7b": 48,
+    "olmo2_7b": 48,
+    "deepseek_v2_lite": 48,
 }
 TUNED_LENS_GCS_ROOT = "gs://pt-vs-it-results/tuned_lens_probes_v3"
 TUNED_LENS_VOLUME_NAME = "exp11-tuned-lens-probes-v3"
@@ -253,6 +279,8 @@ def _run_exp11(
     resume: bool = False,
     readout_mode: str = "raw",
     tuned_lens_dir: str | None = None,
+    teacher_forced: bool = False,
+    prompt_seed: int | None = None,
 ) -> None:
     cmd = [
         "python",
@@ -289,6 +317,10 @@ def _run_exp11(
         cmd.append("--resume")
     if tuned_lens_dir is not None:
         cmd.extend(["--tuned-lens-dir", tuned_lens_dir])
+    if teacher_forced:
+        cmd.append("--teacher-forced")
+    if prompt_seed is not None:
+        cmd.extend(["--prompt-seed", str(prompt_seed)])
     _run_subprocess(cmd, seed=seed)
 
 
@@ -324,9 +356,20 @@ def _count_jsonl_rows(path: Path) -> int:
     return count
 
 
-def _count_shard_prompts(dataset_path: str, *, n_prompts: int, seed: int, shard_index: int, num_shards: int) -> int:
+def _count_shard_prompts(
+    dataset_path: str,
+    *,
+    n_prompts: int,
+    seed: int,
+    shard_index: int,
+    num_shards: int,
+    prompt_seed: int | None = None,
+) -> int:
     dataset = load_dataset(dataset_path)
-    prompts = _sample_prompts(dataset, n_prompts, seed, None)
+    if prompt_seed is not None:
+        prompts = _random_subsample(dataset, n_prompts, prompt_seed)
+    else:
+        prompts = _sample_prompts(dataset, n_prompts, seed, None)
     prompts = _apply_prompt_shard(prompts, shard_index, num_shards)
     return len(prompts)
 
@@ -721,6 +764,8 @@ def full_model_shard_run(
     readout_mode: str = "raw",
     chunk_size: int = 64,
     batch_size: int = 32,
+    teacher_forced: bool = False,
+    prompt_seed: int | None = None,
 ) -> str:
     _setup()
     if model not in VALID_MODELS:
@@ -736,6 +781,7 @@ def full_model_shard_run(
         seed=seed,
         shard_index=shard_index,
         num_shards=num_shards,
+        prompt_seed=prompt_seed,
     )
     prompts_path = Path(run_dir) / "prompts.jsonl"
     done_path = Path(run_dir) / "prompt_summaries.jsonl"
@@ -758,6 +804,8 @@ def full_model_shard_run(
             resume=True,
             readout_mode=readout_mode,
             tuned_lens_dir=tuned_lens_dir,
+            teacher_forced=teacher_forced,
+            prompt_seed=prompt_seed,
         )
         if not prompts_path.exists():
             raise RuntimeError(f"Shard run failed to materialize prompts.jsonl: {prompts_path}")
@@ -829,7 +877,9 @@ def merge_model_shards(
             "readout_name": secondary_payloads[0].get("readout_name"),
             "metrics": {},
         }
+        readout_name_by_pipeline: dict[str, str] = {}
         for payload in secondary_payloads:
+            readout_name_by_pipeline.update(payload.get("readout_name_by_pipeline", {}))
             for pipeline, pipeline_metrics in payload.get("metrics", {}).items():
                 dst_pipeline = merged_secondary["metrics"].setdefault(pipeline, {})
                 for metric_name, metric_stats in pipeline_metrics.items():
@@ -844,6 +894,8 @@ def merge_model_shards(
                         dst_metric["sum"][idx] += value
                     for idx, value in enumerate(metric_stats.get("count", [])):
                         dst_metric["count"][idx] += value
+        if readout_name_by_pipeline:
+            merged_secondary["readout_name_by_pipeline"] = readout_name_by_pipeline
         (merged_dir / "secondary_trajectory_stats.json").write_text(json.dumps(merged_secondary, indent=2))
 
     merged_config = dict(shard_configs[0]) if shard_configs else {}
@@ -855,8 +907,9 @@ def merge_model_shards(
             "num_shards": num_shards,
             "shard_run_dirs": [str(path.name) for path in shard_dirs],
             "scheduler_mode": "single_prompt_data_parallel",
-            "batch_size_pipeline_a": 1,
-            "batch_size_pipeline_b": 1,
+            "batch_size_pipeline_a": shard_configs[0].get("batch_size_pipeline_a") if shard_configs else None,
+            "batch_size_pipeline_b": shard_configs[0].get("batch_size_pipeline_b") if shard_configs else None,
+            "batch_size_by_pipeline": shard_configs[0].get("batch_size_by_pipeline") if shard_configs else None,
             "n_prompts_sampled_after_sharding": prompt_count,
             "n_prompts_completed": summary_count,
         }
@@ -1219,6 +1272,130 @@ def orchestrate_balanced_10gpu_tuned_full(
     return "ALL MODELS COMPLETE"
 
 
+@app.function(
+    image=image,
+    volumes=VOLUME_MOUNTS,
+    memory=4096,
+    timeout=86400,
+    secrets=[modal.Secret.from_name("gcp-adc-exp11")],
+)
+def orchestrate_balanced_10gpu_v11_teacherforced(
+    run_prefix: str,
+    dataset: str = DEFAULT_DATASET,
+    n_prompts: int = 400,
+    prompt_seed: int = 0,
+    chunk_size: int = 64,
+) -> str:
+    """v11.1 remote orchestrator: 6 models × 5 teacher-forced pipelines (C, A', B, A'_tmpl, B2) × 400 prompts on 10 GPUs.
+
+    Pipelines A', B, A'_tmpl, and B2 are teacher-forced to pipeline C's (true IT
+    free-run) token sequence, so cross-pipeline KL / residual-cosine share token
+    history and measure graft / backbone effect without context drift.
+    """
+    print("=" * 60)
+    print(
+        f"EXP11 V11 TEACHER-FORCED ORCHESTRATOR — run_prefix={run_prefix}, "
+        f"dataset={dataset}, shard_map={BALANCED_10GPU_SHARDS_V11}, "
+        f"n_prompts={n_prompts}, prompt_seed={prompt_seed}, chunk_size={chunk_size}"
+    )
+    print("=" * 60)
+    print(stage_tuned_lens_probes_remote.remote(list(BALANCED_10GPU_SHARDS_V11.keys())))
+
+    per_model_calls: dict[str, list[tuple[int, Any]]] = {}
+    for model in BALANCED_10GPU_SHARDS_V11:
+        run_name = f"{run_prefix}_{model}"
+        num_shards = BALANCED_10GPU_SHARDS_V11[model]
+        model_batch_size = TUNED_BATCH_HINTS_V11[model]
+        calls: list[tuple[int, Any]] = []
+        for shard_index in range(num_shards):
+            call = full_model_shard_run.spawn(
+                model,
+                run_name,
+                shard_index,
+                num_shards,
+                n_prompts,
+                512,  # max_new_tokens
+                n_prompts,  # prompts_per_chunk (1 pass)
+                0,  # seed
+                dataset,
+                "both",  # readout_mode
+                chunk_size,
+                model_batch_size,
+                True,  # teacher_forced
+                prompt_seed,
+            )
+            calls.append((shard_index, call))
+            print(
+                f"spawned model={model} shard={shard_index}/{num_shards} "
+                f"batch_size={model_batch_size} teacher_forced=True "
+                f"call_id={getattr(call, 'object_id', call)}",
+                flush=True,
+            )
+        per_model_calls[model] = calls
+
+    failed_models: list[str] = []
+    for model in BALANCED_10GPU_SHARDS_V11:
+        run_name = f"{run_prefix}_{model}"
+        num_shards = BALANCED_10GPU_SHARDS_V11[model]
+        calls = per_model_calls[model]
+        model_ok = True
+        for shard_index, call in calls:
+            print(f"[wait] model={model} shard={shard_index}/{num_shards}", flush=True)
+            try:
+                result = call.get()
+                print(result)
+            except Exception as exc:
+                print(f"[ERROR] model={model} shard={shard_index}/{num_shards} failed: {exc}", flush=True)
+                model_ok = False
+        if model_ok:
+            merge_result = merge_model_shards.remote(
+                run_name,
+                model=model,
+                dataset=dataset,
+                num_shards=num_shards,
+                seed=0,
+            )
+            print(merge_result)
+        else:
+            failed_models.append(model)
+            print(f"[SKIP] merge skipped for {model} due to shard failures", flush=True)
+
+    if failed_models:
+        return f"PARTIAL — failed models: {failed_models}. Re-run to resume."
+    return "ALL V11 MODELS COMPLETE"
+
+
+def _launch_balanced_10gpu_v11_teacherforced(
+    run_prefix: str,
+    *,
+    dataset: str,
+    n_prompts: int,
+    prompt_seed: int,
+    chunk_size: int,
+) -> None:
+    """Local launcher for the v11 remote orchestrator."""
+    print("Triggering v11 remote orchestrator on deployed app...", flush=True)
+    print(
+        "IMPORTANT: First deploy with `modal deploy src/poc/exp11/modal_exp11.py`, "
+        "then trigger with `modal run`.",
+        flush=True,
+    )
+    call = orchestrate_balanced_10gpu_v11_teacherforced.spawn(
+        run_prefix, dataset, n_prompts, prompt_seed, chunk_size,
+    )
+    call_id = getattr(call, "object_id", call)
+    print(f"V11 orchestrator spawned: call_id={call_id}", flush=True)
+    print("Waiting for result (safe to Ctrl-C — orchestrator continues on Modal)...", flush=True)
+    try:
+        result = call.get()
+        print(result)
+    except KeyboardInterrupt:
+        print(f"\nLocal client interrupted — orchestrator {call_id} continues on Modal.", flush=True)
+    except Exception as exc:
+        print(f"Local client error: {exc}", flush=True)
+        print(f"V11 orchestrator {call_id} may still be running on Modal.", flush=True)
+
+
 def _launch_balanced_10gpu_tuned_full(
     run_prefix: str,
     *,
@@ -1258,6 +1435,9 @@ def main(
     dataset: str = DEFAULT_DATASET,
     num_shards: int = 3,
     prompts_per_chunk: int = 512,
+    n_prompts: int = 200,
+    prompt_seed: int = 0,
+    chunk_size: int = 64,
 ) -> None:
     if mode == "smoke":
         _run_smoke(run_name)
@@ -1330,7 +1510,19 @@ def main(
             prompts_per_chunk=prompts_per_chunk,
         )
         return
+    if mode == "balanced-10gpu-v11-teacherforced":
+        if model:
+            raise ValueError("`--model` is not supported for balanced-10gpu-v11-teacherforced mode.")
+        _launch_balanced_10gpu_v11_teacherforced(
+            run_name,
+            dataset=dataset,
+            n_prompts=n_prompts,
+            prompt_seed=prompt_seed,
+            chunk_size=chunk_size,
+        )
+        return
     print(
         "Unknown mode. Use 'smoke', 'tuned-smoke', 'preflight', 'full', 'sharded-full', "
-        "'balanced-8gpu-full', 'stage-tuned-lens-probes', or 'balanced-10gpu-tuned-full'."
+        "'balanced-8gpu-full', 'stage-tuned-lens-probes', 'balanced-10gpu-tuned-full', "
+        "or 'balanced-10gpu-v11-teacherforced'."
     )
