@@ -257,18 +257,17 @@ def _call_judge(client, model: str, prompt: str, retries: int = 4) -> dict:
 
 def _run_llm_judge_g1(rows: list[dict], judge_workers: int = 16) -> dict[str, dict[str, float]]:
     """Run G1 judge on both IT and PT texts. Returns {record_id: {"it": score, "pt": score}}."""
-    _load_dotenv()
-    from openai import OpenAI
     from src.poc.exp6.eval_registry import RUBRICS
+    from src.poc.shared.llm_provider import build_openai_client
     rubric = RUBRICS["g1"]
 
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        print("  WARNING: no OPENROUTER_API_KEY — skipping LLM judge, using STR+NLL only", flush=True)
+    client_info = build_openai_client("google/gemini-2.5-flash", provider="auto")
+    if client_info is None:
+        print("  WARNING: no GEMINI_API_KEY or OPENROUTER_API_KEY — skipping LLM judge, using STR+NLL only", flush=True)
         return {}
 
-    client = OpenAI(api_key=api_key, base_url="https://openrouter.ai/api/v1")
-    model  = "google/gemini-2.5-flash"
+    client, model, provider = client_info
+    print(f"  Using judge provider={provider} model={model}", flush=True)
 
     tasks = []
     for row in rows:

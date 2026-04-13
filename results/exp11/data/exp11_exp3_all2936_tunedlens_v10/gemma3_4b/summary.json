@@ -1,0 +1,18 @@
+{
+  "overall": {
+    "n_prompts": 2936,
+    "mean_divergence_step": 4.402637972926067,
+    "pipeline_a_mean_length": 485.58787465940054,
+    "pipeline_b_mean_length": 510.49693460490465,
+    "pipeline_a_mean_structural_ratio_tier1_proxy": 0.34416882332102605,
+    "pipeline_b_mean_structural_ratio_tier1_proxy": 0.34898181946593115
+  },
+  "per_category": {
+    "": {
+      "n_prompts": 2936,
+      "mean_divergence_step": 4.402637972926067,
+      "pipeline_a_mean_length": 485.58787465940054,
+      "pipeline_b_mean_length": 510.49693460490465
+    }
+  }
+}

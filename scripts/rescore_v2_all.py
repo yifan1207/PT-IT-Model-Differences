@@ -42,6 +42,7 @@ def main() -> None:
     p.add_argument("--workers", type=int, default=16)
     p.add_argument("--tasks", nargs="+", default=["g1", "g2", "s1", "s2"])
     p.add_argument("--model", default="google/gemini-2.5-flash")
+    p.add_argument("--provider", default="auto", choices=["auto", "gemini", "openrouter"])
     args = p.parse_args()
 
     dataset = "data/eval_dataset_v2.jsonl"
@@ -68,6 +69,7 @@ def main() -> None:
             "--merged-dir", merged_dir,
             "--dataset", dataset,
             "--model", args.model,
+            "--provider", args.provider,
             "--workers", str(args.workers),
             "--tasks", *args.tasks,
         ]

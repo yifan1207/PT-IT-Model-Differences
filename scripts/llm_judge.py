@@ -28,26 +28,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from openai import OpenAI
-
 from src.poc.exp6.eval_registry import RUBRICS as _RUBRICS, MODEL_COSTS as _REGISTRY_COSTS
+from src.poc.shared.llm_provider import build_openai_client
 
-
-# ── .env loader ───────────────────────────────────────────────────────────────
-
-def _load_dotenv(path: str = ".env") -> None:
-    p = Path(path)
-    if not p.exists():
-        return
-    for line in p.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        k, _, v = line.partition("=")
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
-
-
-_load_dotenv()
 
 # Which categories each task applies to
 _TASK_CATEGORIES = {
@@ -64,7 +47,7 @@ _S2_BEHAVIORS = {"comply", "comply_safely"}
 
 # ── LLM call ─────────────────────────────────────────────────────────────────
 
-def _call_judge(client: OpenAI, model: str, prompt: str, retries: int = 4) -> dict:
+def _call_judge(client, model: str, prompt: str, retries: int = 4) -> dict:
     import random
     for attempt in range(retries):
         try:
@@ -95,6 +78,7 @@ def score_outputs(
     merged_dir: Path,
     dataset_path: Path,
     model: str,
+    provider: str,
     workers: int,
     overwrite: bool,
     tasks: list[str],
@@ -218,15 +202,18 @@ def score_outputs(
         _print_summary(out_path)
         return
 
-    client = OpenAI(
-        api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-        base_url="https://openrouter.ai/api/v1",
-    )
+    client_info = build_openai_client(model, provider=provider)
+    if client_info is None:
+        raise RuntimeError(
+            "No usable LLM provider credentials found. Set GEMINI_API_KEY or OPENROUTER_API_KEY."
+        )
+    client, resolved_model, resolved_provider = client_info
+    print(f"Using judge provider={resolved_provider} model={resolved_model}")
 
     def score_one(item: dict) -> dict:
         rubric = _RUBRICS[item["task"]]
         prompt = rubric.format(question=item["question"], response=item["response"])
-        result = _call_judge(client, model, prompt)
+        result = _call_judge(client, resolved_model, prompt)
 
         task = item["task"]
         if task == "g1":
@@ -337,7 +324,9 @@ def main() -> None:
     p.add_argument("--dataset", default="data/eval_dataset_v2.jsonl",
                    help="Path to eval_dataset_v2.jsonl")
     p.add_argument("--model", default="google/gemini-2.5-flash",
-                   help="OpenRouter model name (default: Gemini 2.5 Flash ~$0.15/M — ~20x cheaper than Claude Sonnet)")
+                   help="Judge model name (default: Gemini 2.5 Flash)")
+    p.add_argument("--provider", default="auto", choices=["auto", "gemini", "openrouter"],
+                   help="Provider route. auto prefers direct Gemini for Gemini models, else falls back to OpenRouter.")
     p.add_argument("--workers", type=int, default=16)
     p.add_argument("--overwrite", action="store_true",
                    help="Delete existing output and rescore from scratch")
@@ -360,6 +349,7 @@ def main() -> None:
         merged_dir=Path(args.merged_dir),
         dataset_path=dataset_path,
         model=args.model,
+        provider=args.provider,
         workers=args.workers,
         overwrite=args.overwrite,
         tasks=args.tasks,

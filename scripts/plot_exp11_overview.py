@@ -521,7 +521,7 @@ def _plot_trajectories(trajectories: list[dict], out_path: Path) -> None:
 
 
 def _plot_governance(metrics: list[dict], out_path: Path) -> None:
-    """Grouped bar chart of whole-response structure counts across teacher-forced pipelines."""
+    """Grouped bar chart of whole-response structure counts across free-running pipelines only."""
     import matplotlib.pyplot as plt
 
     teacher_forced = any(m.get("teacher_forced") for m in metrics)
@@ -624,13 +624,11 @@ def main() -> None:
     _plot_overview(metrics, out_dir / "overview_panel.png")
     _plot_trajectories(trajectories, out_dir / "overview_trajectories.png")
     teacher_forced = any(m.get("teacher_forced") for m in metrics)
-    if teacher_forced:
-        _plot_governance(metrics, out_dir / "overview_governance.png")
     print(f"Wrote {len(metrics)} model entries to {out_dir / 'overview_metrics.json'}")
     print(f"Wrote overview panel to {out_dir / 'overview_panel.png'}")
     print(f"Wrote overview trajectories to {out_dir / 'overview_trajectories.png'}")
     if teacher_forced:
-        print(f"Wrote overview governance to {out_dir / 'overview_governance.png'}")
+        print("Skipped overview governance plot for teacher-forced run (identical by construction)")
 
 
 if __name__ == "__main__":

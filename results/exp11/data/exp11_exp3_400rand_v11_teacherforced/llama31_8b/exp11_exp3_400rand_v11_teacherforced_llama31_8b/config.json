@@ -1,0 +1,67 @@
+{
+  "model": "llama31_8b",
+  "n_layers": 32,
+  "pt_model_id": "meta-llama/Llama-3.1-8B",
+  "it_model_id": "meta-llama/Llama-3.1-8B-Instruct",
+  "dataset": "/root/data/exp3_dataset.jsonl",
+  "n_prompts": 400,
+  "seed": 0,
+  "prompt_seed": 0,
+  "onset_layer": 19,
+  "max_new_tokens": 512,
+  "categories": null,
+  "dtype": "bfloat16",
+  "batch_size_requested": 48,
+  "batch_size_pipeline_a": null,
+  "batch_size_pipeline_b": 48,
+  "scheduler_mode": "single_prompt_data_parallel",
+  "continuous_admission": false,
+  "shard_index": 0,
+  "num_shards": 2,
+  "limit_prompts": 400,
+  "chunk_size": 64,
+  "n_prompts_sampled_after_sharding": 400,
+  "readout_mode": "both",
+  "primary_readout_name": "tuned_pt_shared",
+  "secondary_readout_name": "mixed_by_pipeline",
+  "secondary_readout_names_by_pipeline": {
+    "B": "tuned_native_it",
+    "C": "tuned_native_it",
+    "A_prime": "tuned_native_pt",
+    "A_prime_tmpl": "tuned_native_pt",
+    "B2": "tuned_native_it"
+  },
+  "tuned_lens_dir": "/root/tuned_lens_probes",
+  "teacher_forced": true,
+  "pipelines": [
+    "C",
+    "A_prime",
+    "B",
+    "A_prime_tmpl",
+    "B2"
+  ],
+  "pipeline_prompt_modes": {
+    "C": "it_chat_template",
+    "A_prime": "raw_format_b",
+    "B": "raw_format_b",
+    "A_prime_tmpl": "it_chat_template",
+    "B2": "it_chat_template"
+  },
+  "pipeline_aliases": {
+    "B": "B1_raw",
+    "A_prime": "A_prime_raw",
+    "B2": "B2_tmpl"
+  },
+  "batch_size_by_pipeline": {
+    "C": 48,
+    "A_prime": 48,
+    "A_prime_tmpl": 48,
+    "B": 48,
+    "B2": 48
+  },
+  "shard_run_dirs": [
+    "exp11_exp3_400rand_v11_teacherforced_llama31_8b__shard0of2",
+    "exp11_exp3_400rand_v11_teacherforced_llama31_8b__shard1of2"
+  ],
+  "n_prompts_completed": 400
+}

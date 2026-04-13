@@ -1,0 +1,697 @@
+# Instruction Tuning Slows Prediction Convergence: Late-Layer Corrective Computation Across Transformer Families
+
+**Anonymous authors** | NeurIPS 2026 Submission
+
+---
+
+## Abstract
+
+What does instruction tuning change inside a transformer's forward pass? We compare pretrained (PT) and instruction-tuned (IT) model variants across six architectures — Gemma 3 4B, Llama 3.1 8B, Qwen 3 4B, Mistral 7B, DeepSeek-V2-Lite, and OLMo 2 7B — and identify a late-layer corrective stage that instruction tuning introduces. In all six families, IT models' intermediate predictions converge toward their final output distribution more slowly than PT's, measured via both tuned and raw logit lenses: the mean KL-to-final excess is positive in all six families under both lenses (+0.30 to +1.05 nats in the late half), with IT's curve sitting above PT's in 13–17 out of 14–18 late layers per family. The delay is robust across five independent convergence metrics — threshold-free top-1 commitment, KL-threshold commitment, no-flip-back stability, majority-vote convergence, and continuous convergence gap. The delay scales with prediction difficulty: high-confidence tokens show minimal excess KL while low-confidence tokens show the largest gap (+6.6 layers in Gemma). This slower convergence co-occurs with late-layer MLP opposition: in all six families, IT's late-layer MLPs oppose the accumulated residual stream more than PT's in the final 20% of layers (δ-cosine shift −0.021 to −0.269), though the effect is strong and sustained in some families and concentrated in the final 1–2 layers in others. The link is geometric: opposition partially cancels the accumulated prediction signal, elevating KL-to-final and forcing additional layers to rebuild toward the final output. We provide causal evidence that the corrective stage encodes format and register control: removing the dominant IT–PT MLP activation difference at corrective layers produces clean dose-response degradation of four formatting metrics while content benchmarks remain at baseline levels within a bounded intervention range. The effect is layer-specific, direction-specific (a projection-magnitude-matched random vector produces 3× less governance modulation while producing identical content degradation), MLP-specific (attention carries no signal; residual-stream intervention is catastrophically destructive), and weight-encoded (persisting even without chat template). Because our direction extraction and steering pipeline operates on raw MLP activations via a model-agnostic adapter system — with no dependence on interpretability dictionaries or model-specific decompositions — it generalizes to any transformer architecture. Modulating the corrective direction simultaneously modulates both formatting quality and convergence speed, establishing these as co-dependent readouts of the same late-layer computation. A complementary matched-prefix MLP weight graft ablation strengthens this causal bridge across five dense families, with a separate concordant DeepSeek-V2-Lite MoE case: an IT model first generates the continuation, and a PT control plus a PT+IT-graft model are then forced to follow that same token history. Under this matched-input design, grafting late IT MLP weights increases late KL-to-own-final in all five dense families (+0.12 to +0.58 nats in the final 20% of layers) and reduces cross-KL to the IT teacher in all five, with near-identical effects for raw and chat-templated prompts. DeepSeek shows the same sign pattern (+0.18 late KL, −0.07 late cross-KL, −0.07 late δ-cosine), but because its graft swaps a router-plus-expert MoE block rather than a dense MLP, we report it as a separate case rather than pool it with the dense-family count. Reproduction of the negative δ-cosine pattern is partial in the dense families (3/5), and a BPE-level structural-token proxy remains weak and inconsistent, so the graft supports a shared late-MLP mechanism for delayed commitment but does not by itself establish output-level governance. Supporting this picture, IT representations in late layers occupy higher intrinsic dimensionality than PT across all six families (+1.3 to +4.7 dimensions), consistent with IT maintaining a higher-dimensional uncommitted state through the corrective stage before final prediction collapse.
+
+---
+
+## 1. Introduction
+
+Large language models acquire broad capabilities during pretraining but require instruction tuning — supervised fine-tuning (SFT) and reinforcement learning from human feedback (RLHF), including direct preference optimization (DPO; Rafailov et al., 2023) — to become useful assistants. The resulting models produce well-formatted, helpful, and safer responses. But *how* does instruction tuning accomplish this inside the model's forward pass?
+
+Several fragments of the answer exist. Arditi et al. (2024) showed that refusal behavior concentrates into a single direction in activation space. Li et al. (2025) identified contiguous "safety layers" whose preservation during fine-tuning is critical for maintaining alignment. Lu et al. (2026) identified an "Assistant Axis" — the leading principal component of persona variation — that generalizes across model families. Lin et al. (2024) demonstrated that much of alignment is stylistic, reproducible through in-context learning alone. Wu et al. (2024) showed that instruction tuning systematically reshapes internal attention and FFN representations. Chaudhury (2025) found alignment effects concentrate in a narrow band of mid-stack layers. On the pretrained side, Lad et al. (2024) characterized inference as four computational stages — detokenization, feature engineering, prediction ensembling, and residual sharpening — and showed remarkable robustness to middle-layer deletion. The logit lens (nostalgebraist, 2020) and its learned refinement, the tuned lens (Belrose et al., 2023), revealed that transformers converge progressively toward their final prediction across layers, with later layers providing monotonic refinement. More recently, Joshi et al. (2025) showed that LLMs undergo a distinct confidence correction phase in upper layers — adjusting certainty *after* accuracy has stabilized — suggesting late-layer computation serves a calibration function independent of content processing.
+
+These findings locate individual phenomena, but they do not explain how instruction tuning reorganizes the forward pass as a whole. We address this gap through systematic *model diffing*: layer-by-layer comparison of pretrained and instruction-tuned variants across six model families, using residual stream analysis, logit lens trajectories, and intrinsic dimensionality estimation (Facco et al., 2017).
+
+We report two findings that build on each other.
+
+**Finding 1: IT's late-layer MLPs oppose the residual stream, and this opposition slows prediction convergence.** In all six model families, IT's late-layer MLP updates have more negative cosine similarity with the accumulated residual stream than PT's (δ-cosine shift −0.021 to −0.269 in the final 20% of layers) — they actively oppose the current prediction direction. In four families (Gemma, DeepSeek, Mistral, Llama), this opposition is sustained across the late-layer range; in two (OLMo, Qwen), it concentrates in the final 1–2 layers. This opposition is mechanistically linked to slower prediction convergence: by partially canceling the accumulated prediction signal, opposition elevates KL-to-final at intermediate layers, forcing additional layers to rebuild toward the final prediction. We measure this convergence delay through five complementary metrics — threshold-free top-1 commitment, KL-threshold commitment, no-flip-back stability, majority-vote convergence, and continuous convergence gap — all measured via tuned logit-lens probes (Belrose et al., 2023) and corroborated by the raw logit lens. All six families show IT converging more slowly than PT: mean KL-to-final is higher for IT in 13–17 of 14–18 late layers per family under both lenses (§3.1–3.2). The delay scales with prediction difficulty: in Gemma, high-confidence tokens show +2.2 layers of commitment delay while low-confidence tokens show +6.6 layers. The co-occurrence of opposition and delayed convergence across all six architectures — spanning hybrid attention, sliding window, MoE, and standard MHA — motivates a common-mechanism hypothesis that we later test with matched-prefix MLP grafting (§3.3.9). The magnitude of opposition varies substantially across families, with Qwen and OLMo showing the weakest sustained signal, consistent with a continuum of implementation strength rather than a binary present/absent distinction. Supporting evidence from intrinsic dimensionality (Facco et al., 2017) confirms that IT representations in late layers occupy more independent dimensions than PT across all six families (+1.3 to +4.7) — geometrically, the representations have not yet collapsed to a single prediction direction.
+
+**Finding 2: The corrective stage selectively encodes format and register control.** We extract the dominant IT–PT MLP activation difference at corrective layers and show that modulating this single direction produces clean dose-response on four formatting metrics while content benchmarks remain flat. The effect is layer-specific (early/mid layers produce no effect), direction-specific (a magnitude-matched random vector produces 3× less governance modulation while producing identical content degradation), MLP-specific (attention carries no corrective signal; residual-stream intervention is catastrophically destructive), and weight-encoded (persists even when the chat template is removed, confirming the corrective stage is a property of model weights rather than input formatting). The same scalar intervention simultaneously modulates both formatting quality and convergence speed, establishing these as co-dependent consequences of the same computation (§3.3). A complementary matched-prefix MLP graft ablation extends interventional evidence across five dense families, with a separate concordant DeepSeek MoE case: under identical teacher-provided token histories, grafting late IT MLP weights into a PT backbone increases late KL-to-own-final in 5/5 dense families and reduces cross-KL to the IT teacher in 5/5, while reproducing the negative δ-cosine pattern only partially in the dense-model pool (3/5; §3.3.9). This supports the claim that late IT MLPs encode a substantial part of the delayed-convergence computation, while leaving output-level behavioral governance to the steering results and future free-running A/B/C comparisons. Critically, our direction extraction and steering pipeline operates on raw MLP activations via a model-agnostic adapter system — no interpretability dictionaries (transcoders, SAEs) or model-specific decompositions are required.
+
+The cross-model evidence spans fundamentally different pretraining corpora (5.7T to 36T tokens), architectures (hybrid local/global, sliding window, MLA/MoE, all-global MHA), post-training recipes (KD, iterative DPO, SFT-only, GRPO, RLVR), and sizes (4B–8B). Commitment delay and δ-cosine opposition are universal across all six families, though the magnitude varies substantially — from strong sustained opposition in Gemma and DeepSeek to weak, final-layer-concentrated opposition in Qwen and OLMo. This variation is itself informative: it reveals a continuum of corrective-stage strength rather than a binary present/absent distinction, and the magnitude of opposition correlates with the magnitude of convergence delay across families.
+
+Our findings provide a candidate architectural locus for several previously disconnected observations: refusal directions (Arditi et al., 2024), safety layers (Li et al., 2025), the alignment tax (Ouyang et al., 2022), the Assistant Axis (Lu et al., 2026), DoLA's contrastive decoding gains (Chuang et al., 2024), and the late-layer confidence correction identified by Joshi et al. (2025). We discuss these connections and their implications — including whether the convergence gap could be explicitly optimized during training — in §4–5.
+
+---
+
+## 2. Setup
+
+### 2.1 Models
+
+ For cross-model validation, we compare PT/IT pairs across five additional families:
+
+| Model | Layers | d_model | Attention | Pre-training data | Post-training |
+|---|---|---|---|---|---|
+| Gemma 3 4B (primary) | 34 | 2560 | GQA, hybrid local/global (5:1) | Undisclosed | KD + SFT + RLHF + RLMF + RLEF |
+| Llama 3.1 8B | 32 | 4096 | GQA, all global | 15T tokens | SFT + RS + DPO (iterative) |
+| Qwen 3 4B | 36 | 2560 | GQA, all global | 36T tokens, 119 langs | 4-stage: SFT → reasoning RL → thinking fusion → general RL |
+| Mistral 7B v0.3 | 32 | 4096 | GQA, sliding window (4096) | Undisclosed | SFT (recipe undisclosed) |
+| DeepSeek-V2-Lite | 27 | 2048 | MLA, MoE (2 shared + 64 routed, top-6) | 5.7T tokens | SFT + GRPO |
+| OLMo 2 7B | 32 | 4096 | MHA, all global | Dolma v1.7, open | SFT + DPO + RLVR (Tülu 3) |
+
+This set spans fundamentally different pretraining regimes — from 5.7T tokens (DeepSeek) to 36T tokens (Qwen), open data (OLMo/Dolma) to proprietary corpora (Gemma, Mistral), monolingual-heavy (DeepSeek: English + Chinese) to massively multilingual (Qwen: 119 languages). Architecturally, it spans hybrid local/global attention (Gemma), uniform global attention (Llama, Qwen, OLMo), sliding window (Mistral), and mixture-of-experts with multi-latent attention and compressed KV (DeepSeek). Post-training recipes are equally diverse, ranging from knowledge distillation with multiple RL stages (Gemma) to multi-stage reasoning-focused RL with thinking-mode fusion (Qwen) to group relative policy optimization (DeepSeek/GRPO) to verifiable-reward RL (OLMo/RLVR).
+
+**What the cross-model evidence shows — and what it does not.** We claim that ID expansion and slower prediction convergence are universal consequences of instruction tuning in our six-family suite. Late-layer corrective opposition is directionally consistent across all six families, but highly heterogeneous in magnitude and spatial extent — from strong sustained opposition and large commitment delays in Gemma and DeepSeek to weaker, terminal-layer-concentrated effects in Qwen and OLMo. We do *not* claim to have controlled for every confound. The training-recipe descriptions above are necessarily incomplete — Gemma and Mistral have not published full post-training details, and even published recipes omit implementation choices that could matter. What the cross-model evidence establishes is a recurrent late corrective signature with informative variation in strength that constrains mechanistic hypotheses: the stronger the late opposition, the larger the convergence delay tends to be. Later matched-prefix graft results on five dense families, plus a concordant but separately reported DeepSeek MoE case, further show that late IT MLP weights are sufficient to recreate part of this convergence signature under controlled token history (§3.3.9).
+
+**OLMo checkpoint compatibility.** AllenAI disclosed that the initial OLMo 2 post-trained releases (preview versions) did not share the pre-tokenization logic of the base model. They subsequently retrained the post-trained models to fix this mismatch. We use the non-preview, retrained checkpoints (`allenai/OLMo-2-1124-7B` and `allenai/OLMo-2-1124-7B-Instruct`), which share compatible tokenization. We verified that the tokenizer vocabulary and special token IDs are identical between PT and IT variants.
+
+**Chat-template evaluation.** All cross-model experiments apply each model family's native chat template to IT variants, while PT variants receive raw text (since PT models have no chat template). This reflects each model's trained distribution: IT models were fine-tuned with chat-template-wrapped inputs, so evaluating them with their template is the natural choice. We validate template robustness through a comprehensive template ablation on Gemma (§3.3.6), showing that the corrective stage signature persists even when the chat template is removed — the corrective computation is weight-encoded and does not depend on input formatting. This template-free condition is an informative ablation confirming that the phenomena we measure are properties of the model weights, not artifacts of input wrapping.
+
+**Chat template as primary evaluation condition.** All results reported in §3.1–3.2 use v3 of our cross-model pipeline: tuned lens probes retrained with the Belrose et al. (2023) recipe on chat-template-wrapped text for IT variants (§2.3), and all observational data (δ-cosine, convergence metrics, ID, entropy) collected with IT models receiving their native chat template. We additionally ran a complete template-free condition for all six models, confirming that the corrective stage signature persists without template (Appendix E). The template-free results are qualitatively concordant — δ-cosine opposition, convergence delay, and ID expansion appear under both conditions — but quantitatively noisier, consistent with IT models operating outside their trained distribution when template is removed. We report template-free results as an ablation confirming weight-encoding (§3.3.6) rather than as the primary condition.
+
+### 2.2 Architecture-agnostic pipeline and supplementary transcoders
+
+**All core experiments are architecture-agnostic.** Our direction extraction (`precompute_directions_v2.py`), steering interventions (A1/A2 α-sweeps), and all cross-model analyses (δ-cosine, convergence gap, intrinsic dimensionality) operate on raw MLP activations and residual stream states via a model-agnostic adapter system. No interpretability dictionaries, transcoders, or model-specific decompositions are required. The adapter system provides a uniform interface to `model.layers`, `residual_from_output()`, and MLP hooks across all six architectures — including DeepSeek's MoE and Gemma's hybrid attention. This means the full causal steering pipeline (direction extraction → intervention → evaluation) can run on any model in our suite with no code changes beyond registering the model's architecture in the adapter.
+
+**Supplementary: Gemma transcoders.** For feature-level analysis only (§4.3), we use Gemma Scope 2 transcoders (`width_16k_l0_big_affine`; Dunefsky et al., 2024) with **variant-matched** dictionaries (PT-trained for PT, IT-trained for IT). Feature overlap metrics (Jaccard index) conflate genuine divergence with dictionary misalignment, so we treat these as supplementary. No core finding depends on transcoders. Crosscoder-based analysis (Lindsey et al., 2024) is a priority for future work.
+
+### 2.3 Metrics and measurement methodology
+
+Following Elhage et al. (2021), we treat the residual stream as a shared communication channel. We operationalize our analyses with the following metrics:
+
+**δ-cosine**: cos(h_ℓ − h_{ℓ−1}, h_{ℓ−1}). Measures whether layer ℓ's MLP update reinforces (+) or opposes (−) the accumulated residual direction.
+
+**Prediction convergence.** We quantify how quickly intermediate-layer predictions converge toward the model's final output, using KL(p_ℓ ‖ p_L) at each layer ℓ — the KL divergence between the logit-lens prediction at layer ℓ and the final-layer prediction p_L. The KL-to-final curve traces a convergence trajectory from high divergence at early layers toward zero at the final layer.
+
+Our primary metric is threshold-free:
+
+- *Convergence Gap (CG)*: The mean excess KL-to-final that IT exhibits over PT across the final portion of the network:
+
+  CG = (1/|T|) × Σ_{ℓ ∈ T} [ KL_IT(ℓ ‖ final) − KL_PT(ℓ ‖ final) ]
+
+  where T is the set of layers in the final 50% of depth. CG > 0 means IT's intermediate predictions converge toward the final output *more slowly* than PT's — at any given late layer, IT is further from its eventual prediction. This captures the full shape of the convergence difference without threshold dependence: a model where IT is 0.3 nats above PT across 10 layers and a model where IT is 3.0 nats above PT for 1 layer are both faithfully represented. Units are nats; interpretation is "mean excess KL per layer." We compute CG per token and report population statistics with BCa bootstrap 95% confidence intervals.
+
+We also define discrete commitment metrics that convert the continuous KL trajectory into a "commitment layer" — the depth at which the model's prediction first reaches its final form:
+
+- *Top-1 commitment layer*: Earliest ℓ where argmax(W_U · h_ℓ) = argmax(W_U · h_L). Threshold-free: depends only on the argmax, not on any KL threshold.
+
+- *No-flip-back top-1 commitment*: Earliest ℓ where the top-1 prediction matches the final output and remains stable for ≥3 consecutive layers. Eliminates transient agreements.
+
+- *KL-commitment layer*: Earliest ℓ where KL(p_ℓ ‖ p_L) < τ (default 0.1 nats), using a first-crossing definition.
+
+- *Majority-vote commitment*: Earliest ℓ where ≥90% of subsequent layers satisfy KL < τ. Robust to transient fluctuations.
+
+These five metrics — CG plus four discrete commitment definitions — provide converging evidence. They capture different aspects of convergence (distributional distance vs argmax agreement, single-crossing vs stability, threshold-dependent vs threshold-free) yet yield the same qualitative result: IT commits later than PT in all six families (§3.2, Appendix D).
+
+**Intrinsic dimensionality (ID)**: Estimated via TwoNN (Facco et al., 2017) from residual stream representations at each layer.
+
+**Measuring commitment: tuned lens (primary) and raw logit lens (supporting).** The raw logit lens (nostalgebraist, 2020) applies the unembedding matrix W_U directly to intermediate hidden states, but Belrose et al. (2023) showed this systematically underestimates intermediate-layer prediction quality because W_U was trained against the final layer's representation distribution. The tuned lens addresses this by training per-layer affine probes T_ℓ that map each layer's representations into the final layer's distribution before unembedding.
+
+We train tuned-lens probes for all 12 model variants (6 models × PT/IT) following the Belrose et al. recipe: SGD with Nesterov momentum (lr=1.0, momentum=0.9), 250 steps of 262,144 tokens each (65.5M total token-activations), linear LR decay to zero, identity initialization, KL divergence loss, gradient clipping to norm 1.0, and joint all-layer training. **We use the tuned lens as our primary convergence measurement.** It provides smoother, more faithful KL-to-final curves at intermediate layers, yielding more stable convergence gap estimates and more robust threshold-based commitment layers.
+
+Tuned-lens quality varies by architecture. For five of six models (all except Gemma), the tuned lens substantially improves prediction quality over the raw logit lens: Mistral and OLMo achieve near-zero final-layer residual KL (< 0.01 nats), Llama and Qwen achieve acceptable quality (< 0.5 nats), and DeepSeek achieves moderate quality. For per-model lr tuning, we apply a per-model learning rate scale to address architecture-specific optimization landscapes: Gemma (0.25×, due to extreme raw KL range ~85 nats at layer 0), Qwen and DeepSeek (0.5×, minor drift), and all others at 1.0×. For Gemma, the tuned lens fails to converge to competitive quality — likely due to Gemma's hybrid local/global attention pattern (every 6th layer uses global attention) which may confuse the per-layer linear probes. **For Gemma, we use the raw logit lens as primary.** This is unproblematic because the raw logit lens already provides clean convergence for Gemma: its raw KL-to-final reaches near-zero nats at the penultimate layer, making the first-crossing commitment definition reliable without learned probes.
+
+![Figure: Tuned lens validation. KL(layer ℓ ‖ final) for all six models (PT variant). Red = tuned logit lens, blue = raw logit lens. The tuned lens substantially improves intermediate-layer prediction quality for 5/6 models. Gemma is the exception: its tuned lens probes failed to converge, with KL remaining above 5.9 nats at all layers.](../results/exp9/plots/tuned_lens_validation_kl_to_final.png)
+
+**The raw logit lens as corroborating evidence.** We report all convergence metrics under both the tuned and raw logit lens. Because the raw logit lens requires no training, it provides a probe-quality-independent check: PT and IT are measured with the identical W_U projection, and any systematic bias applies equally to both variants. All commitment delay findings replicate under the raw lens (§3.2), with the continuous CG positive in all six families under both lenses.
+
+**Threshold and definition robustness.** The commitment delay finding is robust across KL thresholds spanning two orders of magnitude (0.05 to 1.0 nats), under both tuned and raw lenses, and under all five metric definitions (Figure S35, Appendix D). The threshold-free top-1 metric and the continuous CG provide independent confirmation that does not depend on any KL threshold choice.
+
+### 2.4 Prompt datasets
+
+**Cross-model observational dataset (§3.1–3.2).** All δ-cosine, convergence gap, and ID analyses use a shared dataset of 2,936 prompts drawn from 18 diverse sources spanning six task domains: factual QA (TriviaQA 225, NQ-Open 200, WebQuestions 200), commonsense and reasoning (CommonsenseQA 125, HellaSwag 125, WinoGrande 85, BoolQ 110, StrategyQA 100, GSM8K 150), knowledge (MMLU-Pro 325, ARC-Challenge 130), code generation (HumanEval 100, MBPP 75), safety and alignment (AdvBench 100, XSTest 72), format compliance (IFEval 117), general knowledge (Wikipedia 93), and custom multi-format prompts (604 items requiring diverse formatting: lists, tables, code blocks, step-by-step reasoning, conversational register). Each prompt generates up to 512 tokens under greedy decoding, yielding 137K–1.5M generated tokens per model variant. This diversity is deliberate: because the convergence gap is computed as an aggregate across all prompt types, the finding that IT converges more slowly than PT reflects a *general property* of the forward pass, not a domain-specific artifact. The diversity also ensures that the δ-cosine opposition and ID expansion findings are not driven by any single task type. We note that per-category convergence gap breakdowns — which would reveal whether the delay is uniform across domains or concentrated in format-heavy prompts — are a natural extension that would further strengthen the generalizability claim; we flag this as planned analysis.
+
+**Steering evaluation dataset (§3.3).** We use a separate evaluation dataset of 2,300 prompts across 7 categories: CONTENT-FACT (300 items from MMLU, forced-choice log-probability scoring), CONTENT-REASON (200 items from GSM8K + multi-step reasoning, exact match), GOV-FORMAT (250 items from IFEval, per-instruction compliance criteria), GOV-CONV (300 custom items requiring assistant-like conversational format), GOV-REGISTER (100 items from MT-Bench-style prompts measuring register quality), SAFETY (150 items: 75 harmful prompts from AdvBench/XSTest for refusal evaluation, 75 benign prompts for over-refusal measurement), and BASELINE-EASY (100 simple factual prompts). The category structure enables fine-grained assessment of which capabilities the corrective direction modulates: governance categories (GOV-*) test format control, content categories (CONTENT-*) test knowledge preservation, and safety tests whether refusal behavior is co-encoded.
+
+---
+
+## 3. The Corrective Stage: Observation, Mechanism, and Causal Evidence
+
+This section presents our core findings as a unified narrative. We begin by establishing what instruction tuning changes in the forward pass (late-layer MLP opposition, §3.1), show that this opposition mechanistically slows prediction convergence (§3.2), and then demonstrate through causal steering that the corrective computation specifically encodes format and register control (§3.3). Each claim is immediately followed by the controls that validate it.
+
+### 3.1 Late-layer MLP opposition to the residual stream
+
+![Figure 1: δ-cosine profiles across six model families. IT (solid) vs PT (dashed). Gemma shows the strongest IT opposition; Llama shows minimal IT–PT difference because its PT already exhibits negative δ-cosine.](../results/cross_model/plots/L1_summary.png)
+
+Figure 1 shows the δ-cosine profile — cosine similarity between each layer's MLP update and the accumulated residual stream — across all six families.
+
+**Gemma 3 4B.** In PT, δ-cosine is mildly negative in late layers (mean −0.15), consistent with Lad et al.'s (2024) "residual sharpening." In IT, the same range shows markedly stronger opposition: mean δ-cosine of −0.4, a 2.7× amplification (p < 0.001). This negative band is stable across generation steps and prompt categories, and persists even when the chat template is removed (§3.3.6), confirming it is weight-encoded.
+
+**Cross-model variation.** The δ-cosine IT–PT difference varies substantially in magnitude and spatial distribution:
+
+| Model | Depth 0.5–0.7 | Depth 0.7–0.9 | Depth 0.9–1.0 | Last layer | Final 20% mean |
+|---|---|---|---|---|---|
+| Gemma 3 4B | −0.12 | −0.07 | −0.38 | −1.11 | −0.269 |
+| DeepSeek-V2-Lite | −0.11 | −0.08 | −0.34 | −0.89 | −0.201 |
+| Mistral 7B v0.3 | −0.07 | −0.07 | −0.09 | −0.13 | −0.077 |
+| OLMo 2 7B | −0.00 | +0.01 | −0.08 | −0.28 | −0.041 |
+| Qwen 3 4B | +0.04 | −0.01 | −0.06 | −0.26 | −0.038 |
+| Llama 3.1 8B | −0.04 | −0.03 | −0.02 | −0.07 | −0.021 |
+
+The six families form a natural continuum. Gemma and DeepSeek show strong, sustained opposition across the full late-layer range (−0.07 to −0.12 at mid-depth, strengthening to −0.89 to −1.11 at the terminal layer). Mistral shows moderate, evenly-distributed opposition (−0.07 throughout). Llama shows weak but consistent opposition (−0.02 to −0.04 at all depth bins). OLMo and Qwen show a qualitatively different pattern: near-zero or slightly positive differences through most of the late layers, with opposition concentrating sharply in the final 1–2 layers (−0.28 and −0.26 at the terminal layer, respectively). In Qwen, the body-of-network opposition is genuinely at noise level (±0.01 across layers 24–34), with the signal driven almost entirely by a large negative spike at the final layer (L35: IT = −0.72, PT = −0.46, diff = −0.26).
+
+**The direction of change is universal.** Computing the mean δ-cosine shift in the final 20% of layers reveals that IT is more negative than PT in all six families: Gemma −0.269, DeepSeek −0.201, Mistral −0.077, OLMo −0.041, Qwen −0.038, Llama −0.021. No family shows a net positive shift. The universality of the direction is the robust finding; the magnitude varies by over an order of magnitude across architectures. This variation is itself informative: it reveals that the *functional signature* (slower convergence, see §3.2) is universal, while the *mechanistic implementation* (how opposition is distributed across layers) is architecture-dependent. Families with sustained opposition (Gemma, DeepSeek, Mistral) implement correction as a distributed late-layer computation; families with concentrated opposition (OLMo, Qwen) implement it as a sharp final-layer adjustment.
+
+**Why opposition is a natural signature of correction.** If early and middle layers have accumulated a residual direction pointing toward token X, and the model needs to produce token Y instead, opposing the current residual direction is the most efficient strategy: a unit-norm update with negative cosine produces the maximal reduction in the current top-1 logit per unit perturbation magnitude, freeing probability mass for redistribution toward alternative predictions.
+
+**Where does the corrective computation begin?** Full layer × generation-step δ-cosine heatmaps for all six families (Appendix A, Figure S21) reveal the spatial distribution of MLP opposition. The corrective onset — the layer at which IT's δ-cosine first diverges from PT's — falls broadly in the final third of the network for the families where it is robustly detected: Gemma (47–62% depth), Mistral (47–59%), and OLMo (59–63%), across a systematic sweep of σ-based and absolute thresholds (Appendix D, Figure S12). DeepSeek shows onset at moderate thresholds, consistent with its strong late-layer opposition. Llama shows onset only at lenient thresholds, consistent with its small but consistent δ-cosine shift. Qwen shows no detectable sustained onset except at the terminal layer, consistent with its concentrated-opposition profile. This gradient in onset detectability mirrors the gradient in opposition magnitude.
+
+**Weight changes: methodology varies, corrective computation converges.** In Gemma 3 4B, weight difference Frobenius norms peak at layers 25–33, coinciding with the corrective stage — consistent with knowledge distillation concentrating gradients at the output level. All five other families show relatively uniform weight changes across layers, yet still exhibit slower convergence and ID expansion. This dissociation is itself a finding: the corrective computation is a **convergent functional property** that emerges regardless of how weight changes are distributed.
+
+### 3.2 Opposition slows prediction convergence
+
+The link between negative δ-cosine and slower convergence is geometric and direct. The logit lens decodes each layer's residual stream via W_U · h_ℓ. When an MLP update opposes h_ℓ (negative cosine), it partially cancels the accumulated prediction signal, reducing the magnitude of the dominant logit and flattening the predicted distribution. A flatter distribution means higher KL-to-final at that layer — the model's intermediate prediction is further from its eventual output. More concretely: (i) before the corrective stage, h points toward a preliminary prediction with moderately high top-1 logit; (ii) at corrective layers, the MLP adds Δ with cos(Δ, h) < 0, which reduces the top-1 logit and can change the argmax entirely; (iii) convergence is achieved only after later layers rebuild the residual stream toward the final prediction. The model must "recover" from the opposition before it can converge — and this recovery takes layers.
+
+**Per-layer KL trajectories.** Figure 2 shows mean KL-to-final at each layer for PT and IT under both the tuned logit lens and raw logit lens. In all six families, IT's KL-to-final curve sits above PT's throughout the late layers: IT's intermediate predictions remain further from the final output distribution at every layer in the corrective region. The mean late-half KL excess ranges from +0.30 nats (OLMo, tuned) to +1.05 nats (Mistral, raw), with IT above PT in 13–17 of 14–18 late layers per family. The tuned logit lens is our primary measurement instrument for these profiles because it is trained to approximate each layer's contribution to the final prediction (Belrose et al., 2023), yielding smoother and more interpretable convergence trajectories than the raw logit lens, which suffers from representation–logit misalignment in early layers (Gemma's raw KL exceeds 80 nats at layer 0). We report both lenses throughout; raw logit-lens results corroborate the tuned-lens findings and serve as a probe-quality-independent check (Appendix D, Figure S35).
+
+![Figure 2: Mean KL(layer ℓ ‖ final) per layer — PT (blue) vs IT (red). Tuned logit lens. In all six families, IT's curve sits above PT's throughout the corrective region, indicating that IT's intermediate predictions converge toward the final output more slowly.](../results/exp9/plots/L2_mean_kl_per_layer_tuned.png)
+
+![Figure 2b: Same analysis under the raw logit lens. The qualitative pattern replicates in all six families.](../results/exp9/plots/L2_mean_kl_per_layer_raw.png)
+
+**Commitment delay: five convergent metrics.** We quantify the convergence delay through five complementary metrics, each capturing a different aspect of when IT vs PT predictions reach their final form (§2.3). Across all five, the result is the same: IT commits later than PT in all six families. No metric shows IT committing *earlier* than PT in any family. The metrics and their cross-model results are:
+
+*(i) Top-1 commitment (tuned lens, threshold-free).* The first layer where the logit-lens top-1 prediction matches the final output — a threshold-free metric that depends only on the argmax. IT commits later than PT in all six families: DeepSeek +3 layers, OLMo +3, Gemma +2, Llama +1, Mistral +1, Qwen +1. *(ii) Top-1 commitment (raw logit lens).* Same metric without learned probes. IT commits later in all six families: Mistral +4, Gemma +3, OLMo +3, Llama +1, DeepSeek +1, Qwen +1. *(iii) No-flip-back top-1 (tuned lens).* A stricter variant requiring the top-1 prediction to remain stable for at least three consecutive layers — eliminating transient agreements. IT commits later in all six families: OLMo +3, Llama +2, DeepSeek +2, Qwen +1, Mistral +1; Gemma +0 (saturated — both PT and IT already at the final layer). *(iv) KL-threshold commitment (tuned lens, KL < 0.1 nats).* The first layer where the predicted distribution is within 0.1 nats of the final output. The strongest delays appear in Mistral (+6 layers) and OLMo (+5), with Qwen at +2 and Llama at +1. Gemma saturates (both PT and IT at layer 33 of 34) due to tuned-lens probe quality limitations for its hybrid attention architecture; under the raw logit lens, Gemma shows the strongest delay of any family (+5 layers). *(v) Majority-vote commitment (tuned lens, KL < 0.1 nats).* The first layer where ≥90% of subsequent layers remain below threshold. The same families show the largest delays: Mistral +7, OLMo +6, Qwen +3, Llama +2.
+
+![Figure 3: Per-token commitment layer distributions under tuned logit lens (KL < 0.1 nats, first-crossing). In all six families, IT's distribution is shifted right — predictions reach their final form at greater depth.](../results/exp9/plots/L2_commitment_tuned_kl_0.1.png)
+
+![Figure 3b: Same analysis under raw logit lens. Gemma shows the strongest shift (median delay ≈ 5 layers), consistent with its strong δ-cosine opposition (−0.269).](../results/exp9/plots/L2_commitment_raw_kl_0.1.png)
+
+![Figure 3c: Top-1 commitment distributions under tuned logit lens (threshold-free). IT shifted right in all six families. This metric requires no KL threshold, confirming the delay is not a threshold artifact.](../results/exp9/plots/L2_commitment_tuned_top1.png)
+
+![Figure 3d: Top-1 commitment distributions under raw logit lens. Mistral shows the strongest shift (+4 layers), followed by Gemma and OLMo (+3 each).](../results/exp9/plots/L2_commitment_raw_top1.png)
+
+**Co-occurrence with δ-cosine opposition.** The commitment delay co-occurs with corrective opposition across all six families. Ranking by mean δ-cosine shift in the final 20% of layers: Gemma (−0.269) and DeepSeek (−0.201) show the strongest opposition and clear commitment delays (+2 to +3 layers, top-1); Mistral (−0.077) shows moderate, evenly-distributed opposition and the largest KL-threshold delays (+6 layers); OLMo (−0.041) and Qwen (−0.038) show opposition concentrated in the final layers, with moderate delays (+3 and +1–2 layers); Llama (−0.021) shows weak but consistent opposition and small delays (+1 layer). The co-occurrence is universal: every family shows both opposition and delayed convergence, with no counter-examples. The magnitude correlation is positive but imperfect — Mistral's moderate opposition produces the largest KL-threshold delay, suggesting that the spatial distribution of opposition (sustained vs. concentrated) matters as much as its aggregate magnitude.
+
+Two families warrant specific discussion. DeepSeek, despite exhibiting the second-strongest δ-cosine opposition, shows a crossover in its raw-lens KL-to-final: in the final 6 layers, PT's raw KL exceeds IT's, reversing the delay pattern seen earlier. This crossover is absent under the tuned lens (IT above PT in 13/14 late layers) and absent in all other families, suggesting it reflects DeepSeek's MoE architecture interacting with the raw logit projection rather than a genuine reversal of the convergence delay. Qwen shows the weakest opposition signal and the smallest commitment delays. Its body-of-network δ-cosine difference is at noise level (±0.01 across layers 24–34), with opposition concentrated in a single terminal-layer spike. Despite this, its KL-to-final trajectories clearly separate (IT above PT by +0.24 to +0.60 nats in the final 8 tuned-lens layers), demonstrating that even weak, concentrated opposition is sufficient to produce measurable convergence delay.
+
+**Robustness: threshold, definition, and lens invariance.** The commitment delay finding is robust to every methodological choice we have tested. Figure 4 shows that the *direction* of the IT–PT gap is stable across KL thresholds spanning two orders of magnitude (0.05 to 1.0 nats); only the magnitude varies. The finding holds under both tuned and raw logit lenses, under first-crossing and stays-below definitions, under argmax-based (top-1) and distributional (KL) metrics, and under both simple and qualified (no-flip-back) commitment definitions. Appendix D provides the full threshold sensitivity analysis (Figure S35) and lens comparison (Figure S36). The convergence fraction CDFs (Figure 4b) provide a fully nonparametric, threshold-free view: IT's CDF is consistently shifted right of PT's across all quantiles in all six families, confirming that the delay is not an artifact of any particular threshold or commitment definition.
+
+![Figure 4: KL threshold sensitivity. Mean commitment depth vs threshold τ. Blue = raw, red = tuned. Solid = IT, dashed = PT. The IT–PT gap direction is invariant across thresholds and lenses; only the magnitude varies.](../results/exp9/plots/L2_pure_kl_threshold_sensitivity.png)
+
+![Figure 4b: Commitment CDF by normalized depth under four metrics (raw/tuned × KL/top-1). Solid = IT, dashed = PT. IT's CDF is shifted right across all six families at every quantile — a nonparametric confirmation that IT's predictions reach their final form at greater depth.](../results/exp9/plots/L2_commitment_cdf_4methods.png)
+
+**Continuous convergence gap.** Complementing the discrete commitment delay, the continuous convergence gap (CG) — the mean per-layer excess KL-to-final that IT exhibits over PT across the final 50% of depth (§2.3) — is positive in all six families under both lenses. Under the raw logit lens: Mistral +1.054, Gemma +1.008, Qwen +0.751, Llama +0.627, DeepSeek +0.519, OLMo +0.417 nats. Under the tuned logit lens: Qwen +0.645, Llama +0.435, Gemma +0.351, DeepSeek +0.339, Mistral +0.321, OLMo +0.298 nats. The universality of the positive CG under both lenses is the primary result. The magnitudes reflect that IT's KL-to-final curve is systematically elevated above PT's at every late layer — a distributed asymmetry whose cumulative effect across 10–15 corrective layers produces the substantial commitment delays quantified above.
+
+**The delay is logit-space specific.** Cosine similarity between h_ℓ and h_final — a representation-space convergence metric that does not involve the logit lens — shows nearly identical IT and PT profiles across all six families (Appendix D, Figure S36). Slower convergence is exclusively a *logit-space* phenomenon: IT changes the output distribution trajectory more than the representation geometry. This is precisely what the geometric mechanism predicts: opposition partially cancels the *projection* of h onto the prediction direction (via W_U), flattening the output distribution, without substantially altering the residual stream's position in representation space. The distinction rules out the alternative hypothesis that IT simply processes information more slowly in general; IT's hidden states converge at the same rate as PT's — only their decoded distributions do not.
+
+**Convergence gap scales with prediction difficulty in Gemma.** The aggregate convergence gap masks a revealing structure (Figure 5). First, partitioning by prediction agreement: matched tokens (2.8% of generated tokens, where PT and IT ultimately agree on the top-1 prediction) show a small convergence gap, while divergent tokens (97.2%) show a substantially larger gap. Second, partitioning by final-layer confidence (Figure 5D): high-confidence tokens (>90% probability) show minimal convergence gap while low-confidence tokens (<50%) show the largest gap. Using the supporting threshold-based metric: high-confidence tokens show Δ = +2.2 layers of commitment delay; low-confidence tokens show Δ = +6.6 layers. The corrective computation scales with prediction difficulty — uncertain tokens receive more corrective processing, manifesting as a larger per-layer KL excess.
+
+![Figure 5: Convergence dynamics in Gemma 3 4B. Panel A: KL-to-final trajectories show IT (solid) converging later than PT (dashed). Panel B: Commitment layer distributions. Panel C: Layer delta norms scale with token uncertainty. Panel D: Confidence-stratified convergence gap — high-confidence tokens (>90%) show minimal gap (Δ = +2.2 layers under threshold metric); low-confidence tokens (<50%) show substantial gap (Δ = +6.6 layers).](../results/exp3/it_16k_l0_big_affine_t512/plots/plot_e3_5_confidence_stratified.png)
+
+**Difficulty scaling is threshold-robust.** We verify that the confidence-stratified finding is not an artifact of the 0.1 nat threshold by repeating at thresholds of 0.01, 0.02, 0.05, and 0.10 nats (Figure S9). The qualitative pattern — larger convergence gap for lower-confidence tokens — replicates at all thresholds, confirming the difficulty-scaling finding is robust.
+
+**Caveat on divergent-token statistics.** Under free-running autoregressive generation, once continuations diverge at any position, nearly every subsequent position will differ due to cascading token-history effects. The 97.2% figure reflects primarily that IT and PT generate different text, not that 97.2% of positions undergo independent correction. Even restricting to early generation steps (positions 1–5), IT converges more slowly than PT, and the gap is largest at positions that will eventually diverge. The convergence gap is also stable across the full generation window: a layer × generation-step heatmap (Appendix A, Figure S17) shows that the corrective-stage δ-cosine band is equally strong at generation step 1 and step 120, and a per-step mean plot with SEM bands (Figure S17, Panel C) confirms a flat trajectory with no detectable trend. This confirms the slower convergence is an ongoing property of IT's forward pass rather than a startup transient.
+
+**The corrective stage targets structural tokens.** In Gemma 3 4B, we track the top-1 prediction at each layer via logit lens. When a late layer overrides the previous layer's prediction — a "mind-change" (argmax(W_U · h_ℓ) ≠ argmax(W_U · h_{ℓ-1})) — we classify the target token using a deterministic rule-based classifier into five categories: CONTENT (open-class nouns, verbs, adjectives — the default), STRUCTURAL (list markers, headers, code delimiters — regex-matched), DISCOURSE (conversational connectors drawn from Hyland's (2005) metadiscourse taxonomy, 247 items), PUNCTUATION (sentence-final punctuation, commas, colons), and FUNCTION (closed-class determiners, prepositions, auxiliaries — standard ~180-item list). Full classifier specification is in Appendix C.
+
+**Classifier robustness (0E).** To verify the mind-change finding does not depend on specific category boundaries, we test four perturbation scenarios: reclassifying DISCOURSE as STRUCTURAL (Δ STR = 14.5 pp — expected, since both capture formatting), reclassifying DISCOURSE as CONTENT (Δ = 0.4 pp — negligible), and two FUNCTION↔CONTENT reclassifications (Δ < 0.001 pp — effectively zero). The structural-token targeting finding is robust to all boundary perturbations except the STRUCTURAL/DISCOURSE merge, which is expected by design since both categories capture formatting-related tokens. No core finding depends on the precise STRUCTURAL/DISCOURSE boundary (Appendix C, Figure S19).
+
+Full perturbation sensitivity analysis is in Figure S19 (Appendix A).
+
+75% of mind-changes in IT's corrective layers redirect toward structural tokens (STRUCTURAL + DISCOURSE + PUNCTUATION), compared to 45% in PT's late layers (Figure S27, Appendix A). IT's corrective computation systematically redirects predictions toward formatting and discourse structure. This asymmetry provides the observational motivation for the causal experiments in §3.3.
+
+**Prediction revision is concentrated in three discrete phases.** Adjacent-layer KL divergence — measuring how much each layer changes the prediction distribution relative to its predecessor — reveals that prediction revision in IT concentrates at three distinct layer ranges rather than accumulating smoothly (Figure S28, Appendix A): an early content-resolution phase (layers 5–6, KL ≈ 3.5), a mid-network refinement phase (layers 15–17, KL ≈ 1.5), and a late corrective enforcement phase (layers 27–28, KL ≈ 1.5). PT shows substantially lower and more uniform adjacent-layer KL throughout.
+
+**Candidate reshuffling at corrective layers.** Tracking the cumulative set of unique top-1 predictions across layers (Figure S29, Appendix A) reveals that IT rapidly expands its candidate set at corrective layers — the model actively reshuffles its predictions, considering and discarding multiple candidates before settling on a final choice. PT stabilizes earlier.
+
+**Three results work together.** The mind-change analysis (Figure S27), adjacent-layer KL (Figure S28), and candidate reshuffling (Figure S29) paint a convergent picture of the corrective stage. It is not a gradual refinement but a **discrete computational phase** where: (i) prediction distributions are actively destabilized (high adjacent-layer KL), (ii) the top-1 prediction is overridden toward structural tokens (elevated mind-change rates), and (iii) multiple candidate predictions are considered and discarded (expanding candidate sets). Together, these establish that the corrective stage performs genuine deliberation over format and structural token selection, not merely post-hoc adjustment of an already-committed prediction.
+
+**Scope and planned extensions.** The mind-change targeting, three-phase prediction revision, and confidence-stratified convergence analyses above are currently Gemma-specific — they require per-layer logit-lens analysis that has been conducted only on the primary model. However, because these analyses rely solely on logit-lens outputs and the rule-based classifier (no transcoders needed), extending them to all six families is methodologically straightforward: (a) run the token classifier on logit-lens mind-changes for all six models to test whether structural-token targeting generalizes; (b) compute adjacent-layer KL profiles across families to test whether the three-phase structure is universal; (c) extend confidence-stratified convergence gap analysis beyond Gemma to test whether difficulty scaling is a general property. These are high-priority planned extensions (§5).
+
+### 3.3 Causal evidence: the corrective stage encodes format and register control
+
+The observations in §3.1–3.2 are correlational. To test whether the corrective stage *performs* format/register control (rather than merely correlating with it), we conduct directional steering experiments. We present Gemma 3 4B as the first fully validated case; because the pipeline is architecture-agnostic (§2.2), extension to all six families requires only compute, not methodological changes. We emphasize that the observation that instruction tuning affects formatting is well-established (Lin et al., 2024). Our contribution is not this observation but the mechanistic evidence: the formatting computation is implemented through a discrete, late-layer corrective stage that simultaneously determines commitment timing, and the corrective direction is separable from content knowledge.
+
+#### 3.3.1 Experimental design
+
+**Direction extraction.** For each layer range (early: 1–11, mid: 12–19, corrective: 20–33), we compute per-layer mean MLP-output activation differences d̂_ℓ = normalize(E[mlp_ℓ^IT − mlp_ℓ^PT]) using generated tokens only (not prompt tokens), over 600 high-contrast calibration prompts selected from 1,400 records by a composite score combining structural token ratio, G1 judge score, and PT negative log-likelihood. IT generates with its native chat template applied, consistent with our primary evaluation condition (§2.1). Each direction is L2-normalized to unit length in d_model = 2560. Approximately 36,000 token positions per layer contribute to each direction estimate (600 records × ~60 tokens per record, capped at 80 tokens per record, symmetric across models). We additionally extracted directions without chat template and confirmed that the resulting dose-response is qualitatively identical (Appendix E), consistent with the corrective direction being a property of model weights rather than input formatting.
+
+**Direction stability (0A).** The corrective direction is stable under bootstrap resampling: mean pairwise cosine exceeds 0.993 by n = 300 records (well below our full 600), with per-layer cosine > 0.98 at every layer (Appendix B5, Figure S10). This confirms the direction is well-determined and not a small-sample artifact.
+
+**Matched-token validation (0B).** IT and PT produce different token sequences during direction extraction. Force-decoding validation — where IT and PT are forced to decode the same token sequence — yields cosine 0.82 between the free-running and matched-token directions at corrective layers (Figure S11). The reversed condition (deliberately mismatched tokens) yields cosine −0.59, confirming sign consistency. The direction is primarily weight-driven, not token-driven, though some token-content contribution cannot be fully excluded. Per-layer analysis reveals variance (range 0.34–0.98), warranting further investigation with larger matched samples.
+
+**Calibration-evaluation split validation (0H).** The 600 calibration prompts are selected from the same 1,400-record evaluation dataset. We address this concern comprehensively by extracting the corrective direction from three disjoint prompt sets — the canonical top-600 (format-selected), a random-600 (no selection), and the bottom-600 (least format-contrastive) — and running the complete α-sweep with each (Figure S16). All three directions produce nearly identical dose-response curves across all five metric panels, with overlapping 95% BCa bootstrap CIs. Even the bottom-600 direction produces comparable governance modulation. The corrective direction is a fundamental property of the IT–PT weight difference, not an artifact of format-aware prompt selection.
+
+**Intervention formula.** During IT model generation, at each corrective layer, we modulate the corrective direction's contribution to the MLP output:
+
+  h_ℓ ← h_ℓ + (α − 1) · (d̂_ℓ^T h_ℓ) · d̂_ℓ
+
+At α = 1 the model is unmodified. At α = 0 the corrective direction is fully removed. At α < 0 the direction is reversed. At α > 1 it is amplified. This follows the directional ablation framework of Arditi et al. (2024).
+
+**Evaluation metrics.** We evaluate on the 1,400-prompt steering dataset (§2.4) spanning 7 categories. Format-related metrics: structural token ratio (STR; programmatic, deterministic — measures the fraction of generated tokens classified as structural formatting tokens), format compliance (per-instruction IFEval criteria), G1 format quality (LLM judge, validated at Cohen's κ ≥ 0.70 against human annotations), G2 register quality (LLM judge — measures whether the model produces assistant-appropriate register vs. raw completion-style text). Content metrics: MMLU forced-choice accuracy (600 items, log-probability scoring — measures factual knowledge retrieval without requiring coherent generation), GSM8K exact match (400 items — measures multi-step mathematical reasoning requiring coherent generation), reasoning exact match (400 items, multi-step problems). Safety metrics: appropriate refusal rate S1 (75 harmful prompts — fraction correctly refused) and over-refusal rate S2 (75 benign prompts — fraction incorrectly refused). All metrics are evaluated with 10,000-sample BCa bootstrap 95% confidence intervals.
+
+#### 3.3.2 Dose-response: format degrades, content is preserved
+
+![Figure 4: A1 dose-response — corrective direction ablation on IT (Gemma 3 4B). Top row: format metrics (G1, G2, format compliance) degrade monotonically as α decreases. Bottom row: content metrics (MMLU, GSM8K, reasoning) are preserved in the moderate range but degrade at extremes. Shaded bands show 95% bootstrap CIs.](figures/fig_0D_dose_response_CIs.png)
+
+**Format metrics show clear dose-response (Figure 4, top).** As α decreases from 1 (baseline) toward 0 (removal) and into negative values (reversal), all format metrics degrade monotonically. G1 format quality drops from 0.82 (baseline) to 0.20 (α = −5), with 95% CI non-overlapping from baseline for all α ≤ 0 (Cohen's d = −3.73 at α = −5). G2 register quality shows even sharper decline: 0.95 → 0.20. Format compliance follows concordantly. At α = 0, format metrics degrade substantially but the model remains coherent, producing readable text without assistant-like formatting — it reverts toward PT's raw completion behavior. Metrics approach but do not fully reach PT baselines, consistent with the corrective direction capturing the dominant but not complete IT–PT difference. Over-amplification (α ≥ 3) also degrades format: G1 drops to 0.46 at α = 3 and 0.28 at α = 5 — the corrective computation has a calibrated operating range. (These steering numbers are from Gemma's template-free A1 run; chat-template steering across all six families is the immediate next step, §5. The template-free condition serves as a conservative lower bound — steering on IT's native distribution is expected to produce equal or stronger dose-response.)
+
+**Content metrics reveal an asymmetric safe zone (Figure 4, bottom).** MMLU forced-choice accuracy (baseline: 0.25 under template-free condition) is stable across a broad α range with all CIs overlapping baseline, but degrades at extreme negative values. We treat MMLU primarily as a *sensitivity test* (does the intervention degrade performance?) rather than a measure of absolute content quality. The key content evidence comes from GSM8K and reasoning, which have strong baselines (0.42 and 0.54 respectively) and require multi-step generation. Both show a bounded safe zone: performance remains at baseline levels for α ∈ [−0.5, 2] but collapses at extreme values (GSM8K: 0.42 → 0.03 at α = −2 → 0.00 at α = 5; reasoning: 0.54 → 0.12 → 0.00). As we show below (§3.3.4), this content degradation at extremes is a generic perturbation effect, not evidence that the corrective direction encodes content.
+
+**Monotonicity is statistically confirmed.** Spearman rank correlation confirms significant monotonic trends for format metrics: format compliance ρ = 0.74 (p = 0.003), alignment behavior ρ = 0.62 (p = 0.019). Content metrics show non-significant monotonicity (reasoning EM p > 0.3, GSM8K p > 0.3), consistent with content preservation rather than monotonic degradation. MMLU shows significant *positive* monotonicity (ρ = 0.78, p = 0.001) — driven by forced-choice scoring being robust to formatting changes, with slight improvement at moderate removal where formatting tokens are replaced by content-relevant tokens.
+
+**Effect size analysis.** The Cohen's d heatmap (Figure 4b) quantifies the dissociation precisely. At moderate interventions (α ∈ [0, 0.75]), format effect sizes reach d = −0.33 (format compliance at α = 0) and d = −0.29 (alignment behavior at α = 0) while content effects are negligible (|d| < 0.02 for MMLU, |d| < 0.07 for GSM8K). At extreme interventions (α ≤ −2), format effects become very large (alignment behavior d = −4.03 at α = −3) and content effects also become large (reasoning d = −1.25 at α = −3) — but format effects are still 3–4× larger, preserving the dissociation's direction even where its absolute magnitude breaks down.
+
+**Safety metrics show correlated dose-response.** Appropriate refusal rate (S1) drops from 0.95 at baseline to 0.33 at α ≤ −2 — the model loses its refusal capability. Over-refusal rate (S2) rises from 0.12 at baseline to 1.00 at α ≤ −2 (the model refuses everything, including benign prompts). At extreme amplification (α = 5), S2 also rises to 0.80, indicating over-refusal from amplified safety vigilance. Safety is thus co-encoded in the corrective direction alongside formatting — consistent with the corrective stage implementing multiple post-training objectives in the same computational substrate.
+
+**Category-level enrichment reveals what the corrective direction controls.** A token-category analysis provides a fine-grained view of the steering effect (Figure S20). At α = 3, STRUCTURAL tokens (list markers, headers, code delimiters) are 11.9× enriched relative to baseline, PUNCTUATION 5.9× enriched, while CONTENT tokens are depleted to 0.68× and FUNCTION to 0.50×. At α = 5, STRUCTURAL reaches 30.5× — the model generates almost exclusively structural tokens. Notably, DISCOURSE enrichment does *not* track STRUCTURAL: discourse connectors are depleted at extreme α (0.03× at α = 5), suggesting the corrective direction primarily controls hard formatting (list markers, headers) rather than soft discourse connectors (e.g., "however", "therefore"). This distinction — hard formatting vs. discourse markers — may correspond to different sub-components of the corrective stage, a hypothesis testable via PCA decomposition of the corrective direction (§5).
+
+Full enrichment data is in Figure S20 (Appendix A).
+
+**Over-amplification asymmetry.** Removal (α: 1 → 0) produces moderate, graceful format decline — the model reverts toward PT's coherent sharpening behavior, a natural attractor, with content metrics preserved (GSM8K drops only 0.04 points). Reversal (α: 0 → −5) causes steep decline across all metrics. Amplification (α: 1 → 5) degrades format quality and produces increased false-refusal rates, while destroying multi-step reasoning. This asymmetry is consistent with removal reverting to a calibrated operating point (PT) while reversal and amplification push beyond calibrated regions in opposite directions.
+
+#### 3.3.3 Layer specificity
+
+We repeat the α-sweep at early (1–11), mid (12–19), and corrective (20–33) layers, each using the IT–PT direction extracted from that range (Figure S30, Appendix A).
+
+**Corrective layers dominate format effects.** Format compliance shows strong dose-response under corrective-layer intervention with near-zero response under early or mid intervention. Structural token ratio shows the same pattern. The separation is dramatic — early and mid layer interventions have essentially no effect on format metrics across the full α range.
+
+**Content is preserved everywhere.** MMLU accuracy is flat across all three layer ranges at all α values. The IT–PT direction at any layer range does not disrupt content knowledge, ruling out the explanation that late layers are simply "more influential" — if proximity to output were the mechanism, MMLU should also show layer-dependent effects.
+
+**The mid-layer null is informative.** Mid layers (12–19) are closer to the output than early layers (1–11), yet show comparably negligible format effects. This rules out a gradient explanation (corrective > mid > early) and establishes discrete localization.
+
+**Layer range robustness (0F).** To test whether the corrective range choice (20–33) is a researcher degree of freedom, we repeat the α-sweep at four overlapping ranges: 18–33, 20–33 (canonical), 20–31, and 22–33 (Figure S15). All four produce comparable governance dose-response curves — the result is not sensitive to the exact layer boundaries. A per-layer importance analysis (removing one corrective layer at a time) reveals that governance signal concentrates at layers 23, 28, 21, 25, and 32 — clustering near the commitment boundary (~layers 20–25), consistent with the highest-importance layers being those where the model transitions from uncommitted to committed predictions.
+
+#### 3.3.4 Direction specificity and the format-content dissociation
+
+We construct random unit vectors d̂_rand at each corrective layer (sampled from N(0,1), normalized to unit norm) and apply the identical α-sweep. The random direction produces **zero detectable effect** on any format metric across the entire α range (Figure S31, Appendix A), while the corrective direction produces the full dose-response at the same layers with the same formula.
+
+**Projection-magnitude-matched control (0C).** A raw random unit vector in d = 2560 has expected projection magnitude |h·d̂_rand| ≈ ‖h‖/√2560 ≈ ‖h‖/50.6, substantially smaller than the corrective direction's projection. To address this, we scale the random-direction perturbation to match the corrective direction's projection magnitude at each layer and position, and repeat the full α-sweep with 5 independent random seeds (Figure S13).
+
+The projection-matched results reveal a striking dissociation (Figure 6a). On **governance metrics** (STR), the corrective direction produces 3× stronger modulation than the magnitude-matched random at extreme α (STR reaches 0.58 vs. 0.20 for random at α = 5) — confirming that format control is direction-specific. On **content metrics** (reasoning EM), however, the corrective and magnitude-matched random directions produce **nearly identical degradation** at extreme α values — meaning the content degradation at extreme interventions is a generic perturbation effect, not attributable to the corrective direction specifically encoding content. The multiseed analysis (5 independent random vectors) confirms stability (STR std < 0.05, reasoning std < 0.06 across seeds).
+
+![Figure 6a: Projection-magnitude-matched random control (0C). Left: Governance (STR) — corrective direction (black solid) produces 3× stronger modulation than magnitude-matched random (orange dashed, ±1σ bands from 5 seeds). Center: Content (Reasoning EM) — both directions produce nearly identical degradation at extreme α. Right: Safety (Alignment) — corrective direction shows stronger modulation. The dissociation is precise: format control is direction-specific, content degradation is direction-agnostic.](../results/exp7/plots/0C_rand_matched_overlay.png)
+
+This yields a precise characterization: the corrective direction is a **format-specific signal superposed in the residual stream** whose modulation selectively controls governance metrics while having no more impact on content than random noise of equal magnitude. The format-content dissociation is not merely "format degrades more than content" but the stronger claim that **format degradation is direction-specific while content degradation is direction-agnostic**.
+
+#### 3.3.5 The corrective signal is MLP-encoded
+
+We test four intervention formulas at the corrective layers to determine which computational substrate carries the corrective signal (Figure 6b):
+
+(i) **MLP projection removal** (our canonical method): modulates the corrective direction's contribution to MLP output only. Produces clean governance dose-response.
+
+(ii) **MLP additive**: adds the corrective direction scaled by MLP activation norm. Produces identically zero effect on all metrics at all α values — the five data points for each metric are identical to 6+ decimal places. The corrective signal is directional, not magnitude-based.
+
+(iii) **Attention projection removal**: modulates the corrective direction's contribution to attention output. Near-zero effect (all metrics within ±0.01 of baseline) — the corrective signal does not flow through attention.
+
+(iv) **Residual stream projection removal**: removes the corrective direction from the full residual stream. **Catastrophically destructive**: at α = 0, MMLU crashes from 0.51 to 0.02, reasoning from 0.53 to 0.0. The model becomes essentially non-functional. At α = 2.0, all metrics collapse to 0.0.
+
+![Figure 6b: Intervention formula comparison (0I). Four methods tested at corrective layers (20–33): MLP projection removal (canonical, red), MLP additive (magenta), residual stream projection removal (green), and attention projection removal (cyan). Left: Governance (STR). Center: Content (Reasoning EM). Right: Safety (Alignment). Only MLP projection removal modulates governance; residual stream intervention is catastrophically destructive; attention and additive interventions have no effect.](../results/exp7/plots/0I_formula_comparison.png)
+
+This pattern reveals three things. First, the corrective signal is **stored in MLP outputs**, consistent with MLPs as key-value memory stores (Geva et al., 2022) — a finding supported by the matched-prefix MLP graft ablation (§3.3.9), which increases late KL-to-own-final and moves PT hidden-state predictions toward the IT teacher across five dense families, with a separate concordant DeepSeek MoE case. Second, the signal is **directional, not magnitude-based** — the additive intervention's complete failure (zero effect at every α value) confirms the linear representation hypothesis (Park et al., 2023): the corrective computation is implemented as a *direction* in activation space, and modulating it requires projection-based intervention, not magnitude scaling. Third, the residual stream catastrophe demonstrates **superposition** (Elhage et al., 2022): the corrective direction is superposed with many other features in the residual stream, and removing it from the full residual destroys co-encoded information that the MLP-specific intervention preserves. The surgical precision of MLP projection removal — modulating governance while preserving content — is only possible because it targets the component where the corrective signal is generated, before superposition with other signals in the residual stream.
+
+#### 3.3.6 Template ablation: the corrective stage is weight-encoded
+
+All primary experiments use each IT model's native chat template — the format it was trained with. To test whether the corrective stage depends on the template's input-level "be an assistant" signal or is encoded in the model weights themselves, we run a template-removal ablation on Gemma.
+
+The δ-cosine profile is virtually identical between IT-with-template and IT-without-template across all 34 layers (Figure S32, Appendix A). The A1 α-sweep on template-free IT preserves its dose-response shape: format metrics decline as α → 0 and further as α becomes negative. The no-template baseline is lower for some format metrics — the template does contribute to format activation — but the corrective direction modulates format quality above and beyond the template's contribution. MMLU remains flat in both conditions. The template and the corrective stage are additive and separable: the template provides an input-level formatting signal, and the corrective stage provides a weight-level format transformation that operates independently.
+
+This ablation confirms that the corrective stage is a property of the IT model's weights, not an artifact of input wrapping. Even when the IT model processes raw text outside its trained input distribution, the late-layer corrective computation persists — strong evidence that the phenomena documented in §3.1–3.2 reflect genuine weight-level reorganization. Template ablation has been validated on Gemma; extending this ablation to all six families is planned.
+
+#### 3.3.7 Co-modulation of format quality and convergence speed
+
+The observations in §3.1–3.2 documented slower convergence and format-token targeting as co-occurring phenomena. Here we show they are co-modulated by the corrective direction, establishing their shared mechanistic basis.
+
+**Convergence speed tracks α continuously.** During the A1 experiments, we compute the convergence gap at each α value. As α decreases from 1 toward 0, the convergence gap shrinks — IT's KL-to-final curve moves toward PT's. At α = 0 (full removal), IT's convergence profile closely matches PT's. Amplification (α > 1) increases the gap. Under the supporting threshold-based metric, the median commitment layer shifts earlier as α → 0 and later as α increases. The relationship is approximately linear, paralleling the format dose-response.
+
+This is a key result: modulating the corrective direction's strength by a single scalar α simultaneously modulates format quality and convergence speed in a correlated fashion. Both are downstream consequences of the same late-layer computation.
+
+**Under progressive layer skip (Figure S4).** When corrective layers are progressively removed (removing N consecutive layers from the end of the corrective stage), convergence accelerates — with fewer corrective layers, the model has less computational budget for correction and must converge sooner. At 3 layers removed (skip layers 31–33), format compliance drops to 0.80 while coherence remains at 0.92 — a format-coherence dissociation that mirrors the format-content dissociation in the α-sweep. At 6+ layers removed, both degrade. At 14 layers removed (the entire corrective stage), output collapses into incoherent text. This progressive degradation pattern independently supports the layer-specificity finding: the corrective computation is not uniformly distributed but concentrated in specific layers.
+
+Full progressive layer-skip results are in Figure S4 (Appendix A).
+
+#### 3.3.8 Direction injection into PT
+
+We also test the converse: injecting the corrective direction into PT (A2 experiment, h_ℓ ← h_ℓ + β · ‖h_ℓ‖ · d̂_ℓ, β ∈ [−5, +5]).
+
+**Results are noisy (Figure S3, Appendix A).** Unlike A1's clean dose-response, A2 shows inconsistent format improvement under injection. Content metrics remain flat, confirming the direction does not encode factual knowledge even when injected into a different model.
+
+**Interpretation.** The asymmetry between A1 (clean ablation) and A2 (noisy injection) is itself informative and constitutes a control. IT was trained to produce and *use* the corrective signal as part of a learned circuit — downstream layers know how to interpret it. PT's downstream weights do not. This is consistent with the corrective stage being a *learned computational mechanism* rather than merely a direction in activation space: the corrective signal only works within the circuit that was trained to use it. We base our causal claims on the A1 ablation evidence.
+
+#### 3.3.9 MLP weight graft ablation: matched-prefix evidence across five dense families plus a DeepSeek MoE case
+
+The steering experiments in §3.3.1–3.3.8 provide precise causal evidence for Gemma. To ask whether the same late computation is encoded in MLP weight changes across architectures, we conduct a complementary graft ablation that requires no direction extraction and no steering formula — only the raw IT MLP weights themselves.
+
+**Scope.** We report pooled counts for the five dense families (Gemma 3 4B, Llama 3.1 8B, Qwen 3 4B, Mistral 7B, OLMo 2 7B). We additionally ran the matched-prefix graft on DeepSeek-V2-Lite and found the same qualitative direction of effect, but we do not pool it with the dense-family count because its MoE graft replaces not only expert weights but also the router and expert-selection behavior, making the intervention qualitatively different from the dense-model swap.
+
+**Exploratory free-running graft.** We first ran a free-running A/B graft on 2,936 prompts (Figures S40a–c). Those runs suggested elevated KL-to-final in 5/5 and partial reproduction of negative δ-cosine, but rapid autoregressive divergence made the effect sizes hard to interpret. We therefore treat Figures S40a–c as exploratory and base our main graft claim on a cleaner matched-prefix design.
+
+**Matched-prefix design.** For each prompt, pipeline **C** is the full IT model, run free with its native chat template. Pipeline **A'** is the PT backbone, teacher-forced to follow C's emitted continuation. Pipeline **B** uses the same PT backbone but replaces MLP blocks at layers >= onset (60% depth) with the corresponding IT MLP weights; it is teacher-forced to follow that same C continuation. We additionally run a template ablation branch: **A'_tmpl** and **B2** use the IT chat-templated prompt but the same PT backbone and the same teacher tokens. Because A' and B (and A'_tmpl and B2) process identical generated token histories, their internal differences isolate the effect of late MLP weight changes rather than context drift.
+
+The stored free-argmax sequences also show that the graft changes PT next-token preferences rather than only hidden-state trajectories. Because A' and B share the same PT tokenizer, their free-argmax token IDs are directly comparable: across the five dense families, the mean first A'↔B free-argmax divergence occurs after 2.1–15.7 steps depending on model. We do not use B↔C tokenizer-ID divergence as quantitative evidence here because PT and IT token IDs are not directly comparable across all families with tokenizer mismatch; the stronger behavioral bridge remains a separate free-running A/B/C evaluation.
+
+**Result 1: late KL-to-own-final increases in 5/5 dense families under matched prefix.** The cleanest signal is threshold-free. Averaging over the final 20% of layers, B exceeds A' by +0.58 nats in Gemma, +0.45 in Qwen, +0.34 in Llama, +0.19 in OLMo, and +0.12 in Mistral. The template branch is nearly identical (+0.58, +0.45, +0.34, +0.19, +0.12 respectively, up to rounding). Thus late IT MLP weights are sufficient to recreate the delayed-convergence signature under matched token history in all five dense families.
+
+DeepSeek's separate MoE case is concordant: late KL-to-own-final increases by +0.18 nats in the raw branch and +0.18 in the template branch. Thresholded commitment layers tell the same story more weakly in the dense family pool. Mean KL-threshold commitment (tau = 0.1 nats) shifts later in 4/5 dense families under the graft (Llama +0.07 layers, Qwen +0.08, OLMo +0.15, Mistral +0.17), with Gemma as the lone negative case (−0.26). DeepSeek again follows the positive direction (+0.21 raw, +0.20 templated). We therefore treat the threshold-free late KL signal as the cleaner primary readout.
+
+**Result 2: the grafted PT model moves closer to the IT teacher's internal distribution in 5/5 dense families, with DeepSeek again concordant.** Under the shared PT readout used for the apples-to-apples comparison, late cross-pipeline KL is lower for B than for A' in all five dense families: −0.28 nats (Gemma), −0.10 (Qwen), −0.09 (Llama), −0.12 (OLMo), and −0.06 (Mistral). The template branch yields nearly identical values. DeepSeek shows the same sign (−0.07 raw, −0.09 templated). Replacing only the late MLP blocks therefore moves the PT backbone partway toward the IT model's internal predictive geometry even when the token history is held fixed. We base the main claim on this shared-basis readout because it keeps the decoding basis fixed across pipelines.
+
+![Figure S41: Matched-prefix MLP graft trajectories across the five dense families plus a separate DeepSeek-V2-Lite MoE case. Pipeline C (IT) generates freely; PT control A' and grafted B are then forced to follow the same continuation. Solid lines show the raw-prompt branch and dashed lines the chat-template branch. The graft consistently reduces cross-KL to the IT teacher while reproducing the negative δ-cosine signature only partially in the dense-model pool.](../results/exp11/plots/exp11_exp3_400rand_v11_teacherforced/overview_trajectories.png)
+
+**Result 3: reproduction of the negative δ-cosine pattern is partial, not universal.** In the final 20% of layers, B is more negative than A' in Gemma (−0.023), Mistral (−0.015), and OLMo (−0.023), but slightly more positive in Llama (+0.021) and Qwen (+0.004). The template branch is almost identical. DeepSeek is concordant with the more negative cases (−0.066 raw, −0.065 templated), but because it is an MoE swap we continue to describe the negative δ-cosine recovery as partial in the dense-model pool (3/5) rather than elevate it to a pooled 4/6 claim. Thus the matched-prefix graft replicates delayed convergence robustly, but only partially recovers the late opposition geometry. This matters for interpretation: late IT MLP weights are sufficient for much of the convergence signature, but the full oppositional pattern may also depend on the surrounding circuit, including attention, layernorm statistics, or other IT-specific components.
+
+**What this experiment does not show.** Because A', B, A'_tmpl, and B2 are teacher-forced to C's emitted continuation, whole-response behavioral outputs are identical by construction. We therefore do not treat whole-response paragraph/header/bullet counts from these teacher-forced outputs as evidence; at most they are implementation sanity checks. This experiment cannot answer whether the graft alone is sufficient to produce assistant-style output behavior. It isolates an internal-mechanism question: does replacing late PT MLPs with IT MLPs recreate IT-like convergence dynamics under matched input? The answer is yes for delayed convergence (5/5) and only partial for late negative δ-cosine (3/5).
+
+The matched-prefix design also clarifies a negative result. A BPE-level structural-token mass proxy under tuned-lens readout remains tiny and inconsistent in sign across models (late-layer B−A' differences on the order of 10^-4). We therefore do not treat this proxy as a reliable cross-model behavioral readout. Output-level governance must instead be evaluated in a separate free-running A/B/C comparison with judge-based metrics.
+
+**Summary and interpretation.** The matched-prefix graft strengthens the paper's shared-mechanism claim. It shows that late IT MLP weights, transplanted into a PT backbone, are sufficient to (i) increase late KL-to-own-final in 5/5 dense families and (ii) move PT internal predictions closer to the IT teacher in 5/5, with near-identical effects in raw and chat-templated prompt branches. A separate DeepSeek-V2-Lite MoE case is concordant on both internal readouts and also shows a negative late δ-cosine shift, but we keep it separate because the intervention changes routing as well as expert weights. The graft does not, however, establish output-level governance on its own, and it does not universally reproduce the negative δ-cosine geometry in the dense-model pool. Together with the steering evidence (§3.3.1–3.3.7), the most defensible interpretation is that instruction tuning introduces a late MLP computation that jointly supports slower convergence and assistant-style control, while the full behavioral realization of that computation may depend on a broader IT circuit than late MLP weights alone.
+
+---
+
+## 4. Deeper Characterization
+
+Having established the corrective stage's existence (§3.1), its causal link to slower prediction convergence (§3.2), and its functional role in format/register control (§3.3), we now characterize the phenomenon more deeply: what the additional representational complexity encodes (§4.1), how the corrective stage relates to previously identified directions in activation space (§4.2), and what the alignment tax looks like at the level of individual features (§4.3).
+
+### 4.1 Geometric signature: ID expansion confirms the uncommitted state
+
+The slower convergence documented in §3.2 has a geometric counterpart. If IT models' intermediate predictions are further from their final output, their late-layer representations should span more independent dimensions — they have not yet collapsed to a single prediction direction. Using the TwoNN estimator (Facco et al., 2017), we test this prediction directly (Figure 8).
+
+![Figure 8: Intrinsic dimensionality profiles across six model families. Red = IT, blue dashed = PT. IT consistently shows higher ID than PT in late layers across all six architectures.](../results/cross_model/plots/L8_id_profiles.png)
+
+**Cross-model result.** Across all six families — including Qwen, which lacks the corrective stage — IT models show higher ID than PT in the final layers:
+
+| Model | PT last-layer ID | IT last-layer ID | Δ ID | Mean Δ (depth > 0.8) |
+|---|---|---|---|---|
+| Gemma 3 4B | 17.9 | 19.2 | +1.3 | +0.8 |
+| Llama 3.1 8B | 16.4 | 17.8 | +1.5 | +0.3 |
+| Qwen 3 4B | 16.4 | 17.7 | +1.3 | +0.6 |
+| Mistral 7B v0.3 | 20.0 | 21.6 | +1.6 | +0.9 |
+| DeepSeek-V2-Lite | 17.8 | 21.9 | +4.1 | +4.0 |
+| OLMo 2 7B | 20.9 | 25.5 | +4.7 | +3.3 |
+
+This is our most consistent cross-model result (6/6 families), and its universality suggests that ID expansion is a necessary geometric consequence of instruction tuning. The effect is particularly pronounced in OLMo (+4.7) and DeepSeek (+4.1), both of which underwent multi-stage post-training.
+
+**Connection to convergence gap.** Higher late-layer ID and slower convergence are two views of the same phenomenon: representations spanning more independent dimensions have not yet collapsed to a single prediction direction — they are in an uncommitted state. PT representations contract toward a low-dimensional output manifold by mid-depth; IT representations maintain a higher-dimensional state through the corrective stage, collapsing only in the final layers. All three phenomena — ID expansion, convergence delay, and δ-cosine opposition — are universal (6/6), consistent with a single underlying mechanism whose intensity varies across architectures.
+
+**Relationship to the information bottleneck.** The information bottleneck (IB) theory (Shwartz-Ziv & Tishby, 2017) predicts late-layer compression. Our finding of *increased* late-layer ID initially appears to create tension, but recent work has refined the picture. Saxe et al. (2018) showed IB compression depends on activation function. More directly, Cheng et al. (2024) identified a high-dimensional "abstraction phase" at intermediate layers, and Song et al. (2025) observed expansion-contraction patterns. IT models appear to *extend* the high-dimensional abstraction phase, maintaining representational complexity through a longer portion of the forward pass before final contraction. High intrinsic dimensionality does not imply poor compression — the additional dimensions may carry task-relevant information (format, register, safety) required by post-training objectives.
+
+**What does ID expansion encode?** Our causal experiments (§3.3) provide indirect evidence: content metrics are flat across the full intervention range while format metrics show dose-response, suggesting content and format information may occupy partially separable subspaces. Direct tests — PCA decomposition of late-layer representations, linear probing for format vs. content features, and measuring whether ID decreases under corrective direction removal — could establish whether the extra dimensions specifically encode post-training objectives. We flag these as priority experiments (§5).
+
+### 4.2 Connections to known directions in activation space
+
+The corrective stage we identify provides an architectural substrate that may unify several previously disconnected findings about directions in transformer activation space.
+
+**Refusal direction (Arditi et al., 2024).** Arditi et al. showed that refusal behavior in language models is mediated by a single direction. Our steering experiments show that modulating the corrective direction degrades refusal capability (S1 drops from 0.95 to 0.33 at α ≤ −2), suggesting the refusal direction is one component of the broader corrective stage. A direct geometric test — computing cosine similarity between Arditi et al.'s refusal direction and our corrective direction at each layer — would determine the degree of overlap. We predict moderate cosine (0.3–0.6): partial overlap confirming that refusal is one component but not the entirety of the corrective stage. If cosine is high, the corrective direction may approximate the refusal direction; if low, they are independent signals co-localized in late layers.
+
+**Assistant Axis (Lu et al., 2026).** Lu et al. identified the leading PC of persona variation as a direction that generalizes across model families and enables steering toward or away from the default helpful persona. Our corrective direction and the Assistant Axis are extracted through related but distinct procedures: we compute mean IT–PT MLP activation differences at corrective layers, while Lu et al. extract the leading PC across diverse character archetypes. A natural question is whether these directions overlap. A double-dissociation experiment — steering our corrective direction while measuring persona drift, and steering the Assistant Axis while measuring our format metrics (STR, G1, G2) — would determine whether format control and persona identity are the same signal or separable components. We predict moderate overlap (cosine 0.4–0.7): the corrective direction more strongly modulates format, the Assistant Axis more strongly modulates persona consistency, and both affect safety. If confirmed, this would decompose the corrective stage into at least two functional sub-components — format/register control and persona identity — co-localized in the same late-layer computational substrate.
+
+**Safety layers (Li et al., 2025) and preference layers (Chaudhury, 2025).** Li et al. found contiguous safety layers whose preservation is critical during fine-tuning; Chaudhury localized alignment to mid-stack preference layers. Our corrective stage provides a mechanistic account: the "safety layers" and "preference layers" may correspond to layers where the corrective computation is strongest (layers 20–33 in Gemma), and their importance for fine-tuning preservation reflects the fragility of the corrective direction under weight perturbation.
+
+**DoLA contrastive decoding (Chuang et al., 2024).** DoLA improves factual accuracy by contrasting early and final layer predictions. Our framework suggests DoLA succeeds by contrasting pre-corrective and post-corrective layers, which diverge more in IT models — the corrective stage creates a larger "gap" between intermediate and final predictions for DoLA to exploit.
+
+### 4.3 Feature-level reorganization and the alignment tax
+
+**Feature repertoire.** At corrective layers, IT uses a substantially different feature set than PT (Figure S7). IT's Gini coefficient is 0.53 vs. PT's 0.69, and IT requires 2,799 features (N50) to account for half the total activation mass vs. PT's 919 — a 3× broadening of the active feature repertoire. Despite this broadening, the total number of active features per layer is nearly identical (IT: 16,344 vs PT: 16,283), indicating that IT redistributes activation mass across more features rather than activating additional features. IT's median activation magnitude is higher (168.7 vs 137.5) with a heavier tail (p90: 315.2 vs 240.9), suggesting that IT's corrective features fire more strongly. Feature overlap between independently trained PT and IT transcoders is low (Jaccard at k=100: 0.149; at k=1000: 0.225), confirming that the two variants rely on substantially different computational strategies at corrective layers — though this metric conflates genuine divergence with dictionary misalignment. IT-amplified features preferentially boost structural tokens, while PT-amplified features boost content tokens.
+
+**Alignment tax quantification.** The "alignment tax" (Ouyang et al., 2022) — performance degradation from post-training — has been discussed qualitatively but not localized architecturally. In Gemma 3 4B, we quantify the fraction of computation allocated to corrective features as a function of layer depth (Figure S33, Appendix A). Early layers (1–11) allocate less than 2% of activation mass to IT-specific features. This rises to 14–16% in the corrective stage (layers 28–33), providing the first layer-resolved measurement of where the alignment tax concentrates. The computational footprint is modest — but its functional impact (§3.3) is disproportionate.
+
+**Feature-level steering.** Feature-level interventions (clamping format-classified features to zero) produced noisy results, which we attribute to polysemanticity, metric coarseness, and format computation being distributed across many features. Crosscoder-based decomposition (Lindsey et al., 2024) would provide a more principled basis for feature-level experiments.
+
+### 4.4 Attention entropy divergence
+
+A finer-grained view emerges from per-layer attention entropy. Computing the mean IT−PT entropy difference across all layers reveals a qualitative split: models with MoE or open-training regimes show entropy *expansion* (DeepSeek: +0.094, OLMo: +0.050), while dense models show entropy *contraction* (Mistral: −0.062, Gemma: −0.028, Qwen: −0.025, Llama: −0.010). The models with the largest late-layer ID expansion (DeepSeek: +4.1, OLMo: +4.7) are exactly those showing entropy expansion — but with only N=6 families and small absolute magnitudes (all |Δ| < 0.1 nats), this is an exploratory observation that motivates testing with larger model suites.
+
+### 4.5 DeepSeek's opposition–delay paradox
+
+DeepSeek-V2-Lite presents an interesting puzzle: it exhibits the second-strongest opposition pattern in our suite (δ-cosine difference of −0.79 at the terminal layer, −0.11 at 0.5–0.7 depth) yet a small convergence gap compared to models with similar opposition magnitude. One possibility is that MoE routing allows DeepSeek to implement correction more *efficiently* — routing correction to specialized experts rather than distributing it across many dense layers — achieving the same functional effect through expert specialization rather than requiring additional layers to recover from opposition.
+
+---
+
+## 5. Discussion
+
+### Slower convergence as the central phenomenon
+
+The three findings — slower prediction convergence, ID expansion, and corrective MLP opposition — are not independent observations but three readouts of a single computational change. IT models maintain representations in a high-dimensional, uncommitted state for longer before collapsing to a final prediction. The convergence gap is the temporal signature (via logit lens): IT's intermediate predictions are further from the final output at each late layer. The ID expansion is the geometric signature (representations span more dimensions during the deliberation window). The MLP opposition is the mechanistic signature (late-layer MLPs actively redirect residual stream vectors).
+
+This connects to Joshi et al.'s (2025) confidence correction phase: the model's content prediction is largely set by the time the corrective stage begins, but confidence calibration, formatting, and register selection require additional computation.
+
+### Why slower convergence matters
+
+**The convergence gap scales with difficulty.** High-confidence tokens show minimal excess KL while low-confidence tokens show the largest convergence gap (Figure 5D). This scaling, demonstrated in Gemma, is not predicted by a simple "formatting in late layers" account — formatting decisions should not depend on content confidence. It suggests the corrective stage performs a form of evidence accumulation, where low-confidence predictions trigger more extensive late-layer computation.
+
+**Convergence speed as a potential training objective.** Current post-training losses optimize the final output without directly rewarding the internal process that produces slower convergence. One could design auxiliary losses encouraging maintained uncertainty — e.g., a regularizer discouraging KL-to-final from dropping too fast, an entropy floor on intermediate-layer logit-lens predictions, or a convergence-gap target encouraging IT-like convergence profiles. Recent work provides converging evidence: Xu et al. (2025) showed that limiting confidence during training improves reasoning performance under test-time scaling, and RL entropy collapse has been identified as a scaling bottleneck (arXiv:2505.22617). Our framework provides a mechanistic interpretation: these interventions may work by encouraging models to maintain high-dimensional, uncommitted representations longer.
+
+**Connection to reasoning and test-time compute.** Chain-of-thought reasoning extends deliberation *externally* by generating reasoning tokens. The corrective stage extends deliberation *internally* within the forward pass. These may be complementary mechanisms: the corrective stage handles short-range deliberation (formatting, register, confidence) while chain-of-thought handles long-range deliberation (multi-step reasoning).
+
+### What replicates and what does not
+
+**Universal (6/6): slower convergence and ID expansion; late opposition is directionally consistent but heterogeneous.** All six families show IT converging more slowly than PT, confirmed by five independent convergence metrics under both tuned and raw logit lenses (§3.2). The mean KL-to-final is higher for IT in all six families under both lenses. ID expansion (6/6) provides supporting geometric evidence that IT representations remain in a higher-dimensional uncommitted state. Late-layer δ-cosine shifts are also directionally consistent across all six families, but their magnitude and spatial support vary substantially.
+
+This variation forms a natural continuum. At one end, Gemma and DeepSeek show strong, sustained opposition across the late-layer range (−0.20 to −0.27 mean shift) with large commitment delays. At the other end, Qwen and OLMo show weak opposition concentrated in the final 1–2 layers (about −0.04 mean shift) with smaller delays. This pattern is informative: it suggests the corrective mechanism admits degrees of implementation intensity rather than a strict present/absent dichotomy. Qwen's body-of-network opposition is genuinely at noise level (±0.01 across layers 24–34), with its signal driven by a terminal-layer spike — making it the weakest case in our sample and a natural stress test for any universal account.
+
+**Causal evidence: Gemma steering + five-dense-family matched-prefix graft + a concordant DeepSeek MoE case.** The directional steering experiments (§3.3.1–3.3.8) use Gemma 3 4B as the first fully validated case, demonstrating precise format-content dissociation via single-direction modulation. The matched-prefix graft ablation (§3.3.9) extends interventional evidence across five dense families without requiring direction extraction: transplanting late IT MLP weights into a PT backbone increases late KL-to-own-final in 5/5 dense families and moves PT internal predictions closer to the IT teacher in 5/5, while reproducing the negative δ-cosine pattern only partially in that dense-model pool (3/5). DeepSeek's separate MoE case is directionally concordant on all three internal readouts but is not pooled because its graft also changes routing. The two experiments are complementary: steering shows the corrective signal is *directional* within MLP activations; the graft shows that late IT MLP weights are sufficient to recreate much of the delayed-convergence signature under controlled token history. What remains open is behavioral sufficiency: because the graft is teacher-forced, it does not tell us whether late MLP weights alone are enough to produce assistant-style outputs in free-running generation. Extending the full steering pipeline to additional families and running a unified free-running A/B/C comparison are the highest-priority next steps.
+
+### Limitations
+
+**Tuned-lens quality is architecture-dependent.** The tuned logit lens provides substantially more faithful intermediate predictions than the raw logit lens for 5/6 models, but probe quality varies: Mistral achieves near-perfect final-layer KL (0.00 nats), while Qwen and DeepSeek have residual KL of ~0.70 nats, and Gemma's probes failed to converge (7.2 nats). For Gemma, we rely on the raw logit lens, which provides clean convergence without learned probes. To guard against probe-quality artifacts, we use five complementary convergence metrics including the threshold-free top-1 commitment that depends only on the argmax. All five metrics agree on the 6/6 universal delay pattern under both lenses (§3.2).
+
+**Opposition magnitude varies by over an order of magnitude.** While the direction of the δ-cosine shift is universal (6/6), its magnitude ranges from −0.021 (Llama) to −0.269 (Gemma). In Qwen and OLMo, the body-of-network opposition is near zero, with the signal driven by terminal-layer spikes. These spikes could partially reflect architectural boundary effects (the final layer's proximity to the unembedding matrix) rather than purely the corrective mechanism. The universality claim rests on the direction being consistent across all families and both lenses, not on every family showing equally strong opposition.
+
+**Logit-space specificity.** The convergence delay is specific to logit-space measurements — representation-space metrics (cosine similarity to final-layer hidden state, entropy convergence) show minimal IT–PT difference (Appendix D, Figure S36). We view this as informative rather than limiting: it indicates the corrective stage operates on the model's output distribution trajectory rather than its internal representation geometry, consistent with the geometric mechanism described in §3.2.
+
+**Steering limited to Gemma; graft extends interventional evidence but not dose-response.** The full directional steering pipeline (dose-response, format-content dissociation, direction specificity) has been validated only on Gemma, which is arguably the least representative model — it uses knowledge distillation (unique among six), shows uniquely concentrated weight changes, and has the strongest sustained δ-cosine opposition. The matched-prefix graft ablation (§3.3.9) extends interventional evidence to five dense models but demonstrates only that late IT MLP weights shift internal convergence metrics — not that the effect is direction-specific or format-selective. Whether the same precise format-content dissociation holds in OLMo or Llama remains an important open question addressable by running the full steering pipeline on those models.
+
+**Matched-prefix graft isolates internals, not behavior.** The teacher-forced graft resolves the largest methodological problem in our earlier free-running A/B experiment — autoregressive context drift — but introduces a different limitation: the emitted tokens of A', B, A'_tmpl, and B2 are identical by construction. The experiment therefore establishes internal-mechanism causality, not output-level behavioral sufficiency. A separate free-running A/B/C comparison is needed to test whether the grafted model actually moves toward IT in helpfulness, register, formatting, and refusal behavior.
+
+**Structural token proxy.** The BPE-level structural token probability mass (tier-1 mask applied to tuned-lens readout) is weak and inconsistent under the matched-prefix graft, with late-layer differences on the order of 10^-4. We therefore treat it as an auxiliary diagnostic rather than a decisive behavioral readout. More targeted behavioral metrics — answer-frame probability, judge-based register scoring, helpfulness/format ratings, and early-divergence token categorization in a free-running A/B/C comparison — are needed.
+
+**Dense-model pooled claim.** Our matched-prefix graft results are pooled over five dense families. DeepSeek-V2-Lite is now directionally concordant as a separate MoE case, but because its graft replaces router behavior as well as expert weights, we do not pool it with the dense-model count. Whether the same clean matched-prefix story extends to MoE models more broadly remains open.
+
+**Direction extraction confound.** IT and PT process different token sequences. Matched-token validation (0B) yields cosine 0.82, confirming the direction is primarily weight-driven, but per-layer variance is substantial.
+
+**Content preservation is bounded, not absolute — and the bound is direction-agnostic.** Content preservation holds within α ∈ [−0.5, 2] but breaks at extreme interventions. The projection-matched random control (0C) shows this collapse is generic perturbation, not direction-specific content encoding.
+
+**Alternative explanation: distributional shift.** The simplest alternative is that instruction tuning changes the output distribution and late layers manifest this most strongly. The sharp layer-specificity result (§3.3.3) partially addresses this — if distributional shift propagated backward, we would expect some mid-layer sensitivity, not the sharp cutoff at layer 20.
+
+### Open questions
+
+**Can the convergence gap be engineered?** Concrete candidates: (i) entropy floor on intermediate-layer predictions, (ii) ID regularizer maintaining high dimensionality through later layers, (iii) convergence-rate penalty encouraging IT-like slow convergence profiles, (iv) directly optimizing the convergence gap via differentiable logit-lens probes.
+
+**How does the corrective stage emerge during training?** OLMo 2 7B's public checkpoints (SFT → DPO → RLVR) offer a unique opportunity to track when the convergence gap and corrective opposition first appear. Preliminary evidence suggests the corrective stage is present after SFT and strengthened by preference optimization, but a systematic study across training stages remains future work.
+
+**What is the relationship between the corrective direction and the Assistant Axis?** A double-dissociation experiment would determine whether format control and persona identity are the same signal or separable components (§4.2).
+
+**PCA decomposition of the corrective direction.** Is the corrective direction one thing or several? If PC1 dominates (>60% variance), the rank-1 direction is justified; if distributed, the corrective stage decomposes into functional sub-directions.
+
+**Within-model cross-metric correlations.** With ~30 layers per model, within-model analysis provides substantially more statistical power than our N=6 cross-model comparisons.
+
+---
+
+## 6. Related Work
+
+**Layer-wise prediction dynamics.** The logit lens (nostalgebraist, 2020) revealed progressive prediction convergence; the tuned lens (Belrose et al., 2023) refined this with learned probes that substantially improve intermediate-layer faithfulness. We use the tuned lens as our primary convergence measurement, confirming that the convergence gap finding is not an artifact of raw logit-lens bias (§2.3, §3.2). DoLA (Chuang et al., 2024) exploits the gap between early and final layer predictions — our framework suggests DoLA succeeds by contrasting pre-corrective and post-corrective layers. Joshi et al. (2025) demonstrated a distinct upper-layer confidence correction phase, aligning with our convergence gap observation.
+
+**Post-training effects on representations.** Jain et al. (2024) showed safety fine-tuning disrupts pretrained features. Chaudhury (2025) localized alignment to mid-stack layers. Ouyang et al. (2022) documented the alignment tax. Lin et al. (2024) showed much of alignment is stylistic and reproducible via in-context learning. Wu et al. (2024) showed that instruction tuning systematically reshapes attention and FFN representations. Our work complements these analyses by localizing a late corrective stage and linking it to explicit convergence dynamics.
+
+**Activation steering and affine editing.** Representation Surgery (Singh et al., 2024) and later activation-steering work on instruction following (Stolfo et al., 2024) show that low-dimensional activation edits can substantially alter model behavior. Our use of related interventions is mechanistic rather than performance-oriented: we ask what computation is being edited, where it lives, and which internal readouts move with it.
+
+**Refusal, safety, and persona directions.** Arditi et al. (2024) identified a refusal direction. Li et al. (2025) found safety layers. Lu et al. (2026) identified the Assistant Axis. Recent work also argues that refusal behavior is not exhausted by a single global direction (Joad et al., 2026). We therefore do not claim that our corrective direction or grafted late-MLP difference fully explains assistant behavior. Instead, we identify a late-layer substrate whose modulation changes convergence dynamics and, in Gemma, causal behavior; refusal, safety, and persona directions may be specific functional components implemented within that broader substrate.
+
+**Intrinsic dimensionality.** Ansuini et al. (2019) found ID first rises then falls in CNNs. Cheng et al. (2024) identified a high-dimensional abstraction phase. Song et al. (2025) showed expansion-contraction patterns. Our finding that IT increases late-layer ID is consistent with extending the high-dimensional phase. Aghajanyan et al. (2021) showed fine-tuned models operate in low intrinsic-dimensionality *parameter* subspaces — complementary to our finding of expanded *activation* dimensionality.
+
+**MLP computation and linear representations.** Geva et al. (2022) characterized MLPs as key-value memories. Meng et al. (2022) demonstrated factual editing through MLP updates. Our intervention formula comparison (§3.3.5) extends this: the corrective signal is stored in MLP outputs with attention carrying none. Park et al. (2023) provided evidence for the linear representation hypothesis; our finding that projection removal (but not additive scaling) modulates the corrective signal confirms this. The residual stream catastrophe (§3.3.5) is consistent with the superposition hypothesis (Elhage et al., 2022).
+
+**Computational stages.** Elhage et al. (2021) established the residual stream framework. Lad et al. (2024) characterized four pretrained stages. Our finding extends this: instruction tuning transforms "residual sharpening" into active corrective computation.
+
+**Delayed commitment in biological systems.** The delayed commitment we observe parallels evidence accumulation in biological decision-making. Gold & Shadlen (2007) showed neural decision circuits delay commitment proportionally to stimulus difficulty — closely paralleling our confidence-stratified commitment finding. Friston (2005) formalized this within predictive processing: biological systems maintain multiple competing hypotheses as long as prediction error remains high. Levelt (1989) described staged speech production where commitment timing scales with lexical competition. The functional convergence on difficulty-scaled delayed commitment across such different substrates is suggestive of a deeper computational principle.
+
+---
+
+## 7. Conclusion
+
+Instruction tuning does not scatter behavioral changes randomly across the network. By comparing pretrained and instruction-tuned model variants layer by layer across six architectures, we identify a structured reorganization of the forward pass that is universal in its convergence signature and heterogeneous in its geometric expression.
+
+Two observations are strongest. First, slower prediction convergence and late-layer intrinsic-dimensionality expansion are universal in our six-family suite. Second, late-layer MLP opposition is directionally consistent but varies sharply in magnitude and spatial extent: Gemma and DeepSeek show strong sustained effects, while Qwen and OLMo concentrate their signal in the final layers. In Gemma 3 4B, we provide causal evidence that the corrective stage selectively encodes format and register computation while preserving factual content, and that the convergence gap scales with token difficulty. A matched-prefix MLP graft ablation adds cross-model mechanistic support across five dense architectures, with a separate concordant DeepSeek MoE case: transplanting late IT MLP weights into a PT backbone increases late KL-to-own-final in all five dense models and moves PT internal predictions toward the IT teacher in all five, while only partially reproducing the negative δ-cosine geometry in that dense-model pool. The most defensible synthesis is therefore not that delayed commitment itself causes assistant behavior, but that instruction tuning introduces a late MLP computation whose downstream consequences include both slower convergence and assistant-style control.
+
+Whether the corrective stage can be directly optimized, and whether the magnitude of corrective opposition predicts the quality of format control across architectures, are immediate next questions.
+
+---
+
+## References
+
+Aghajanyan, A., et al. (2021). Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning. *ACL 2021*. arXiv:2012.13255.
+
+Ansuini, A., et al. (2019). Intrinsic Dimension of Data Representations in Deep Neural Networks. *NeurIPS 2019*. arXiv:1905.12784.
+
+Arditi, A., et al. (2024). Refusal in Language Models Is Mediated by a Single Direction. *arXiv:2406.11717*.
+
+Belrose, N., et al. (2023). Eliciting Latent Predictions from Transformers with the Tuned Lens. *COLM 2024*. arXiv:2303.08112.
+
+Bricken, T., et al. (2023). Towards Monosemanticity: Decomposing Language Models with Dictionary Learning. *Anthropic*.
+
+Chaudhury, A. (2025). Alignment is Localized: A Causal Probe into Preference Layers. *arXiv:2510.16167*.
+
+Cheng, E., Doimo, D., Kervadec, C., Macocco, I., Yu, J., Laio, A., & Baroni, M. (2024). Emergence of a High-Dimensional Abstraction Phase in Language Transformers. *ICLR 2025*. arXiv:2405.15471.
+
+Chuang, Y., et al. (2024). DoLA: Decoding by Contrasting Layers Improves Factuality. *ICLR 2024*. arXiv:2309.03883.
+
+Dunefsky, J., et al. (2024). Transcoders Find Interpretable LLM Feature Circuits. *arXiv:2406.11944*.
+
+Elhage, N., et al. (2021). A Mathematical Framework for Transformer Circuits. *Anthropic*.
+
+Elhage, N., et al. (2022). Toy Models of Superposition. *Anthropic Transformer Circuits Thread*. arXiv:2209.10652.
+
+Facco, E., et al. (2017). Estimating the Intrinsic Dimension of Datasets by a Minimal Neighborhood Information. *Scientific Reports*.
+
+Friston, K. (2005). A Theory of Cortical Responses. *Philosophical Transactions of the Royal Society B*, 360(1456), 815–836.
+
+Geva, M., Schuster, R., Berant, J., & Levy, O. (2022). Transformer Feed-Forward Layers Are Key-Value Memories. *EMNLP 2022*. arXiv:2012.14913.
+
+Gold, J. I., & Shadlen, M. N. (2007). The Neural Basis of Decision Making. *Annual Review of Neuroscience*, 30, 535–574.
+
+Hyland, K. (2005). *Metadiscourse: Exploring Interaction in Writing*. Continuum.
+
+Jain, S., Lubana, E. S., Oksuz, K., Joy, T., Torr, P. H. S., Sanyal, A., & Dokania, P. K. (2024). What Makes and Breaks Safety Fine-tuning? A Mechanistic Study. *NeurIPS 2024*. arXiv:2407.10264.
+
+Joshi, A., Ahmad, A., & Modi, A. (2025). Calibration Across Layers: Understanding Calibration Evolution in LLMs. *EMNLP 2025*. arXiv:2511.00280.
+
+Lad, F., et al. (2024). The Remarkable Robustness of LLMs: Stages of Inference? *arXiv:2406.19384*.
+
+Levelt, W. J. M. (1989). *Speaking: From Intention to Articulation*. MIT Press.
+
+Li, Z., et al. (2025). Safety Layers of Aligned LLMs. *arXiv preprint*.
+
+Lin, B. Y., et al. (2024). The Unlocking Spell on Base LLMs. *ICLR 2024*.
+
+Lindsey, J., Templeton, A., Marcus, J., Conerly, T., Batson, J., & Olah, C. (2024). Sparse Crosscoders for Cross-Layer Features and Model Diffing. *Transformer Circuits Thread*.
+
+Joad, R., et al. (2026). There Is More to Refusal than a Single Direction. *arXiv:2602.02132*.
+
+Lu, C., Gallagher, J., Michala, J., Fish, K., & Lindsey, J. (2026). The Assistant Axis: Situating and Stabilizing the Default Persona of Language Models. *arXiv:2601.10387*.
+
+Meng, K., Bau, D., Andonian, A., & Belinkov, Y. (2022). Locating and Editing Factual Associations in GPT. *NeurIPS 2022*. arXiv:2202.05262.
+
+Nanda, N., & Lieberum, T. (2022). A Mechanistic Interpretability Analysis of Grokking. *ICLR MATH-AI Workshop 2023*.
+
+nostalgebraist. (2020). interpreting GPT: the logit lens. *LessWrong*.
+
+Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C. L., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al. (2022). Training Language Models to Follow Instructions with Human Feedback. *NeurIPS 2022*. arXiv:2203.02155.
+
+Park, K., Choe, Y. J., & Veitch, V. (2023). The Linear Representation Hypothesis and the Geometry of Large Language Models. *arXiv:2311.03658*.
+
+Singh, A., et al. (2024). Representation Surgery: Theory and Practice of Affine Steering in Language Models. *arXiv:2402.09631*.
+
+Rafailov, R., et al. (2023). Direct Preference Optimization: Your Language Model Is Secretly a Reward Model. *NeurIPS 2023*. arXiv:2305.18290.
+
+Saxe, A. M., et al. (2018). On the Information Bottleneck Theory of Deep Learning. *ICLR 2018*.
+
+Shwartz-Ziv, R., & Tishby, N. (2017). Opening the Black Box of Deep Neural Networks via Information. *arXiv:1703.00810*.
+
+Song, Y., et al. (2025). Bridging the Dimensional Chasm: Uncover Layer-wise Dimensional Reduction in Transformers through Token Correlation. *arXiv:2503.22547*.
+
+Templeton, A., et al. (2024). Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet. *Anthropic*.
+
+Stolfo, A., et al. (2024). Improving Instruction-Following in Language Models through Activation Steering. *arXiv:2410.12877*.
+
+Wei, R., Du, R., Yu, H., Tiwari, D., Li, J., Xu, Z., & Wang, H. (2026). The Diminishing Returns of Early-Exit Decoding in Modern LLMs. *arXiv:2603.23701*.
+
+Wu, Z., et al. (2024). From Language Modeling to Instruction Following: Understanding the Behavior Shift in LLMs after Instruction Tuning. *NAACL 2024*.
+
+Xu, Z., et al. (2025). Rethinking Fine-Tuning when Scaling Test-Time Compute: Limiting Confidence Improves Mathematical Reasoning. *NeurIPS 2025*. arXiv:2502.07154.
+
+---
+
+## Appendix A: Supplementary Figures
+
+[Figure S1: Logit-lens KL-to-final trajectories for Gemma 3 4B, all prompt categories]
+[Figure S3: A2 — PT injection dose-response (noisy)]
+[Figure S4: Progressive layer-skip results (A5a)]
+[Figure S5: Cross-model δ-cosine heatmaps (all 6 families, PT and IT side by side)]
+[Figure S6: Cross-model attention entropy profiles (L9)]
+[Figure S7: Feature Gini coefficient and N50 distributions at corrective layers]
+[Figure S8: Per-category mind-change breakdown (STRUCTURAL, DISCOURSE, PUNCTUATION, FUNCTION, CONTENT)]
+[Figure S9: Confidence-stratified convergence gap at alternative thresholds (0.05, 0.1, 0.2 nats)]
+[Figure S10: Direction calibration sensitivity (0A). Convergence curves and bootstrap pairwise stability.](figures/fig_0A_direction_stability.png)
+[Figure S11: Matched-token direction validation (0B). Cosine similarity between free-running and forced-decoded directions.](figures/fig_0B_matched_token_cosine.png)
+[Figure S12: Corrective onset threshold sensitivity (0J). Onset layer vs. thresholds; detection success matrix.](figures/fig_0J_onset_sensitivity.png)
+[Figure S13: Projection-magnitude-matched random control (0C). Three panels with multiseed ±1σ bands.](figures/fig_0C_projection_matched.png)
+[Figure S14: Intervention formula comparison (0I). Four methods tested at corrective layers.](figures/fig_0I_formula_comparison.png)
+[Figure S15: Layer range sensitivity (0F). Four overlapping ranges tested.](figures/fig_0F_layer_range_sensitivity.png)
+[Figure S16: Calibration-evaluation split validation (0H). Five metric panels, three direction variants.](figures/fig_0H_calibration_split.png)
+[Figure S17: Generation-step × layer heatmap for Gemma 3 4B. Four panels showing δ-cosine stability across generation steps.](figures/it_plot10_generation_heatmap.png)
+[Figure S18: Per-layer weight change localization (PT → IT) across six families. Gemma shows late-layer concentration; others show uniform changes.](../results/cross_model/plots/L3_weight_diff.png)
+
+[Figure S19: Classifier perturbation sensitivity (0E). Maximum STR impact under four boundary perturbation scenarios and baseline category distribution.](../results/exp7/plots/0E_classifier_robustness.png)
+
+[Figure S20: Category enrichment under corrective direction amplification. STRUCTURAL tokens reach 30.5× enrichment at α = 5 while CONTENT is depleted to 0.68× at α = 3. DISCOURSE is depleted rather than enriched, distinguishing hard formatting from discourse control.](../results/exp7/plots/0E_enrichment.png)
+
+[Figure S21: Cross-model δ-cosine heatmaps. Full layer × generation-step heatmaps for all six families (PT and IT side by side), showing the distribution of MLP opposition across the full forward pass.](../results/cross_model/plots/L1_heatmaps.png)
+
+[Figure S22: Matched-token analysis at multiple thresholds. Cosine similarity between free-running and matched-token directions at four commitment thresholds (0.01, 0.02, 0.05, 0.10 nats), confirming the direction's weight-driven nature is threshold-robust.](../results/exp3/it_16k_l0_big_affine_t512/plots/plot_e3_4_matched_token.png)
+
+[Figure S23: Feature importance analysis. Per-feature contribution to the corrective computation at layers 20–33, showing the distribution of importance across transcoder features.](../results/exp3/it_16k_l0_big_affine_t512/plots/plot_e3_11_feature_importance.png)
+
+[Figure S24: Feature population dynamics. Gini coefficient and N50 distributions for IT vs PT at corrective layers, quantifying the broadening of the active feature repertoire.](../results/exp3/it_16k_l0_big_affine_t512/plots/plot_feature_populations.png)
+
+[Figure S25: Tuned-lens validation. KL(layer ℓ ‖ final) for all six models (PT variant). Red = tuned logit lens, blue = raw logit lens. The tuned lens substantially reduces KL at intermediate layers for 5/6 models (71–76% improvement at 60% depth for Llama, Mistral, DeepSeek, OLMo; 48% for Qwen). Gemma's tuned-lens probes failed to converge (KL remains 5.97–9.42 nats at all layers), likely due to its hybrid local/global attention pattern. For Gemma, the raw logit lens is used exclusively.](../results/exp9/plots/tuned_lens_validation_kl_to_final.png)
+
+[Figure S33b: Raw vs tuned logit lens commitment scatter. Per-step top-1 commitment layer under raw (x-axis) vs tuned (y-axis) logit lens. Points below the diagonal indicate tuned lens commits earlier (i.e., the tuned lens reveals earlier convergence that the raw lens misses). For most models, the tuned lens detects commitment at earlier absolute layers — consistent with its more faithful intermediate predictions — while preserving the IT > PT ordering.](../results/exp9/plots/L2_raw_vs_tuned_scatter.png)
+
+[Figure S34: Alternative commitment definitions. Commitment delay under majority-vote (≥90% subsequent layers KL < 0.1) for tuned and raw logit lens. The delay pattern replicates under this more conservative definition.](../results/exp9/plots/L2_commitment_tuned_majority_0.1.png)
+
+[Figure S35: KL threshold sensitivity (full). Mean commitment vs KL threshold τ for both tuned (red) and raw (blue) lenses. The IT–PT gap is consistent across thresholds from 0.05 to 1.0 nats.](../results/exp9/plots/L2_pure_kl_threshold_sensitivity.png)
+
+[Figure S36: Cosine and entropy commitment. Commitment defined via cosine similarity (cos(h_ℓ, h_final) > 0.95) and entropy convergence (|H_ℓ − H_final| < 0.2). These representation-space metrics show minimal IT–PT difference, establishing that the convergence gap is a logit-space phenomenon.](../results/exp9/plots/L2_commitment_cosine_0.95.png)
+
+[Figure S37: Commitment CDF by normalized depth. Cumulative distribution of commitment layers for PT (dashed) and IT (solid), four methods. The rightward shift of IT CDFs is visible under KL-based metrics but absent under top-1 for some models — confirming the delay is distributional, not merely an argmax effect.](../results/exp9/plots/L2_commitment_cdf_4methods.png)
+
+[Figure S40a: Exploratory free-running KL-to-final trajectories under MLP graft. Blue = Pipeline A (pure PT), Red = Pipeline B (PT + IT MLP graft). The effect direction is clear, but post-divergence context drift inflates the magnitudes.](../results/exp11/plots/exp11_extended/kl_diff_ba_vs_itpt.png)
+
+[Figure S40b: Exploratory free-running δ-cosine difference (B − A) per layer under MLP graft. Gemma and Mistral show clear sustained negative shifts; OLMo shows concentrated final-layer opposition.](../results/exp11/plots/exp11_extended/delta_cosine_diff_ba.png)
+
+[Figure S40c: Exploratory free-running cross-pipeline residual cosine similarity under MLP graft. Gemma shows near-unity alignment throughout, while Llama and Qwen diverge more in representation space.](../results/exp11/plots/exp11_extended/residual_cosine_alignment.png)
+
+[Figure S41: Matched-prefix MLP graft trajectories across the five dense families plus a separate DeepSeek-V2-Lite MoE case. Pipeline C (IT) generates freely; PT control A' and grafted B are then forced to follow the same continuation. Solid lines show the raw-prompt branch and dashed lines the chat-template branch. The graft consistently reduces cross-KL to the IT teacher while reproducing the negative δ-cosine signature only partially in the dense-model pool.](../results/exp11/plots/exp11_exp3_400rand_v11_teacherforced/overview_trajectories.png)
+
+[Figure S26: KL-to-final trajectories in Gemma 3 4B. IT (solid) shows elevated KL-to-final at corrective layers (20–33), converging to the 0.1 nat threshold later than PT (dashed). The divergence begins precisely at the corrective onset.](../results/exp3/it_16k_l0_big_affine_t512/plots/plot6_kl_trajectory.png)
+
+[Figure S27: Mind-change analysis in Gemma 3 4B. Per-layer mind-change rates by token category. IT's corrective layers (20–33) show a sharp spike in mind-changes, with the majority targeting structural and discourse tokens.](../results/exp3/it_16k_l0_big_affine_t512/plots/plot_e3_10_mind_change.png)
+
+[Figure S28: Adjacent-layer KL divergence in Gemma 3 4B. IT (solid red) shows three discrete revision phases — early (layers 5–6), mid (15–17), and corrective (27–28) — while PT (dashed blue) shows lower and more uniform prediction revision across layers.](../results/exp3/it_16k_l0_big_affine_t512/plots/plot_e3_12_adjacent_layer_kl.png)
+
+[Figure S29: Candidate reshuffling in Gemma 3 4B. Number of unique top-1 candidates encountered up to each layer. IT (red) shows rapid expansion at corrective layers; PT (blue) stabilizes earlier.](../results/exp3/it_16k_l0_big_affine_t512/plots/plot_e3_13_candidate_reshuffling.png)
+
+[Figure S30: Layer specificity — same α-sweep applied at three layer ranges. Red = corrective (20–33), blue = early (1–11), green = mid (12–19). Only corrective layers produce format dose-response.](../results/exp6/merged_A1_it_v4/plots/A1_layer_specificity_v5.png)
+
+[Figure S31: Direction specificity control. Red = corrective direction, blue = random unit vector at same layers. Only the corrective direction produces format dose-response.](../results/exp6/merged_A1_rand_it_v1/plots/A1_rand_vs_A1.png)
+
+[Figure S32: Template ablation. Solid = IT with template; dashed = IT without template; dotted = PT baseline. Dose-response shape is preserved without template.](../results/exp6/merged_A1_notmpl_it_v1/plots/A1_combined_tmpl_vs_notmpl.png)
+
+[Figure S33: Alignment tax localization in Gemma 3 4B. Fraction of total activation mass allocated to IT-amplified features by layer depth. Corrective layers (20–33) show 14–16% of activation mass at layers 28–33.](../results/exp3/it_16k_l0_big_affine_t512/plots/plot5_alignment_tax.png)
+
+## Appendix B: Evaluation Methodology
+
+[B1: LLM judge rubric definitions]
+[B2: Gold standard validation (κ scores)]
+[B3: Statistical testing approach]
+[B4: Prompt dataset construction]
+
+### B5: Direction extraction calibration (0A)
+
+Our corrective direction is computed as the mean IT–PT activation difference across generation records. To verify this is not a small-sample artifact, we test calibration stability via bootstrap resampling (n = 600 records, 50 resamples per subset size). The convergence curve (Figure S10, left) shows that the canonical direction stabilizes rapidly: pairwise cosine similarity between bootstrap samples exceeds 0.993 by n = 300 for all three layer groups (early, mid, corrective). Even at n = 100, cosine is above 0.92 — the direction is well-determined far below our full sample size. The per-layer bootstrap (Figure S10, right) confirms mean pairwise cosine > 0.98 at every layer, with corrective layers showing slightly higher variance (std = 0.004) than early layers (std = 0.002), consistent with the direction carrying more signal at corrective layers.
+
+### B6: Matched-token direction validation (0B)
+
+A potential confound in our direction extraction is that IT and PT generate different tokens, so the IT–PT activation difference could reflect token-content differences rather than weight-level representational changes. We address this via forced-decoded matched-token analysis (Figure S11). When IT and PT are forced to decode the same token sequence (governance-selected, i.e., tokens chosen by whichever model's token is used), the resulting IT–PT activation difference has cosine 0.82 with the free-running direction at corrective layers (mean across corrective layers 20–33). The reversed-governance condition yields mean cosine −0.59 — a sign flip confirming opposition-consistency. The result is noisier at individual layers (range 0.34–0.98 for governance-selected, −0.95–0.81 for reversed). The key takeaway: the direction is primarily weight-driven, not token-driven, but some token-content contribution cannot be fully excluded.
+
+### B7: Projection-magnitude-matched random control (0C)
+
+The raw random direction control (§3.3.4, Figure 6) has a known limitation: in d = 2560, a random unit vector projects ~50× less onto the residual stream than the corrective direction. We resolve this by scaling each random direction's perturbation to match the corrective direction's projection magnitude at each layer and token position. Five independent random seeds are used, with mean ±1σ bands reported.
+
+Results (Figure S13): On governance (STR), the corrective direction produces STR = 0.58 at α = 5 while the magnitude-matched random produces only STR = 0.20 — a 3× difference confirming direction-specificity. On content (reasoning EM), both directions produce nearly identical degradation curves. On safety (alignment behavior), the corrective direction shows somewhat stronger modulation. The multiseed analysis confirms these patterns are not single-seed artifacts: STR std < 0.05 and reasoning std < 0.06 across 5 seeds.
+
+### B8: Layer range sensitivity and single-layer importance (0F)
+
+Four overlapping ranges: 18–33, 20–33 (canonical), 20–31, and 22–33 (Figure S15). All produce comparable governance dose-response. Content metrics show a nuance: the broader 18–33 range produces slightly more content degradation at extreme α. Per-layer importance analysis reveals governance signal concentrates at layers 23, 28, 21, 25, and 32 — clustering near the commitment boundary.
+
+### B9: Calibration-evaluation split validation (0H)
+
+Three disjoint prompt subsets: canonical top-600, random-600, and bottom-600. Each produces nearly identical dose-response curves with overlapping 95% BCa bootstrap CIs (Figure S16). The corrective direction is a fundamental property of the IT–PT weight difference, observable from any sufficiently large prompt sample.
+
+### B10: Intervention formula comparison (0I)
+
+MLP projection removal produces clean dose-response. MLP additive: zero effect. Attention projection removal: near-zero. Residual stream projection removal: catastrophically destructive (MMLU: 0.51 → 0.02, reasoning: 0.53 → 0.0 at α = 0). This confirms the corrective signal is stored in MLP outputs and superposed with other features in the residual stream (Figure S14).
+
+## Appendix C: Token Classifier Specification and Robustness
+
+### C1: Classifier specification
+
+Five categories with priority order (first match wins): STRUCTURAL (regex-matched, 2.8% baseline), PUNCTUATION (1.2%), DISCOURSE (Hyland 2005 taxonomy, 0.5%), FUNCTION (closed-class, 34.9%), CONTENT (default, 59.9%).
+
+### C2: Perturbation robustness analysis
+
+Four perturbation scenarios tested. Only the STRUCTURAL/DISCOURSE boundary produces measurable sensitivity (Δ = 0.145 when merged — expected, as both capture formatting). Content-side perturbations produce Δ < 0.00001. No core finding depends on precise boundary choices.
+
+### C3: Category enrichment under intervention
+
+At α = 3, STRUCTURAL tokens are 11.9× enriched relative to baseline, PUNCTUATION 5.9×, while CONTENT is depleted to 0.68× and FUNCTION to 0.50×. At α = 5, STRUCTURAL reaches 30.5×. DISCOURSE enrichment does not track STRUCTURAL — it is depleted at extreme α (0.03× at α = 5), suggesting the corrective direction primarily controls hard formatting rather than soft discourse connectors.
+
+## Appendix D: Threshold and Onset Sensitivity
+
+Systematic threshold sweep (0J, Figure S12): across the five families with detectable sustained onset (all except Qwen), onset layer shifts by at most 5 layers as threshold varies from 0.5σ to 2.0σ. For the three robustly-detected models (Gemma, Mistral, OLMo), onset remains within 47–62% depth. The "suspiciously tight" ~59% onset reflects integer-layer arithmetic rather than a universal constant. Qwen's opposition concentrates in the final layer, precluding meaningful onset detection. The 0.1 nat KL threshold is validated empirically: below it, top-1 token remains unchanged in >99% of positions and top-5 set remains stable in >97%.
