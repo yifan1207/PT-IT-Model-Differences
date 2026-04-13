@@ -25,7 +25,7 @@ N_PROMPTS=400
 PROMPT_SEED=0
 CHUNK_SIZE=64
 RUN_PREFIX="exp11_exp3_400rand_v11_teacherforced"
-DATASET="exp3_all_outputs"
+DATASET="exp3"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in

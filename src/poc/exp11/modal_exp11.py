@@ -46,10 +46,12 @@ def _repo_root_for_local_paths() -> Path:
 DATASET_PATHS = {
     "eval_v2": "/root/data/eval_dataset_v2.jsonl",
     "exp3": "/root/data/exp3_dataset.jsonl",
+    "exp3_all_outputs": "/root/data/exp3_dataset.jsonl",
 }
 LOCAL_DATASET_PATHS = {
     "eval_v2": str((_repo_root_for_local_paths() / "data" / "eval_dataset_v2.jsonl")),
     "exp3": str((_repo_root_for_local_paths() / "data" / "exp3_dataset.jsonl")),
+    "exp3_all_outputs": str((_repo_root_for_local_paths() / "data" / "exp3_dataset.jsonl")),
 }
 BALANCED_8GPU_SHARDS = {
     "llama31_8b": 2,
