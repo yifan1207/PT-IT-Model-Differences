@@ -206,6 +206,12 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
+# Raw activation / residual dumps — regenerable, never commit
+*.npz
+*.npy
+*.pt
+*.safetensors
+
 # results — each experiment has plots/ and data/ tracked, everything else ignored
 # Tuned lens checkpoints (2.2GB, hours to retrain) are gitignored
 results/cross_model/checkpoints/

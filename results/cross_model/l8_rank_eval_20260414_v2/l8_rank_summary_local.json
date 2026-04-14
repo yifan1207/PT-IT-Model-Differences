@@ -1,0 +1,118 @@
+{
+  "rows": [
+    {
+      "model": "gemma3_4b",
+      "id_late_mean_pt": 8.460699180772375,
+      "pr_late_mean_pt": 11.224607520096683,
+      "erank_late_mean_pt": 80.00545961989185,
+      "pc1_late_mean_pt": 0.29470429115143565,
+      "id_late_mean_it": 8.549253141690238,
+      "pr_late_mean_it": 8.676529873640423,
+      "erank_late_mean_it": 43.43125106763585,
+      "pc1_late_mean_it": 0.30764810086419364,
+      "delta_id_late_mean": 0.0885539609178636,
+      "delta_pr_late_mean": -2.5480776464562602,
+      "delta_erank_late_mean": -36.574208552256,
+      "delta_pc1_late_mean": 0.012943809712757992
+    },
+    {
+      "model": "llama31_8b",
+      "id_late_mean_pt": 9.295276094160736,
+      "pr_late_mean_pt": 19.924665518697896,
+      "erank_late_mean_pt": 113.69484514805535,
+      "pc1_late_mean_pt": 0.17647213229956948,
+      "id_late_mean_it": 7.742241529809875,
+      "pr_late_mean_it": 28.463402778618022,
+      "erank_late_mean_it": 134.96653740264975,
+      "pc1_late_mean_it": 0.12791879774690829,
+      "delta_id_late_mean": -1.5530345643508605,
+      "delta_pr_late_mean": 8.538737259920126,
+      "delta_erank_late_mean": 21.2716922545944,
+      "delta_pc1_late_mean": -0.0485533345526612
+    },
+    {
+      "model": "qwen3_4b",
+      "id_late_mean_pt": 8.666650137122627,
+      "pr_late_mean_pt": 25.26278760227384,
+      "erank_late_mean_pt": 116.58314669636007,
+      "pc1_late_mean_pt": 0.13072627192916073,
+      "id_late_mean_it": 7.523342099819143,
+      "pr_late_mean_it": 20.054914083626297,
+      "erank_late_mean_it": 82.28949192264048,
+      "pc1_late_mean_it": 0.15662277816213174,
+      "delta_id_late_mean": -1.143308037303484,
+      "delta_pr_late_mean": -5.207873518647542,
+      "delta_erank_late_mean": -34.293654773719595,
+      "delta_pc1_late_mean": 0.025896506232971017
+    },
+    {
+      "model": "mistral_7b",
+      "id_late_mean_pt": 10.30502860137686,
+      "pr_late_mean_pt": 27.05103606661608,
+      "erank_late_mean_pt": 148.02624813635822,
+      "pc1_late_mean_pt": 0.13809537451729365,
+      "id_late_mean_it": 7.712289299705575,
+      "pr_late_mean_it": 25.30723325044394,
+      "erank_late_mean_it": 120.04499305592508,
+      "pc1_late_mean_it": 0.13431184071935212,
+      "delta_id_late_mean": -2.5927393016712843,
+      "delta_pr_late_mean": -1.743802816172142,
+      "delta_erank_late_mean": -27.981255080433144,
+      "delta_pc1_late_mean": -0.003783533797941524
+    },
+    {
+      "model": "olmo2_7b",
+      "id_late_mean_pt": 10.748634362305168,
+      "pr_late_mean_pt": 26.94213186421417,
+      "erank_late_mean_pt": 153.63219891046197,
+      "pc1_late_mean_pt": 0.13544707024633068,
+      "id_late_mean_it": 10.331172563878116,
+      "pr_late_mean_it": 38.520349316626096,
+      "erank_late_mean_it": 205.85068048287667,
+      "pc1_late_mean_it": 0.10842154556939951,
+      "delta_id_late_mean": -0.4174617984270519,
+      "delta_pr_late_mean": 11.578217452411927,
+      "delta_erank_late_mean": 52.2184815724147,
+      "delta_pc1_late_mean": -0.027025524676931173
+    },
+    {
+      "model": "deepseek_v2_lite",
+      "id_late_mean_pt": 9.853209792161161,
+      "pr_late_mean_pt": 23.108888936674802,
+      "erank_late_mean_pt": 119.17088967345244,
+      "pc1_late_mean_pt": 0.16985742424003714,
+      "id_late_mean_it": 8.812363982002958,
+      "pr_late_mean_it": 32.22705692872952,
+      "erank_late_mean_it": 143.71228851558675,
+      "pc1_late_mean_it": 0.11212480911036815,
+      "delta_id_late_mean": -1.0408458101582028,
+      "delta_pr_late_mean": 9.118167992054715,
+      "delta_erank_late_mean": 24.541398842134313,
+      "delta_pc1_late_mean": -0.057732615129668985
+    }
+  ],
+  "means": {
+    "delta_id_late_mean": -1.1098059251655032,
+    "delta_pr_late_mean": 3.289228120518471,
+    "delta_erank_late_mean": -0.1362576228775533,
+    "delta_pc1_late_mean": -0.016375782035245645
+  },
+  "counts": {
+    "delta_id_late_mean": {
+      "positive": 1,
+      "negative": 5
+    },
+    "delta_pr_late_mean": {
+      "positive": 3,
+      "negative": 3
+    },
+    "delta_erank_late_mean": {
+      "positive": 3,
+      "negative": 3
+    },
+    "delta_pc1_late_mean": {
+      "positive": 2,
+      "negative": 4
+    }
+  }
+}

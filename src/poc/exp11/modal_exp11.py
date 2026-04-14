@@ -71,6 +71,7 @@ BALANCED_10GPU_SHARDS_V11 = {
     "qwen3_4b": 1,
     "deepseek_v2_lite": 1,
 }
+BALANCED_10GPU_SHARDS_V11_DEPTH = dict(BALANCED_10GPU_SHARDS_V11)
 FULL_BATCH_HINTS = {
     "gemma3_4b": 128,
     "qwen3_4b": 128,
@@ -99,6 +100,7 @@ TUNED_BATCH_HINTS_V11 = {
     "olmo2_7b": 48,
     "deepseek_v2_lite": 48,
 }
+TUNED_BATCH_HINTS_V11_DEPTH = dict(TUNED_BATCH_HINTS_V11)
 TUNED_LENS_GCS_ROOT = "gs://pt-vs-it-results/tuned_lens_probes_v3"
 TUNED_LENS_VOLUME_NAME = "exp11-tuned-lens-probes-v3"
 _HF_MODELS_TO_BAKE = sorted(
@@ -282,6 +284,7 @@ def _run_exp11(
     readout_mode: str = "raw",
     tuned_lens_dir: str | None = None,
     teacher_forced: bool = False,
+    depth_ablation: bool = False,
     prompt_seed: int | None = None,
 ) -> None:
     cmd = [
@@ -321,6 +324,8 @@ def _run_exp11(
         cmd.extend(["--tuned-lens-dir", tuned_lens_dir])
     if teacher_forced:
         cmd.append("--teacher-forced")
+    if depth_ablation:
+        cmd.append("--depth-ablation")
     if prompt_seed is not None:
         cmd.extend(["--prompt-seed", str(prompt_seed)])
     _run_subprocess(cmd, seed=seed)
@@ -767,6 +772,7 @@ def full_model_shard_run(
     chunk_size: int = 64,
     batch_size: int = 32,
     teacher_forced: bool = False,
+    depth_ablation: bool = False,
     prompt_seed: int | None = None,
 ) -> str:
     _setup()
@@ -807,6 +813,7 @@ def full_model_shard_run(
             readout_mode=readout_mode,
             tuned_lens_dir=tuned_lens_dir,
             teacher_forced=teacher_forced,
+            depth_ablation=depth_ablation,
             prompt_seed=prompt_seed,
         )
         if not prompts_path.exists():
@@ -949,6 +956,38 @@ def _run_tuned_smoke(run_name: str, *, model: str) -> None:
         0,
         DEFAULT_DATASET,
         "both",
+    )
+    print(result)
+    merge_result = merge_model_shards.remote(
+        run_name,
+        model=model,
+        dataset=DEFAULT_DATASET,
+        num_shards=1,
+        seed=0,
+    )
+    print(merge_result)
+
+
+def _run_depth_ablation_smoke(run_name: str, *, model: str) -> None:
+    if model not in VALID_MODELS:
+        raise ValueError(f"Unsupported model for depth-ablation smoke: {model}")
+    print(stage_tuned_lens_probes_remote.remote([model]))
+    result = full_model_shard_run.remote(
+        model=model,
+        run_name=run_name,
+        shard_index=0,
+        num_shards=1,
+        n_prompts=10,
+        max_new_tokens=64,
+        prompts_per_chunk=10,
+        seed=0,
+        dataset=DEFAULT_DATASET,
+        readout_mode="both",
+        chunk_size=10,
+        batch_size=min(TUNED_BATCH_HINTS_V11_DEPTH[model], 16),
+        teacher_forced=True,
+        depth_ablation=True,
+        prompt_seed=0,
     )
     print(result)
     merge_result = merge_model_shards.remote(
@@ -1311,20 +1350,21 @@ def orchestrate_balanced_10gpu_v11_teacherforced(
         calls: list[tuple[int, Any]] = []
         for shard_index in range(num_shards):
             call = full_model_shard_run.spawn(
-                model,
-                run_name,
-                shard_index,
-                num_shards,
-                n_prompts,
-                512,  # max_new_tokens
-                n_prompts,  # prompts_per_chunk (1 pass)
-                0,  # seed
-                dataset,
-                "both",  # readout_mode
-                chunk_size,
-                model_batch_size,
-                True,  # teacher_forced
-                prompt_seed,
+                model=model,
+                run_name=run_name,
+                shard_index=shard_index,
+                num_shards=num_shards,
+                n_prompts=n_prompts,
+                max_new_tokens=512,
+                prompts_per_chunk=n_prompts,
+                seed=0,
+                dataset=dataset,
+                readout_mode="both",
+                chunk_size=chunk_size,
+                batch_size=model_batch_size,
+                teacher_forced=True,
+                depth_ablation=False,
+                prompt_seed=prompt_seed,
             )
             calls.append((shard_index, call))
             print(
@@ -1367,6 +1407,100 @@ def orchestrate_balanced_10gpu_v11_teacherforced(
     return "ALL V11 MODELS COMPLETE"
 
 
+@app.function(
+    image=image,
+    volumes=VOLUME_MOUNTS,
+    memory=4096,
+    timeout=86400,
+    secrets=[modal.Secret.from_name("gcp-adc-exp11")],
+)
+def orchestrate_balanced_10gpu_v11_depth_ablation(
+    run_prefix: str,
+    dataset: str = DEFAULT_DATASET,
+    n_prompts: int = 600,
+    prompt_seed: int = 0,
+    chunk_size: int = 64,
+) -> str:
+    """exp11.2 remote orchestrator: 6 models × 5 raw teacher-forced depth-ablation pipelines.
+
+    C_it_chat free-runs as teacher. A_prime_raw, B_early_raw, B_mid_raw, and B_late_raw
+    share C's token history, so early/mid/late graft windows are compared under identical
+    context and prompt conditions.
+    """
+    print("=" * 60)
+    print(
+        f"EXP11 V11.2 DEPTH-ABLATION ORCHESTRATOR — run_prefix={run_prefix}, "
+        f"dataset={dataset}, shard_map={BALANCED_10GPU_SHARDS_V11_DEPTH}, "
+        f"n_prompts={n_prompts}, prompt_seed={prompt_seed}, chunk_size={chunk_size}"
+    )
+    print("=" * 60)
+    print(stage_tuned_lens_probes_remote.remote(list(BALANCED_10GPU_SHARDS_V11_DEPTH.keys())))
+
+    per_model_calls: dict[str, list[tuple[int, Any]]] = {}
+    for model in BALANCED_10GPU_SHARDS_V11_DEPTH:
+        run_name = f"{run_prefix}_{model}"
+        num_shards = BALANCED_10GPU_SHARDS_V11_DEPTH[model]
+        model_batch_size = TUNED_BATCH_HINTS_V11_DEPTH[model]
+        calls: list[tuple[int, Any]] = []
+        for shard_index in range(num_shards):
+            call = full_model_shard_run.spawn(
+                model=model,
+                run_name=run_name,
+                shard_index=shard_index,
+                num_shards=num_shards,
+                n_prompts=n_prompts,
+                max_new_tokens=512,
+                prompts_per_chunk=n_prompts,
+                seed=0,
+                dataset=dataset,
+                readout_mode="both",
+                chunk_size=chunk_size,
+                batch_size=model_batch_size,
+                teacher_forced=True,
+                depth_ablation=True,
+                prompt_seed=prompt_seed,
+            )
+            calls.append((shard_index, call))
+            print(
+                f"spawned model={model} shard={shard_index}/{num_shards} "
+                f"batch_size={model_batch_size} teacher_forced=True depth_ablation=True "
+                f"call_id={getattr(call, 'object_id', call)}",
+                flush=True,
+            )
+        per_model_calls[model] = calls
+
+    failed_models: list[str] = []
+    for model in BALANCED_10GPU_SHARDS_V11_DEPTH:
+        run_name = f"{run_prefix}_{model}"
+        num_shards = BALANCED_10GPU_SHARDS_V11_DEPTH[model]
+        calls = per_model_calls[model]
+        model_ok = True
+        for shard_index, call in calls:
+            print(f"[wait] model={model} shard={shard_index}/{num_shards}", flush=True)
+            try:
+                result = call.get()
+                print(result)
+            except Exception as exc:
+                print(f"[ERROR] model={model} shard={shard_index}/{num_shards} failed: {exc}", flush=True)
+                model_ok = False
+        if model_ok:
+            merge_result = merge_model_shards.remote(
+                run_name,
+                model=model,
+                dataset=dataset,
+                num_shards=num_shards,
+                seed=0,
+            )
+            print(merge_result)
+        else:
+            failed_models.append(model)
+            print(f"[SKIP] merge skipped for {model} due to shard failures", flush=True)
+
+    if failed_models:
+        return f"PARTIAL — failed models: {failed_models}. Re-run to resume."
+    return "ALL V11.2 MODELS COMPLETE"
+
+
 def _launch_balanced_10gpu_v11_teacherforced(
     run_prefix: str,
     *,
@@ -1396,6 +1530,36 @@ def _launch_balanced_10gpu_v11_teacherforced(
     except Exception as exc:
         print(f"Local client error: {exc}", flush=True)
         print(f"V11 orchestrator {call_id} may still be running on Modal.", flush=True)
+
+
+def _launch_balanced_10gpu_v11_depth_ablation(
+    run_prefix: str,
+    *,
+    dataset: str,
+    n_prompts: int,
+    prompt_seed: int,
+    chunk_size: int,
+) -> None:
+    print("Triggering v11.2 depth-ablation remote orchestrator on deployed app...", flush=True)
+    print(
+        "IMPORTANT: First deploy with `modal deploy src/poc/exp11/modal_exp11.py`, "
+        "then trigger with `modal run`.",
+        flush=True,
+    )
+    call = orchestrate_balanced_10gpu_v11_depth_ablation.spawn(
+        run_prefix, dataset, n_prompts, prompt_seed, chunk_size,
+    )
+    call_id = getattr(call, "object_id", call)
+    print(f"V11.2 orchestrator spawned: call_id={call_id}", flush=True)
+    print("Waiting for result (safe to Ctrl-C — orchestrator continues on Modal)...", flush=True)
+    try:
+        result = call.get()
+        print(result)
+    except KeyboardInterrupt:
+        print(f"\nLocal client interrupted — orchestrator {call_id} continues on Modal.", flush=True)
+    except Exception as exc:
+        print(f"Local client error: {exc}", flush=True)
+        print(f"V11.2 orchestrator {call_id} may still be running on Modal.", flush=True)
 
 
 def _launch_balanced_10gpu_tuned_full(
@@ -1447,6 +1611,10 @@ def main(
     if mode == "tuned-smoke":
         smoke_model = model or SMOKE_MODEL
         _run_tuned_smoke(run_name, model=smoke_model)
+        return
+    if mode == "depth-smoke":
+        smoke_model = model or SMOKE_MODEL
+        _run_depth_ablation_smoke(run_name, model=smoke_model)
         return
     if mode == "preflight":
         if not model:
@@ -1523,8 +1691,19 @@ def main(
             chunk_size=chunk_size,
         )
         return
+    if mode == "balanced-10gpu-v11-depth-ablation":
+        if model:
+            raise ValueError("`--model` is not supported for balanced-10gpu-v11-depth-ablation mode.")
+        _launch_balanced_10gpu_v11_depth_ablation(
+            run_name,
+            dataset=dataset,
+            n_prompts=n_prompts,
+            prompt_seed=prompt_seed,
+            chunk_size=chunk_size,
+        )
+        return
     print(
-        "Unknown mode. Use 'smoke', 'tuned-smoke', 'preflight', 'full', 'sharded-full', "
+        "Unknown mode. Use 'smoke', 'tuned-smoke', 'depth-smoke', 'preflight', 'full', 'sharded-full', "
         "'balanced-8gpu-full', 'stage-tuned-lens-probes', 'balanced-10gpu-tuned-full', "
-        "or 'balanced-10gpu-v11-teacherforced'."
+        "'balanced-10gpu-v11-teacherforced', or 'balanced-10gpu-v11-depth-ablation'."
     )

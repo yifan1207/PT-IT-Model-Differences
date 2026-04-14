@@ -39,6 +39,7 @@ from pathlib import Path
 
 import torch
 import numpy as np
+from sklearn.neighbors import NearestNeighbors
 
 from src.poc.cross_model.config import get_spec, MODEL_REGISTRY, model_id_for_variant
 from src.poc.cross_model.adapters import get_adapter
@@ -58,6 +59,44 @@ try:
 except ImportError:
     _SKDIM_AVAILABLE = False
     log.warning("scikit-dimension not installed. Run: uv add scikit-dimension")
+
+
+def _twonn_fallback(X: np.ndarray) -> float:
+    """Fallback TwoNN estimate when scikit-dimension is unavailable.
+
+    For the TwoNN model, the ratio mu = r2 / r1 should satisfy:
+        F(mu) = 1 - mu^{-d}
+    so that:
+        -log(1 - F(mu)) = d * log(mu)
+    We estimate d by a least-squares slope through the origin on the empirical
+    CDF after sorting mu.
+    """
+    if X.shape[0] < 3:
+        raise ValueError("Need at least 3 samples for TwoNN fallback")
+    nbrs = NearestNeighbors(n_neighbors=3, metric="euclidean")
+    nbrs.fit(X)
+    dists, _ = nbrs.kneighbors(X)
+    r1 = dists[:, 1]
+    r2 = dists[:, 2]
+    mu = r2 / np.maximum(r1, 1e-12)
+    mu = mu[np.isfinite(mu) & (mu > 1.0)]
+    if mu.size < 3:
+        raise ValueError("Too few valid mu ratios for TwoNN fallback")
+    mu.sort()
+    # Empirical CDF excluding 1.0 to avoid log(0).
+    F = np.arange(1, mu.size + 1, dtype=np.float64) / (mu.size + 1.0)
+    x = np.log(mu)
+    y = -np.log1p(-F)
+    denom = float(np.dot(x, x))
+    if denom <= 0:
+        raise ValueError("Degenerate log-distance ratios in TwoNN fallback")
+    return float(np.dot(x, y) / denom)
+
+
+def _estimate_twonn(X: np.ndarray) -> float:
+    if _SKDIM_AVAILABLE:
+        return float(skdim.id.TwoNN().fit_transform(X))
+    return _twonn_fallback(X)
 
 
 # ── residual collection ───────────────────────────────────────────────────────
@@ -129,9 +168,6 @@ def estimate_id_profile(
 
     residuals_npz: {prompt_id: [n_layers, d_model]} — all prompts, all layers.
     """
-    if not _SKDIM_AVAILABLE:
-        raise RuntimeError("scikit-dimension required. Run: uv add scikit-dimension")
-
     # Build per-layer matrices [n_prompts, d_model]
     pids = list(residuals_npz.keys())
     n_prompts = len(pids)
@@ -147,7 +183,7 @@ def estimate_id_profile(
 
     for ℓ, X in enumerate(layer_matrices):
         try:
-            id_est = float(skdim.id.TwoNN().fit_transform(X))
+            id_est = _estimate_twonn(X)
         except Exception as e:
             log.warning("TwoNN failed at layer %d: %s", ℓ, e)
             id_vals.append(float("nan"))
@@ -163,7 +199,7 @@ def estimate_id_profile(
         for _ in range(100):
             idx = rng.choice(n_prompts, size=sub_size, replace=False)
             try:
-                boot_estimates.append(float(skdim.id.TwoNN().fit_transform(X[idx])))
+                boot_estimates.append(_estimate_twonn(X[idx]))
             except Exception:
                 pass
 

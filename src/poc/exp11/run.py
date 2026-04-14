@@ -66,6 +66,38 @@ TRAJECTORY_METRICS = [
     "residual_cosine",
     "residual_divergence",
 ]
+DEPTH_ABLATION_WINDOWS = {
+    "gemma3_4b": {
+        "B_early_raw": (0, 14),
+        "B_mid_raw": (10, 24),
+        "B_late_raw": (20, 34),
+    },
+    "llama31_8b": {
+        "B_early_raw": (0, 13),
+        "B_mid_raw": (9, 22),
+        "B_late_raw": (19, 32),
+    },
+    "qwen3_4b": {
+        "B_early_raw": (0, 14),
+        "B_mid_raw": (11, 25),
+        "B_late_raw": (22, 36),
+    },
+    "mistral_7b": {
+        "B_early_raw": (0, 13),
+        "B_mid_raw": (9, 22),
+        "B_late_raw": (19, 32),
+    },
+    "olmo2_7b": {
+        "B_early_raw": (0, 13),
+        "B_mid_raw": (9, 22),
+        "B_late_raw": (19, 32),
+    },
+    "deepseek_v2_lite": {
+        "B_early_raw": (0, 11),
+        "B_mid_raw": (8, 19),
+        "B_late_raw": (16, 27),
+    },
+}
 
 
 @dataclass
@@ -205,6 +237,14 @@ def parse_args() -> argparse.Namespace:
             "raw/template controls (A', A'_tmpl), and grafted raw/template branches "
             "(B, B2). Cross-pipeline metrics for teacher-forced "
             "branches are computed against C's residuals."
+        ),
+    )
+    parser.add_argument(
+        "--depth-ablation",
+        action="store_true",
+        help=(
+            "Teacher-forced exp11.2 depth ablation: run C_it_chat, A_prime_raw, and "
+            "equal-width early/mid/late raw graft branches. Requires --teacher-forced."
         ),
     )
     parser.add_argument(
@@ -352,6 +392,26 @@ def _assert_used_token_ids_compatible(
     if problems:
         joined = "; ".join(problems)
         raise ValueError(f"Incompatible token IDs for {context}: {joined}")
+
+
+def _is_depth_ablation(args: argparse.Namespace) -> bool:
+    return bool(args.teacher_forced and args.depth_ablation)
+
+
+def _depth_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
+    windows = DEPTH_ABLATION_WINDOWS[model]
+    expected_width = spec.n_layers - spec.corrective_onset
+    for pipeline_name, (start, end) in windows.items():
+        if end - start != expected_width:
+            raise ValueError(
+                f"Depth-ablation window width mismatch for {model}/{pipeline_name}: "
+                f"{end - start} != expected {expected_width}"
+            )
+        if start < 0 or end > spec.n_layers or start >= end:
+            raise ValueError(
+                f"Invalid depth-ablation window for {model}/{pipeline_name}: [{start}, {end})"
+            )
+    return windows
 
 
 def _make_request_states(
@@ -1081,12 +1141,16 @@ def _write_jsonl(path: Path, rows: list[dict], *, append: bool) -> None:
 def main() -> None:
     args = parse_args()
     _configure_reproducibility(args.seed)
+    if args.depth_ablation and not args.teacher_forced:
+        raise ValueError("--depth-ablation requires --teacher-forced")
     if args.num_shards < 1:
         raise ValueError("--num-shards must be >= 1")
     if not 0 <= args.shard_index < args.num_shards:
         raise ValueError("--shard-index must satisfy 0 <= shard-index < num-shards")
     spec = get_spec(args.model)
     onset_layer = spec.corrective_onset if args.onset_layer is None else args.onset_layer
+    depth_ablation = _is_depth_ablation(args)
+    depth_windows = _depth_windows_for_model(args.model, spec) if depth_ablation else {}
     requested_batch_size = args.batch_size or DEFAULT_BATCH_SIZE[args.model]
     out_dir = Path(args.out_dir or f"results/exp11/{args.model}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1179,7 +1243,7 @@ def main() -> None:
         prompt_id: tokenizer_it(prompt_text, add_special_tokens=True)["input_ids"]
         for prompt_id, prompt_text in it_chat_prompt_text_by_id.items()
     }
-    if args.teacher_forced:
+    if args.teacher_forced and not depth_ablation:
         _assert_used_token_ids_compatible(
             tokenizer_it,
             tokenizer_pt,
@@ -1196,6 +1260,65 @@ def main() -> None:
     batch_size_a = requested_batch_size
     batch_size_b = requested_batch_size
     batch_size_by_pipeline: dict[str, int] = {}
+    if depth_ablation:
+        pipelines = ["C_it_chat", "A_prime_raw", "B_early_raw", "B_mid_raw", "B_late_raw"]
+        pipeline_prompt_modes = {
+            "C_it_chat": "it_chat_template",
+            "A_prime_raw": "raw_format_b",
+            "B_early_raw": "raw_format_b",
+            "B_mid_raw": "raw_format_b",
+            "B_late_raw": "raw_format_b",
+        }
+        secondary_names = (
+            {
+                "C_it_chat": secondary_readout_b.name,
+                "A_prime_raw": secondary_readout_a.name,
+                "B_early_raw": secondary_readout_b.name,
+                "B_mid_raw": secondary_readout_b.name,
+                "B_late_raw": secondary_readout_b.name,
+            }
+            if secondary_readout_a is not None and secondary_readout_b is not None
+            else None
+        )
+        pipeline_aliases: dict[str, str] | None = None
+    elif args.teacher_forced:
+        pipelines = ["C", "A_prime", "B", "A_prime_tmpl", "B2"]
+        pipeline_prompt_modes = {
+            "C": "it_chat_template",
+            "A_prime": "raw_format_b",
+            "B": "raw_format_b",
+            "A_prime_tmpl": "it_chat_template",
+            "B2": "it_chat_template",
+        }
+        secondary_names = (
+            {
+                "B": secondary_readout_b.name,
+                "C": secondary_readout_b.name,
+                "A_prime": secondary_readout_a.name,
+                "A_prime_tmpl": secondary_readout_a.name,
+                "B2": secondary_readout_b.name,
+            }
+            if secondary_readout_a is not None and secondary_readout_b is not None
+            else None
+        )
+        pipeline_aliases = {
+            "B": "B1_raw",
+            "A_prime": "A_prime_raw",
+            "B2": "B2_tmpl",
+        }
+    else:
+        pipelines = ["A", "B"]
+        pipeline_prompt_modes = {"A": "raw_format_b", "B": "raw_format_b"}
+        secondary_names = (
+            {
+                "A": secondary_readout_a.name,
+                "B": secondary_readout_b.name if secondary_readout_b is not None else secondary_readout_a.name,
+            }
+            if secondary_readout_a is not None and args.readout_mode == "both"
+            else None
+        )
+        pipeline_aliases = {}
+
     config = {
         "model": args.model,
         "n_layers": spec.n_layers,
@@ -1222,46 +1345,24 @@ def main() -> None:
         "readout_mode": args.readout_mode,
         "primary_readout_name": primary_readout.name,
         "secondary_readout_name": "mixed_by_pipeline" if secondary_readout_b is not None else None,
-        "secondary_readout_names_by_pipeline": (
-            {
-                "B": secondary_readout_b.name,
-                "C": secondary_readout_b.name,
-                "A_prime": secondary_readout_a.name,
-                "A_prime_tmpl": secondary_readout_a.name,
-                "B2": secondary_readout_b.name,
-            }
-            if secondary_readout_a is not None and secondary_readout_b is not None and args.teacher_forced
-            else (
-                {
-                    "A": secondary_readout_a.name,
-                    "B": secondary_readout_b.name if secondary_readout_b is not None else secondary_readout_a.name,
-                }
-                if secondary_readout_a is not None and args.readout_mode == "both"
-                else None
-            )
-        ),
+        "secondary_readout_names_by_pipeline": secondary_names,
         "tuned_lens_dir": args.tuned_lens_dir,
         "teacher_forced": bool(args.teacher_forced),
-        "pipelines": ["C", "A_prime", "B", "A_prime_tmpl", "B2"] if args.teacher_forced else ["A", "B"],
-        "pipeline_prompt_modes": (
+        "depth_ablation": depth_ablation,
+        "pipelines": pipelines,
+        "pipeline_prompt_modes": pipeline_prompt_modes,
+        "pipeline_aliases": pipeline_aliases,
+        "graft_windows_by_pipeline": (
             {
-                "C": "it_chat_template",
-                "A_prime": "raw_format_b",
-                "B": "raw_format_b",
-                "A_prime_tmpl": "it_chat_template",
-                "B2": "it_chat_template",
+                name: {
+                    "start_layer": start,
+                    "end_layer_exclusive": end,
+                    "display_range": f"{start}-{end - 1}",
+                }
+                for name, (start, end) in depth_windows.items()
             }
-            if args.teacher_forced
-            else {"A": "raw_format_b", "B": "raw_format_b"}
-        ),
-        "pipeline_aliases": (
-            {
-                "B": "B1_raw",
-                "A_prime": "A_prime_raw",
-                "B2": "B2_tmpl",
-            }
-            if args.teacher_forced
-            else {}
+            if depth_ablation
+            else None
         ),
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -1282,7 +1383,9 @@ def main() -> None:
         chunk = prompts_to_run[chunk_start : chunk_start + chunk_size]
 
         runs_a: dict[str, PipelineRun] = {}
+        runs_b: dict[str, PipelineRun] = {}
         requests_a: list[RequestState] = []
+        requests_b: list[RequestState] = []
         if not args.teacher_forced:
             requests_a = _make_request_states(
                 chunk,
@@ -1322,10 +1425,16 @@ def main() -> None:
 
         runs_c: dict[str, PipelineRun] = {}
         runs_a_prime: dict[str, PipelineRun] = {}
+        runs_b_early: dict[str, PipelineRun] = {}
+        runs_b_mid: dict[str, PipelineRun] = {}
+        runs_b_late: dict[str, PipelineRun] = {}
         runs_a_prime_tmpl: dict[str, PipelineRun] = {}
         runs_b2: dict[str, PipelineRun] = {}
         requests_c: list[RequestState] = []
         requests_a_prime: list[RequestState] = []
+        requests_b_early: list[RequestState] = []
+        requests_b_mid: list[RequestState] = []
+        requests_b_late: list[RequestState] = []
         requests_a_prime_tmpl: list[RequestState] = []
         requests_b2: list[RequestState] = []
         c_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None
@@ -1340,7 +1449,7 @@ def main() -> None:
                 prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
             )
             runs_c, batch_size_c = _run_pipeline_with_batch_fallback(
-                pipeline_name="C",
+                pipeline_name="C_it_chat" if depth_ablation else "C",
                 requests=requests_c,
                 model_raw=model_raw_it,
                 capture_factory=lambda: PipelineCapture(
@@ -1366,7 +1475,7 @@ def main() -> None:
                 baseline_secondary_readout=None,
                 secondary_accumulator=secondary_accumulator,
             )
-            batch_size_by_pipeline["C"] = batch_size_c
+            batch_size_by_pipeline["C_it_chat" if depth_ablation else "C"] = batch_size_c
             c_baseline_lookup = {pid: run.baseline_cache for pid, run in runs_c.items()}
             teacher_tokens = {pid: list(run.generated_token_ids) for pid, run in runs_c.items()}
             _assert_used_token_ids_compatible(
@@ -1384,7 +1493,7 @@ def main() -> None:
                 prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
             )
             runs_a_prime, batch_size_a_prime = _run_pipeline_with_batch_fallback(
-                pipeline_name="A_prime",
+                pipeline_name="A_prime_raw" if depth_ablation else "A_prime",
                 requests=requests_a_prime,
                 model_raw=model_raw_pt,
                 capture_factory=lambda: PipelineCapture(
@@ -1411,95 +1520,182 @@ def main() -> None:
                 secondary_accumulator=secondary_accumulator,
                 teacher_tokens_by_prompt=teacher_tokens,
             )
-            batch_size_by_pipeline["A_prime"] = batch_size_a_prime
+            batch_size_by_pipeline["A_prime_raw" if depth_ablation else "A_prime"] = batch_size_a_prime
 
-            requests_a_prime_tmpl = _make_request_states(
-                chunk,
-                tokenizer_it,
-                set(),
-                prompt_text_by_id=it_chat_prompt_text_by_id,
-                prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
-            )
-            runs_a_prime_tmpl, batch_size_a_prime_tmpl = _run_pipeline_with_batch_fallback(
-                pipeline_name="A_prime_tmpl",
-                requests=requests_a_prime_tmpl,
-                model_raw=model_raw_pt,
-                capture_factory=lambda: PipelineCapture(
+            if depth_ablation:
+                branch_requests = {
+                    name: _make_request_states(
+                        chunk,
+                        tokenizer_pt,
+                        set(),
+                        prompt_text_by_id=raw_prompt_text_by_id,
+                        prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
+                    )
+                    for name in depth_windows
+                }
+                branch_runs: dict[str, dict[str, PipelineRun]] = {}
+                branch_batch_sizes: dict[str, int] = {}
+                for pipeline_name, requests_branch in branch_requests.items():
+                    graft_start, graft_end = depth_windows[pipeline_name]
+                    branch_runs[pipeline_name], branch_batch_sizes[pipeline_name] = _run_pipeline_with_batch_fallback(
+                        pipeline_name=pipeline_name,
+                        requests=requests_branch,
+                        model_raw=model_raw_pt,
+                        capture_factory=lambda start=graft_start, end=graft_end: PipelineCapture(
+                            model_raw=model_raw_pt,
+                            adapter=steering_adapter,
+                            arch_probe=arch_probe,
+                            graft_start_layer=start,
+                            graft_end_layer_exclusive=end,
+                            graft_it_model_raw=model_raw_it,
+                        ),
+                        tokenizer=tokenizer_pt,
+                        pad_token_id=pad_token_id_pt,
+                        real_token_mask=real_token_mask_pt,
+                        tier1_mask=structural_masks_pt.tier1,
+                        eos_token_ids=eos_ids_pt_or_it,
+                        max_new_tokens=args.max_new_tokens,
+                        inactive_token_id=inactive_token_id_pt,
+                        batch_size=batch_size_a,
+                        store_baseline=False,
+                        baseline_lookup=c_baseline_lookup,
+                        primary_readout=primary_readout,
+                        secondary_readout=secondary_readout_b,
+                        baseline_primary_readout=primary_readout,
+                        baseline_secondary_readout=secondary_readout_b,
+                        secondary_accumulator=secondary_accumulator,
+                        teacher_tokens_by_prompt=teacher_tokens,
+                    )
+                    batch_size_by_pipeline[pipeline_name] = branch_batch_sizes[pipeline_name]
+                runs_b_early = branch_runs["B_early_raw"]
+                runs_b_mid = branch_runs["B_mid_raw"]
+                runs_b_late = branch_runs["B_late_raw"]
+                requests_b_early = branch_requests["B_early_raw"]
+                requests_b_mid = branch_requests["B_mid_raw"]
+                requests_b_late = branch_requests["B_late_raw"]
+            else:
+                requests_a_prime_tmpl = _make_request_states(
+                    chunk,
+                    tokenizer_it,
+                    set(),
+                    prompt_text_by_id=it_chat_prompt_text_by_id,
+                    prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
+                )
+                runs_a_prime_tmpl, batch_size_a_prime_tmpl = _run_pipeline_with_batch_fallback(
+                    pipeline_name="A_prime_tmpl",
+                    requests=requests_a_prime_tmpl,
                     model_raw=model_raw_pt,
-                    adapter=steering_adapter,
-                    arch_probe=arch_probe,
-                    onset_layer=onset_layer,
-                    graft_it_model_raw=None,
-                ),
-                tokenizer=tokenizer_pt,
-                pad_token_id=pad_token_id_pt,
-                real_token_mask=real_token_mask_pt,
-                tier1_mask=structural_masks_pt.tier1,
-                eos_token_ids=eos_ids_pt_or_it,
-                max_new_tokens=args.max_new_tokens,
-                inactive_token_id=inactive_token_id_pt,
-                batch_size=batch_size_a,
-                store_baseline=False,
-                baseline_lookup=c_baseline_lookup,
-                primary_readout=primary_readout,
-                secondary_readout=secondary_readout_a,
-                baseline_primary_readout=primary_readout,
-                baseline_secondary_readout=secondary_readout_b,
-                secondary_accumulator=secondary_accumulator,
-                teacher_tokens_by_prompt=teacher_tokens,
-            )
-            batch_size_by_pipeline["A_prime_tmpl"] = batch_size_a_prime_tmpl
+                    capture_factory=lambda: PipelineCapture(
+                        model_raw=model_raw_pt,
+                        adapter=steering_adapter,
+                        arch_probe=arch_probe,
+                        onset_layer=onset_layer,
+                        graft_it_model_raw=None,
+                    ),
+                    tokenizer=tokenizer_pt,
+                    pad_token_id=pad_token_id_pt,
+                    real_token_mask=real_token_mask_pt,
+                    tier1_mask=structural_masks_pt.tier1,
+                    eos_token_ids=eos_ids_pt_or_it,
+                    max_new_tokens=args.max_new_tokens,
+                    inactive_token_id=inactive_token_id_pt,
+                    batch_size=batch_size_a,
+                    store_baseline=False,
+                    baseline_lookup=c_baseline_lookup,
+                    primary_readout=primary_readout,
+                    secondary_readout=secondary_readout_a,
+                    baseline_primary_readout=primary_readout,
+                    baseline_secondary_readout=secondary_readout_b,
+                    secondary_accumulator=secondary_accumulator,
+                    teacher_tokens_by_prompt=teacher_tokens,
+                )
+                batch_size_by_pipeline["A_prime_tmpl"] = batch_size_a_prime_tmpl
 
-        baseline_lookup_b = c_baseline_lookup if args.teacher_forced else {pid: run.baseline_cache for pid, run in runs_a.items()}
+                requests_b = _make_request_states(
+                    chunk,
+                    tokenizer_pt,
+                    set(),
+                    prompt_text_by_id=raw_prompt_text_by_id,
+                    prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
+                )
+                runs_b, batch_size_b = _run_pipeline_with_batch_fallback(
+                    pipeline_name="B",
+                    requests=requests_b,
+                    model_raw=model_raw_pt,
+                    capture_factory=lambda: PipelineCapture(
+                        model_raw=model_raw_pt,
+                        adapter=steering_adapter,
+                        arch_probe=arch_probe,
+                        onset_layer=onset_layer,
+                        graft_it_model_raw=model_raw_it,
+                    ),
+                    tokenizer=tokenizer_pt,
+                    pad_token_id=pad_token_id_pt,
+                    real_token_mask=real_token_mask_pt,
+                    tier1_mask=structural_masks_pt.tier1,
+                    eos_token_ids=eos_ids_pt_or_it,
+                    max_new_tokens=args.max_new_tokens,
+                    inactive_token_id=inactive_token_id_pt,
+                    batch_size=batch_size_a,
+                    store_baseline=False,
+                    baseline_lookup=c_baseline_lookup,
+                    primary_readout=primary_readout,
+                    secondary_readout=secondary_readout_b,
+                    baseline_primary_readout=primary_readout,
+                    baseline_secondary_readout=secondary_readout_b,
+                    secondary_accumulator=secondary_accumulator,
+                    teacher_tokens_by_prompt=teacher_tokens,
+                )
+                batch_size_by_pipeline["B"] = batch_size_b
 
-        requests_b = _make_request_states(
-            chunk,
-            tokenizer_pt,
-            set(),
-            prompt_text_by_id=raw_prompt_text_by_id,
-            prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
-        )
-        runs_b, batch_size_b = _run_pipeline_with_batch_fallback(
-            pipeline_name="B",
-            requests=requests_b,
-            model_raw=model_raw_pt,
-            capture_factory=lambda: PipelineCapture(
-                model_raw=model_raw_pt,
-                adapter=steering_adapter,
-                arch_probe=arch_probe,
-                onset_layer=onset_layer,
-                graft_it_model_raw=model_raw_it,
-            ),
-            tokenizer=tokenizer_pt,
-            pad_token_id=pad_token_id_pt,
-            real_token_mask=real_token_mask_pt,
-            tier1_mask=structural_masks_pt.tier1,
-            eos_token_ids=eos_ids_pt_or_it if args.teacher_forced else eos_ids_pt,
-            max_new_tokens=args.max_new_tokens,
-            inactive_token_id=inactive_token_id_pt,
-            batch_size=batch_size_a,
-            store_baseline=False,
-            baseline_lookup=baseline_lookup_b,
-            primary_readout=primary_readout,
-            secondary_readout=secondary_readout_b,
-            baseline_primary_readout=primary_readout,
-            baseline_secondary_readout=secondary_readout_b if args.teacher_forced else secondary_readout_a,
-            secondary_accumulator=secondary_accumulator,
-            teacher_tokens_by_prompt=teacher_tokens,
-        )
-        batch_size_by_pipeline["B"] = batch_size_b
-
-        if args.teacher_forced:
-            requests_b2 = _make_request_states(
+                requests_b2 = _make_request_states(
+                    chunk,
+                    tokenizer_it,
+                    set(),
+                    prompt_text_by_id=it_chat_prompt_text_by_id,
+                    prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
+                )
+                runs_b2, batch_size_b2 = _run_pipeline_with_batch_fallback(
+                    pipeline_name="B2",
+                    requests=requests_b2,
+                    model_raw=model_raw_pt,
+                    capture_factory=lambda: PipelineCapture(
+                        model_raw=model_raw_pt,
+                        adapter=steering_adapter,
+                        arch_probe=arch_probe,
+                        onset_layer=onset_layer,
+                        graft_it_model_raw=model_raw_it,
+                    ),
+                    tokenizer=tokenizer_pt,
+                    pad_token_id=pad_token_id_pt,
+                    real_token_mask=real_token_mask_pt,
+                    tier1_mask=structural_masks_pt.tier1,
+                    eos_token_ids=eos_ids_pt_or_it,
+                    max_new_tokens=args.max_new_tokens,
+                    inactive_token_id=inactive_token_id_pt,
+                    batch_size=batch_size_a,
+                    store_baseline=False,
+                    baseline_lookup=c_baseline_lookup,
+                    primary_readout=primary_readout,
+                    secondary_readout=secondary_readout_b,
+                    baseline_primary_readout=primary_readout,
+                    baseline_secondary_readout=secondary_readout_b,
+                    secondary_accumulator=secondary_accumulator,
+                    teacher_tokens_by_prompt=teacher_tokens,
+                )
+                batch_size_by_pipeline["B2"] = batch_size_b2
+        else:
+            baseline_lookup_b = {pid: run.baseline_cache for pid, run in runs_a.items()}
+            requests_b = _make_request_states(
                 chunk,
-                tokenizer_it,
+                tokenizer_pt,
                 set(),
-                prompt_text_by_id=it_chat_prompt_text_by_id,
-                prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
+                prompt_text_by_id=raw_prompt_text_by_id,
+                prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
             )
-            runs_b2, batch_size_b2 = _run_pipeline_with_batch_fallback(
-                pipeline_name="B2",
-                requests=requests_b2,
+            runs_b, batch_size_b = _run_pipeline_with_batch_fallback(
+                pipeline_name="B",
+                requests=requests_b,
                 model_raw=model_raw_pt,
                 capture_factory=lambda: PipelineCapture(
                     model_raw=model_raw_pt,
@@ -1512,7 +1708,7 @@ def main() -> None:
                 pad_token_id=pad_token_id_pt,
                 real_token_mask=real_token_mask_pt,
                 tier1_mask=structural_masks_pt.tier1,
-                eos_token_ids=eos_ids_pt_or_it,
+                eos_token_ids=eos_ids_pt,
                 max_new_tokens=args.max_new_tokens,
                 inactive_token_id=inactive_token_id_pt,
                 batch_size=batch_size_a,
@@ -1521,17 +1717,20 @@ def main() -> None:
                 primary_readout=primary_readout,
                 secondary_readout=secondary_readout_b,
                 baseline_primary_readout=primary_readout,
-                baseline_secondary_readout=secondary_readout_b,
+                baseline_secondary_readout=secondary_readout_a,
                 secondary_accumulator=secondary_accumulator,
-                teacher_tokens_by_prompt=teacher_tokens,
+                teacher_tokens_by_prompt=None,
             )
-            batch_size_by_pipeline["B2"] = batch_size_b2
+            batch_size_by_pipeline["B"] = batch_size_b
 
         for record in chunk:
             run_a = runs_a.get(record["id"])
-            run_b = runs_b[record["id"]]
+            run_b = runs_b.get(record["id"])
             run_c = runs_c.get(record["id"])
             run_a_prime = runs_a_prime.get(record["id"])
+            run_b_early = runs_b_early.get(record["id"])
+            run_b_mid = runs_b_mid.get(record["id"])
+            run_b_late = runs_b_late.get(record["id"])
             run_a_prime_tmpl = runs_a_prime_tmpl.get(record["id"])
             run_b2 = runs_b2.get(record["id"])
 
@@ -1541,7 +1740,6 @@ def main() -> None:
                 "prompt": raw_prompt_text_by_id[record["id"]],
                 "prompt_raw": raw_prompt_text_by_id[record["id"]],
                 "prompt_it_chat": it_chat_prompt_text_by_id[record["id"]],
-                "pipeline_b": _summarize_pipeline(run_b),
             }
             if run_a is not None:
                 divergence_step = None
@@ -1553,7 +1751,26 @@ def main() -> None:
                     divergence_step = min(len(run_a.generated_token_ids), len(run_b.generated_token_ids))
                 summary_row["divergence_step"] = divergence_step
                 summary_row["pipeline_a"] = _summarize_pipeline(run_a)
-            if args.teacher_forced and run_c is not None and run_a_prime is not None:
+                summary_row["pipeline_b"] = _summarize_pipeline(run_b)
+            if depth_ablation and run_c is not None and run_a_prime is not None:
+                c_tokens = list(run_c.generated_token_ids)
+                summary_row["pipeline_c_it_chat"] = _summarize_pipeline(run_c)
+                summary_row["pipeline_a_prime_raw"] = _summarize_pipeline(run_a_prime)
+                summary_row["pipeline_b_early_raw"] = _summarize_pipeline(run_b_early)
+                summary_row["pipeline_b_mid_raw"] = _summarize_pipeline(run_b_mid)
+                summary_row["pipeline_b_late_raw"] = _summarize_pipeline(run_b_late)
+                summary_row["divergence_step_a_prime_raw_vs_c"] = _first_divergence_step(
+                    c_tokens, list(run_a_prime.free_argmax_token_ids)
+                )
+                for pipeline_name, run_branch in (
+                    ("B_early_raw", run_b_early),
+                    ("B_mid_raw", run_b_mid),
+                    ("B_late_raw", run_b_late),
+                ):
+                    summary_row[f"divergence_step_{pipeline_name.lower()}_vs_c"] = _first_divergence_step(
+                        c_tokens, list(run_branch.free_argmax_token_ids)
+                    )
+            elif args.teacher_forced and run_c is not None and run_a_prime is not None:
                 c_tokens = list(run_c.generated_token_ids)
                 div_b_vs_c = _first_divergence_step(c_tokens, list(run_b.free_argmax_token_ids))
                 div_a_prime_vs_c = _first_divergence_step(
@@ -1602,17 +1819,36 @@ def main() -> None:
                         "prompt_mode": "raw_format_b",
                     }
                 )
-            gen_rows.append(
-                {
-                    "prompt_id": record["id"],
-                    "pipeline": "B",
-                    "generated_text": run_b.generated_text,
-                    "generated_tokens": run_b.generated_tokens,
-                    "free_argmax_token_ids": list(run_b.free_argmax_token_ids),
-                    "prompt_mode": "raw_format_b",
-                }
-            )
-            if args.teacher_forced and run_c is not None and run_a_prime is not None:
+            if not args.teacher_forced:
+                gen_rows.append(
+                    {
+                        "prompt_id": record["id"],
+                        "pipeline": "B",
+                        "generated_text": run_b.generated_text,
+                        "generated_tokens": run_b.generated_tokens,
+                        "free_argmax_token_ids": list(run_b.free_argmax_token_ids),
+                        "prompt_mode": "raw_format_b",
+                    }
+                )
+            if depth_ablation and run_c is not None and run_a_prime is not None:
+                for pipeline_name, run_branch, prompt_mode in (
+                    ("C_it_chat", run_c, "it_chat_template"),
+                    ("A_prime_raw", run_a_prime, "raw_format_b"),
+                    ("B_early_raw", run_b_early, "raw_format_b"),
+                    ("B_mid_raw", run_b_mid, "raw_format_b"),
+                    ("B_late_raw", run_b_late, "raw_format_b"),
+                ):
+                    row = {
+                        "prompt_id": record["id"],
+                        "pipeline": pipeline_name,
+                        "generated_text": run_branch.generated_text,
+                        "generated_tokens": run_branch.generated_tokens,
+                        "prompt_mode": prompt_mode,
+                    }
+                    if pipeline_name != "C_it_chat":
+                        row["free_argmax_token_ids"] = list(run_branch.free_argmax_token_ids)
+                    gen_rows.append(row)
+            elif args.teacher_forced and run_c is not None and run_a_prime is not None:
                 gen_rows.append(
                     {
                         "prompt_id": record["id"],
@@ -1657,10 +1893,22 @@ def main() -> None:
             _write_jsonl(out_dir / "generated_texts.jsonl", gen_rows, append=True)
 
             step_rows: list[dict] = []
-            pipelines_to_log: list[tuple[str, PipelineRun]] = [("B", run_b)]
+            pipelines_to_log: list[tuple[str, PipelineRun]] = []
             if run_a is not None:
-                pipelines_to_log.insert(0, ("A", run_a))
-            if args.teacher_forced and run_c is not None and run_a_prime is not None:
+                pipelines_to_log.append(("A", run_a))
+            if depth_ablation and run_c is not None and run_a_prime is not None:
+                pipelines_to_log.extend(
+                    [
+                        ("C_it_chat", run_c),
+                        ("A_prime_raw", run_a_prime),
+                        ("B_early_raw", run_b_early),
+                        ("B_mid_raw", run_b_mid),
+                        ("B_late_raw", run_b_late),
+                    ]
+                )
+            else:
+                pipelines_to_log.append(("B", run_b))
+            if args.teacher_forced and not depth_ablation and run_c is not None and run_a_prime is not None:
                 pipelines_to_log.append(("C", run_c))
                 pipelines_to_log.append(("A_prime", run_a_prime))
                 if run_a_prime_tmpl is not None:
@@ -1682,17 +1930,25 @@ def main() -> None:
             _write_jsonl(out_dir / "step_metrics.jsonl", step_rows, append=True)
 
         # Free baseline cache and generation state before next chunk
-        del runs_b, requests_b
         if not args.teacher_forced:
+            del runs_b, requests_b
             del runs_a, requests_a
-        if args.teacher_forced:
-            del runs_c, runs_a_prime, runs_a_prime_tmpl, runs_b2
-            del requests_c, requests_a_prime, requests_a_prime_tmpl, requests_b2
+        elif depth_ablation:
+            del runs_c, runs_a_prime, runs_b_early, runs_b_mid, runs_b_late
+            del requests_c, requests_a_prime, requests_b_early, requests_b_mid, requests_b_late
             if c_baseline_lookup is not None:
                 del c_baseline_lookup
             if teacher_tokens is not None:
                 del teacher_tokens
-        del baseline_lookup_b
+        else:
+            del runs_c, runs_a_prime, runs_a_prime_tmpl, runs_b, runs_b2
+            del requests_c, requests_a_prime, requests_a_prime_tmpl, requests_b, requests_b2
+            if c_baseline_lookup is not None:
+                del c_baseline_lookup
+            if teacher_tokens is not None:
+                del teacher_tokens
+        if not args.teacher_forced:
+            del baseline_lookup_b
         torch.cuda.empty_cache()
 
         n_done += len(chunk)

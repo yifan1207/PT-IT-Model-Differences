@@ -110,18 +110,25 @@ class PipelineCapture:
         model_raw,
         adapter,
         arch_probe: ArchitectureProbe,
-        onset_layer: int,
+        onset_layer: int | None = None,
+        graft_start_layer: int | None = None,
+        graft_end_layer_exclusive: int | None = None,
         graft_it_model_raw=None,
     ) -> None:
         self.model_raw = model_raw
         self.adapter = adapter
         self.arch_probe = arch_probe
-        self.onset_layer = onset_layer
         self.graft_it_model_raw = graft_it_model_raw
         self.layers = adapter.get_layers(model_raw)
         self.graft_it_layers = (
             adapter.get_layers(graft_it_model_raw) if graft_it_model_raw is not None else None
         )
+        if graft_start_layer is None and onset_layer is not None:
+            graft_start_layer = onset_layer
+        if graft_end_layer_exclusive is None and graft_start_layer is not None:
+            graft_end_layer_exclusive = len(self.layers)
+        self.graft_start_layer = graft_start_layer
+        self.graft_end_layer_exclusive = graft_end_layer_exclusive
         self._current = self._empty_store()
         self._handles = self._register()
 
@@ -188,7 +195,12 @@ class PipelineCapture:
                 pt_out = output
                 pt_norm = pt_out[:, -1, :].float().norm(dim=-1).detach()
                 self._current["pt_mlp_norm"][li] = pt_norm
-                if self.graft_it_layers is not None and li >= self.onset_layer:
+                if (
+                    self.graft_it_layers is not None
+                    and self.graft_start_layer is not None
+                    and self.graft_end_layer_exclusive is not None
+                    and self.graft_start_layer <= li < self.graft_end_layer_exclusive
+                ):
                     # For dense backbones this swaps the late MLP block directly. For
                     # DeepSeek-V2-Lite, `.mlp(...)` is the full MoE module, so the graft
                     # also swaps router behavior plus shared/routed experts rather than
