@@ -5,6 +5,7 @@ and emits:
 
   - depth_ablation_metrics.json
   - depth_ablation_main.png
+  - depth_ablation_paper_main.png
   - {model}_panel.png copies when available
 """
 
@@ -171,6 +172,89 @@ def _plot_main(metrics: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
+def _plot_paper_main(metrics: list[dict], out_path: Path) -> None:
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    ax_windows, ax_local, ax_late = axes
+
+    y = np.arange(len(metrics))
+    ax_windows.set_title("Equal-width graft windows by model")
+    ax_windows.set_xlabel("Normalized depth")
+    ax_windows.set_yticks(y)
+    ax_windows.set_yticklabels([MODEL_DISPLAY.get(entry["model"], entry["model"]) for entry in metrics])
+    ax_windows.set_xlim(0, 1)
+    ax_windows.grid(axis="x", alpha=0.2)
+    for row_idx, entry in enumerate(metrics):
+        n_layers = entry.get("n_layers") or 1
+        for pipeline_name in PIPELINE_ORDER:
+            window = entry.get("pipelines", {}).get(pipeline_name, {}).get("graft_window", {})
+            start = float(window.get("start_layer", 0)) / max(n_layers, 1)
+            end = float(window.get("end_layer_exclusive", 0)) / max(n_layers, 1)
+            ax_windows.barh(
+                row_idx,
+                max(end - start, 0.0),
+                left=start,
+                height=0.22,
+                color=PIPELINE_COLOR[pipeline_name],
+                alpha=0.8,
+                label=PIPELINE_LABEL[pipeline_name] if row_idx == 0 else None,
+            )
+    handles, labels = ax_windows.get_legend_handles_labels()
+    if handles:
+        ax_windows.legend(frameon=False, fontsize=9, loc="lower right")
+
+    x = np.arange(len(metrics))
+    width = 0.22
+    for i, pipeline_name in enumerate(PIPELINE_ORDER):
+        offsets = x + (i - 1) * width
+        local_values = [
+            entry.get("pipelines", {})
+            .get(pipeline_name, {})
+            .get("regions", {})
+            .get("graft_window", {})
+            .get("kl_to_own_final", {})
+            .get("delta", 0.0)
+            for entry in metrics
+        ]
+        late_values = [
+            entry.get("pipelines", {})
+            .get(pipeline_name, {})
+            .get("regions", {})
+            .get("final_20pct", {})
+            .get("kl_to_own_final", {})
+            .get("delta", 0.0)
+            for entry in metrics
+        ]
+        ax_local.bar(offsets, local_values, width, color=PIPELINE_COLOR[pipeline_name], label=PIPELINE_LABEL[pipeline_name])
+        ax_late.bar(offsets, late_values, width, color=PIPELINE_COLOR[pipeline_name], label=PIPELINE_LABEL[pipeline_name])
+
+    labels = [MODEL_DISPLAY.get(entry["model"], entry["model"]) for entry in metrics]
+    for ax in (ax_local, ax_late):
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=20, ha="right")
+        ax.axhline(0, color="#888888", linewidth=0.8)
+        ax.grid(axis="y", alpha=0.2)
+
+    ax_local.set_title("Δ KL-to-own-final inside grafted block\n(B_window - A'_raw)")
+    ax_local.set_ylabel("Positive = larger local perturbation")
+    ax_late.set_title("Δ KL-to-own-final in final 20% of layers\n(B_window - A'_raw)")
+    ax_late.set_ylabel("Positive = later / less committed")
+    handles, labels_h = ax_late.get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels_h, loc="lower center", ncol=3, frameon=False)
+    fig.suptitle(
+        "exp11.2 depth specificity: local perturbation is not enough\n"
+        "Only the late graft consistently recreates the late delayed-convergence signature",
+        fontsize=12,
+    )
+    fig.tight_layout(rect=[0, 0.06, 1, 0.93])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", required=True)
@@ -208,8 +292,10 @@ def main() -> None:
     }
     (out_dir / "depth_ablation_metrics.json").write_text(json.dumps(payload, indent=2))
     _plot_main(metrics, out_dir / "depth_ablation_main.png")
+    _plot_paper_main(metrics, out_dir / "depth_ablation_paper_main.png")
     print(f"Wrote {out_dir / 'depth_ablation_metrics.json'}")
     print(f"Wrote {out_dir / 'depth_ablation_main.png'}")
+    print(f"Wrote {out_dir / 'depth_ablation_paper_main.png'}")
 
 
 if __name__ == "__main__":
