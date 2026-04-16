@@ -285,6 +285,7 @@ def _run_exp11(
     tuned_lens_dir: str | None = None,
     teacher_forced: bool = False,
     depth_ablation: bool = False,
+    causal_combined: bool = False,
     prompt_seed: int | None = None,
 ) -> None:
     cmd = [
@@ -326,6 +327,8 @@ def _run_exp11(
         cmd.append("--teacher-forced")
     if depth_ablation:
         cmd.append("--depth-ablation")
+    if causal_combined:
+        cmd.append("--causal-combined")
     if prompt_seed is not None:
         cmd.extend(["--prompt-seed", str(prompt_seed)])
     _run_subprocess(cmd, seed=seed)
@@ -773,6 +776,7 @@ def full_model_shard_run(
     batch_size: int = 32,
     teacher_forced: bool = False,
     depth_ablation: bool = False,
+    causal_combined: bool = False,
     prompt_seed: int | None = None,
 ) -> str:
     _setup()
@@ -814,6 +818,7 @@ def full_model_shard_run(
             tuned_lens_dir=tuned_lens_dir,
             teacher_forced=teacher_forced,
             depth_ablation=depth_ablation,
+            causal_combined=causal_combined,
             prompt_seed=prompt_seed,
         )
         if not prompts_path.exists():
@@ -876,6 +881,9 @@ def merge_model_shards(
         [shard_dir / "step_metrics.jsonl" for shard_dir in shard_dirs],
         merged_dir / "step_metrics.jsonl",
     )
+    mechanism_paths = [shard_dir / "mechanism_metrics.jsonl" for shard_dir in shard_dirs if (shard_dir / "mechanism_metrics.jsonl").exists()]
+    if mechanism_paths:
+        _concat_jsonl_files(mechanism_paths, merged_dir / "mechanism_metrics.jsonl")
     secondary_payloads = [
         _read_json(shard_dir / "secondary_trajectory_stats.json")
         for shard_dir in shard_dirs
@@ -906,6 +914,29 @@ def merge_model_shards(
         if readout_name_by_pipeline:
             merged_secondary["readout_name_by_pipeline"] = readout_name_by_pipeline
         (merged_dir / "secondary_trajectory_stats.json").write_text(json.dumps(merged_secondary, indent=2))
+    gradient_payloads = [
+        _read_json(shard_dir / "mechanism_gradient_directions.json")
+        for shard_dir in shard_dirs
+        if (shard_dir / "mechanism_gradient_directions.json").exists()
+    ]
+    if gradient_payloads:
+        merged_gradients: dict[str, Any] = {}
+        for payload in gradient_payloads:
+            for pipeline_name, pipeline_payload in payload.items():
+                dst = merged_gradients.setdefault(pipeline_name, {"counts": {}})
+                for axis_name, layers in pipeline_payload.items():
+                    if axis_name == "counts":
+                        for count_axis, counts in layers.items():
+                            dst_counts = dst["counts"].setdefault(count_axis, [0] * len(counts))
+                            for idx, value in enumerate(counts):
+                                dst_counts[idx] += int(value)
+                        continue
+                    dst_axis = dst.setdefault(axis_name, {})
+                    for layer_key, values in layers.items():
+                        existing = dst_axis.setdefault(layer_key, [0.0] * len(values))
+                        for idx, value in enumerate(values):
+                            existing[idx] += float(value)
+        (merged_dir / "mechanism_gradient_directions.json").write_text(json.dumps(merged_gradients, indent=2))
 
     merged_config = dict(shard_configs[0]) if shard_configs else {}
     merged_config.update(
@@ -987,6 +1018,38 @@ def _run_depth_ablation_smoke(run_name: str, *, model: str) -> None:
         batch_size=min(TUNED_BATCH_HINTS_V11_DEPTH[model], 16),
         teacher_forced=True,
         depth_ablation=True,
+        prompt_seed=0,
+    )
+    print(result)
+    merge_result = merge_model_shards.remote(
+        run_name,
+        model=model,
+        dataset=DEFAULT_DATASET,
+        num_shards=1,
+        seed=0,
+    )
+    print(merge_result)
+
+
+def _run_causal_combined_smoke(run_name: str, *, model: str) -> None:
+    if model not in VALID_MODELS:
+        raise ValueError(f"Unsupported model for causal-combined smoke: {model}")
+    print(stage_tuned_lens_probes_remote.remote([model]))
+    result = full_model_shard_run.remote(
+        model=model,
+        run_name=run_name,
+        shard_index=0,
+        num_shards=1,
+        n_prompts=8,
+        max_new_tokens=64,
+        prompts_per_chunk=8,
+        seed=0,
+        dataset=DEFAULT_DATASET,
+        readout_mode="both",
+        chunk_size=8,
+        batch_size=min(TUNED_BATCH_HINTS_V11_DEPTH[model], 8),
+        teacher_forced=True,
+        causal_combined=True,
         prompt_seed=0,
     )
     print(result)
@@ -1616,6 +1679,10 @@ def main(
         smoke_model = model or SMOKE_MODEL
         _run_depth_ablation_smoke(run_name, model=smoke_model)
         return
+    if mode == "causal-smoke":
+        smoke_model = model or SMOKE_MODEL
+        _run_causal_combined_smoke(run_name, model=smoke_model)
+        return
     if mode == "preflight":
         if not model:
             raise ValueError("`--model` is required for preflight mode.")
@@ -1703,7 +1770,7 @@ def main(
         )
         return
     print(
-        "Unknown mode. Use 'smoke', 'tuned-smoke', 'depth-smoke', 'preflight', 'full', 'sharded-full', "
+        "Unknown mode. Use 'smoke', 'tuned-smoke', 'depth-smoke', 'causal-smoke', 'preflight', 'full', 'sharded-full', "
         "'balanced-8gpu-full', 'stage-tuned-lens-probes', 'balanced-10gpu-tuned-full', "
         "'balanced-10gpu-v11-teacherforced', or 'balanced-10gpu-v11-depth-ablation'."
     )

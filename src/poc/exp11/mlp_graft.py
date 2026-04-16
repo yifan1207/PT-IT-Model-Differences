@@ -6,6 +6,8 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
+from src.poc.exp3.analysis.word_categories import classify_generated_tokens_by_word
+
 
 @dataclass
 class LayerStepMetrics:
@@ -27,6 +29,18 @@ class LayerStepMetrics:
     kl_to_pt_final: list[float] | None = None
     residual_cosine: list[float] | None = None
     residual_divergence: list[float] | None = None
+    anti_top1_proj: list[float] | None = None
+    anti_top1_cosine: list[float] | None = None
+    support_teacher_proj: list[float] | None = None
+    support_teacher_cosine: list[float] | None = None
+    anti_kl_final_proj: list[float] | None = None
+    anti_kl_final_cosine: list[float] | None = None
+    orth_remainder_norm: list[float] | None = None
+    local_teacher_rank: list[int] | None = None
+    local_teacher_rank_gain: list[float] | None = None
+    local_top1_token: list[int] | None = None
+    local_top1_token_str: list[str] | None = None
+    local_top1_category: list[str] | None = None
 
 
 @dataclass
@@ -80,6 +94,28 @@ class ReadoutSpec:
     final_norm: torch.nn.Module
     lm_head: torch.nn.Module
     probes: dict[int, torch.nn.Module] | None = None
+
+
+@dataclass
+class MechanismLayerMetrics:
+    anti_top1_proj: list[float]
+    anti_top1_cosine: list[float]
+    support_teacher_proj: list[float]
+    support_teacher_cosine: list[float]
+    anti_kl_final_proj: list[float]
+    anti_kl_final_cosine: list[float]
+    orth_remainder_norm: list[float]
+    local_teacher_rank: list[int]
+    local_teacher_rank_gain: list[float]
+    local_top1_token: list[int]
+    local_top1_token_str: list[str]
+    local_top1_category: list[str]
+
+
+@dataclass
+class GradientDirectionAccumulator:
+    sums: dict[str, list[torch.Tensor]]
+    counts: dict[str, list[int]]
 
 
 class ArchitectureProbe:
@@ -255,6 +291,75 @@ def logits_from_residuals(readout: ReadoutSpec, residuals: list[torch.Tensor]) -
     return logits.permute(1, 0, 2).contiguous()
 
 
+def raw_logits_from_residuals(readout: ReadoutSpec, residuals: list[torch.Tensor]) -> torch.Tensor:
+    """Return raw final_norm+lm_head logits [batch, n_layers, vocab] with no probes."""
+    stacked = torch.stack(residuals, dim=0)
+    target_dtype = _module_dtype(readout.final_norm)
+    stacked = stacked.to(dtype=target_dtype)
+    normed = readout.final_norm(stacked)
+    logits = readout.lm_head(normed).float()
+    return logits.permute(1, 0, 2).contiguous()
+
+
+def _safe_token_category(token_str: str) -> str:
+    cat = classify_generated_tokens_by_word([{"token_str": token_str}])[0]
+    return cat if isinstance(cat, str) else "OTHER"
+
+
+def _gather_rank(logits: torch.Tensor, token_ids: torch.Tensor) -> torch.Tensor:
+    target = logits.gather(-1, token_ids.unsqueeze(-1))
+    return (logits > target).sum(dim=-1) + 1
+
+
+def _project_against_direction(
+    vectors: torch.Tensor,
+    direction: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    eps = 1e-12
+    dir_norm = direction.norm(dim=-1, keepdim=True)
+    safe_dir = torch.where(dir_norm > eps, direction / dir_norm.clamp_min(eps), torch.zeros_like(direction))
+    proj = (vectors * safe_dir).sum(dim=-1)
+    vec_norm = vectors.norm(dim=-1)
+    cosine = proj / (vec_norm.clamp_min(eps))
+    remainder = vectors - proj.unsqueeze(-1) * safe_dir
+    remainder_norm = remainder.norm(dim=-1)
+    proj = torch.where(dir_norm.squeeze(-1) > eps, proj, torch.zeros_like(proj))
+    cosine = torch.where(
+        (dir_norm.squeeze(-1) > eps) & (vec_norm > eps),
+        cosine,
+        torch.zeros_like(cosine),
+    )
+    remainder_norm = torch.where(dir_norm.squeeze(-1) > eps, remainder_norm, vec_norm)
+    return proj, cosine, remainder_norm
+
+
+def init_gradient_direction_accumulator(
+    *,
+    axis_names: list[str],
+    layer_indices: list[int],
+    d_model: int,
+) -> GradientDirectionAccumulator:
+    sums = {
+        axis: [torch.zeros(d_model, dtype=torch.float64) for _ in layer_indices]
+        for axis in axis_names
+    }
+    counts = {
+        axis: [0 for _ in layer_indices]
+        for axis in axis_names
+    }
+    return GradientDirectionAccumulator(sums=sums, counts=counts)
+
+
+def gradient_direction_payload(acc: GradientDirectionAccumulator) -> dict[str, Any]:
+    payload: dict[str, Any] = {"counts": acc.counts}
+    for axis, vectors in acc.sums.items():
+        axis_payload: dict[str, list[float]] = {}
+        for idx, vec in enumerate(vectors):
+            axis_payload[f"late_idx_{idx}"] = vec.tolist()
+        payload[axis] = axis_payload
+    return payload
+
+
 def select_row_step_tensors(step_tensors: BatchedStepTensors, row_idx: int) -> StepTensors:
     return StepTensors(
         pre_mlp_residual=[tensor[row_idx : row_idx + 1] for tensor in step_tensors.pre_mlp_residual],
@@ -265,6 +370,118 @@ def select_row_step_tensors(step_tensors: BatchedStepTensors, row_idx: int) -> S
         pt_mlp_norm=[float(tensor[row_idx].item()) for tensor in step_tensors.pt_mlp_norm],
         relative_diff=[float(tensor[row_idx].item()) for tensor in step_tensors.relative_diff],
     )
+
+
+def compute_batched_mechanism_metrics(
+    *,
+    raw_readout: ReadoutSpec,
+    step_tensors: BatchedStepTensors,
+    chosen_token_ids: torch.Tensor,
+    tokenizer,
+    layer_indices: list[int],
+    baseline_raw_logits: torch.Tensor | None = None,
+    gradient_accumulator: GradientDirectionAccumulator | None = None,
+) -> list[MechanismLayerMetrics]:
+    if not layer_indices:
+        return []
+
+    chosen_token_ids = chosen_token_ids.reshape(-1)
+    device = chosen_token_ids.device
+    residuals = [step_tensors.residual_output[idx].detach() for idx in layer_indices]
+    updates = [step_tensors.mlp_output[idx].detach().float() for idx in layer_indices]
+    batch_size = chosen_token_ids.shape[0]
+
+    raw_logits = raw_logits_from_residuals(raw_readout, residuals)  # [batch, n_late, vocab]
+    final_log_p = F.log_softmax(raw_logits[:, -1, :], dim=-1).detach()
+    teacher_token_grid = chosen_token_ids[:, None].expand(batch_size, len(layer_indices))
+    teacher_rank = _gather_rank(raw_logits, teacher_token_grid)
+    if baseline_raw_logits is not None:
+        baseline_rank = _gather_rank(
+            baseline_raw_logits,
+            teacher_token_grid,
+        )
+        teacher_rank_gain = baseline_rank.float() - teacher_rank.float()
+    else:
+        teacher_rank_gain = torch.zeros_like(teacher_rank, dtype=torch.float32)
+
+    top1_ids_all = raw_logits.argmax(dim=-1)
+
+    anti_top1_proj_by_layer: list[torch.Tensor] = []
+    anti_top1_cos_by_layer: list[torch.Tensor] = []
+    support_teacher_proj_by_layer: list[torch.Tensor] = []
+    support_teacher_cos_by_layer: list[torch.Tensor] = []
+    anti_kl_proj_by_layer: list[torch.Tensor] = []
+    anti_kl_cos_by_layer: list[torch.Tensor] = []
+    orth_norm_by_layer: list[torch.Tensor] = []
+
+    axis_names = ["anti_top1", "support_teacher", "anti_kl_final"]
+    for late_idx, layer_idx in enumerate(layer_indices):
+        h_li = residuals[late_idx].detach().float().requires_grad_(True)
+        normed = raw_readout.final_norm(h_li.to(dtype=_module_dtype(raw_readout.final_norm)))
+        logits = raw_readout.lm_head(normed).float()
+        top1_ids = logits.detach().argmax(dim=-1)
+
+        teacher_obj = logits[torch.arange(batch_size, device=device), chosen_token_ids].sum()
+        top1_obj = logits[torch.arange(batch_size, device=device), top1_ids].sum()
+        log_q = F.log_softmax(logits, dim=-1)
+        kl_obj = F.kl_div(log_q, final_log_p, reduction="sum", log_target=True)
+
+        teacher_grad = torch.autograd.grad(teacher_obj, h_li, retain_graph=True)[0].detach()
+        top1_grad = torch.autograd.grad(top1_obj, h_li, retain_graph=True)[0].detach()
+        kl_grad = torch.autograd.grad(kl_obj, h_li)[0].detach()
+
+        update_vec = updates[late_idx]
+        anti_top1_proj, anti_top1_cos, _ = _project_against_direction(update_vec, -top1_grad)
+        support_teacher_proj, support_teacher_cos, _ = _project_against_direction(update_vec, teacher_grad)
+        anti_kl_proj, anti_kl_cos, orth_norm = _project_against_direction(update_vec, kl_grad)
+
+        anti_top1_proj_by_layer.append(anti_top1_proj.cpu())
+        anti_top1_cos_by_layer.append(anti_top1_cos.cpu())
+        support_teacher_proj_by_layer.append(support_teacher_proj.cpu())
+        support_teacher_cos_by_layer.append(support_teacher_cos.cpu())
+        anti_kl_proj_by_layer.append(anti_kl_proj.cpu())
+        anti_kl_cos_by_layer.append(anti_kl_cos.cpu())
+        orth_norm_by_layer.append(orth_norm.cpu())
+
+        if gradient_accumulator is not None:
+            for axis_name, grad in (
+                ("anti_top1", -top1_grad),
+                ("support_teacher", teacher_grad),
+                ("anti_kl_final", kl_grad),
+            ):
+                grad = grad.float()
+                norms = grad.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+                unit = grad / norms
+                gradient_accumulator.sums[axis_name][late_idx] += unit.sum(dim=0).double().cpu()
+                gradient_accumulator.counts[axis_name][late_idx] += int(unit.shape[0])
+
+    results: list[MechanismLayerMetrics] = []
+    for row_idx in range(batch_size):
+        top1_token_strs = [
+            tokenizer.decode(
+                [int(top1_ids_all[row_idx, late_idx].item())],
+                skip_special_tokens=False,
+                clean_up_tokenization_spaces=False,
+            )
+            for late_idx in range(len(layer_indices))
+        ]
+        results.append(
+            MechanismLayerMetrics(
+                anti_top1_proj=[float(t[row_idx].item()) for t in anti_top1_proj_by_layer],
+                anti_top1_cosine=[float(t[row_idx].item()) for t in anti_top1_cos_by_layer],
+                support_teacher_proj=[float(t[row_idx].item()) for t in support_teacher_proj_by_layer],
+                support_teacher_cosine=[float(t[row_idx].item()) for t in support_teacher_cos_by_layer],
+                anti_kl_final_proj=[float(t[row_idx].item()) for t in anti_kl_proj_by_layer],
+                anti_kl_final_cosine=[float(t[row_idx].item()) for t in anti_kl_cos_by_layer],
+                orth_remainder_norm=[float(t[row_idx].item()) for t in orth_norm_by_layer],
+                local_teacher_rank=[int(teacher_rank[row_idx, late_idx].item()) for late_idx in range(len(layer_indices))],
+                local_teacher_rank_gain=[float(teacher_rank_gain[row_idx, late_idx].item()) for late_idx in range(len(layer_indices))],
+                local_top1_token=[int(top1_ids_all[row_idx, late_idx].item()) for late_idx in range(len(layer_indices))],
+                local_top1_token_str=top1_token_strs,
+                local_top1_category=[_safe_token_category(token_str) for token_str in top1_token_strs],
+            )
+        )
+    return results
 
 
 def _entropy_from_probs(probs: torch.Tensor) -> torch.Tensor:

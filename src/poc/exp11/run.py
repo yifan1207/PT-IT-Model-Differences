@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import re
 from collections import defaultdict
@@ -10,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import numpy as np
 from transformers.cache_utils import DynamicCache
 
 from src.poc.cross_model.config import get_spec, model_id_for_variant
@@ -19,15 +21,21 @@ from src.poc.exp3.analysis.word_categories import classify_generated_tokens_by_w
 from src.poc.exp6.model_adapter import get_steering_adapter
 from src.poc.exp11.mlp_graft import (
     ArchitectureProbe,
+    GradientDirectionAccumulator,
     LayerStepMetrics,
+    MechanismLayerMetrics,
     PipelineCapture,
     PipelineRun,
     PipelineStepRecord,
     ReadoutSpec,
+    compute_batched_mechanism_metrics,
     compute_layer_metrics,
     first_stable_below_threshold,
     first_stable_true,
+    gradient_direction_payload,
+    init_gradient_direction_accumulator,
     logits_from_residuals,
+    raw_logits_from_residuals,
     select_row_step_tensors,
 )
 from src.poc.exp11.structural_tokens import build_structural_token_masks
@@ -98,6 +106,8 @@ DEPTH_ABLATION_WINDOWS = {
         "B_late_raw": (16, 27),
     },
 }
+CAUSAL_MECHANISM_CORE_PIPELINES = {"A_prime_raw", "B_late_raw", "C_it_chat", "D_late_ptswap"}
+CAUSAL_MECHANISM_AXES = ["anti_top1", "support_teacher", "anti_kl_final"]
 
 
 @dataclass
@@ -245,6 +255,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Teacher-forced exp11.2 depth ablation: run C_it_chat, A_prime_raw, and "
             "equal-width early/mid/late raw graft branches. Requires --teacher-forced."
+        ),
+    )
+    parser.add_argument(
+        "--causal-combined",
+        action="store_true",
+        help=(
+            "Teacher-forced combined Exp13/Exp14 run: run C_it_chat, A_prime_raw, "
+            "B/D early-mid-late branches, and collect late-stage output-relevant "
+            "mechanism summaries for core pipelines."
         ),
     )
     parser.add_argument(
@@ -398,6 +417,10 @@ def _is_depth_ablation(args: argparse.Namespace) -> bool:
     return bool(args.teacher_forced and args.depth_ablation)
 
 
+def _is_causal_combined(args: argparse.Namespace) -> bool:
+    return bool(args.teacher_forced and getattr(args, "causal_combined", False))
+
+
 def _depth_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
     windows = DEPTH_ABLATION_WINDOWS[model]
     expected_width = spec.n_layers - spec.corrective_onset
@@ -412,6 +435,19 @@ def _depth_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
                 f"Invalid depth-ablation window for {model}/{pipeline_name}: [{start}, {end})"
             )
     return windows
+
+
+def _causal_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
+    base = _depth_windows_for_model(model, spec)
+    out = dict(base)
+    out.update(
+        {
+            "D_early_ptswap": base["B_early_raw"],
+            "D_mid_ptswap": base["B_mid_raw"],
+            "D_late_ptswap": base["B_late_raw"],
+        }
+    )
+    return out
 
 
 def _make_request_states(
@@ -528,12 +564,17 @@ def _load_readouts(
     model_raw_pt,
     model_raw_it,
     device: torch.device,
-) -> tuple[ReadoutSpec, ReadoutSpec | None, ReadoutSpec | None]:
+) -> dict[str, ReadoutSpec]:
     final_norm_pt = steering_adapter.get_final_norm(model_raw_pt)
     lm_head_pt = steering_adapter.get_lm_head(model_raw_pt)
+    final_norm_it = steering_adapter.get_final_norm(model_raw_it)
+    lm_head_it = steering_adapter.get_lm_head(model_raw_it)
+    bundle = {
+        "raw_pt": ReadoutSpec(name="raw_logit_lens_pt", final_norm=final_norm_pt, lm_head=lm_head_pt),
+        "raw_it": ReadoutSpec(name="raw_logit_lens_it", final_norm=final_norm_it, lm_head=lm_head_it),
+    }
     if args.readout_mode == "raw":
-        primary = ReadoutSpec(name="raw_logit_lens", final_norm=final_norm_pt, lm_head=lm_head_pt)
-        return primary, None, None
+        return bundle
 
     if args.tuned_lens_dir is None:
         raise ValueError("--tuned-lens-dir is required when --readout-mode is tuned_pt_shared or both")
@@ -544,36 +585,28 @@ def _load_readouts(
         raise ValueError(
             f"Incomplete PT tuned-lens probes for {args.model}: expected {spec.n_layers}, found {len(pt_probes)}"
         )
-    primary = ReadoutSpec(
+    bundle["tuned_pt"] = ReadoutSpec(
         name="tuned_pt_shared",
         final_norm=final_norm_pt,
         lm_head=lm_head_pt,
         probes=pt_probes,
     )
     if args.readout_mode == "tuned_pt_shared":
-        return primary, None, None
+        return bundle
 
-    final_norm_it = steering_adapter.get_final_norm(model_raw_it)
-    lm_head_it = steering_adapter.get_lm_head(model_raw_it)
     it_probe_dir = _resolve_probe_dir(args.tuned_lens_dir, args.model, "it")
     it_probes = _load_probes(it_probe_dir, spec.d_model, device)
     if len(it_probes) != spec.n_layers:
         raise ValueError(
             f"Incomplete IT tuned-lens probes for {args.model}: expected {spec.n_layers}, found {len(it_probes)}"
         )
-    secondary_a = ReadoutSpec(
-        name="tuned_native_pt",
-        final_norm=final_norm_pt,
-        lm_head=lm_head_pt,
-        probes=pt_probes,
-    )
-    secondary_b = ReadoutSpec(
+    bundle["tuned_it"] = ReadoutSpec(
         name="tuned_native_it",
         final_norm=final_norm_it,
         lm_head=lm_head_it,
         probes=it_probes,
     )
-    return primary, secondary_a, secondary_b
+    return bundle
 
 
 def _maybe_secondary_logits(
@@ -615,6 +648,11 @@ def _prefill_requests(
     baseline_primary_readout: ReadoutSpec | None,
     baseline_secondary_readout: ReadoutSpec | None,
     secondary_accumulator: TrajectoryAccumulator | None,
+    mechanism_readout: ReadoutSpec | None = None,
+    mechanism_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None,
+    mechanism_baseline_raw_readout: ReadoutSpec | None = None,
+    mechanism_layer_indices: list[int] | None = None,
+    gradient_accumulator: GradientDirectionAccumulator | None = None,
     teacher_tokens_by_prompt: dict[str, list[int]] | None = None,
 ) -> FixedBatch | None:
     if not new_requests:
@@ -662,6 +700,27 @@ def _prefill_requests(
             else:
                 next_token_ids[row_idx] = teacher_seq[step_idx]
 
+    mechanism_results: list[MechanismLayerMetrics] | None = None
+    if mechanism_readout is not None and mechanism_layer_indices:
+        step_indices = [len(request.generated_token_ids) for request in new_requests]
+        baseline_raw_logits = _build_mechanism_baseline_raw_logits(
+            request_ids=[request.prompt_id for request in new_requests],
+            step_indices=step_indices,
+            baseline_lookup=mechanism_baseline_lookup,
+            baseline_raw_readout=mechanism_baseline_raw_readout,
+            fallback_step_tensors=step_tensors,
+            layer_indices=mechanism_layer_indices,
+        )
+        mechanism_results = compute_batched_mechanism_metrics(
+            raw_readout=mechanism_readout,
+            step_tensors=step_tensors,
+            chosen_token_ids=next_token_ids,
+            tokenizer=tokenizer,
+            layer_indices=mechanism_layer_indices,
+            baseline_raw_logits=baseline_raw_logits,
+            gradient_accumulator=gradient_accumulator,
+        )
+
     next_inputs: list[int] = []
     finished_mask = torch.zeros((len(new_requests),), dtype=torch.bool, device=device)
     for row_idx, request in enumerate(new_requests):
@@ -699,6 +758,12 @@ def _prefill_requests(
             tier1_mask=tier1_mask,
             **metric_kwargs,
         )
+        if mechanism_results is not None:
+            _apply_mechanism_metrics(
+                metrics,
+                mechanism_results[row_idx],
+                late_layers=mechanism_layer_indices or [],
+            )
         _record_step(
             request,
             token_id,
@@ -758,6 +823,11 @@ def _decode_fixed_batch(
     baseline_primary_readout: ReadoutSpec | None,
     baseline_secondary_readout: ReadoutSpec | None,
     secondary_accumulator: TrajectoryAccumulator | None,
+    mechanism_readout: ReadoutSpec | None = None,
+    mechanism_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None,
+    mechanism_baseline_raw_readout: ReadoutSpec | None = None,
+    mechanism_layer_indices: list[int] | None = None,
+    gradient_accumulator: GradientDirectionAccumulator | None = None,
     teacher_tokens_by_prompt: dict[str, list[int]] | None = None,
 ) -> FixedBatch | None:
     device = next(model_raw.parameters()).device
@@ -803,6 +873,30 @@ def _decode_fixed_batch(
                 forced_exhausted[row_idx] = True
             else:
                 next_token_ids[row_idx] = teacher_seq[step_idx]
+
+    mechanism_results: list[MechanismLayerMetrics] | None = None
+    if mechanism_readout is not None and mechanism_layer_indices:
+        step_indices = [
+            len(requests_by_id[prompt_id].generated_token_ids)
+            for prompt_id in active.request_ids
+        ]
+        baseline_raw_logits = _build_mechanism_baseline_raw_logits(
+            request_ids=list(active.request_ids),
+            step_indices=step_indices,
+            baseline_lookup=mechanism_baseline_lookup,
+            baseline_raw_readout=mechanism_baseline_raw_readout,
+            fallback_step_tensors=step_tensors,
+            layer_indices=mechanism_layer_indices,
+        )
+        mechanism_results = compute_batched_mechanism_metrics(
+            raw_readout=mechanism_readout,
+            step_tensors=step_tensors,
+            chosen_token_ids=next_token_ids,
+            tokenizer=tokenizer,
+            layer_indices=mechanism_layer_indices,
+            baseline_raw_logits=baseline_raw_logits,
+            gradient_accumulator=gradient_accumulator,
+        )
 
     next_inputs: list[int] = []
     updated_valid_lengths = active.valid_lengths.clone()
@@ -850,6 +944,12 @@ def _decode_fixed_batch(
             tier1_mask=tier1_mask,
             **metric_kwargs,
         )
+        if mechanism_results is not None:
+            _apply_mechanism_metrics(
+                metrics,
+                mechanism_results[row_idx],
+                late_layers=mechanism_layer_indices or [],
+            )
         _record_step(
             request,
             token_id,
@@ -912,6 +1012,11 @@ def _run_pipeline_fixed_batches(
     baseline_primary_readout: ReadoutSpec | None,
     baseline_secondary_readout: ReadoutSpec | None,
     secondary_accumulator: TrajectoryAccumulator | None,
+    mechanism_readout: ReadoutSpec | None = None,
+    mechanism_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None,
+    mechanism_baseline_raw_readout: ReadoutSpec | None = None,
+    mechanism_layer_indices: list[int] | None = None,
+    gradient_accumulator: GradientDirectionAccumulator | None = None,
     teacher_tokens_by_prompt: dict[str, list[int]] | None = None,
 ) -> dict[str, PipelineRun]:
     requests_by_id = {request.prompt_id: request for request in requests}
@@ -937,6 +1042,11 @@ def _run_pipeline_fixed_batches(
             baseline_primary_readout=baseline_primary_readout,
             baseline_secondary_readout=baseline_secondary_readout,
             secondary_accumulator=secondary_accumulator,
+            mechanism_readout=mechanism_readout,
+            mechanism_baseline_lookup=mechanism_baseline_lookup,
+            mechanism_baseline_raw_readout=mechanism_baseline_raw_readout,
+            mechanism_layer_indices=mechanism_layer_indices,
+            gradient_accumulator=gradient_accumulator,
             teacher_tokens_by_prompt=teacher_tokens_by_prompt,
         )
 
@@ -960,6 +1070,11 @@ def _run_pipeline_fixed_batches(
                 baseline_primary_readout=baseline_primary_readout,
                 baseline_secondary_readout=baseline_secondary_readout,
                 secondary_accumulator=secondary_accumulator,
+                mechanism_readout=mechanism_readout,
+                mechanism_baseline_lookup=mechanism_baseline_lookup,
+                mechanism_baseline_raw_readout=mechanism_baseline_raw_readout,
+                mechanism_layer_indices=mechanism_layer_indices,
+                gradient_accumulator=gradient_accumulator,
                 teacher_tokens_by_prompt=teacher_tokens_by_prompt,
             )
 
@@ -1002,6 +1117,11 @@ def _run_pipeline_with_batch_fallback(
     baseline_primary_readout: ReadoutSpec | None,
     baseline_secondary_readout: ReadoutSpec | None,
     secondary_accumulator: TrajectoryAccumulator | None,
+    mechanism_readout: ReadoutSpec | None = None,
+    mechanism_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None,
+    mechanism_baseline_raw_readout: ReadoutSpec | None = None,
+    mechanism_layer_indices: list[int] | None = None,
+    gradient_accumulator: GradientDirectionAccumulator | None = None,
     teacher_tokens_by_prompt: dict[str, list[int]] | None = None,
 ) -> tuple[dict[str, PipelineRun], int]:
     current_batch_size = max(1, batch_size)
@@ -1029,6 +1149,11 @@ def _run_pipeline_with_batch_fallback(
                 baseline_primary_readout=baseline_primary_readout,
                 baseline_secondary_readout=baseline_secondary_readout,
                 secondary_accumulator=secondary_accumulator,
+                mechanism_readout=mechanism_readout,
+                mechanism_baseline_lookup=mechanism_baseline_lookup,
+                mechanism_baseline_raw_readout=mechanism_baseline_raw_readout,
+                mechanism_layer_indices=mechanism_layer_indices,
+                gradient_accumulator=gradient_accumulator,
                 teacher_tokens_by_prompt=teacher_tokens_by_prompt,
             )
             return runs, current_batch_size
@@ -1138,11 +1263,146 @@ def _write_jsonl(path: Path, rows: list[dict], *, append: bool) -> None:
             f.write(json.dumps(row) + "\n")
 
 
+def _collapsed_category(raw: str) -> str:
+    if raw in {"STRUCTURAL", "DISCOURSE", "PUNCTUATION"}:
+        return "FORMAT"
+    if raw == "CONTENT":
+        return "CONTENT"
+    return "FUNCTION_OTHER"
+
+
+def _teacher_token_category(token_str: str) -> str:
+    raw = classify_generated_tokens_by_word([{"token_str": token_str}])[0]
+    return raw if isinstance(raw, str) else "OTHER"
+
+
+def _layer_range_for_final_region(spec) -> list[int]:
+    start = max(0, math.floor(spec.n_layers * 0.8))
+    return list(range(start, spec.n_layers))
+
+
+def _late_mechanism_payload(
+    *,
+    mechanism: MechanismLayerMetrics,
+    layer_indices: list[int],
+    teacher_token_id: int,
+    teacher_token_str: str,
+) -> dict[str, Any]:
+    teacher_category = _teacher_token_category(teacher_token_str)
+    return {
+        "layer_indices": list(layer_indices),
+        "teacher_token_id": int(teacher_token_id),
+        "teacher_token_str": teacher_token_str,
+        "teacher_token_category": teacher_category,
+        "teacher_token_category_collapsed": _collapsed_category(teacher_category),
+        "teacher_token_rank": mechanism.local_teacher_rank,
+        "teacher_token_rank_gain": mechanism.local_teacher_rank_gain,
+        "current_top1_token_id": mechanism.local_top1_token,
+        "current_top1_token_str": mechanism.local_top1_token_str,
+        "current_top1_token_category": mechanism.local_top1_category,
+        "current_top1_token_category_collapsed": [
+            _collapsed_category(cat) for cat in mechanism.local_top1_category
+        ],
+        "anti_top1_proj": mechanism.anti_top1_proj,
+        "anti_top1_cosine": mechanism.anti_top1_cosine,
+        "support_teacher_proj": mechanism.support_teacher_proj,
+        "support_teacher_cosine": mechanism.support_teacher_cosine,
+        "anti_kl_final_proj": mechanism.anti_kl_final_proj,
+        "anti_kl_final_cosine": mechanism.anti_kl_final_cosine,
+        "orth_remainder_norm": mechanism.orth_remainder_norm,
+    }
+
+
+def _save_gradient_directions_npz(
+    path: Path,
+    *,
+    payload: dict[str, Any],
+) -> None:
+    arrays: dict[str, np.ndarray] = {}
+    counts = payload.get("counts", {})
+    for axis_name, layers in payload.items():
+        if axis_name == "counts":
+            continue
+        for layer_key, values in layers.items():
+            arrays[f"{axis_name}__{layer_key}"] = np.asarray(values, dtype=np.float32)
+    for axis_name, layer_counts in counts.items():
+        arrays[f"count__{axis_name}"] = np.asarray(layer_counts, dtype=np.int64)
+    np.savez(path, **arrays)
+
+
+def _build_mechanism_baseline_raw_logits(
+    *,
+    request_ids: list[str],
+    step_indices: list[int],
+    baseline_lookup: dict[str, list[list[torch.Tensor]]] | None,
+    baseline_raw_readout: ReadoutSpec | None,
+    fallback_step_tensors: BatchedStepTensors,
+    layer_indices: list[int],
+) -> torch.Tensor | None:
+    if baseline_lookup is None or baseline_raw_readout is None or not layer_indices:
+        return None
+    per_layer: list[list[torch.Tensor]] = [[] for _ in layer_indices]
+    for row_idx, prompt_id in enumerate(request_ids):
+        steps = baseline_lookup.get(prompt_id, [])
+        step_idx = step_indices[row_idx]
+        if step_idx < len(steps):
+            row_residuals = steps[step_idx]
+            for late_idx, layer_idx in enumerate(layer_indices):
+                per_layer[late_idx].append(row_residuals[layer_idx].float())
+        else:
+            for late_idx, layer_idx in enumerate(layer_indices):
+                per_layer[late_idx].append(fallback_step_tensors.residual_output[layer_idx][row_idx : row_idx + 1].float().detach().cpu())
+    stacked = [torch.cat(rows, dim=0).to(next(baseline_raw_readout.final_norm.parameters()).device) for rows in per_layer]
+    return raw_logits_from_residuals(baseline_raw_readout, stacked)
+
+
+def _apply_mechanism_metrics(
+    metrics: LayerStepMetrics,
+    mechanism: MechanismLayerMetrics,
+    *,
+    late_layers: list[int],
+) -> None:
+    n_layers = len(metrics.top1_token)
+    index_map = {layer_idx: late_idx for late_idx, layer_idx in enumerate(late_layers)}
+    def _fill_float(values: list[float]) -> list[float]:
+        out = [0.0] * n_layers
+        for layer_idx, late_idx in index_map.items():
+            out[layer_idx] = float(values[late_idx])
+        return out
+    def _fill_int(values: list[int]) -> list[int]:
+        out = [0] * n_layers
+        for layer_idx, late_idx in index_map.items():
+            out[layer_idx] = int(values[late_idx])
+        return out
+    def _fill_str(values: list[str]) -> list[str]:
+        out = [""] * n_layers
+        for layer_idx, late_idx in index_map.items():
+            out[layer_idx] = str(values[late_idx])
+        return out
+
+    metrics.anti_top1_proj = _fill_float(mechanism.anti_top1_proj)
+    metrics.anti_top1_cosine = _fill_float(mechanism.anti_top1_cosine)
+    metrics.support_teacher_proj = _fill_float(mechanism.support_teacher_proj)
+    metrics.support_teacher_cosine = _fill_float(mechanism.support_teacher_cosine)
+    metrics.anti_kl_final_proj = _fill_float(mechanism.anti_kl_final_proj)
+    metrics.anti_kl_final_cosine = _fill_float(mechanism.anti_kl_final_cosine)
+    metrics.orth_remainder_norm = _fill_float(mechanism.orth_remainder_norm)
+    metrics.local_teacher_rank = _fill_int(mechanism.local_teacher_rank)
+    metrics.local_teacher_rank_gain = _fill_float(mechanism.local_teacher_rank_gain)
+    metrics.local_top1_token = _fill_int(mechanism.local_top1_token)
+    metrics.local_top1_token_str = _fill_str(mechanism.local_top1_token_str)
+    metrics.local_top1_category = _fill_str(mechanism.local_top1_category)
+
+
 def main() -> None:
     args = parse_args()
     _configure_reproducibility(args.seed)
     if args.depth_ablation and not args.teacher_forced:
         raise ValueError("--depth-ablation requires --teacher-forced")
+    if args.causal_combined and not args.teacher_forced:
+        raise ValueError("--causal-combined requires --teacher-forced")
+    if args.depth_ablation and args.causal_combined:
+        raise ValueError("--depth-ablation and --causal-combined are mutually exclusive")
     if args.num_shards < 1:
         raise ValueError("--num-shards must be >= 1")
     if not 0 <= args.shard_index < args.num_shards:
@@ -1150,7 +1410,10 @@ def main() -> None:
     spec = get_spec(args.model)
     onset_layer = spec.corrective_onset if args.onset_layer is None else args.onset_layer
     depth_ablation = _is_depth_ablation(args)
+    causal_combined = _is_causal_combined(args)
     depth_windows = _depth_windows_for_model(args.model, spec) if depth_ablation else {}
+    causal_windows = _causal_windows_for_model(args.model, spec) if causal_combined else {}
+    late_mechanism_layers = _layer_range_for_final_region(spec) if causal_combined else []
     requested_batch_size = args.batch_size or DEFAULT_BATCH_SIZE[args.model]
     out_dir = Path(args.out_dir or f"results/exp11/{args.model}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1194,7 +1457,7 @@ def main() -> None:
     real_token_mask_it = steering_adapter.real_token_mask(tokenizer_it, device, model_raw=model_raw_it)
     structural_masks_pt = build_structural_token_masks(tokenizer_pt, logit_dim_pt, real_token_mask_pt, device)
     structural_masks_it = build_structural_token_masks(tokenizer_it, logit_dim_it, real_token_mask_it, device)
-    primary_readout, secondary_readout_a, secondary_readout_b = _load_readouts(
+    readouts = _load_readouts(
         args=args,
         spec=spec,
         steering_adapter=steering_adapter,
@@ -1202,6 +1465,10 @@ def main() -> None:
         model_raw_it=model_raw_it,
         device=device,
     )
+    raw_readout_pt = readouts["raw_pt"]
+    raw_readout_it = readouts["raw_it"]
+    tuned_readout_pt = readouts.get("tuned_pt", raw_readout_pt)
+    tuned_readout_it = readouts.get("tuned_it", raw_readout_it)
     eos_ids_pt = set(steering_adapter.eos_token_ids(tokenizer_pt))
     eos_ids_it = set(steering_adapter.eos_token_ids(tokenizer_it))
     eos_ids_pt_or_it = eos_ids_pt | eos_ids_it
@@ -1243,7 +1510,7 @@ def main() -> None:
         prompt_id: tokenizer_it(prompt_text, add_special_tokens=True)["input_ids"]
         for prompt_id, prompt_text in it_chat_prompt_text_by_id.items()
     }
-    if args.teacher_forced and not depth_ablation:
+    if args.teacher_forced and not depth_ablation and not causal_combined:
         _assert_used_token_ids_compatible(
             tokenizer_it,
             tokenizer_pt,
@@ -1253,14 +1520,54 @@ def main() -> None:
 
     chunk_size = args.chunk_size if args.chunk_size else len(prompts_to_run) or 1
     secondary_accumulator = None
-    if args.readout_mode == "both":
+    if args.readout_mode == "both" and not causal_combined:
         secondary_accumulator = TrajectoryAccumulator(metric_names=TRAJECTORY_METRICS, n_layers=spec.n_layers)
+    mechanism_accumulators: dict[str, GradientDirectionAccumulator] = {}
+    if causal_combined:
+        for pipeline_name in CAUSAL_MECHANISM_CORE_PIPELINES:
+            mechanism_accumulators[pipeline_name] = init_gradient_direction_accumulator(
+                axis_names=CAUSAL_MECHANISM_AXES,
+                layer_indices=late_mechanism_layers,
+                d_model=spec.d_model,
+            )
 
     # Write config and prompts once before chunk loop
     batch_size_a = requested_batch_size
     batch_size_b = requested_batch_size
     batch_size_by_pipeline: dict[str, int] = {}
-    if depth_ablation:
+    pipeline_primary_readouts: dict[str, str] = {}
+    pipeline_raw_readouts: dict[str, str] = {}
+    if causal_combined:
+        pipelines = [
+            "C_it_chat",
+            "A_prime_raw",
+            "B_early_raw",
+            "B_mid_raw",
+            "B_late_raw",
+            "D_early_ptswap",
+            "D_mid_ptswap",
+            "D_late_ptswap",
+        ]
+        pipeline_prompt_modes = {
+            "C_it_chat": "it_chat_template",
+            "A_prime_raw": "raw_format_b",
+            "B_early_raw": "raw_format_b",
+            "B_mid_raw": "raw_format_b",
+            "B_late_raw": "raw_format_b",
+            "D_early_ptswap": "it_chat_template",
+            "D_mid_ptswap": "it_chat_template",
+            "D_late_ptswap": "it_chat_template",
+        }
+        for name in pipelines:
+            if name.startswith("D_") or name == "C_it_chat":
+                pipeline_primary_readouts[name] = tuned_readout_it.name
+                pipeline_raw_readouts[name] = raw_readout_it.name
+            else:
+                pipeline_primary_readouts[name] = tuned_readout_pt.name
+                pipeline_raw_readouts[name] = raw_readout_pt.name
+        pipeline_aliases = None
+        secondary_names = None
+    elif depth_ablation:
         pipelines = ["C_it_chat", "A_prime_raw", "B_early_raw", "B_mid_raw", "B_late_raw"]
         pipeline_prompt_modes = {
             "C_it_chat": "it_chat_template",
@@ -1269,15 +1576,18 @@ def main() -> None:
             "B_mid_raw": "raw_format_b",
             "B_late_raw": "raw_format_b",
         }
+        for name in pipelines:
+            pipeline_primary_readouts[name] = tuned_readout_pt.name if name != "C_it_chat" else tuned_readout_pt.name
+            pipeline_raw_readouts[name] = raw_readout_it.name if name == "C_it_chat" else raw_readout_pt.name
         secondary_names = (
             {
-                "C_it_chat": secondary_readout_b.name,
-                "A_prime_raw": secondary_readout_a.name,
-                "B_early_raw": secondary_readout_b.name,
-                "B_mid_raw": secondary_readout_b.name,
-                "B_late_raw": secondary_readout_b.name,
+                "C_it_chat": tuned_readout_it.name,
+                "A_prime_raw": tuned_readout_pt.name,
+                "B_early_raw": tuned_readout_it.name,
+                "B_mid_raw": tuned_readout_it.name,
+                "B_late_raw": tuned_readout_it.name,
             }
-            if secondary_readout_a is not None and secondary_readout_b is not None
+            if args.readout_mode == "both"
             else None
         )
         pipeline_aliases: dict[str, str] | None = None
@@ -1290,15 +1600,18 @@ def main() -> None:
             "A_prime_tmpl": "it_chat_template",
             "B2": "it_chat_template",
         }
+        for name in pipelines:
+            pipeline_primary_readouts[name] = tuned_readout_pt.name
+            pipeline_raw_readouts[name] = raw_readout_it.name if name == "C" else raw_readout_pt.name
         secondary_names = (
             {
-                "B": secondary_readout_b.name,
-                "C": secondary_readout_b.name,
-                "A_prime": secondary_readout_a.name,
-                "A_prime_tmpl": secondary_readout_a.name,
-                "B2": secondary_readout_b.name,
+                "B": tuned_readout_it.name,
+                "C": tuned_readout_it.name,
+                "A_prime": tuned_readout_pt.name,
+                "A_prime_tmpl": tuned_readout_pt.name,
+                "B2": tuned_readout_it.name,
             }
-            if secondary_readout_a is not None and secondary_readout_b is not None
+            if args.readout_mode == "both"
             else None
         )
         pipeline_aliases = {
@@ -1309,12 +1622,15 @@ def main() -> None:
     else:
         pipelines = ["A", "B"]
         pipeline_prompt_modes = {"A": "raw_format_b", "B": "raw_format_b"}
+        for name in pipelines:
+            pipeline_primary_readouts[name] = tuned_readout_pt.name
+            pipeline_raw_readouts[name] = raw_readout_pt.name
         secondary_names = (
             {
-                "A": secondary_readout_a.name,
-                "B": secondary_readout_b.name if secondary_readout_b is not None else secondary_readout_a.name,
+                "A": tuned_readout_pt.name,
+                "B": tuned_readout_it.name if args.readout_mode == "both" else tuned_readout_pt.name,
             }
-            if secondary_readout_a is not None and args.readout_mode == "both"
+            if args.readout_mode == "both"
             else None
         )
         pipeline_aliases = {}
@@ -1343,12 +1659,15 @@ def main() -> None:
         "chunk_size": args.chunk_size,
         "n_prompts_sampled_after_sharding": len(prompts),
         "readout_mode": args.readout_mode,
-        "primary_readout_name": primary_readout.name,
-        "secondary_readout_name": "mixed_by_pipeline" if secondary_readout_b is not None else None,
+        "primary_readout_name": None if causal_combined else tuned_readout_pt.name,
+        "secondary_readout_name": "mixed_by_pipeline" if secondary_names is not None else None,
         "secondary_readout_names_by_pipeline": secondary_names,
+        "primary_readout_names_by_pipeline": pipeline_primary_readouts,
+        "raw_readout_names_by_pipeline": pipeline_raw_readouts,
         "tuned_lens_dir": args.tuned_lens_dir,
         "teacher_forced": bool(args.teacher_forced),
         "depth_ablation": depth_ablation,
+        "causal_combined": causal_combined,
         "pipelines": pipelines,
         "pipeline_prompt_modes": pipeline_prompt_modes,
         "pipeline_aliases": pipeline_aliases,
@@ -1362,8 +1681,18 @@ def main() -> None:
                 for name, (start, end) in depth_windows.items()
             }
             if depth_ablation
+            else {
+                name: {
+                    "start_layer": start,
+                    "end_layer_exclusive": end,
+                    "display_range": f"{start}-{end - 1}",
+                }
+                for name, (start, end) in causal_windows.items()
+            }
+            if causal_combined
             else None
         ),
+        "late_mechanism_layers": late_mechanism_layers if causal_combined else None,
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
     _write_jsonl(out_dir / "prompts.jsonl", prompts, append=False)
@@ -1384,8 +1713,14 @@ def main() -> None:
 
         runs_a: dict[str, PipelineRun] = {}
         runs_b: dict[str, PipelineRun] = {}
+        runs_d_early: dict[str, PipelineRun] = {}
+        runs_d_mid: dict[str, PipelineRun] = {}
+        runs_d_late: dict[str, PipelineRun] = {}
         requests_a: list[RequestState] = []
         requests_b: list[RequestState] = []
+        requests_d_early: list[RequestState] = []
+        requests_d_mid: list[RequestState] = []
+        requests_d_late: list[RequestState] = []
         if not args.teacher_forced:
             requests_a = _make_request_states(
                 chunk,
@@ -1415,8 +1750,8 @@ def main() -> None:
                 batch_size=requested_batch_size,
                 store_baseline=True,
                 baseline_lookup=None,
-                primary_readout=primary_readout,
-                secondary_readout=secondary_readout_a,
+                primary_readout=tuned_readout_pt,
+                secondary_readout=tuned_readout_pt if args.readout_mode == "both" else None,
                 baseline_primary_readout=None,
                 baseline_secondary_readout=None,
                 secondary_accumulator=secondary_accumulator,
@@ -1438,6 +1773,7 @@ def main() -> None:
         requests_a_prime_tmpl: list[RequestState] = []
         requests_b2: list[RequestState] = []
         c_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None
+        a_prime_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None
         teacher_tokens: dict[str, list[int]] | None = None
 
         if args.teacher_forced:
@@ -1449,7 +1785,7 @@ def main() -> None:
                 prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
             )
             runs_c, batch_size_c = _run_pipeline_with_batch_fallback(
-                pipeline_name="C_it_chat" if depth_ablation else "C",
+                pipeline_name="C_it_chat" if (depth_ablation or causal_combined) else "C",
                 requests=requests_c,
                 model_raw=model_raw_it,
                 capture_factory=lambda: PipelineCapture(
@@ -1469,13 +1805,20 @@ def main() -> None:
                 batch_size=requested_batch_size,
                 store_baseline=True,
                 baseline_lookup=None,
-                primary_readout=primary_readout,
-                secondary_readout=secondary_readout_b,
+                primary_readout=tuned_readout_it if causal_combined else tuned_readout_pt,
+                secondary_readout=None if causal_combined else (tuned_readout_it if args.readout_mode == "both" else None),
                 baseline_primary_readout=None,
                 baseline_secondary_readout=None,
                 secondary_accumulator=secondary_accumulator,
+                mechanism_readout=raw_readout_it if causal_combined and "C_it_chat" in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                mechanism_baseline_lookup=None,
+                mechanism_baseline_raw_readout=None,
+                mechanism_layer_indices=late_mechanism_layers if causal_combined and "C_it_chat" in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                gradient_accumulator=mechanism_accumulators.get("C_it_chat"),
             )
-            batch_size_by_pipeline["C_it_chat" if depth_ablation else "C"] = batch_size_c
+            batch_size_by_pipeline[
+                "C_it_chat" if (depth_ablation or causal_combined) else "C"
+            ] = batch_size_c
             c_baseline_lookup = {pid: run.baseline_cache for pid, run in runs_c.items()}
             teacher_tokens = {pid: list(run.generated_token_ids) for pid, run in runs_c.items()}
             _assert_used_token_ids_compatible(
@@ -1493,7 +1836,7 @@ def main() -> None:
                 prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
             )
             runs_a_prime, batch_size_a_prime = _run_pipeline_with_batch_fallback(
-                pipeline_name="A_prime_raw" if depth_ablation else "A_prime",
+                pipeline_name="A_prime_raw" if (depth_ablation or causal_combined) else "A_prime",
                 requests=requests_a_prime,
                 model_raw=model_raw_pt,
                 capture_factory=lambda: PipelineCapture(
@@ -1511,18 +1854,134 @@ def main() -> None:
                 max_new_tokens=args.max_new_tokens,
                 inactive_token_id=inactive_token_id_pt,
                 batch_size=batch_size_a,
-                store_baseline=False,
+                store_baseline=causal_combined,
                 baseline_lookup=c_baseline_lookup,
-                primary_readout=primary_readout,
-                secondary_readout=secondary_readout_a,
-                baseline_primary_readout=primary_readout,
-                baseline_secondary_readout=secondary_readout_b,
+                primary_readout=tuned_readout_pt,
+                secondary_readout=None if causal_combined else (tuned_readout_pt if args.readout_mode == "both" else None),
+                baseline_primary_readout=tuned_readout_pt,
+                baseline_secondary_readout=tuned_readout_it if args.readout_mode == "both" and not causal_combined else None,
                 secondary_accumulator=secondary_accumulator,
+                mechanism_readout=raw_readout_pt if causal_combined and "A_prime_raw" in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                mechanism_baseline_lookup=None,
+                mechanism_baseline_raw_readout=None,
+                mechanism_layer_indices=late_mechanism_layers if causal_combined and "A_prime_raw" in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                gradient_accumulator=mechanism_accumulators.get("A_prime_raw"),
                 teacher_tokens_by_prompt=teacher_tokens,
             )
-            batch_size_by_pipeline["A_prime_raw" if depth_ablation else "A_prime"] = batch_size_a_prime
+            batch_size_by_pipeline[
+                "A_prime_raw" if (depth_ablation or causal_combined) else "A_prime"
+            ] = batch_size_a_prime
+            if causal_combined:
+                a_prime_baseline_lookup = {pid: run.baseline_cache for pid, run in runs_a_prime.items()}
 
-            if depth_ablation:
+            if causal_combined:
+                branch_requests_pt = {
+                    name: _make_request_states(
+                        chunk,
+                        tokenizer_pt,
+                        set(),
+                        prompt_text_by_id=raw_prompt_text_by_id,
+                        prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
+                    )
+                    for name in ("B_early_raw", "B_mid_raw", "B_late_raw")
+                }
+                branch_requests_it = {
+                    name: _make_request_states(
+                        chunk,
+                        tokenizer_it,
+                        set(),
+                        prompt_text_by_id=it_chat_prompt_text_by_id,
+                        prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
+                    )
+                    for name in ("D_early_ptswap", "D_mid_ptswap", "D_late_ptswap")
+                }
+                branch_runs_pt: dict[str, dict[str, PipelineRun]] = {}
+                branch_runs_it: dict[str, dict[str, PipelineRun]] = {}
+                for pipeline_name, requests_branch in branch_requests_pt.items():
+                    graft_start, graft_end = causal_windows[pipeline_name]
+                    branch_runs_pt[pipeline_name], batch_size_by_pipeline[pipeline_name] = _run_pipeline_with_batch_fallback(
+                        pipeline_name=pipeline_name,
+                        requests=requests_branch,
+                        model_raw=model_raw_pt,
+                        capture_factory=lambda start=graft_start, end=graft_end: PipelineCapture(
+                            model_raw=model_raw_pt,
+                            adapter=steering_adapter,
+                            arch_probe=arch_probe,
+                            graft_start_layer=start,
+                            graft_end_layer_exclusive=end,
+                            graft_it_model_raw=model_raw_it,
+                        ),
+                        tokenizer=tokenizer_pt,
+                        pad_token_id=pad_token_id_pt,
+                        real_token_mask=real_token_mask_pt,
+                        tier1_mask=structural_masks_pt.tier1,
+                        eos_token_ids=eos_ids_pt_or_it,
+                        max_new_tokens=args.max_new_tokens,
+                        inactive_token_id=inactive_token_id_pt,
+                        batch_size=batch_size_a,
+                        store_baseline=False,
+                        baseline_lookup=c_baseline_lookup,
+                        primary_readout=tuned_readout_pt,
+                        secondary_readout=None,
+                        baseline_primary_readout=tuned_readout_pt,
+                        baseline_secondary_readout=None,
+                        secondary_accumulator=None,
+                        mechanism_readout=raw_readout_pt if pipeline_name in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                        mechanism_baseline_lookup=a_prime_baseline_lookup,
+                        mechanism_baseline_raw_readout=raw_readout_pt,
+                        mechanism_layer_indices=late_mechanism_layers if pipeline_name in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                        gradient_accumulator=mechanism_accumulators.get(pipeline_name),
+                        teacher_tokens_by_prompt=teacher_tokens,
+                    )
+                for pipeline_name, requests_branch in branch_requests_it.items():
+                    graft_start, graft_end = causal_windows[pipeline_name]
+                    branch_runs_it[pipeline_name], batch_size_by_pipeline[pipeline_name] = _run_pipeline_with_batch_fallback(
+                        pipeline_name=pipeline_name,
+                        requests=requests_branch,
+                        model_raw=model_raw_it,
+                        capture_factory=lambda start=graft_start, end=graft_end: PipelineCapture(
+                            model_raw=model_raw_it,
+                            adapter=steering_adapter,
+                            arch_probe=arch_probe,
+                            graft_start_layer=start,
+                            graft_end_layer_exclusive=end,
+                            graft_it_model_raw=model_raw_pt,
+                        ),
+                        tokenizer=tokenizer_it,
+                        pad_token_id=pad_token_id_it,
+                        real_token_mask=real_token_mask_it,
+                        tier1_mask=structural_masks_it.tier1,
+                        eos_token_ids=eos_ids_it,
+                        max_new_tokens=args.max_new_tokens,
+                        inactive_token_id=inactive_token_id_it,
+                        batch_size=batch_size_a,
+                        store_baseline=False,
+                        baseline_lookup=c_baseline_lookup,
+                        primary_readout=tuned_readout_it,
+                        secondary_readout=None,
+                        baseline_primary_readout=tuned_readout_it,
+                        baseline_secondary_readout=None,
+                        secondary_accumulator=None,
+                        mechanism_readout=raw_readout_it if pipeline_name in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                        mechanism_baseline_lookup=c_baseline_lookup,
+                        mechanism_baseline_raw_readout=raw_readout_it,
+                        mechanism_layer_indices=late_mechanism_layers if pipeline_name in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                        gradient_accumulator=mechanism_accumulators.get(pipeline_name),
+                        teacher_tokens_by_prompt=teacher_tokens,
+                    )
+                runs_b_early = branch_runs_pt["B_early_raw"]
+                runs_b_mid = branch_runs_pt["B_mid_raw"]
+                runs_b_late = branch_runs_pt["B_late_raw"]
+                requests_b_early = branch_requests_pt["B_early_raw"]
+                requests_b_mid = branch_requests_pt["B_mid_raw"]
+                requests_b_late = branch_requests_pt["B_late_raw"]
+                runs_d_early = branch_runs_it["D_early_ptswap"]
+                runs_d_mid = branch_runs_it["D_mid_ptswap"]
+                runs_d_late = branch_runs_it["D_late_ptswap"]
+                requests_d_early = branch_requests_it["D_early_ptswap"]
+                requests_d_mid = branch_requests_it["D_mid_ptswap"]
+                requests_d_late = branch_requests_it["D_late_ptswap"]
+            elif depth_ablation:
                 branch_requests = {
                     name: _make_request_states(
                         chunk,
@@ -1559,10 +2018,10 @@ def main() -> None:
                         batch_size=batch_size_a,
                         store_baseline=False,
                         baseline_lookup=c_baseline_lookup,
-                        primary_readout=primary_readout,
-                        secondary_readout=secondary_readout_b,
-                        baseline_primary_readout=primary_readout,
-                        baseline_secondary_readout=secondary_readout_b,
+                        primary_readout=tuned_readout_pt,
+                        secondary_readout=tuned_readout_it if args.readout_mode == "both" else None,
+                        baseline_primary_readout=tuned_readout_pt,
+                        baseline_secondary_readout=tuned_readout_it if args.readout_mode == "both" else None,
                         secondary_accumulator=secondary_accumulator,
                         teacher_tokens_by_prompt=teacher_tokens,
                     )
@@ -1602,10 +2061,10 @@ def main() -> None:
                     batch_size=batch_size_a,
                     store_baseline=False,
                     baseline_lookup=c_baseline_lookup,
-                    primary_readout=primary_readout,
-                    secondary_readout=secondary_readout_a,
-                    baseline_primary_readout=primary_readout,
-                    baseline_secondary_readout=secondary_readout_b,
+                    primary_readout=tuned_readout_pt,
+                    secondary_readout=tuned_readout_pt if args.readout_mode == "both" else None,
+                    baseline_primary_readout=tuned_readout_pt,
+                    baseline_secondary_readout=tuned_readout_it if args.readout_mode == "both" else None,
                     secondary_accumulator=secondary_accumulator,
                     teacher_tokens_by_prompt=teacher_tokens,
                 )
@@ -1639,10 +2098,10 @@ def main() -> None:
                     batch_size=batch_size_a,
                     store_baseline=False,
                     baseline_lookup=c_baseline_lookup,
-                    primary_readout=primary_readout,
-                    secondary_readout=secondary_readout_b,
-                    baseline_primary_readout=primary_readout,
-                    baseline_secondary_readout=secondary_readout_b,
+                    primary_readout=tuned_readout_pt,
+                    secondary_readout=tuned_readout_it if args.readout_mode == "both" else None,
+                    baseline_primary_readout=tuned_readout_pt,
+                    baseline_secondary_readout=tuned_readout_it if args.readout_mode == "both" else None,
                     secondary_accumulator=secondary_accumulator,
                     teacher_tokens_by_prompt=teacher_tokens,
                 )
@@ -1676,10 +2135,10 @@ def main() -> None:
                     batch_size=batch_size_a,
                     store_baseline=False,
                     baseline_lookup=c_baseline_lookup,
-                    primary_readout=primary_readout,
-                    secondary_readout=secondary_readout_b,
-                    baseline_primary_readout=primary_readout,
-                    baseline_secondary_readout=secondary_readout_b,
+                    primary_readout=tuned_readout_pt,
+                    secondary_readout=tuned_readout_it if args.readout_mode == "both" else None,
+                    baseline_primary_readout=tuned_readout_pt,
+                    baseline_secondary_readout=tuned_readout_it if args.readout_mode == "both" else None,
                     secondary_accumulator=secondary_accumulator,
                     teacher_tokens_by_prompt=teacher_tokens,
                 )
@@ -1714,10 +2173,10 @@ def main() -> None:
                 batch_size=batch_size_a,
                 store_baseline=False,
                 baseline_lookup=baseline_lookup_b,
-                primary_readout=primary_readout,
-                secondary_readout=secondary_readout_b,
-                baseline_primary_readout=primary_readout,
-                baseline_secondary_readout=secondary_readout_a,
+                primary_readout=tuned_readout_pt,
+                secondary_readout=tuned_readout_it if args.readout_mode == "both" else None,
+                baseline_primary_readout=tuned_readout_pt,
+                baseline_secondary_readout=tuned_readout_pt if args.readout_mode == "both" else None,
                 secondary_accumulator=secondary_accumulator,
                 teacher_tokens_by_prompt=None,
             )
@@ -1731,6 +2190,9 @@ def main() -> None:
             run_b_early = runs_b_early.get(record["id"])
             run_b_mid = runs_b_mid.get(record["id"])
             run_b_late = runs_b_late.get(record["id"])
+            run_d_early = runs_d_early.get(record["id"])
+            run_d_mid = runs_d_mid.get(record["id"])
+            run_d_late = runs_d_late.get(record["id"])
             run_a_prime_tmpl = runs_a_prime_tmpl.get(record["id"])
             run_b2 = runs_b2.get(record["id"])
 
@@ -1752,7 +2214,31 @@ def main() -> None:
                 summary_row["divergence_step"] = divergence_step
                 summary_row["pipeline_a"] = _summarize_pipeline(run_a)
                 summary_row["pipeline_b"] = _summarize_pipeline(run_b)
-            if depth_ablation and run_c is not None and run_a_prime is not None:
+            if causal_combined and run_c is not None and run_a_prime is not None:
+                c_tokens = list(run_c.generated_token_ids)
+                summary_row["pipeline_c_it_chat"] = _summarize_pipeline(run_c)
+                summary_row["pipeline_a_prime_raw"] = _summarize_pipeline(run_a_prime)
+                summary_row["pipeline_b_early_raw"] = _summarize_pipeline(run_b_early)
+                summary_row["pipeline_b_mid_raw"] = _summarize_pipeline(run_b_mid)
+                summary_row["pipeline_b_late_raw"] = _summarize_pipeline(run_b_late)
+                summary_row["pipeline_d_early_ptswap"] = _summarize_pipeline(run_d_early)
+                summary_row["pipeline_d_mid_ptswap"] = _summarize_pipeline(run_d_mid)
+                summary_row["pipeline_d_late_ptswap"] = _summarize_pipeline(run_d_late)
+                summary_row["divergence_step_a_prime_raw_vs_c"] = _first_divergence_step(
+                    c_tokens, list(run_a_prime.free_argmax_token_ids)
+                )
+                for pipeline_name, run_branch in (
+                    ("B_early_raw", run_b_early),
+                    ("B_mid_raw", run_b_mid),
+                    ("B_late_raw", run_b_late),
+                    ("D_early_ptswap", run_d_early),
+                    ("D_mid_ptswap", run_d_mid),
+                    ("D_late_ptswap", run_d_late),
+                ):
+                    summary_row[f"divergence_step_{pipeline_name.lower()}_vs_c"] = _first_divergence_step(
+                        c_tokens, list(run_branch.free_argmax_token_ids)
+                    )
+            elif depth_ablation and run_c is not None and run_a_prime is not None:
                 c_tokens = list(run_c.generated_token_ids)
                 summary_row["pipeline_c_it_chat"] = _summarize_pipeline(run_c)
                 summary_row["pipeline_a_prime_raw"] = _summarize_pipeline(run_a_prime)
@@ -1830,7 +2316,28 @@ def main() -> None:
                         "prompt_mode": "raw_format_b",
                     }
                 )
-            if depth_ablation and run_c is not None and run_a_prime is not None:
+            if causal_combined and run_c is not None and run_a_prime is not None:
+                for pipeline_name, run_branch, prompt_mode in (
+                    ("C_it_chat", run_c, "it_chat_template"),
+                    ("A_prime_raw", run_a_prime, "raw_format_b"),
+                    ("B_early_raw", run_b_early, "raw_format_b"),
+                    ("B_mid_raw", run_b_mid, "raw_format_b"),
+                    ("B_late_raw", run_b_late, "raw_format_b"),
+                    ("D_early_ptswap", run_d_early, "it_chat_template"),
+                    ("D_mid_ptswap", run_d_mid, "it_chat_template"),
+                    ("D_late_ptswap", run_d_late, "it_chat_template"),
+                ):
+                    row = {
+                        "prompt_id": record["id"],
+                        "pipeline": pipeline_name,
+                        "generated_text": run_branch.generated_text,
+                        "generated_tokens": run_branch.generated_tokens,
+                        "prompt_mode": prompt_mode,
+                    }
+                    if pipeline_name != "C_it_chat":
+                        row["free_argmax_token_ids"] = list(run_branch.free_argmax_token_ids)
+                    gen_rows.append(row)
+            elif depth_ablation and run_c is not None and run_a_prime is not None:
                 for pipeline_name, run_branch, prompt_mode in (
                     ("C_it_chat", run_c, "it_chat_template"),
                     ("A_prime_raw", run_a_prime, "raw_format_b"),
@@ -1896,7 +2403,20 @@ def main() -> None:
             pipelines_to_log: list[tuple[str, PipelineRun]] = []
             if run_a is not None:
                 pipelines_to_log.append(("A", run_a))
-            if depth_ablation and run_c is not None and run_a_prime is not None:
+            if causal_combined and run_c is not None and run_a_prime is not None:
+                pipelines_to_log.extend(
+                    [
+                        ("C_it_chat", run_c),
+                        ("A_prime_raw", run_a_prime),
+                        ("B_early_raw", run_b_early),
+                        ("B_mid_raw", run_b_mid),
+                        ("B_late_raw", run_b_late),
+                        ("D_early_ptswap", run_d_early),
+                        ("D_mid_ptswap", run_d_mid),
+                        ("D_late_ptswap", run_d_late),
+                    ]
+                )
+            elif depth_ablation and run_c is not None and run_a_prime is not None:
                 pipelines_to_log.extend(
                     [
                         ("C_it_chat", run_c),
@@ -1908,7 +2428,13 @@ def main() -> None:
                 )
             else:
                 pipelines_to_log.append(("B", run_b))
-            if args.teacher_forced and not depth_ablation and run_c is not None and run_a_prime is not None:
+            if (
+                args.teacher_forced
+                and not depth_ablation
+                and not causal_combined
+                and run_c is not None
+                and run_a_prime is not None
+            ):
                 pipelines_to_log.append(("C", run_c))
                 pipelines_to_log.append(("A_prime", run_a_prime))
                 if run_a_prime_tmpl is not None:
@@ -1929,10 +2455,60 @@ def main() -> None:
                     )
             _write_jsonl(out_dir / "step_metrics.jsonl", step_rows, append=True)
 
+            if causal_combined:
+                mechanism_rows: list[dict[str, Any]] = []
+                for pipeline_name, run in (
+                    ("C_it_chat", run_c),
+                    ("A_prime_raw", run_a_prime),
+                    ("B_late_raw", run_b_late),
+                    ("D_late_ptswap", run_d_late),
+                ):
+                    if run is None:
+                        continue
+                    for step_idx, step in enumerate(run.step_records):
+                        if step.metrics.anti_top1_proj is None:
+                            continue
+                        mechanism_rows.append(
+                            {
+                                "prompt_id": record["id"],
+                                "pipeline": pipeline_name,
+                                "step": step_idx,
+                                **_late_mechanism_payload(
+                                    mechanism=MechanismLayerMetrics(
+                                        anti_top1_proj=[step.metrics.anti_top1_proj[layer] for layer in late_mechanism_layers],
+                                        anti_top1_cosine=[step.metrics.anti_top1_cosine[layer] for layer in late_mechanism_layers],
+                                        support_teacher_proj=[step.metrics.support_teacher_proj[layer] for layer in late_mechanism_layers],
+                                        support_teacher_cosine=[step.metrics.support_teacher_cosine[layer] for layer in late_mechanism_layers],
+                                        anti_kl_final_proj=[step.metrics.anti_kl_final_proj[layer] for layer in late_mechanism_layers],
+                                        anti_kl_final_cosine=[step.metrics.anti_kl_final_cosine[layer] for layer in late_mechanism_layers],
+                                        orth_remainder_norm=[step.metrics.orth_remainder_norm[layer] for layer in late_mechanism_layers],
+                                        local_teacher_rank=[step.metrics.local_teacher_rank[layer] for layer in late_mechanism_layers],
+                                        local_teacher_rank_gain=[step.metrics.local_teacher_rank_gain[layer] for layer in late_mechanism_layers],
+                                        local_top1_token=[step.metrics.local_top1_token[layer] for layer in late_mechanism_layers],
+                                        local_top1_token_str=[step.metrics.local_top1_token_str[layer] for layer in late_mechanism_layers],
+                                        local_top1_category=[step.metrics.local_top1_category[layer] for layer in late_mechanism_layers],
+                                    ),
+                                    layer_indices=late_mechanism_layers,
+                                    teacher_token_id=step.token_id,
+                                    teacher_token_str=step.token_str,
+                                ),
+                            }
+                        )
+                _write_jsonl(out_dir / "mechanism_metrics.jsonl", mechanism_rows, append=True)
+
         # Free baseline cache and generation state before next chunk
         if not args.teacher_forced:
             del runs_b, requests_b
             del runs_a, requests_a
+        elif causal_combined:
+            del runs_c, runs_a_prime, runs_b_early, runs_b_mid, runs_b_late, runs_d_early, runs_d_mid, runs_d_late
+            del requests_c, requests_a_prime, requests_b_early, requests_b_mid, requests_b_late, requests_d_early, requests_d_mid, requests_d_late
+            if c_baseline_lookup is not None:
+                del c_baseline_lookup
+            if a_prime_baseline_lookup is not None:
+                del a_prime_baseline_lookup
+            if teacher_tokens is not None:
+                del teacher_tokens
         elif depth_ablation:
             del runs_c, runs_a_prime, runs_b_early, runs_b_mid, runs_b_late
             del requests_c, requests_a_prime, requests_b_early, requests_b_mid, requests_b_late
@@ -1966,6 +2542,18 @@ def main() -> None:
                 ),
             )
             secondary_path.write_text(json.dumps(merged_secondary, indent=2))
+
+        if causal_combined:
+            gradient_payload = {
+                pipeline_name: gradient_direction_payload(acc)
+                for pipeline_name, acc in mechanism_accumulators.items()
+            }
+            (out_dir / "mechanism_gradient_directions.json").write_text(json.dumps(gradient_payload, indent=2))
+            for pipeline_name, payload in gradient_payload.items():
+                _save_gradient_directions_npz(
+                    out_dir / f"mechanism_gradient_directions__{pipeline_name}.npz",
+                    payload=payload,
+                )
 
     # Update config with actual batch sizes from the last chunk
     config["batch_size_pipeline_a"] = batch_size_a if not args.teacher_forced else None
