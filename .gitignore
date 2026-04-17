@@ -302,6 +302,11 @@ results/exp13/exp13A_lite_20260415_live/*
 !results/exp13/exp13A_lite_20260415_live/exp13a_lite_paper_main.png
 !results/exp13/exp13A_lite_20260415_live/exp13a_lite_appendix.png
 !results/exp13/exp13A_lite_20260415_live/*_panel.png
+!results/exp13/exp13exp14_full_20260416/
+results/exp13/exp13exp14_full_20260416/*
+!results/exp13/exp13exp14_full_20260416/exp13_full_summary.json
+!results/exp13/exp13exp14_full_20260416/exp13_full_causal_main.png
+!results/exp13/exp13exp14_full_20260416/exp13_full_causal_appendix.png
 
 paper_draft/*
 

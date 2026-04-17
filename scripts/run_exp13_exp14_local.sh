@@ -125,23 +125,23 @@ launch_bg() {
   local num_shards="$4"
   local out_dir="${RUN_ROOT}/shards/${model}__shard${shard_index}of${num_shards}"
   local log_path="${LOG_DIR}/${model}__shard${shard_index}of${num_shards}.log"
-  echo "[exp13/14] launch model=${model} shard=${shard_index}/${num_shards} gpu=${gpu}"
+  echo "[exp13/14] launch model=${model} shard=${shard_index}/${num_shards} gpu=${gpu}" >&2
   run_single "$gpu" "$model" "$N_PROMPTS" "$shard_index" "$num_shards" "$out_dir" "$log_path" &
-  echo $!
+  LAUNCHED_PID=$!
 }
 
-pid_llama0="$(launch_bg 0 llama31_8b 0 2)"
-pid_llama1="$(launch_bg 1 llama31_8b 1 2)"
-pid_mistral0="$(launch_bg 2 mistral_7b 0 2)"
-pid_mistral1="$(launch_bg 3 mistral_7b 1 2)"
-pid_olmo0="$(launch_bg 4 olmo2_7b 0 2)"
-pid_olmo1="$(launch_bg 5 olmo2_7b 1 2)"
-pid_gemma="$(launch_bg 6 gemma3_4b 0 1)"
-pid_qwen="$(launch_bg 7 qwen3_4b 0 1)"
+launch_bg 0 llama31_8b 0 2; pid_llama0="$LAUNCHED_PID"
+launch_bg 1 llama31_8b 1 2; pid_llama1="$LAUNCHED_PID"
+launch_bg 2 mistral_7b 0 2; pid_mistral0="$LAUNCHED_PID"
+launch_bg 3 mistral_7b 1 2; pid_mistral1="$LAUNCHED_PID"
+launch_bg 4 olmo2_7b 0 2; pid_olmo0="$LAUNCHED_PID"
+launch_bg 5 olmo2_7b 1 2; pid_olmo1="$LAUNCHED_PID"
+launch_bg 6 gemma3_4b 0 1; pid_gemma="$LAUNCHED_PID"
+launch_bg 7 qwen3_4b 0 1; pid_qwen="$LAUNCHED_PID"
 
 wait "$pid_gemma"
 echo "[exp13/14] finished gemma3_4b shard 0/1"
-pid_deepseek="$(launch_bg 6 deepseek_v2_lite 0 1)"
+launch_bg 6 deepseek_v2_lite 0 1; pid_deepseek="$LAUNCHED_PID"
 echo "[exp13/14] queued deepseek on gpu 6"
 
 wait "$pid_llama0"; echo "[exp13/14] finished llama31_8b shard 0/2"
