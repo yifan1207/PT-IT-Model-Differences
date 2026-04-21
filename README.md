@@ -236,7 +236,7 @@ results/
   exp15_symmetric_behavioral_causality/
 ```
 
-Canonical experiment/result paths now use descriptive names. Legacy numeric aliases such as `src/poc/exp6`, `results/exp6`, and flat `scripts/*.py` entrypoints are kept as compatibility symlinks so older notes and commands still resolve.
+Canonical experiment/result paths now use descriptive names. Source code now lives only in the canonical named experiment folders. Some legacy result and flat script aliases are still kept during the results/scripts migration so older commands keep working.
 
 For a full index, see [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md).
 

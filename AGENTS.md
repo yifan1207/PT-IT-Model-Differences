@@ -10,7 +10,8 @@ Mechanistic interpretability study on instruction-tuned LLMs. We find a "correct
 - Canonical experiment packages now use descriptive names such as `src/poc/exp06_corrective_direction_steering/` instead of bare numeric folders.
 - Canonical result roots match those names, e.g. `results/exp06_corrective_direction_steering/`.
 - Canonical script entrypoints live under `scripts/{run,plot,analysis,precompute,eval,merge,scoring,infra,data}/`.
-- Legacy numeric/flat aliases are kept as compatibility symlinks (`src/poc/exp6`, `results/exp6`, `scripts/run_phase0_multimodel.sh`, etc.), but new work should prefer the canonical paths.
+- Source experiments now live only in the canonical named folders under `src/poc/exp##_descriptive_name/`.
+- Some legacy result and flat script aliases are still kept during migration, but new work should prefer the canonical paths.
 
 ## Key experiments
 
