@@ -210,6 +210,63 @@ def _call_judge(client, model: str, prompt: str, retries: int = 4, max_tokens: i
     raise RuntimeError("unreachable")
 
 
+def _call_and_normalize_pointwise(
+    *,
+    client,
+    model: str,
+    task: str,
+    prompt: str,
+    retries: int = 4,
+    max_tokens: int = 192,
+) -> tuple[dict[str, Any], str]:
+    last_exc: Exception | None = None
+    last_raw = ""
+    for attempt in range(retries):
+        try:
+            parsed, raw_text = _call_judge(client, model, prompt, retries=1, max_tokens=max_tokens)
+            normalized = _normalize_pointwise_result(task, parsed)
+            return normalized, raw_text
+        except Exception as exc:
+            last_exc = exc
+            if "raw_text" in locals():
+                last_raw = raw_text
+            if attempt == retries - 1:
+                preview = last_raw[:300].replace("\n", "\\n")
+                raise ValueError(
+                    f"Pointwise judge failed after {retries} attempts for task={task}: {exc}; raw={preview!r}"
+                ) from exc
+            time.sleep((2**attempt) + random.uniform(0, 0.75))
+    raise RuntimeError("unreachable")
+
+
+def _call_and_normalize_pairwise(
+    *,
+    client,
+    model: str,
+    prompt: str,
+    retries: int = 4,
+    max_tokens: int = 160,
+) -> tuple[dict[str, Any], str]:
+    last_exc: Exception | None = None
+    last_raw = ""
+    for attempt in range(retries):
+        try:
+            parsed, raw_text = _call_judge(client, model, prompt, retries=1, max_tokens=max_tokens)
+            normalized = _normalize_pairwise_result(parsed)
+            return normalized, raw_text
+        except Exception as exc:
+            last_exc = exc
+            if "raw_text" in locals():
+                last_raw = raw_text
+            if attempt == retries - 1:
+                preview = last_raw[:300].replace("\n", "\\n")
+                raise ValueError(
+                    f"Pairwise judge failed after {retries} attempts: {exc}; raw={preview!r}"
+                ) from exc
+            time.sleep((2**attempt) + random.uniform(0, 0.75))
+    raise RuntimeError("unreachable")
+
+
 def _load_pointwise_items(run_dir: Path) -> tuple[list[dict], dict[str, dict], dict[str, Any], list[dict], dict[str, dict]]:
     config = json.loads((run_dir / "config.json").read_text(encoding="utf-8"))
     pipeline_manifest = json.loads((run_dir / "pipeline_manifest.json").read_text(encoding="utf-8"))
@@ -298,8 +355,13 @@ def _run_pointwise_stage(
     def score_one(item: dict) -> dict:
         rubric = RUBRICS[item["task"]]
         prompt = rubric.format(question=item["question"], response=item["response"])
-        parsed, raw_text = _call_judge(client, resolved_model, prompt, max_tokens=192)
-        normalized = _normalize_pointwise_result(item["task"], parsed)
+        normalized, raw_text = _call_and_normalize_pointwise(
+            client=client,
+            model=resolved_model,
+            task=item["task"],
+            prompt=prompt,
+            max_tokens=192,
+        )
         return {
             "item_id": item["item_id"],
             "stage": stage_name,
@@ -546,8 +608,12 @@ def _run_pairwise_stage(
             response_a=item["response_a"],
             response_b=item["response_b"],
         )
-        parsed, raw_text = _call_judge(client, resolved_model, prompt, max_tokens=160)
-        normalized = _normalize_pairwise_result(parsed)
+        normalized, raw_text = _call_and_normalize_pairwise(
+            client=client,
+            model=resolved_model,
+            prompt=prompt,
+            max_tokens=160,
+        )
         preferred_condition = (
             item["presented_condition_a"]
             if normalized["winner"] == "A"
