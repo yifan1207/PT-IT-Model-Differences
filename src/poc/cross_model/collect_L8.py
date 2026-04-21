@@ -14,7 +14,7 @@ matching the Gemma 3 4B result from exp4.
     run on the merged residual matrix.
   • Residuals stored as float32 numpy arrays (not bfloat16) so TwoNN
     distances are numerically stable.
-  • Reuses skdim.id.TwoNN — same library as src/poc/exp4/analysis/intrinsic_dim.py.
+  • Reuses skdim.id.TwoNN — same library as src/poc/exp04_phase_transition_characterization/analysis/intrinsic_dim.py.
 
 ═══ Output ═══════════════════════════════════════════════════════════════
   results/cross_model/{model}/{variant}/

@@ -1,5 +1,0 @@
-{
-  "primary_readout_name": "tuned_pt_shared",
-  "secondary_readout_name": "tuned_native",
-  "readout_mode": "both"
-}

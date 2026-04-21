@@ -5,7 +5,7 @@ Runs generation mode (autoregressive, per-step per-layer metrics) and/or
 encode mode (single-pass, last-token per-layer metrics) in one model load,
 writing results incrementally to disk.
 
-This script supersedes src/poc/exp3/run.py and src/poc/exp4/run.py.
+This script supersedes src/poc/exp03_corrective_stage_characterization/run.py and src/poc/exp04_phase_transition_characterization/run.py.
 Existing analysis scripts remain fully compatible — field names are unchanged.
 
 Output (results/{run_name}/)
@@ -237,7 +237,7 @@ def load_dataset_records(
     if not path.exists():
         raise FileNotFoundError(
             f"Dataset not found: {path}\n"
-            f"Build it: uv run python -m src.poc.exp3.data.build_dataset"
+            f"Build it: uv run python -m src.poc.exp03_corrective_stage_characterization.data.build_dataset"
         )
     records = []
     with open(path, encoding="utf-8") as f:
@@ -1056,7 +1056,7 @@ def collect_record(
         # ── Token type classification (post-generation, word-level) ───────────
         token_type: list[str] = []
         try:
-            from src.poc.exp3.analysis.token_types import classify_generated_tokens
+            from src.poc.exp03_corrective_stage_characterization.analysis.token_types import classify_generated_tokens
             token_type = classify_generated_tokens(generated_tokens)
         except Exception:
             token_type = ["OTHER"] * n_steps

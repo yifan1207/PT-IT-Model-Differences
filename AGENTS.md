@@ -6,17 +6,23 @@ Always implement 100% as planned. Overcome engineering difficulties — don't by
 ## Project overview
 Mechanistic interpretability study on instruction-tuned LLMs. We find a "corrective direction" in MLP outputs (layers ~20-33) that instruction tuning introduces. Removing this direction from generation degrades governance/structural formatting while preserving content quality — evidence of a distinct structural control mechanism.
 
+## Canonical layout
+- Canonical experiment packages now use descriptive names such as `src/poc/exp06_corrective_direction_steering/` instead of bare numeric folders.
+- Canonical result roots match those names, e.g. `results/exp06_corrective_direction_steering/`.
+- Canonical script entrypoints live under `scripts/{run,plot,analysis,precompute,eval,merge,scoring,infra,data}/`.
+- Legacy numeric/flat aliases are kept as compatibility symlinks (`src/poc/exp6`, `results/exp6`, `scripts/run_phase0_multimodel.sh`, etc.), but new work should prefer the canonical paths.
+
 ## Key experiments
 
 ### Exp6 (core intervention framework)
-- `src/poc/exp6/run.py` — Main intervention runner. Supports multi-worker parallelism.
+- `src/poc/exp06_corrective_direction_steering/run.py` — Main intervention runner. Supports multi-worker parallelism.
 - **Worker suffix logic (line 979-981)**: `run_name = run_name_base + f"_w{worker_index}"` only when `n_workers > 1`. Scripts must NOT add `_w{i}` themselves (double-suffix bug was fixed in 0C/0F/0H/0I scripts).
 - **Resume logic (line ~1079)**: Conditions with all benchmarks done are skipped (`[exp6] skip CONDITION (all done)`), enabling safe parallel/resume runs.
-- Merging: `scripts/merge_exp6_workers.py` combines per-worker scores.jsonl into merged dir.
+- Merging: `scripts/merge/merge_steering_workers.py` combines per-worker scores.jsonl into merged dir.
 
 ### Exp7 Tier 0 (methodology validation — 10 experiments)
-All plot code: `scripts/plot_exp7_tier0.py`
-All plot data: `results/exp7/plots/data/`
+All plot code: `scripts/plot/plot_validation_tier0.py`
+All plot data: `results/exp07_methodology_validation_tier0/plots/data/`
 
 | ID | Name | Status | Notes |
 |----|------|--------|-------|
@@ -39,44 +45,44 @@ All plots have 95% CI bands or ±1σ error bars where data supports it (from 0D 
 Extends causal steering from Gemma-only to all 6 models. Code changes DONE.
 
 **New files:**
-- `src/poc/exp6/model_adapter.py` — SteeringAdapter bridging cross_model adapters to exp6
-- `scripts/precompute_directions_multimodel.py` — Multi-model direction extraction (4-phase pipeline)
-- `scripts/run_phase0_multimodel.sh` — Orchestration script
+- `src/poc/exp06_corrective_direction_steering/model_adapter.py` — SteeringAdapter bridging cross_model adapters to exp6
+- `scripts/precompute/precompute_directions_multimodel.py` — Multi-model direction extraction (4-phase pipeline)
+- `scripts/run/run_phase0_multimodel.sh` — Orchestration script
 
 **Modified files:**
-- `src/poc/exp6/config.py` — Added `model_family` field, derives arch params from MODEL_REGISTRY
-- `src/poc/exp6/interventions.py` — `register_hooks()` accepts optional `adapter` param
-- `src/poc/exp6/runtime.py` — Generalized EOS tokens, logit-lens hooks, real_token_mask
-- `src/poc/exp6/run.py` — Added `--model-name` CLI arg (IT uses chat template by default; `--no-chat-template` available for ablation)
+- `src/poc/exp06_corrective_direction_steering/config.py` — Added `model_family` field, derives arch params from MODEL_REGISTRY
+- `src/poc/exp06_corrective_direction_steering/interventions.py` — `register_hooks()` accepts optional `adapter` param
+- `src/poc/exp06_corrective_direction_steering/runtime.py` — Generalized EOS tokens, logit-lens hooks, real_token_mask
+- `src/poc/exp06_corrective_direction_steering/run.py` — Added `--model-name` CLI arg (IT uses chat template by default; `--no-chat-template` available for ablation)
 
 **Run order:**
 ```bash
 # Step 1: Precompute directions for 5 new models (~6h, GPUs 2-7)
-bash scripts/run_phase0_multimodel.sh --step precompute
+bash scripts/run/run_phase0_multimodel.sh --step precompute
 
 # Step 2: Validate (3-point sanity check, ~2h)
-bash scripts/run_phase0_multimodel.sh --step validate
+bash scripts/run/run_phase0_multimodel.sh --step validate
 
 # Step 3: Full A1 alpha-sweep + logit lens, all 6 models (~17h, GPUs 2-7)
-bash scripts/run_phase0_multimodel.sh --step steer
+bash scripts/run/run_phase0_multimodel.sh --step steer
 
 # Step 4: LLM judge (~4h, API-bound, can overlap with steps 5-7)
-bash scripts/run_phase0_multimodel.sh --step judge
+bash scripts/run/run_phase0_multimodel.sh --step judge
 
 # Step 5: 1A PCA of IT-PT direction (~1.5h, 6 models in parallel)
-bash scripts/run_phase0_multimodel.sh --step pca
+bash scripts/run/run_phase0_multimodel.sh --step pca
 
 # Step 6: 1C ID under steering (TwoNN, ~30min, 6 models in parallel)
-bash scripts/run_phase0_multimodel.sh --step id-steering
+bash scripts/run/run_phase0_multimodel.sh --step id-steering
 
 # Step 7: 1B Commitment vs alpha (CPU post-processing, ~30min)
-bash scripts/run_phase0_multimodel.sh --step commitment
+bash scripts/run/run_phase0_multimodel.sh --step commitment
 ```
 
 **Piggybacked experiments (1A/1B/1C):**
-- **1A PCA**: `src/poc/exp8/pca_rank1.py` — Is PC1 > 60%? Rank-1 justified?
-- **1B Commitment**: `src/poc/exp8/commitment_vs_alpha.py` — Commitment layer vs α (THE causal link)
-- **1C ID under steering**: `src/poc/exp8/id_under_steering.py` — TwoNN ID at α=1.0, 0.0, -1.0
+- **1A PCA**: `src/poc/exp08_multimodel_steering_phase0/pca_rank1.py` — Is PC1 > 60%? Rank-1 justified?
+- **1B Commitment**: `src/poc/exp08_multimodel_steering_phase0/commitment_vs_alpha.py` — Commitment layer vs α (THE causal link)
+- **1C ID under steering**: `src/poc/exp08_multimodel_steering_phase0/id_under_steering.py` — TwoNN ID at α=1.0, 0.0, -1.0
 
 **Key design decisions:**
 - ALL experiments use `apply_chat_template=True` for IT models (their native trained distribution); PT models get raw text
@@ -87,10 +93,10 @@ bash scripts/run_phase0_multimodel.sh --step commitment
 - GPUs 0-1 reserved for other users; GPUs 2-7 available
 
 ### 1. Rerun 0I (expanded alpha values)
-Script: `scripts/run_exp7_0I.sh` — already updated with 14 alpha values, 4 methods, 60 conditions.
+Script: `scripts/run/run_exp7_0I.sh` — already updated with 14 alpha values, 4 methods, 60 conditions.
 ```bash
 # 4 workers, ~2-3 hours
-bash scripts/run_exp7_0I.sh
+bash scripts/run/run_exp7_0I.sh
 ```
 
 ### 2. Rerun 0G (tuned-lens training from scratch)
@@ -124,20 +130,21 @@ uv run python -m src.poc.cross_model.tuned_lens \
     --device "cuda:N" --eval-only --n-eval-examples 200
 
 # After eval, regenerate cross-model CIs (per-token method):
-uv run python -m src.poc.exp7.bootstrap_ci \
-    --merged-dir results/exp6/merged_A1_it_v4 \
+uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_ci \
+    --merged-dir results/exp06_corrective_direction_steering/merged_A1_it_v4 \
     --cross-model-dir results/cross_model
 
 # Copy CI to plots data:
-cp results/exp7/0D/ci_cross_model.json results/exp7/plots/data/
+cp results/exp07_methodology_validation_tier0/0D/ci_cross_model.json \
+   results/exp07_methodology_validation_tier0/plots/data/
 
 # Generate commitment plots:
-uv run python scripts/plot_tuned_lens_commitment.py
+uv run python scripts/plot/plot_commitment_delay.py
 ```
 
 ### 3. Regenerate all Tier 0 plots after reruns
 ```bash
-uv run python scripts/plot_exp7_tier0.py
+uv run python scripts/plot/plot_validation_tier0.py
 ```
 
 ## Tuned-lens recipe (Belrose et al. 2023 — exact)
@@ -176,39 +183,39 @@ None use multi_gpu (all fit on 1×80GB A100).
 
 4. **model.requires_grad_(False)**: Must be called before tuned-lens training. Without it, backward() stores ~3 GB of useless gradients on lm_head/final_norm, causing OOM in joint training.
 
-5. **Per-token vs per-prompt commitment CI**: Cross-model commitment CIs must use per-token values (SKIP_FIRST_N=5, 50k token subsample, BCa bootstrap), not per-prompt averaging which is biased by generation length. Fixed in `src/poc/exp7/bootstrap_ci.py`.
+5. **Per-token vs per-prompt commitment CI**: Cross-model commitment CIs must use per-token values (SKIP_FIRST_N=5, 50k token subsample, BCa bootstrap), not per-prompt averaging which is biased by generation length. Fixed in `src/poc/exp07_methodology_validation_tier0/bootstrap_ci.py`.
 
 ## Key file paths
 
 ```
 # Phase 0 (multi-model steering)
-src/poc/exp6/model_adapter.py       — SteeringAdapter for multi-model hook resolution
-scripts/precompute_directions_multimodel.py — Multi-model direction extraction
-scripts/run_phase0_multimodel.sh    — Phase 0 orchestration (precompute/validate/steer/judge)
+src/poc/exp06_corrective_direction_steering/model_adapter.py       — SteeringAdapter for multi-model hook resolution
+scripts/precompute/precompute_directions_multimodel.py             — Multi-model direction extraction
+scripts/run/run_phase0_multimodel.sh                               — Phase 0 orchestration (precompute/validate/steer/judge)
 
 # Exp6 core
-src/poc/exp6/run.py                 — Core intervention runner (--model-name for multi-model)
-src/poc/exp6/config.py              — Exp6Config (model_family field for multi-model)
-src/poc/exp6/interventions.py       — Hook registration (adapter param for multi-model)
-src/poc/exp6/runtime.py             — Generation (adapter param for multi-model)
+src/poc/exp06_corrective_direction_steering/run.py                 — Core intervention runner (--model-name for multi-model)
+src/poc/exp06_corrective_direction_steering/config.py              — Exp6Config (model_family field for multi-model)
+src/poc/exp06_corrective_direction_steering/interventions.py       — Hook registration (adapter param for multi-model)
+src/poc/exp06_corrective_direction_steering/runtime.py             — Generation (adapter param for multi-model)
 
 # Exp7 / Cross-model
-scripts/plot_exp7_tier0.py          — All Tier 0 plots (0A-0J)
-scripts/plot_tuned_lens_commitment.py — 0G commitment plots
-scripts/merge_exp6_workers.py       — Merge multi-worker results
-scripts/run_exp7_0*.sh              — Per-experiment run scripts
+scripts/plot/plot_validation_tier0.py                              — All Tier 0 plots (0A-0J)
+scripts/plot/plot_commitment_delay.py                              — 0G commitment plots
+scripts/merge/merge_steering_workers.py                            — Merge multi-worker results
+scripts/run/run_exp7_0*.sh                                          — Per-experiment run scripts
 src/poc/cross_model/tuned_lens.py   — Tuned-lens training/eval
 src/poc/cross_model/config.py       — MODEL_REGISTRY
 src/poc/cross_model/adapters/       — Per-model architecture adapters
-src/poc/exp7/bootstrap_ci.py        — Bootstrap CIs + effect sizes
+src/poc/exp07_methodology_validation_tier0/bootstrap_ci.py        — Bootstrap CIs + effect sizes
 
 # Results
-results/exp6/merged_A1_it_v4/       — Canonical A1 intervention results (Gemma, with chat template)
+results/exp06_corrective_direction_steering/merged_A1_it_v4/       — Canonical A1 intervention results (Gemma, with chat template)
 results/cross_model/{model}/directions/ — Per-model corrective directions
 results/cross_model/{model}/exp6/   — Per-model steering results (Phase 0)
-results/exp7/0*/                    — Per-experiment Tier 0 results
-results/exp7/plots/                 — All PNG plots
-results/exp7/plots/data/            — All JSON data exports
+results/exp07_methodology_validation_tier0/0*/                     — Per-experiment Tier 0 results
+results/exp07_methodology_validation_tier0/plots/                  — All PNG plots
+results/exp07_methodology_validation_tier0/plots/data/             — All JSON data exports
 ```
 
 ## GPU usage

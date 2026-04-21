@@ -12,7 +12,7 @@
 > **TL;DR** &mdash; We compare pretrained and instruction-tuned variants of six transformer families and find that instruction tuning universally introduces a **late-layer corrective stage**: IT's MLPs oppose the residual stream, slowing prediction convergence by 1&ndash;6 layers. This corrective stage selectively controls **format and register** while leaving content knowledge intact.
 
 <p align="center">
-  <img src="results/exp9/plots/L1_delta_cosine_6panel.png" width="95%">
+  <img src="results/exp09_cross_model_observational_replication/plots/L1_delta_cosine_6panel.png" width="95%">
   <br>
   <sub><b>Figure 1.</b> &delta;-cosine profiles &mdash; cos(MLP update, residual stream) &mdash; across six model families. IT (red) opposes the residual stream more strongly than PT (blue dashed) in late layers. The effect is sustained in Gemma, DeepSeek, Mistral, and Llama; concentrated in the final layers of OLMo and Qwen.</sub>
 </p>
@@ -52,7 +52,7 @@ In all six families, IT's late-layer MLP outputs have more negative cosine simil
 No family shows a net positive shift. The direction is universal; the magnitude varies by over an order of magnitude.
 
 <p align="center">
-  <img src="results/exp9/plots/L1_residual_opposition_6panel.png" width="95%">
+  <img src="results/exp09_cross_model_observational_replication/plots/L1_residual_opposition_6panel.png" width="95%">
   <br>
   <sub><b>Figure 2.</b> IT&minus;PT &delta;-cosine difference per layer. Red = IT opposes more than PT. Four families show sustained opposition; two show opposition concentrated in the final layers.</sub>
 </p>
@@ -62,7 +62,7 @@ No family shows a net positive shift. The direction is universal; the magnitude 
 Using both **tuned logit-lens probes** (Belrose et al., 2023) and the **raw logit lens**, we measure when IT vs PT predictions reach their final form. IT commits later in **all six families** across five independent metrics:
 
 <p align="center">
-  <img src="results/exp9/plots/L2_mean_kl_per_layer_tuned.png" width="95%">
+  <img src="results/exp09_cross_model_observational_replication/plots/L2_mean_kl_per_layer_tuned.png" width="95%">
   <br>
   <sub><b>Figure 3.</b> Mean KL(layer &ell; &Vert; final) per layer under the tuned logit lens. In all six families, IT's curve (red) sits above PT's (blue dashed) &mdash; IT's intermediate predictions are further from the final output at every late layer.</sub>
 </p>
@@ -70,7 +70,7 @@ Using both **tuned logit-lens probes** (Belrose et al., 2023) and the **raw logi
 The convergence gap is positive in all six families under both lenses (tuned: +0.30 to +0.65 nats; raw: +0.42 to +1.05 nats in the late half). The delay scales with **prediction difficulty**: in Gemma, high-confidence tokens show +2.2 layers of delay while low-confidence tokens show +6.6 layers.
 
 <p align="center">
-  <img src="results/exp9/plots/L2_commitment_tuned_kl_0.1.png" width="95%">
+  <img src="results/exp09_cross_model_observational_replication/plots/L2_commitment_tuned_kl_0.1.png" width="95%">
   <br>
   <sub><b>Figure 4.</b> Per-token commitment layer distributions (tuned lens, KL < 0.1 nats). In all six families, IT's distribution (red) is shifted right &mdash; predictions reach their final form at greater depth.</sub>
 </p>
@@ -78,7 +78,7 @@ The convergence gap is positive in all six families under both lenses (tuned: +0
 The finding is robust across KL thresholds spanning two orders of magnitude, under both lenses, and under all five metric definitions (top-1, no-flip-back, KL threshold, majority vote, continuous CG):
 
 <p align="center">
-  <img src="results/exp9/plots/L2_pure_kl_threshold_sensitivity.png" width="95%">
+  <img src="results/exp09_cross_model_observational_replication/plots/L2_pure_kl_threshold_sensitivity.png" width="95%">
   <br>
   <sub><b>Figure 5.</b> Threshold sensitivity. The direction of the IT&minus;PT gap is invariant across KL thresholds from 0.05 to 1.0 nats and across both raw and tuned lenses.</sub>
 </p>
@@ -98,7 +98,7 @@ IT representations in late layers occupy more independent dimensions than PT. Ge
 We extract the dominant IT&ndash;PT MLP activation difference at corrective layers and modulate it with a scalar &alpha;. Removing the direction (&alpha;&rarr;0) degrades formatting while content metrics stay flat:
 
 <p align="center">
-  <img src="results/exp6/plots/merged_A1_it_v4_A1_dose_response_v5.png" width="95%">
+  <img src="results/exp06_corrective_direction_steering/plots/merged_A1_it_v4_A1_dose_response_v5.png" width="95%">
   <br>
   <sub><b>Figure 7.</b> Dose-response for Gemma 3 4B. Format metrics (top) degrade monotonically as the corrective direction is removed/reversed. Content metrics (bottom: MMLU, GSM8K, reasoning) remain flat in the moderate range. Shaded bands = 95% BCa bootstrap CIs.</sub>
 </p>
@@ -114,7 +114,7 @@ The dissociation is validated by multiple controls:
 | Calibration split (0H) | Prompt selection artifact | Three disjoint prompt sets produce identical dose-response |
 
 <p align="center">
-  <img src="results/exp6/plots/merged_A1_it_v4_A1_layer_specificity_v5.png" width="85%">
+  <img src="results/exp06_corrective_direction_steering/plots/merged_A1_it_v4_A1_layer_specificity_v5.png" width="85%">
   <br>
   <sub><b>Figure 8.</b> Layer specificity. Only the corrective layers (20&ndash;33, red) produce governance effects. Early (blue) and mid (green) layers produce nothing.</sub>
 </p>
@@ -172,27 +172,27 @@ uv run python -m src.poc.cross_model.collect_L9 --model gemma3_4b --device cuda:
 uv run python -m src.poc.cross_model.tuned_lens --model gemma3_4b --variant it --device cuda:0
 
 # Causal steering (Gemma, multi-GPU)
-bash scripts/run_exp6_A_v4.sh
+bash scripts/run/run_steering_A.sh
 
 # Multi-model steering (6 models)
-bash scripts/run_phase0_multimodel.sh --step precompute
-bash scripts/run_phase0_multimodel.sh --step steer
-bash scripts/run_phase0_multimodel.sh --step judge
+bash scripts/run/run_phase0_multimodel.sh --step precompute
+bash scripts/run/run_phase0_multimodel.sh --step steer
+bash scripts/run/run_phase0_multimodel.sh --step judge
 ```
 
 ### Generate plots
 
 ```bash
 # Cross-model observational figures (Fig 1-6)
-uv run python -m src.poc.exp9.plot_replication
+uv run python -m src.poc.exp09_cross_model_observational_replication.plot_replication
 
 # Gemma dose-response figures (Fig 7-8)
-uv run python scripts/plot_exp6_dose_response.py \
+uv run python scripts/plot/plot_steering_dose_response.py \
     --experiment A1 \
-    --a1-dir results/exp6/merged_A1_it_v4
+    --a1-dir results/exp06_corrective_direction_steering/merged_A1_it_v4
 
 # Methodology validation (Tier 0)
-uv run python scripts/plot_exp7_tier0.py
+uv run python scripts/plot/plot_validation_tier0.py
 ```
 
 ---
@@ -201,39 +201,44 @@ uv run python scripts/plot_exp7_tier0.py
 
 ```
 src/poc/
-  cross_model/                 # Multi-model infrastructure
-    config.py                  #   MODEL_REGISTRY (6 models)
-    adapters/                  #   Per-architecture adapters (Gemma, Llama, Qwen, Mistral, DeepSeek, OLMo)
-    tuned_lens.py              #   Tuned-lens training + eval (Belrose et al. 2023 recipe)
-    collect_L1L2.py            #   Delta-cosine + raw commitment collection
-    collect_L8.py              #   TwoNN intrinsic dimensionality
-    collect_L9.py              #   Attention entropy
-
-  exp6/                        # Core causal steering framework
-    run.py                     #   Main intervention runner (--model-name for multi-model)
-    config.py                  #   Experiment configuration
-    interventions.py           #   Hook registration + direction loading
-    runtime.py                 #   Generation with interventions
-    model_adapter.py           #   SteeringAdapter for multi-model hooks
-
-  exp7/                        # Methodology validation (Tier 0: 0A-0J)
-  exp8/                        # Multi-model causal steering (Phase 0)
-  exp9/                        # Cross-model observational replication
-  exp10/                       # Contrastive activation patching (WIP)
+  cross_model/                                   # Shared multi-model infrastructure
+  exp01_hierarchical_distributional_narrowing/
+  exp02_ic_ooc_reasoning_mechanistic_comparison/
+  exp03_corrective_stage_characterization/
+  exp04_phase_transition_characterization/
+  exp05_corrective_direction_ablation_cartography/
+  exp06_corrective_direction_steering/
+  exp07_methodology_validation_tier0/
+  exp08_multimodel_steering_phase0/
+  exp09_cross_model_observational_replication/
+  exp10_contrastive_activation_patching/
+  exp11_matched_prefix_mlp_graft/
+  exp12_free_running_abc_graft/
+  exp13_late_stage_token_support_analysis/
+  exp14_symmetric_matched_prefix_causality/
+  exp15_symmetric_behavioral_causality/
 
 scripts/
-  run_phase0_multimodel.sh     # Multi-model orchestration
-  precompute_directions_multimodel.py  # Direction extraction for all 6 models
-  plot_exp6_dose_response.py   # Gemma dose-response figures
-  plot_exp7_tier0.py           # Methodology validation figures
-  merge_exp6_workers.py        # Merge multi-worker results
+  analysis/                                      # Post-hoc summaries, cross-checks, paper stats
+  data/                                          # Dataset builders / data prep
+  eval/                                          # Judge and evaluation entrypoints
+  infra/                                         # Modal/Lambda/cloud helpers
+  merge/                                         # Worker/shard merge utilities
+  plot/                                          # Figure generation
+  precompute/                                    # Direction extraction and preprocessing
+  run/                                           # Main experiment launchers
+  scoring/                                       # Rescoring utilities
 
 results/
-  cross_model/{model}/         # Per-model observational data + directions
-  exp6/merged_A1_it_v4/        # Canonical Gemma steering results
-  exp7/plots/                  # Methodology validation figures
-  exp9/plots/                  # Cross-model replication figures (main paper)
+  cross_model/{model}/
+  exp01_hierarchical_distributional_narrowing/
+  ...
+  exp15_symmetric_behavioral_causality/
 ```
+
+Canonical experiment/result paths now use descriptive names. Legacy numeric aliases such as `src/poc/exp6`, `results/exp6`, and flat `scripts/*.py` entrypoints are kept as compatibility symlinks so older notes and commands still resolve.
+
+For a full index, see [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md).
 
 ---
 
