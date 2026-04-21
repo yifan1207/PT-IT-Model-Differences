@@ -1,0 +1,42 @@
+{
+  "experiment": "exp12_abc_raw_eval_v1",
+  "model": "gemma3_4b",
+  "n_layers": 34,
+  "pt_model_id": "google/gemma-3-4b-pt",
+  "it_model_id": "google/gemma-3-4b-it",
+  "dataset": "/root/data/eval_dataset_v2.jsonl",
+  "n_prompts_requested": 1400,
+  "n_prompts_after_sharding": 1400,
+  "seed": 0,
+  "prompt_seed": 0,
+  "categories": null,
+  "onset_layer": 20,
+  "max_new_tokens": 512,
+  "dtype": "bfloat16",
+  "batch_size_requested": 96,
+  "shard_index": 0,
+  "num_shards": 1,
+  "pipelines": [
+    "A",
+    "B",
+    "C"
+  ],
+  "conditions": {
+    "A": {
+      "condition": "A_pt_raw",
+      "prompt_mode": "raw_format_b"
+    },
+    "B": {
+      "condition": "B_graft_raw",
+      "prompt_mode": "raw_format_b"
+    },
+    "C": {
+      "condition": "C_it_chat",
+      "prompt_mode": "it_chat_template"
+    }
+  },
+  "shard_run_dirs": [
+    "exp12_eval_v1_20260413_gemma3_4b__shard0of1"
+  ],
+  "n_rows_completed": 4200
+}

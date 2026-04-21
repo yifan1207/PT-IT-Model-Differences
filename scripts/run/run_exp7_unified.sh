@@ -66,7 +66,7 @@ if [[ "$QUICK" -eq 1 ]]; then
     echo "[unified] QUICK MODE: 20 records per worker, 40 eval examples"
 fi
 
-CORR_DIR="results/exp5/precompute_v2/precompute/corrective_directions.npz"
+CORR_DIR="results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz"
 NW=8
 
 mkdir -p logs/exp7
@@ -79,7 +79,7 @@ if run_phase 1; then
     echo "████ Phase 1: Unified MLP activation collection (all 1400 records, 8 GPUs) ████"
 
     # Check if already done
-    if [[ -f "results/exp7/unified_acts/merged.npz" ]]; then
+    if [[ -f "results/exp07_methodology_validation_tier0/unified_acts/merged.npz" ]]; then
         echo "[Phase 1] merged.npz already exists, skipping collection."
     else
         echo "[Phase 1a] Launching 8 workers for unified activation collection..."
@@ -132,7 +132,7 @@ if run_phase 2; then
     echo ""
     echo "████ Phase 2: Direction computation and bootstrap analysis (CPU) ████"
 
-    MERGED="results/exp7/unified_acts/merged.npz"
+    MERGED="results/exp07_methodology_validation_tier0/unified_acts/merged.npz"
     if [[ ! -f "$MERGED" ]]; then
         echo "[Phase 2] ERROR: merged.npz not found. Run Phase 1 first."
         exit 1
@@ -157,7 +157,7 @@ else:
 acts = extract_subset_acts(selected_ids)
 
 # Save in format expected by bootstrap_directions.py (acts/merged.npz)
-out_dir = Path('results/exp7/0A/acts')
+out_dir = Path('results/exp07_methodology_validation_tier0/0A/acts')
 out_dir.mkdir(parents=True, exist_ok=True)
 merged_out = out_dir / 'merged.npz'
 np.savez_compressed(str(merged_out), **acts)
@@ -165,10 +165,10 @@ print(f'[Phase 2a] Selected-600 acts → {merged_out} ({len(selected_ids)} recor
 " 2>&1 | tee logs/exp7/0A_slice.log
 
     uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_directions \
-        --acts-dir results/exp7/0A/acts/ \
+        --acts-dir results/exp07_methodology_validation_tier0/0A/acts/ \
         --canonical-npz "$CORR_DIR" \
         --n-bootstrap 50 --seed 42 \
-        --output-dir results/exp7/0A/ \
+        --output-dir results/exp07_methodology_validation_tier0/0A/ \
         2>&1 | tee logs/exp7/0A_bootstrap.log
 
     echo "[Phase 2b] Computing 0H random and bottom directions..."
@@ -179,7 +179,7 @@ from src.poc.exp07_methodology_validation_tier0.collect_unified_acts import extr
 from src.poc.exp07_methodology_validation_tier0.precompute_random_split import compute_directions
 
 # Extract random-600 and bottom-600 acts
-h_dir = Path('results/exp7/0H')
+h_dir = Path('results/exp07_methodology_validation_tier0/0H')
 random_ids = json.loads((h_dir / 'random_600_ids.json').read_text())
 bottom_ids = json.loads((h_dir / 'bottom_600_ids.json').read_text())
 
@@ -215,9 +215,9 @@ if run_phase 4; then
     bash scripts/run_exp7_0F.sh $N_EVAL_ARG
 
     echo "[Phase 4c] 0H: A1 on held-out 800 (random + bottom directions)..."
-    RAND_NPZ="results/exp7/0H/random_directions.npz"
-    BOTTOM_NPZ="results/exp7/0H/bottom_directions.npz"
-    HELD_OUT_IDS="results/exp7/0H/held_out_800_ids.json"
+    RAND_NPZ="results/exp07_methodology_validation_tier0/0H/random_directions.npz"
+    BOTTOM_NPZ="results/exp07_methodology_validation_tier0/0H/bottom_directions.npz"
+    HELD_OUT_IDS="results/exp07_methodology_validation_tier0/0H/held_out_800_ids.json"
 
     # Run with random direction (restricted to held-out 800 records)
     if [[ -f "$RAND_NPZ" ]]; then
@@ -226,17 +226,17 @@ if run_phase 4; then
             uv run python -m src.poc.exp06_corrective_direction_steering.run \
                 --experiment A1 --variant it \
                 --worker-index "$i" --n-workers "$NW" --device "cuda:${i}" \
-                --run-name "A1_it_random_dir_w${i}" --output-base "results/exp7/0H" \
+                --run-name "A1_it_random_dir_w${i}" --output-base "results/exp07_methodology_validation_tier0/0H" \
                 --corrective-direction-path "$RAND_NPZ" \
                 --eval-record-ids "$HELD_OUT_IDS" \
                 $N_EVAL_ARG > logs/exp7/0H_rand_w${i}.log 2>&1 &
             pids+=($!)
         done
         for pid in "${pids[@]}"; do wait "$pid"; done
-        src_dirs=(); for i in $(seq 0 $((NW-1))); do src_dirs+=("results/exp7/0H/A1_it_random_dir_w${i}"); done
+        src_dirs=(); for i in $(seq 0 $((NW-1))); do src_dirs+=("results/exp07_methodology_validation_tier0/0H/A1_it_random_dir_w${i}"); done
         uv run python scripts/merge_steering_workers.py \
             --experiment A1 --variant it --n-workers "$NW" \
-            --merged-name "A1_it_random_dir" --output-base "results/exp7/0H" \
+            --merged-name "A1_it_random_dir" --output-base "results/exp07_methodology_validation_tier0/0H" \
             --source-dirs "${src_dirs[@]}"
     fi
 
@@ -247,17 +247,17 @@ if run_phase 4; then
             uv run python -m src.poc.exp06_corrective_direction_steering.run \
                 --experiment A1 --variant it \
                 --worker-index "$i" --n-workers "$NW" --device "cuda:${i}" \
-                --run-name "A1_it_bottom_dir_w${i}" --output-base "results/exp7/0H" \
+                --run-name "A1_it_bottom_dir_w${i}" --output-base "results/exp07_methodology_validation_tier0/0H" \
                 --corrective-direction-path "$BOTTOM_NPZ" \
                 --eval-record-ids "$HELD_OUT_IDS" \
                 $N_EVAL_ARG > logs/exp7/0H_bottom_w${i}.log 2>&1 &
             pids+=($!)
         done
         for pid in "${pids[@]}"; do wait "$pid"; done
-        src_dirs=(); for i in $(seq 0 $((NW-1))); do src_dirs+=("results/exp7/0H/A1_it_bottom_dir_w${i}"); done
+        src_dirs=(); for i in $(seq 0 $((NW-1))); do src_dirs+=("results/exp07_methodology_validation_tier0/0H/A1_it_bottom_dir_w${i}"); done
         uv run python scripts/merge_steering_workers.py \
             --experiment A1 --variant it --n-workers "$NW" \
-            --merged-name "A1_it_bottom_dir" --output-base "results/exp7/0H" \
+            --merged-name "A1_it_bottom_dir" --output-base "results/exp07_methodology_validation_tier0/0H" \
             --source-dirs "${src_dirs[@]}"
     fi
 
@@ -266,7 +266,7 @@ if run_phase 4; then
 
     echo "[Phase 4e] 0J: Gemma A1 with alternative onset layer ranges..."
     # Only run if alt ranges were computed
-    if [[ -f "results/exp7/0J/gemma_alt_ranges.json" ]]; then
+    if [[ -f "results/exp07_methodology_validation_tier0/0J/gemma_alt_ranges.json" ]]; then
         bash scripts/run_exp7_0J.sh $N_EVAL_ARG
     else
         echo "[Phase 4e] gemma_alt_ranges.json not found, running 0J analysis first..."
@@ -291,5 +291,5 @@ fi
 
 echo ""
 echo "████ Exp7 Unified pipeline complete ████"
-echo "Results in: results/exp7/{0A,0B,0C,0D,0E,0F,0G,0H,0I,0J}/"
-echo "Plots in:   results/exp7/plots/"
+echo "Results in: results/exp07_methodology_validation_tier0/{0A,0B,0C,0D,0E,0F,0G,0H,0I,0J}/"
+echo "Plots in:   results/exp07_methodology_validation_tier0/plots/"

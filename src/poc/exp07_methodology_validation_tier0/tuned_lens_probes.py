@@ -24,18 +24,18 @@ Usage:
   uv run python -m src.poc.exp07_methodology_validation_tier0.tuned_lens_probes \\
       --variant pt --device cuda:0 \\
       --n-train 2000 --n-steps 5000 \\
-      --output-dir results/exp7/0G/probes/pt/ &
+      --output-dir results/exp07_methodology_validation_tier0/0G/probes/pt/ &
   uv run python -m src.poc.exp07_methodology_validation_tier0.tuned_lens_probes \\
       --variant it --device cuda:1 \\
       --n-train 2000 --n-steps 5000 \\
-      --output-dir results/exp7/0G/probes/it/ &
+      --output-dir results/exp07_methodology_validation_tier0/0G/probes/it/ &
   wait
 
   # Evaluate: commitment + cross-model probe transfer
   uv run python -m src.poc.exp07_methodology_validation_tier0.tuned_lens_probes \\
       --eval-only \\
-      --probe-dir results/exp7/0G/probes/ \\
-      --output-dir results/exp7/0G/
+      --probe-dir results/exp07_methodology_validation_tier0/0G/probes/ \\
+      --output-dir results/exp07_methodology_validation_tier0/0G/
 """
 from __future__ import annotations
 
@@ -715,7 +715,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Tuned-lens probes (Exp7 0G)")
     p.add_argument("--variant", choices=["pt", "it"], help="Model variant for training")
     p.add_argument("--device", default="cuda:0")
-    p.add_argument("--output-dir", default="results/exp7/0G/probes/")
+    p.add_argument("--output-dir", default="results/exp07_methodology_validation_tier0/0G/probes/")
     p.add_argument("--n-train", type=int, default=10000,
                    help="Number of training texts (default: 10000, ~1M+ tokens with prefill)")
     p.add_argument("--n-steps", type=int, default=5000, help="Training steps per layer")
@@ -725,7 +725,7 @@ def main() -> None:
                    help="Tokens to generate per prompt for hidden state collection")
     p.add_argument("--eval-only", action="store_true",
                    help="Skip training, just evaluate commitment with existing probes")
-    p.add_argument("--probe-dir", default="results/exp7/0G/probes/",
+    p.add_argument("--probe-dir", default="results/exp07_methodology_validation_tier0/0G/probes/",
                    help="Parent dir containing pt/ and it/ probe subdirs (eval-only mode)")
     p.add_argument("--n-eval", type=int, default=400,
                    help="Number of eval prompts (from held-out set)")

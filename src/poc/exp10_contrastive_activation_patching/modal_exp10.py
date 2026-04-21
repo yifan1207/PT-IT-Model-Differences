@@ -24,7 +24,7 @@ Monitor:
     modal app logs exp10-contrastive-patching
 
 Download results:
-    modal volume get exp10-results exp10 results/exp10
+    modal volume get exp10-results exp10 results/exp10_contrastive_activation_patching
 """
 from __future__ import annotations
 
@@ -268,9 +268,9 @@ def collect_one(model_name: str, n_prompts: int = 600,
 
     # Each shard writes to its own dir to avoid checkpoint collisions
     if n_shards > 1:
-        output_dir = f"/root/results/exp10/{model_name}/paired_data_s{shard_id}"
+        output_dir = f"/root/results/exp10_contrastive_activation_patching/{model_name}/paired_data_s{shard_id}"
     else:
-        output_dir = f"/root/results/exp10/{model_name}/paired_data"
+        output_dir = f"/root/results/exp10_contrastive_activation_patching/{model_name}/paired_data"
 
     tuned_lens_dir = "/root/tuned_lens_probes"
 
@@ -315,7 +315,7 @@ def merge_collection_shards(model_name: str, n_shards: int = 2) -> str:
     import numpy as np
 
     results_vol.reload()
-    base = Path(f"/root/results/exp10/{model_name}")
+    base = Path(f"/root/results/exp10_contrastive_activation_patching/{model_name}")
     merged_dir = base / "paired_data"
     merged_dir.mkdir(parents=True, exist_ok=True)
 
@@ -450,9 +450,9 @@ def train_probes_one(model_name: str) -> str:
 
     summary = train_probes(
         model_name=model_name,
-        paired_data_dir=f"/root/results/exp10/{model_name}/paired_data",
+        paired_data_dir=f"/root/results/exp10_contrastive_activation_patching/{model_name}/paired_data",
         mean_dir_path=mean_dir_path,
-        output_dir=f"/root/results/exp10/{model_name}/probes",
+        output_dir=f"/root/results/exp10_contrastive_activation_patching/{model_name}/probes",
     )
 
     _commit_volumes()
@@ -495,9 +495,9 @@ def patch_one(model_name: str, n_test_prompts: int = 120,
         validate_patching(
             model_name=model_name,
             device="cuda:0",
-            probes_dir=f"/root/results/exp10/{model_name}/probes",
-            paired_data_dir=f"/root/results/exp10/{model_name}/paired_data",
-            output_dir=f"/root/results/exp10/{model_name}/patching",
+            probes_dir=f"/root/results/exp10_contrastive_activation_patching/{model_name}/probes",
+            paired_data_dir=f"/root/results/exp10_contrastive_activation_patching/{model_name}/paired_data",
+            output_dir=f"/root/results/exp10_contrastive_activation_patching/{model_name}/patching",
             mean_dir_path=mean_dir_path,
             n_test_prompts=n_test_prompts,
             max_tokens_per_prompt=max_tokens_per_prompt,
@@ -547,7 +547,7 @@ def steer_one_direction(model_name: str, direction: str,
     results_vol.reload()
 
     # Check go/no-go (only relevant for d_conv — d_mean always runs)
-    summary_path = f"/root/results/exp10/{model_name}/probes/probe_summary.json"
+    summary_path = f"/root/results/exp10_contrastive_activation_patching/{model_name}/probes/probe_summary.json"
     with open(summary_path) as f:
         summary = json.load(f)
 
@@ -558,7 +558,7 @@ def steer_one_direction(model_name: str, direction: str,
 
     # Resolve direction path
     if direction == "d_conv":
-        dir_path = f"/root/results/exp10/{model_name}/probes/commitment_directions.npz"
+        dir_path = f"/root/results/exp10_contrastive_activation_patching/{model_name}/probes/commitment_directions.npz"
     elif direction == "d_mean":
         dir_path = _find_mean_dir(model_name)
         if dir_path is None:
@@ -570,7 +570,7 @@ def steer_one_direction(model_name: str, direction: str,
     import subprocess as sp
     env = os.environ.copy()
     env["PYTHONPATH"] = "/root"
-    output_base = f"/root/results/exp10/{model_name}/steering"
+    output_base = f"/root/results/exp10_contrastive_activation_patching/{model_name}/steering"
     max_gen = STEER_MAX_GEN.get(model_name, 512)
     batch_size = _get_batch_size(model_name)
 
@@ -663,7 +663,7 @@ def judge_one(model_name: str) -> str:
 
     results_vol.reload()
 
-    steering_base = f"/root/results/exp10/{model_name}/steering"
+    steering_base = f"/root/results/exp10_contrastive_activation_patching/{model_name}/steering"
     directions = ["d_conv", "d_mean"]
     results = []
 
@@ -726,7 +726,7 @@ def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
 
     results_vol.reload()
 
-    summary_path = f"/root/results/exp10/{model_name}/probes/probe_summary.json"
+    summary_path = f"/root/results/exp10_contrastive_activation_patching/{model_name}/probes/probe_summary.json"
     with open(summary_path) as f:
         summary = json.load(f)
 
@@ -738,14 +738,14 @@ def steer_one(model_name: str, n_eval_examples: int = 1400) -> str:
     import subprocess as sp
     env = os.environ.copy()
     env["PYTHONPATH"] = "/root"
-    output_base = f"/root/results/exp10/{model_name}/steering"
+    output_base = f"/root/results/exp10_contrastive_activation_patching/{model_name}/steering"
     max_gen = STEER_MAX_GEN.get(model_name, 512)
     batch_size = _get_batch_size(model_name)
     results = []
 
     for direction in ["d_conv", "d_mean"]:
         if direction == "d_conv":
-            dir_path = f"/root/results/exp10/{model_name}/probes/commitment_directions.npz"
+            dir_path = f"/root/results/exp10_contrastive_activation_patching/{model_name}/probes/commitment_directions.npz"
         else:
             dir_path = _find_mean_dir(model_name)
             if dir_path is None:
@@ -893,12 +893,12 @@ def smoke_test_gpu(model_name: str) -> str:
 
     # ── 3. Phase 1: Collect 5 prompts ─────────────────────────────────────────
     print("\n[Step 3] Phase 1: Collect forced-decoding data (5 prompts)")
-    output_dir = f"/root/results/exp10/_smoke_{model_name}/paired_data"
+    output_dir = f"/root/results/exp10_contrastive_activation_patching/_smoke_{model_name}/paired_data"
     max_gen = MODEL_MAX_GEN.get(model_name, 128)
 
     # Clean old smoke data to avoid resume-from-stale-data
     import shutil
-    smoke_root = Path(f"/root/results/exp10/_smoke_{model_name}")
+    smoke_root = Path(f"/root/results/exp10_contrastive_activation_patching/_smoke_{model_name}")
     if smoke_root.exists():
         shutil.rmtree(smoke_root)
         print("  Cleaned old smoke data")
@@ -978,7 +978,7 @@ def smoke_test_gpu(model_name: str) -> str:
 
     # ── 4. Phase 2: Ridge probes ──────────────────────────────────────────────
     print("\n[Step 4] Phase 2: Ridge probes")
-    probes_dir = f"/root/results/exp10/_smoke_{model_name}/probes"
+    probes_dir = f"/root/results/exp10_contrastive_activation_patching/_smoke_{model_name}/probes"
     mean_dir_for_train = mean_dir if mean_dir else "/dev/null"
 
     t2 = time.time()
@@ -1026,7 +1026,7 @@ def smoke_test_gpu(model_name: str) -> str:
 
     # ── 5. Phase 3: Patching (3 prompts, 2 tokens) ───────────────────────────
     print("\n[Step 5] Phase 3: Causal patching (3 prompts, 2 tokens)")
-    patching_dir = f"/root/results/exp10/_smoke_{model_name}/patching"
+    patching_dir = f"/root/results/exp10_contrastive_activation_patching/_smoke_{model_name}/patching"
 
     t3 = time.time()
     validate_patching(
@@ -1106,8 +1106,8 @@ def sync_to_gcs() -> str:
     try:
         sp.run([
             "gsutil", "-m", "rsync", "-r",
-            "/root/results/exp10/",
-            "gs://pt-vs-it-results/exp10/",
+            "/root/results/exp10_contrastive_activation_patching/",
+            "gs://pt-vs-it-results/exp10_contrastive_activation_patching/",
         ], check=True, timeout=300)
         return "GCS sync done"
     except Exception as e:
@@ -1176,7 +1176,7 @@ def _run_prototype():
     print("=" * 60)
     print("\nDownload results:")
     for m in proto_models:
-        print(f"  modal volume get exp10-results exp10/{m} results/exp10/{m}")
+        print(f"  modal volume get exp10-results exp10/{m} results/exp10_contrastive_activation_patching/{m}")
 
 
 def _run_full():
@@ -1220,11 +1220,11 @@ def _run_full():
         subprocess.run([
             "modal", "volume", "get",
             "exp10-results", "exp10",
-            "results/exp10",
+            "results/exp10_contrastive_activation_patching",
         ], check=True, timeout=300)
     except Exception as e:
         print(f"  Download failed: {e}")
-        print("  Run manually: modal volume get exp10-results exp10 results/exp10")
+        print("  Run manually: modal volume get exp10-results exp10 results/exp10_contrastive_activation_patching")
 
     print("\n" + "=" * 70)
     print("EXP10 COMPLETE")
@@ -1232,7 +1232,7 @@ def _run_full():
     print("\nGenerate plots:")
     print("  uv run python scripts/plot_exp10.py")
     print("\nPush to GCS:")
-    print("  gsutil -m rsync -r results/exp10/ gs://pt-vs-it-results/exp10/")
+    print("  gsutil -m rsync -r results/exp10_contrastive_activation_patching/ gs://pt-vs-it-results/exp10_contrastive_activation_patching/")
 
 
 @app.function(
@@ -1244,7 +1244,7 @@ def clear_phase1_data(model_name: str) -> str:
     """Delete Phase 1 accumulators/PCA/checkpoints for a model."""
     import shutil
     results_vol.reload()
-    base = Path(f"/root/results/exp10/{model_name}")
+    base = Path(f"/root/results/exp10_contrastive_activation_patching/{model_name}")
     for subdir in ["paired_data", "probes"]:
         target = base / subdir
         if target.exists():

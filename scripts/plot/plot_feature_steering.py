@@ -16,7 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-RESULTS_DIR = Path("results/exp6")
+RESULTS_DIR = Path("results/exp06_corrective_direction_steering")
 OUT_DIR = RESULTS_DIR / "plots_B"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 

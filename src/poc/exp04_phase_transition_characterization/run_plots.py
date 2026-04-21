@@ -4,20 +4,20 @@ Exp4 plot runner: regenerate all plots from saved results.
 Usage:
     # Plot with both PT and IT results (required for comparison plots):
     uv run python -m src.poc.exp04_phase_transition_characterization.run_plots \\
-        --pt-dir results/exp4/pt_16k_l0_big_affine \\
-        --it-dir results/exp4/it_16k_l0_big_affine
+        --pt-dir results/exp04_phase_transition_characterization/pt_16k_l0_big_affine \\
+        --it-dir results/exp04_phase_transition_characterization/it_16k_l0_big_affine
 
     # Plot only features that exist (skips missing data gracefully):
     uv run python -m src.poc.exp04_phase_transition_characterization.run_plots \\
-        --pt-dir results/exp4/pt_16k_l0_big_affine \\
-        --it-dir results/exp4/it_16k_l0_big_affine \\
+        --pt-dir results/exp04_phase_transition_characterization/pt_16k_l0_big_affine \\
+        --it-dir results/exp04_phase_transition_characterization/it_16k_l0_big_affine \\
         --features-source exp3  # use exp3 active_features instead
 
     # Plot4 requires Neuronpedia labels; pass --pt-labels / --it-labels:
     uv run python -m src.poc.exp04_phase_transition_characterization.run_plots \\
         --pt-dir ... --it-dir ... \\
-        --pt-labels results/exp4/pt_16k_l0_big_affine/labels.json \\
-        --it-labels results/exp4/it_16k_l0_big_affine/labels.json
+        --pt-labels results/exp04_phase_transition_characterization/pt_16k_l0_big_affine/labels.json \\
+        --it-labels results/exp04_phase_transition_characterization/it_16k_l0_big_affine/labels.json
 
 Plots generated:
   plot1_jaccard_curve.png        — E0b: Jaccard across dip
@@ -54,7 +54,7 @@ def _resolve_exp3_features(run_dir: Path) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate Exp4 plots")
     parser.add_argument("--pt-dir", required=True,
-                        help="PT results directory (e.g. results/exp4/pt_16k_l0_big_affine)")
+                        help="PT results directory (e.g. results/exp04_phase_transition_characterization/pt_16k_l0_big_affine)")
     parser.add_argument("--it-dir", required=True,
                         help="IT results directory")
     parser.add_argument("--output-dir", default=None,

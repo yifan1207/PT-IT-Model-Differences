@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CODE_ROOTS = [ROOT / "src", ROOT / "scripts"]
+SYMLINK_ROOTS = [ROOT / "scripts", ROOT / "results"]
 HELP_COMMANDS = [
     ["bash", "scripts/run/run_exp13_exp14_local.sh", "--help"],
     [sys.executable, "-m", "src.poc.exp14_symmetric_matched_prefix_causality", "--help"],
@@ -39,8 +40,12 @@ def _shell_files() -> list[Path]:
 
 
 def _symlink_targets() -> list[Path]:
-    scripts_root = ROOT / "scripts"
-    return sorted(p for p in scripts_root.rglob("*") if p.is_symlink())
+    symlinks: list[Path] = []
+    for root in SYMLINK_ROOTS:
+        if not root.exists():
+            continue
+        symlinks.extend(p for p in root.rglob("*") if p.is_symlink())
+    return sorted(symlinks)
 
 
 def _run(cmd: list[str]) -> None:

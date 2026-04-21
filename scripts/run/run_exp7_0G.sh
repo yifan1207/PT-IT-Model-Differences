@@ -105,11 +105,11 @@ echo "[$(date '+%H:%M')] === Eval COMPLETE ==="
 # ── Phase 3: Cross-model CIs + plots ────────────────────────────────────
 echo "[$(date '+%H:%M')] === Regenerating cross-model CIs (per-token method) ==="
 uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_ci \
-    --merged-dir results/exp6/merged_A1_it_v4 \
+    --merged-dir results/exp06_corrective_direction_steering/merged_A1_it_v4 \
     --cross-model-dir results/cross_model \
     > logs/exp7/0G/cross_model_ci.log 2>&1 || echo "[0G] cross-model CI had errors"
 
-cp results/exp7/0D/ci_cross_model.json results/exp7/plots/data/ci_cross_model.json 2>/dev/null || true
+cp results/exp07_methodology_validation_tier0/0D/ci_cross_model.json results/exp07_methodology_validation_tier0/plots/data/ci_cross_model.json 2>/dev/null || true
 echo "[$(date '+%H:%M')] === CIs regenerated ==="
 
 echo "[$(date '+%H:%M')] === Generating commitment plots ==="

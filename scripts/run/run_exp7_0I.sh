@@ -21,13 +21,13 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-CORR_DIR="results/exp5/precompute_v2/precompute/corrective_directions.npz"
+CORR_DIR="results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz"
 if [[ ! -f "$CORR_DIR" ]]; then
     echo "[0I] ERROR: corrective_directions.npz not found at $CORR_DIR"
     exit 1
 fi
 
-OUTPUT_BASE="results/exp7/0I"
+OUTPUT_BASE="results/exp07_methodology_validation_tier0/0I"
 RUN_NAME="A1_formula_it_v1"
 NW=4  # must match original run (4 workers) so resume finds existing results
 

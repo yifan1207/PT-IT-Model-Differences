@@ -1,0 +1,11 @@
+{
+  "model": "olmo2_7b",
+  "dataset": "eval_v2",
+  "n_prompts": 1400,
+  "n_sample_rows": 4200,
+  "conditions": [
+    "A_pt_raw",
+    "B_graft_raw",
+    "C_it_chat"
+  ]
+}

@@ -82,11 +82,11 @@ run_experiment() {
 
     # Merge
     local src_dirs=()
-    for ((i=0; i<NW; i++)); do src_dirs+=("results/exp6/${run_name}_w${i}"); done
+    for ((i=0; i<NW; i++)); do src_dirs+=("results/exp06_corrective_direction_steering/${run_name}_w${i}"); done
 
     if [[ "$DRY_RUN" == "1" ]]; then
-        echo "[dry] merge → results/exp6/merged_${run_name}"
-        echo "[dry] judge → results/exp6/merged_${run_name}/llm_judge_v2_scores.jsonl"
+        echo "[dry] merge → results/exp06_corrective_direction_steering/merged_${run_name}"
+        echo "[dry] judge → results/exp06_corrective_direction_steering/merged_${run_name}/llm_judge_v2_scores.jsonl"
     else
         echo "[$(date +%T)] MERGE $run_name"
         uv run python scripts/merge_steering_workers.py \
@@ -97,7 +97,7 @@ run_experiment() {
 
         echo "[$(date +%T)] JUDGE $run_name"
         uv run python scripts/llm_judge.py \
-            --merged-dir "results/exp6/merged_${run_name}" \
+            --merged-dir "results/exp06_corrective_direction_steering/merged_${run_name}" \
             --model "$JUDGE_MODEL" --workers 16 --tasks g1 g2 s1 s2 \
             > "$log_dir/judge_${run_name}.log" 2>&1
 
@@ -113,18 +113,18 @@ run_experiment A5a_mid A5a_mid_it_v1
 
 # ── Step 3: Layerspec comparison plot ────────────────────────────────────────
 if [[ "$DRY_RUN" == "1" ]]; then
-    echo "[dry] plot → results/exp6/plots_layerspec/A5a_layer_specificity.png"
+    echo "[dry] plot → results/exp06_corrective_direction_steering/plots_layerspec/A5a_layer_specificity.png"
 else
     echo "[$(date +%T)] PLOT A5a_layerspec"
-    mkdir -p results/exp6/plots_layerspec
+    mkdir -p results/exp06_corrective_direction_steering/plots_layerspec
     uv run python scripts/plot_steering_dose_response.py \
         --experiment A5a_layerspec \
-        --a5a-early-dir results/exp6/merged_A5a_early_it_v1 \
-        --a5a-mid-dir   results/exp6/merged_A5a_mid_it_v1 \
-        --a5a-dir       results/exp6/merged_A5a_it_v1 \
+        --a5a-early-dir results/exp06_corrective_direction_steering/merged_A5a_early_it_v1 \
+        --a5a-mid-dir   results/exp06_corrective_direction_steering/merged_A5a_mid_it_v1 \
+        --a5a-dir       results/exp06_corrective_direction_steering/merged_A5a_it_v1 \
         >> logs/exp6_A5a_early_it_v1/plot_layerspec.log 2>&1
     echo "[$(date +%T)] PLOT DONE"
 fi
 
 echo "=== A5a_layerspec complete ==="
-echo "  results/exp6/plots_layerspec/A5a_layer_specificity.png"
+echo "  results/exp06_corrective_direction_steering/plots_layerspec/A5a_layer_specificity.png"

@@ -1,0 +1,128 @@
+{
+  "summary": {
+    "mode": "governance_selected",
+    "cosine_matched_vs_canonical_mean_corrective": 0.8237957945230114,
+    "cosine_matched_vs_canonical_min_corrective": 0.5209409753258505,
+    "cosine_by_group": {
+      "early": {
+        "mean": 0.6719980166149846,
+        "min": 0.337056263646223,
+        "std": 0.19456428279781532
+      },
+      "mid": {
+        "mean": 0.8151001436028137,
+        "min": 0.5386560948159366,
+        "std": 0.1319019521952689
+      },
+      "corrective": {
+        "mean": 0.8237957945230114,
+        "min": 0.5209409753258505,
+        "std": 0.1521693325062324
+      }
+    },
+    "corrective_vs_early_drop": -0.15179777790802684,
+    "corrective_drop_flag": "MINIMAL: cosine stable across layers \u2014 token confound is not layer-specific",
+    "n_matched_records": 600
+  },
+  "per_layer": {
+    "1": {
+      "cosine_matched_vs_canonical": 0.7188869784266664
+    },
+    "2": {
+      "cosine_matched_vs_canonical": 0.8654749164951789
+    },
+    "3": {
+      "cosine_matched_vs_canonical": 0.4859291232027362
+    },
+    "4": {
+      "cosine_matched_vs_canonical": 0.7178182850324497
+    },
+    "5": {
+      "cosine_matched_vs_canonical": 0.7173913330042955
+    },
+    "6": {
+      "cosine_matched_vs_canonical": 0.970462206804585
+    },
+    "7": {
+      "cosine_matched_vs_canonical": 0.337056263646223
+    },
+    "8": {
+      "cosine_matched_vs_canonical": 0.4423476784518414
+    },
+    "9": {
+      "cosine_matched_vs_canonical": 0.4831081257678127
+    },
+    "10": {
+      "cosine_matched_vs_canonical": 0.8410940199861205
+    },
+    "11": {
+      "cosine_matched_vs_canonical": 0.812409251946922
+    },
+    "12": {
+      "cosine_matched_vs_canonical": 0.9439476492068062
+    },
+    "13": {
+      "cosine_matched_vs_canonical": 0.5386560948159366
+    },
+    "14": {
+      "cosine_matched_vs_canonical": 0.822523342808914
+    },
+    "15": {
+      "cosine_matched_vs_canonical": 0.8921743415610355
+    },
+    "16": {
+      "cosine_matched_vs_canonical": 0.9651067971157401
+    },
+    "17": {
+      "cosine_matched_vs_canonical": 0.8136635028893295
+    },
+    "18": {
+      "cosine_matched_vs_canonical": 0.6886694962298797
+    },
+    "19": {
+      "cosine_matched_vs_canonical": 0.8560599241948681
+    },
+    "20": {
+      "cosine_matched_vs_canonical": 0.641495224526345
+    },
+    "21": {
+      "cosine_matched_vs_canonical": 0.7573429637600522
+    },
+    "22": {
+      "cosine_matched_vs_canonical": 0.5400405169947106
+    },
+    "23": {
+      "cosine_matched_vs_canonical": 0.7526159816239346
+    },
+    "24": {
+      "cosine_matched_vs_canonical": 0.856398453154754
+    },
+    "25": {
+      "cosine_matched_vs_canonical": 0.5209409753258505
+    },
+    "26": {
+      "cosine_matched_vs_canonical": 0.953118538648781
+    },
+    "27": {
+      "cosine_matched_vs_canonical": 0.9795983905613319
+    },
+    "28": {
+      "cosine_matched_vs_canonical": 0.9186270782601615
+    },
+    "29": {
+      "cosine_matched_vs_canonical": 0.87929331777657
+    },
+    "30": {
+      "cosine_matched_vs_canonical": 0.9603008456991877
+    },
+    "31": {
+      "cosine_matched_vs_canonical": 0.8609110424807349
+    },
+    "32": {
+      "cosine_matched_vs_canonical": 0.9561472924298341
+    },
+    "33": {
+      "cosine_matched_vs_canonical": 0.9563105020799116
+    }
+  }
+}

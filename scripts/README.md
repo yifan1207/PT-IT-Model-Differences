@@ -37,7 +37,7 @@ This checks:
 
 - Python syntax under `src/` and `scripts/`
 - shell syntax for launchers
-- broken script symlinks
+- broken script and result symlinks
 - a few canonical `--help` smoke entrypoints
 
 ## Related docs

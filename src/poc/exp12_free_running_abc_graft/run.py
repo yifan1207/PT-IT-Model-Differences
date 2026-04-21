@@ -368,7 +368,7 @@ def main() -> None:
     onset_layer = spec.corrective_onset if args.onset_layer is None else args.onset_layer
     max_new_tokens = args.max_new_tokens or DEFAULT_MAX_NEW_TOKENS[args.model]
     batch_size = args.batch_size or DEFAULT_BATCH_SIZE[args.model]
-    out_dir = Path(args.out_dir or f"results/exp12/{args.model}/abc_raw_eval_v1")
+    out_dir = Path(args.out_dir or f"results/exp12_free_running_abc_graft/{args.model}/abc_raw_eval_v1")
     out_dir.mkdir(parents=True, exist_ok=True)
     sample_outputs_path = out_dir / "sample_outputs.jsonl"
     if not args.resume and sample_outputs_path.exists():

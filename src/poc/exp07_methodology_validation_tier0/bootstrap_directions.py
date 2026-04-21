@@ -22,22 +22,22 @@ Usage:
 
   # 0A: bootstrap stability
   uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_directions \\
-      --acts-dir results/exp7/0A/acts/ \\
-      --canonical-npz results/exp5/precompute_v2/precompute/corrective_directions.npz \\
-      --n-bootstrap 50 --output-dir results/exp7/0A/
+      --acts-dir results/exp07_methodology_validation_tier0/0A/acts/ \\
+      --canonical-npz results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz \\
+      --n-bootstrap 50 --output-dir results/exp07_methodology_validation_tier0/0A/
 
   # 0B: matched-token direction validation
   uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_directions \\
-      --it-acts-dir results/exp7/0A/acts/ \\
-      --pt-forced-acts-dir results/exp7/0B/acts/ \\
-      --canonical-npz results/exp5/precompute_v2/precompute/corrective_directions.npz \\
-      --matched-mode --output-dir results/exp7/0B/
+      --it-acts-dir results/exp07_methodology_validation_tier0/0A/acts/ \\
+      --pt-forced-acts-dir results/exp07_methodology_validation_tier0/0B/acts/ \\
+      --canonical-npz results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz \\
+      --matched-mode --output-dir results/exp07_methodology_validation_tier0/0B/
 
   # Quick test
   uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_directions \\
-      --acts-dir results/exp7/0A/acts/ \\
-      --canonical-npz results/exp5/precompute_v2/precompute/corrective_directions.npz \\
-      --n-bootstrap 10 --output-dir results/exp7/0A/
+      --acts-dir results/exp07_methodology_validation_tier0/0A/acts/ \\
+      --canonical-npz results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz \\
+      --n-bootstrap 10 --output-dir results/exp07_methodology_validation_tier0/0A/
 """
 from __future__ import annotations
 

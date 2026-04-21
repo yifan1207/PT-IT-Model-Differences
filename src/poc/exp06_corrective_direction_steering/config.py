@@ -54,7 +54,7 @@ class Exp6Config:
     batch_size: int = 1
 
     # ── Output ────────────────────────────────────────────────────────────
-    output_base: str = "results/exp6"
+    output_base: str = "results/exp06_corrective_direction_steering"
     run_name: str = ""              # auto-derived if empty
 
     # ── Model architecture ────────────────────────────────────────────────
@@ -93,9 +93,9 @@ class Exp6Config:
     feature_set: str = "method12_top100"  # key in governance_feature_sets.json
     feature_layer_range: FeatureLayerRange = "all"
 
-    governance_features_path: str = ""   # results/exp6/governance_feature_sets.json
-    mean_feature_acts_path: str = ""     # results/exp6/precompute/mean_feature_acts_it/
-    governance_direction_path: str = ""  # results/exp6/precompute/governance_directions.npz
+    governance_features_path: str = ""   # results/exp06_corrective_direction_steering/governance_feature_sets.json
+    mean_feature_acts_path: str = ""     # results/exp06_corrective_direction_steering/precompute/mean_feature_acts_it/
+    governance_direction_path: str = ""  # results/exp06_corrective_direction_steering/precompute/content_direction_governance.npz
 
     # ── Benchmarks ────────────────────────────────────────────────────────
     benchmarks: list[str] = field(default_factory=lambda: [

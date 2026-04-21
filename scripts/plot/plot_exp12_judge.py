@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--run-root",
         type=Path,
-        default=Path("results/exp12/data"),
+        default=Path("results/exp12_free_running_abc_graft/data"),
         help="Root dir containing exp12 merged run dirs.",
     )
     parser.add_argument(
@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--out-dir",
         type=Path,
-        default=Path("results/exp12/plots/exp12_eval_v1_20260413_v3"),
+        default=Path("results/exp12_free_running_abc_graft/plots/exp12_eval_v1_20260413_v3"),
         help="Output dir for plots and summary JSON.",
     )
     parser.add_argument(

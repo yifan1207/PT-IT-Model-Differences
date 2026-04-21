@@ -77,7 +77,7 @@ echo "[$(date +%T)] ═══ Phase 4 complete ═══"
 
 echo ""
 echo "Direction vectors ready (single file, all layer groups share same data):"
-echo "  results/exp5/precompute_v2/precompute/corrective_directions.npz"
+echo "  results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz"
 echo "  (contains layers 1-33: early=1-11, mid=12-19, corrective=20-33)"
 
 # ═══════════════════════════════════════════════════════════════════════════════

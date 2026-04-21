@@ -20,13 +20,13 @@ Method:
   Report range of onset layers per family across all 9 thresholds
 
 Output:
-  results/exp7/0J/onset_table.json      — 6×9 table
-  results/exp7/0J/onset_table.csv       — same as CSV
-  results/exp7/0J/gemma_alt_ranges.json — Gemma onset at 0.5σ and 2σ for A1 reruns
-  results/exp7/0J/plots/onset_sensitivity.png
+  results/exp07_methodology_validation_tier0/0J/onset_table.json      — 6×9 table
+  results/exp07_methodology_validation_tier0/0J/onset_table.csv       — same as CSV
+  results/exp07_methodology_validation_tier0/0J/gemma_alt_ranges.json — Gemma onset at 0.5σ and 2σ for A1 reruns
+  results/exp07_methodology_validation_tier0/0J/plots/onset_sensitivity.png
 
 Usage:
-  uv run python -m src.poc.exp07_methodology_validation_tier0.onset_threshold_sensitivity --output-dir results/exp7/0J/
+  uv run python -m src.poc.exp07_methodology_validation_tier0.onset_threshold_sensitivity --output-dir results/exp07_methodology_validation_tier0/0J/
   uv run python -m src.poc.exp07_methodology_validation_tier0.onset_threshold_sensitivity --csv-path <custom_path>
 """
 from __future__ import annotations
@@ -42,7 +42,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 CSV_PATH = Path("results/cross_model/plots/data/L1_mean_delta_cosine.csv")
-OUTPUT_DIR = Path("results/exp7/0J")
+OUTPUT_DIR = Path("results/exp07_methodology_validation_tier0/0J")
 
 # Early layers for baseline std estimate (exclude layer 0 which is embedding → always NaN)
 BASELINE_LAYERS = 5   # use layers 1..5 to estimate background variation

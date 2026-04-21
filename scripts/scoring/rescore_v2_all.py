@@ -22,16 +22,16 @@ from pathlib import Path
 
 
 MERGED_DIRS = [
-    "results/exp6/merged_A1_it",
-    "results/exp6/merged_A1_early_it",
-    "results/exp6/merged_A1_mid_it",
-    "results/exp6/merged_A2_pt",
-    "results/exp6/merged_B1_it",
-    "results/exp6/merged_B2_it",
-    "results/exp6/merged_B2_pt",
-    "results/exp6/merged_B3_it",
-    "results/exp6/merged_B4_it",
-    "results/exp6/merged_B5_it",
+    "results/exp06_corrective_direction_steering/merged_A1_it",
+    "results/exp06_corrective_direction_steering/merged_A1_early_it",
+    "results/exp06_corrective_direction_steering/merged_A1_mid_it",
+    "results/exp06_corrective_direction_steering/merged_A2_pt",
+    "results/exp06_corrective_direction_steering/merged_B1_it",
+    "results/exp06_corrective_direction_steering/merged_B2_it",
+    "results/exp06_corrective_direction_steering/merged_B2_pt",
+    "results/exp06_corrective_direction_steering/merged_B3_it",
+    "results/exp06_corrective_direction_steering/merged_B4_it",
+    "results/exp06_corrective_direction_steering/merged_B5_it",
 ]
 
 

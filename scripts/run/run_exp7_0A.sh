@@ -31,7 +31,7 @@ for i in $(seq 0 $((NW-1))); do
     echo "[0A] launching worker $i on cuda:$i"
     uv run python -m src.poc.exp07_methodology_validation_tier0.collect_per_record_acts \
         --worker-index "$i" --n-workers "$NW" --device "cuda:$i" \
-        --output-dir results/exp7/0A/acts/ \
+        --output-dir results/exp07_methodology_validation_tier0/0A/acts/ \
         "${EXTRA_ARGS[@]}" \
         > logs/exp7/0A_w${i}.log 2>&1 &
     pids+=($!)
@@ -52,16 +52,16 @@ fi
 
 echo "=== [0A] Phase 1 done. Merging... ==="
 uv run python -m src.poc.exp07_methodology_validation_tier0.collect_per_record_acts \
-    --merge-only --n-workers "$NW" --output-dir results/exp7/0A/acts/
+    --merge-only --n-workers "$NW" --output-dir results/exp07_methodology_validation_tier0/0A/acts/
 
 # ── Phase 2: Bootstrap direction stability analysis ──────────────────────────
 echo ""
 echo "=== [0A] Phase 2: Bootstrap direction stability analysis ==="
 uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_directions \
-    --acts-dir results/exp7/0A/acts/ \
-    --canonical-npz results/exp5/precompute_v2/precompute/corrective_directions.npz \
+    --acts-dir results/exp07_methodology_validation_tier0/0A/acts/ \
+    --canonical-npz results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz \
     --n-bootstrap 50 --seed 42 \
-    --output-dir results/exp7/0A/
+    --output-dir results/exp07_methodology_validation_tier0/0A/
 
 # ── Phase 3: OOD direction test ──────────────────────────────────────────────
 echo ""
@@ -71,7 +71,7 @@ for i in $(seq 0 $((NW-1))); do
     echo "[0A-OOD] launching worker $i on cuda:$i"
     uv run python -m src.poc.exp07_methodology_validation_tier0.collect_ood_acts \
         --worker-index "$i" --n-workers "$NW" --device "cuda:$i" \
-        --output-dir results/exp7/0A/ood_acts/ \
+        --output-dir results/exp07_methodology_validation_tier0/0A/ood_acts/ \
         "${EXTRA_ARGS[@]}" \
         > logs/exp7/0A_ood_w${i}.log 2>&1 &
     pids+=($!)
@@ -91,18 +91,18 @@ if [[ "$failed" -ne 0 ]]; then
 else
     echo "[0A-OOD] Merging OOD acts..."
     uv run python -m src.poc.exp07_methodology_validation_tier0.collect_ood_acts \
-        --merge-only --n-workers "$NW" --output-dir results/exp7/0A/ood_acts/
+        --merge-only --n-workers "$NW" --output-dir results/exp07_methodology_validation_tier0/0A/ood_acts/
 
     echo "[0A-OOD] Running OOD direction comparison..."
     uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_directions \
-        --acts-dir results/exp7/0A/acts/ \
-        --ood-acts-dir results/exp7/0A/ood_acts/ \
-        --canonical-npz results/exp5/precompute_v2/precompute/corrective_directions.npz \
-        --output-dir results/exp7/0A/
+        --acts-dir results/exp07_methodology_validation_tier0/0A/acts/ \
+        --ood-acts-dir results/exp07_methodology_validation_tier0/0A/ood_acts/ \
+        --canonical-npz results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz \
+        --output-dir results/exp07_methodology_validation_tier0/0A/
 fi
 
 echo ""
 echo "=== [0A] Done ==="
 echo "Results:"
-echo "  results/exp7/0A/bootstrap_results.json  — pairwise cosine (expect > 0.95 at layers 20-33)"
-echo "  results/exp7/0A/ood_direction_test.json  — OOD cosine (expect > 0.90 at corrective layers)"
+echo "  results/exp07_methodology_validation_tier0/0A/bootstrap_results.json  — pairwise cosine (expect > 0.95 at layers 20-33)"
+echo "  results/exp07_methodology_validation_tier0/0A/ood_direction_test.json  — OOD cosine (expect > 0.90 at corrective layers)"

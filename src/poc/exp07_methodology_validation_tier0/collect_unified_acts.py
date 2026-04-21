@@ -15,11 +15,11 @@ Data collected per record:
   pt_acts_{L}  [n_records_this_worker, D_MODEL] float32  — PT MLP output mean over generated steps
 
 Output layout:
-  results/exp7/unified_acts/acts/w{N}.npz     — per-worker activation files
-  results/exp7/unified_acts/merged.npz        — merged 1400-record file
-  results/exp7/0H/random_600_ids.json         — random-600 split (seed=42)
-  results/exp7/0H/held_out_800_ids.json       — held-out 800
-  results/exp7/0H/bottom_600_ids.json         — bottom-600 (lowest contrast)
+  results/exp07_methodology_validation_tier0/unified_acts/acts/w{N}.npz     — per-worker activation files
+  results/exp07_methodology_validation_tier0/unified_acts/merged.npz        — merged 1400-record file
+  results/exp07_methodology_validation_tier0/0H/random_600_ids.json         — random-600 split (seed=42)
+  results/exp07_methodology_validation_tier0/0H/held_out_800_ids.json       — held-out 800
+  results/exp07_methodology_validation_tier0/0H/bottom_600_ids.json         — bottom-600 (lowest contrast)
 
 Usage:
   # Step 1: 8 parallel workers (load IT on GPU, then PT on same GPU sequentially)
@@ -55,7 +55,7 @@ D_MODEL    = 2560
 MAX_GEN    = 80
 
 WORK_DIR   = Path("results/precompute_v2_work")
-OUTPUT_DIR = Path("results/exp7/unified_acts")
+OUTPUT_DIR = Path("results/exp07_methodology_validation_tier0/unified_acts")
 ACTS_DIR   = OUTPUT_DIR / "acts"
 
 # Selected 600 records path (governance-ranked, used for 0A direction)
@@ -87,9 +87,9 @@ def _load_all_records() -> tuple[list[str], list[dict]]:
 
 
 def _make_0H_split(all_ids: list[str], all_records: list[dict]) -> None:
-    """Create random-600/held-out-800/bottom-600 split for 0H (saved to results/exp7/0H/)."""
+    """Create random-600/held-out-800/bottom-600 split for 0H (saved to results/exp07_methodology_validation_tier0/0H/)."""
     from pathlib import Path as P
-    h_dir = P("results/exp7/0H")
+    h_dir = P("results/exp07_methodology_validation_tier0/0H")
     h_dir.mkdir(parents=True, exist_ok=True)
 
     random_ids_path = h_dir / "random_600_ids.json"
@@ -325,7 +325,7 @@ def verify_against_canonical() -> None:
     They should produce the same direction vector (up to numerical precision).
     Computes: direction from selected-600 via unified acts → cosine vs canonical.
     """
-    canonical_path = Path("results/exp5/precompute_v2/precompute/corrective_directions.npz")
+    canonical_path = Path("results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz")
     selected_path = SELECTED_JSON
 
     if not canonical_path.exists():

@@ -10,7 +10,7 @@ Plots generated:
 Usage:
   uv run python scripts/plot_exp10_steering.py
   uv run python scripts/plot_exp10_steering.py --models gemma3_4b llama31_8b
-  uv run python scripts/plot_exp10_steering.py --results-dir results/exp10
+  uv run python scripts/plot_exp10_steering.py --results-dir results/exp10_contrastive_activation_patching
 """
 from __future__ import annotations
 
@@ -464,8 +464,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Exp10 multi-model steering plots")
     parser.add_argument("--models", nargs="+", default=None,
                         help="Subset of models to plot (default: all available)")
-    parser.add_argument("--results-dir", type=str, default="results/exp10",
-                        help="Root results directory (default: results/exp10)")
+    parser.add_argument("--results-dir", type=str, default="results/exp10_contrastive_activation_patching",
+                        help="Root results directory (default: results/exp10_contrastive_activation_patching)")
     parser.add_argument("--plots", nargs="+", default=None,
                         choices=["governance", "panel", "safety", "summary", "delta"],
                         help="Subset of plots to generate (default: all)")

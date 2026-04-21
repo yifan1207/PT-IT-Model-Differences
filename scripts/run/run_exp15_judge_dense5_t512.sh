@@ -11,17 +11,26 @@ PROVIDER="${PROVIDER:-openrouter}"
 BULK_MODEL="${BULK_MODEL:-google/gemini-2.5-flash}"
 SECOND_MODEL="${SECOND_MODEL:-openai/gpt-4o-mini}"
 ESCALATION_MODEL="${ESCALATION_MODEL:-openai/gpt-4o}"
+SKIP_EXISTING="${SKIP_EXISTING:-1}"
 
-MODELS=(
-  gemma3_4b
-  qwen3_4b
-  llama31_8b
-  mistral_7b
-  olmo2_7b
-)
+if [[ -n "${MODELS:-}" ]]; then
+  read -r -a MODELS_ARR <<<"${MODELS}"
+else
+  MODELS_ARR=(
+    gemma3_4b
+    qwen3_4b
+    llama31_8b
+    mistral_7b
+    olmo2_7b
+  )
+fi
 
-for model in "${MODELS[@]}"; do
+for model in "${MODELS_ARR[@]}"; do
   run_dir="$RUN_ROOT/${RUN_PREFIX}_${model}/${RUN_PREFIX}_${model}"
+  if [[ "$SKIP_EXISTING" == "1" && -f "$run_dir/judge_manifest.json" ]]; then
+    echo "[exp15 judge] skipping $model (judge_manifest.json exists)"
+    continue
+  fi
   echo "[exp15 judge] running $model"
   uv run python "$ROOT/scripts/eval/judge_exp15.py" \
     --run-dir "$run_dir" \

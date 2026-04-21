@@ -27,11 +27,11 @@ Usage:
       --worker-index 0 --n-workers 1 --device cuda:0 --n-records 20
 
 Output:
-  results/exp7/0H/random_600_ids.json      — randomly selected 600 record IDs
-  results/exp7/0H/held_out_800_ids.json    — held-out 800 record IDs
-  results/exp7/0H/acts/                    — per-worker activation files
-  results/exp7/0H/random_directions.npz   — direction from random 600
-  results/exp7/0H/bottom_directions.npz   — direction from bottom 600 (negative control)
+  results/exp07_methodology_validation_tier0/0H/random_600_ids.json      — randomly selected 600 record IDs
+  results/exp07_methodology_validation_tier0/0H/held_out_800_ids.json    — held-out 800 record IDs
+  results/exp07_methodology_validation_tier0/0H/acts/                    — per-worker activation files
+  results/exp07_methodology_validation_tier0/0H/random_directions.npz   — direction from random 600
+  results/exp07_methodology_validation_tier0/0H/bottom_directions.npz   — direction from bottom 600 (negative control)
 """
 from __future__ import annotations
 
@@ -53,7 +53,7 @@ D_MODEL = 2560
 MAX_GEN = 80
 
 WORK_DIR = Path("results/precompute_v2_work")
-OUTPUT_DIR = Path("results/exp7/0H")
+OUTPUT_DIR = Path("results/exp07_methodology_validation_tier0/0H")
 ACTS_DIR = OUTPUT_DIR / "acts"
 
 RANDOM_SEED = 42
@@ -265,7 +265,7 @@ def compare_direction_cosines(output_dir: Path) -> dict:
     Reports per-layer cosine similarity. If cosine > 0.95, governance selection is unnecessary.
     If cosine < 0.80, the governance-selected direction is meaningfully different.
     """
-    canonical_path = Path("results/exp5/precompute_v2/precompute/corrective_directions.npz")
+    canonical_path = Path("results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz")
     random_path = output_dir / "random_directions.npz"
     bottom_path = output_dir / "bottom_directions.npz"
 

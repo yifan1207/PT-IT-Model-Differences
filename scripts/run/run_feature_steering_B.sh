@@ -16,12 +16,12 @@ export PYTHONPATH
 cd /home/yifan/structral-semantic-features
 
 LOG() { echo "[exp6B $(date '+%H:%M:%S')] $*" | tee -a logs/exp6_B_pipeline.log; }
-mkdir -p logs results/exp6
+mkdir -p logs results/exp06_corrective_direction_steering
 
-CORRECTIVE_DIR="results/exp5/precompute_it/precompute/corrective_directions.npz"
-GOVERNANCE_FEATURES="results/exp6/governance_feature_sets.json"
-MEAN_FEATURE_ACTS="results/exp6/precompute/mean_feature_acts_it"
-GOVERNANCE_DIRECTION="results/exp6/precompute/governance_directions.npz"
+CORRECTIVE_DIR="results/exp05_corrective_direction_ablation_cartography/precompute_it/precompute/corrective_directions.npz"
+GOVERNANCE_FEATURES="results/exp06_corrective_direction_steering/governance_feature_sets.json"
+MEAN_FEATURE_ACTS="results/exp06_corrective_direction_steering/precompute/mean_feature_acts_it"
+GOVERNANCE_DIRECTION="results/exp06_corrective_direction_steering/precompute/content_direction_governance.npz"
 
 # ─── B1: Feature clamping (IT, γ sweep × feature set sweep) ──────────────────
 LOG "Launching B1 (feature clamp, IT model) on all 8 GPUs..."

@@ -441,9 +441,9 @@ def _validate_batched_equivalence(
     if requested_batch_size <= 1:
         return 1
 
-    ref_dir = f"/root/results/exp11/{run_prefix}_equiv_bs1"
+    ref_dir = f"/root/results/exp11_matched_prefix_mlp_graft/{run_prefix}_equiv_bs1"
     test_batch_size = min(requested_batch_size, 8)
-    test_dir = f"/root/results/exp11/{run_prefix}_equiv_bs{test_batch_size}"
+    test_dir = f"/root/results/exp11_matched_prefix_mlp_graft/{run_prefix}_equiv_bs{test_batch_size}"
     print(
         f"[preflight] validating {model}: batch_size=1 vs batch_size={test_batch_size} "
         f"on matched prompts before full launch",
@@ -474,7 +474,7 @@ def _validate_batched_equivalence(
 
 
 def _results_hint(run_name: str) -> str:
-    return f"modal volume get exp11-results exp11/{run_name} results/exp11/{run_name}"
+    return f"modal volume get exp11-results exp11/{run_name} results/exp11_matched_prefix_mlp_graft/{run_name}"
 
 
 def _local_probe_cache_root() -> Path:
@@ -641,7 +641,7 @@ def stage_tuned_lens_probes_remote(models: list[str] | None = None) -> str:
 )
 def smoke_test(run_name: str = "gemma3_4b_smoke") -> str:
     _setup()
-    run_dir = f"/root/results/exp11/{run_name}"
+    run_dir = f"/root/results/exp11_matched_prefix_mlp_graft/{run_name}"
     _run_exp11(
         model=SMOKE_MODEL,
         run_dir=run_dir,
@@ -726,7 +726,7 @@ def full_model_run(
             seed=seed,
         )
 
-    run_dir = f"/root/results/exp11/{run_name}"
+    run_dir = f"/root/results/exp11_matched_prefix_mlp_graft/{run_name}"
     tuned_lens_dir = "/root/tuned_lens_probes" if readout_mode != "raw" else None
     if tuned_lens_dir is not None:
         _verify_probe_mount(model)
@@ -786,7 +786,7 @@ def full_model_shard_run(
     tuned_lens_dir = "/root/tuned_lens_probes" if readout_mode != "raw" else None
     if tuned_lens_dir is not None:
         _verify_probe_mount(model)
-    run_dir = f"/root/results/exp11/{run_name}__shard{shard_index}of{num_shards}"
+    run_dir = f"/root/results/exp11_matched_prefix_mlp_graft/{run_name}__shard{shard_index}of{num_shards}"
     shard_total = _count_shard_prompts(
         dataset_path,
         n_prompts=n_prompts,
@@ -853,7 +853,7 @@ def merge_model_shards(
     seed: int = 0,
 ) -> str:
     _setup()
-    base_dir = Path("/root/results/exp11")
+    base_dir = Path("/root/results/exp11_matched_prefix_mlp_graft")
     shard_dirs = [base_dir / f"{run_name}__shard{idx}of{num_shards}" for idx in range(num_shards)]
     merged_dir = base_dir / run_name
     merged_dir.mkdir(parents=True, exist_ok=True)

@@ -33,7 +33,7 @@ if [[ -z "$MODEL" ]]; then
 fi
 
 if [[ -z "$OUT_DIR" ]]; then
-  OUT_DIR="results/exp12/${MODEL}/abc_raw_eval_v1"
+  OUT_DIR="results/exp12_free_running_abc_graft/${MODEL}/abc_raw_eval_v1"
 fi
 
 export CUDA_VISIBLE_DEVICES="$GPU"

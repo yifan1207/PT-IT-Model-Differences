@@ -9,8 +9,8 @@ capture only the requested layers' MLP outputs.  Peak memory ≈ model weights
 Usage:
     uv run python scripts/precompute_extra_directions.py \
         --layers 5,15 \
-        --out-npz results/exp5/precompute_it/precompute/extra_directions.npz \
-        --merge-into results/exp5/precompute_it/precompute/corrective_directions.npz
+        --out-npz results/exp05_corrective_direction_ablation_cartography/precompute_it/precompute/extra_directions.npz \
+        --merge-into results/exp05_corrective_direction_ablation_cartography/precompute_it/precompute/corrective_directions.npz
 
 The --merge-into flag updates the target npz in-place (adds/overwrites the
 layer keys produced here without touching other keys).

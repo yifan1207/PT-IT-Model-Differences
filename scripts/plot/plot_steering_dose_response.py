@@ -1488,18 +1488,18 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
     p = argparse.ArgumentParser()
     p.add_argument("--experiment", choices=["A1", "A2", "both", "A1v5", "A1rand", "A1_notmpl", "A1_combined", "A5a", "A5a_notmpl", "A5b", "A5", "A5a_layerspec"], default="both")
-    p.add_argument("--a1-dir",      default="results/exp6/merged_A1_it")
-    p.add_argument("--a2-dir",      default="results/exp6/merged_A2_pt")
-    p.add_argument("--a1-early-dir", default="results/exp6/merged_A1_early_it_v4")
-    p.add_argument("--a1-mid-dir",   default="results/exp6/merged_A1_mid_it_v4")
-    p.add_argument("--a1-rand-dir",  default="results/exp6/merged_A1_rand_it_v1")
-    p.add_argument("--a5a-dir",          default="results/exp6/merged_A5a_it_v1")
-    p.add_argument("--a5a-early-dir",    default="results/exp6/merged_A5a_early_it_v1")
-    p.add_argument("--a5a-mid-dir",      default="results/exp6/merged_A5a_mid_it_v1")
-    p.add_argument("--a5a-notmpl-dir",   default="results/exp6/merged_A5a_notmpl_it_v1")
-    p.add_argument("--a1-notmpl-dir",    default="results/exp6/merged_A1_notmpl_it_v1")
-    p.add_argument("--a5b-dir",     default="results/exp6/merged_A5b_it_v1")
-    p.add_argument("--pt-dir",      default="results/exp6/merged_A2_pt_v4")
+    p.add_argument("--a1-dir",      default="results/exp06_corrective_direction_steering/merged_A1_it")
+    p.add_argument("--a2-dir",      default="results/exp06_corrective_direction_steering/merged_A2_pt")
+    p.add_argument("--a1-early-dir", default="results/exp06_corrective_direction_steering/merged_A1_early_it_v4")
+    p.add_argument("--a1-mid-dir",   default="results/exp06_corrective_direction_steering/merged_A1_mid_it_v4")
+    p.add_argument("--a1-rand-dir",  default="results/exp06_corrective_direction_steering/merged_A1_rand_it_v1")
+    p.add_argument("--a5a-dir",          default="results/exp06_corrective_direction_steering/merged_A5a_it_v1")
+    p.add_argument("--a5a-early-dir",    default="results/exp06_corrective_direction_steering/merged_A5a_early_it_v1")
+    p.add_argument("--a5a-mid-dir",      default="results/exp06_corrective_direction_steering/merged_A5a_mid_it_v1")
+    p.add_argument("--a5a-notmpl-dir",   default="results/exp06_corrective_direction_steering/merged_A5a_notmpl_it_v1")
+    p.add_argument("--a1-notmpl-dir",    default="results/exp06_corrective_direction_steering/merged_A1_notmpl_it_v1")
+    p.add_argument("--a5b-dir",     default="results/exp06_corrective_direction_steering/merged_A5b_it_v1")
+    p.add_argument("--pt-dir",      default="results/exp06_corrective_direction_steering/merged_A2_pt_v4")
     args = p.parse_args()
 
     a1          = Path(args.a1_dir)
@@ -1537,10 +1537,10 @@ def main() -> None:
     if args.experiment == "A1_combined":
         plot_A1_combined(a1, a1_notmpl, a2, a1_notmpl / "plots" / "A1_combined_tmpl_vs_notmpl.png")
     if args.experiment == "A5a_notmpl":
-        out = Path("results/exp6/plots_notmpl") / "A5a_notmpl_vs_template.png"
+        out = Path("results/exp06_corrective_direction_steering/plots_notmpl") / "A5a_notmpl_vs_template.png"
         plot_A5a_notmpl(a5a, a5a_notmpl, out)
     if args.experiment == "A5a_layerspec":
-        out = Path("results/exp6/plots_layerspec") / "A5a_layer_specificity.png"
+        out = Path("results/exp06_corrective_direction_steering/plots_layerspec") / "A5a_layer_specificity.png"
         plot_A5a_layerspec(a5a_early, a5a_mid, a5a, out)
 
 

@@ -265,17 +265,17 @@ def main() -> None:
         "governance-direction",
     ], required=True)
     p.add_argument("--content-directions-npz",
-                   default="results/exp6/precompute/content_directions.npz")
+                   default="results/exp06_corrective_direction_steering/precompute/content_directions.npz")
     p.add_argument("--out-path",
-                   default="results/exp6/precompute/content_direction_aggregate.npz")
+                   default="results/exp06_corrective_direction_steering/precompute/content_direction_aggregate.npz")
     p.add_argument("--device", default="cuda:7")
     p.add_argument("--dataset", default="data/exp6_dataset.jsonl")
     p.add_argument("--n-records", type=int, default=500)
     p.add_argument("--corrective-layers", default="20,21,22,23,24,25,26,27,28,29,30,31,32,33")
     p.add_argument("--mean-feature-acts-dir",
-                   default="results/exp6/precompute/mean_feature_acts_it")
+                   default="results/exp06_corrective_direction_steering/precompute/mean_feature_acts_it")
     p.add_argument("--governance-features-path",
-                   default="results/exp6/governance_feature_sets.json")
+                   default="results/exp06_corrective_direction_steering/governance_feature_sets.json")
     p.add_argument("--feature-set-key", default="method12_top100")
     p.add_argument("--transcoder-release", default="google/gemma-scope-2-4b-it")
     p.add_argument("--transcoder-variant", default="width_16k_l0_big_affine")
@@ -310,7 +310,7 @@ def main() -> None:
             corrective_layers=layers,
             feature_set_key=args.feature_set_key,
             out_path=args.out_path.replace("aggregate", "governance") if "aggregate" in args.out_path
-                     else "results/exp6/precompute/governance_directions.npz",
+                     else "results/exp06_corrective_direction_steering/precompute/content_direction_governance.npz",
             device=args.device,
         )
 

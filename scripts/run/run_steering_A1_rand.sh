@@ -23,8 +23,8 @@ for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=1; done
 # ── Config ────────────────────────────────────────────────────────────────────
 DATASET="data/eval_dataset_v2.jsonl"
 N_EVAL=1400
-RAND_DIR="results/exp6/precompute/random_directions.npz"
-CONTENT_DIR="results/exp6/precompute/content_direction_aggregate.npz"
+RAND_DIR="results/exp06_corrective_direction_steering/precompute/random_directions.npz"
+CONTENT_DIR="results/exp06_corrective_direction_steering/precompute/content_direction_aggregate.npz"
 JUDGE_MODEL="google/gemini-2.5-flash"
 LOG_DIR="logs/exp6_A1_rand"
 RUN_NAME="A1_rand_it_v1"
@@ -92,11 +92,11 @@ fi
 
 # ── Step 3: merge + judge ─────────────────────────────────────────────────────
 if [[ "$DRY_RUN" == "1" ]]; then
-    echo "[dry] merge → results/exp6/merged_${RUN_NAME}"
-    echo "[dry] judge → results/exp6/merged_${RUN_NAME}/llm_judge_v2_scores.jsonl"
+    echo "[dry] merge → results/exp06_corrective_direction_steering/merged_${RUN_NAME}"
+    echo "[dry] judge → results/exp06_corrective_direction_steering/merged_${RUN_NAME}/llm_judge_v2_scores.jsonl"
 else
     src_dirs=()
-    for ((i=0; i<NW; i++)); do src_dirs+=("results/exp6/${RUN_NAME}_w${i}"); done
+    for ((i=0; i<NW; i++)); do src_dirs+=("results/exp06_corrective_direction_steering/${RUN_NAME}_w${i}"); done
 
     echo "[$(date +%T)] MERGE $RUN_NAME"
     uv run python scripts/merge_steering_workers.py \
@@ -107,7 +107,7 @@ else
 
     echo "[$(date +%T)] JUDGE $RUN_NAME"
     uv run python scripts/llm_judge.py \
-        --merged-dir "results/exp6/merged_${RUN_NAME}" \
+        --merged-dir "results/exp06_corrective_direction_steering/merged_${RUN_NAME}" \
         --model "$JUDGE_MODEL" --workers 16 --tasks g1 g2 s1 s2 \
         > "$LOG_DIR/judge_${RUN_NAME}.log" 2>&1
 
@@ -115,4 +115,4 @@ else
 fi
 
 echo "=== A1_rand complete ==="
-echo "  results/exp6/merged_${RUN_NAME}/"
+echo "  results/exp06_corrective_direction_steering/merged_${RUN_NAME}/"

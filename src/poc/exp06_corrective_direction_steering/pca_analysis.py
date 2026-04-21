@@ -158,7 +158,7 @@ def _try_fetch_gcs_record_diff_artifact(base_dir: Path, bucket: str = "pt-vs-it-
     exact_candidates = [
         f"gs://{bucket}/results/precompute_v2_work/record_diff_vectors.npz",
         f"gs://{bucket}/results/precompute_v2_work/pca/record_diff_vectors.npz",
-        f"gs://{bucket}/results/exp5/precompute_v2/precompute/record_diff_vectors.npz",
+        f"gs://{bucket}/results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/record_diff_vectors.npz",
     ]
     for remote in exact_candidates:
         try:
@@ -178,7 +178,7 @@ def _try_fetch_gcs_record_diff_artifact(base_dir: Path, bucket: str = "pt-vs-it-
     broad_matches: list[str] = []
     for prefix in (
         f"gs://{bucket}/results/precompute_v2_work/**",
-        f"gs://{bucket}/results/exp5/precompute_v2/precompute/**",
+        f"gs://{bucket}/results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/**",
     ):
         broad_matches.extend(_gsutil_ls(prefix))
 

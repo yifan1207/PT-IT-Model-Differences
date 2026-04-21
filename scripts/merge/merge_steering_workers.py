@@ -37,7 +37,7 @@ def main() -> None:
     p.add_argument("--experiment", required=True)
     p.add_argument("--variant", required=True)
     p.add_argument("--n-workers", type=int, required=True)
-    p.add_argument("--output-base", default="results/exp6")
+    p.add_argument("--output-base", default="results/exp06_corrective_direction_steering")
     p.add_argument("--merged-name", default="",
                    help="Override merged dir name (default: merged_{experiment}_{variant})")
     p.add_argument("--source-dirs", nargs="*", default=None,

@@ -171,7 +171,7 @@ precompute_model() {
 
 if [[ "$STEP" == "precompute" ]]; then
     # Copy existing Gemma directions
-    GEMMA_SRC="results/exp5/precompute_v2/precompute/corrective_directions.npz"
+    GEMMA_SRC="results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz"
     GEMMA_DST="results/cross_model/gemma3_4b/directions"
     if [[ -f "$GEMMA_SRC" ]] && [[ ! -f "$GEMMA_DST/corrective_directions.npz" ]]; then
         mkdir -p "$GEMMA_DST"

@@ -3,14 +3,14 @@
 Usage (Approach A):
     python src/poc/exp06_corrective_direction_steering/run.py \\
         --experiment A1 --variant it --device cuda:0 \\
-        --corrective-direction-path results/exp5/precompute_v2/precompute/corrective_directions.npz \\
+        --corrective-direction-path results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz \\
         --worker-index 0 --n-workers 8
 
 Usage (Approach B):
     python src/poc/exp06_corrective_direction_steering/run.py \\
         --experiment B1 --variant it --device cuda:0 \\
-        --governance-features-path results/exp6/governance_feature_sets.json \\
-        --mean-feature-acts-path results/exp6/precompute/mean_feature_acts_it \\
+        --governance-features-path results/exp06_corrective_direction_steering/governance_feature_sets.json \\
+        --mean-feature-acts-path results/exp06_corrective_direction_steering/precompute/mean_feature_acts_it \\
         --feature-set method12_top100 --gamma 5.0 \\
         --worker-index 0 --n-workers 8
 """
@@ -435,7 +435,7 @@ def _A1_rand_conditions(cfg: Exp6Config) -> list[tuple[str, Exp6Config]]:
     *content* of the IT-PT corrective direction (not just any perturbation at layers
     20-33), random directions should produce flat metrics across all α values.
 
-    Direction source: results/exp6/precompute/random_directions.npz  (seed=42, fixed).
+    Direction source: results/exp06_corrective_direction_steering/precompute/random_directions.npz  (seed=42, fixed).
     Pass this file via --corrective-direction-path when launching.
 
     Expected:  flat across α  →  governance effect is direction-specific ✓
@@ -950,20 +950,20 @@ def main() -> None:
     p.add_argument("--max-gen-tokens", type=int, default=200)
     p.add_argument("--n-eval-examples", type=int, default=1400)
     p.add_argument("--run-name", default="")
-    p.add_argument("--output-base", default="results/exp6",
-                   help="Base directory for run outputs (default: results/exp6). "
-                        "Use results/exp7/0C etc. for exp7 experiments.")
+    p.add_argument("--output-base", default="results/exp06_corrective_direction_steering",
+                   help="Base directory for run outputs (default: results/exp06_corrective_direction_steering). "
+                        "Use results/exp07_methodology_validation_tier0/0C etc. for exp7 experiments.")
     p.add_argument("--worker-index", type=int, default=0)
     p.add_argument("--n-workers", type=int, default=1)
 
     # A-experiment paths
-    p.add_argument("--corrective-direction-path", default="results/exp5/precompute_v2/precompute/corrective_directions.npz")
-    p.add_argument("--content-direction-path", default="results/exp6/precompute/content_direction_aggregate.npz")
+    p.add_argument("--corrective-direction-path", default="results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz")
+    p.add_argument("--content-direction-path", default="results/exp06_corrective_direction_steering/precompute/content_direction_aggregate.npz")
 
     # B-experiment paths
-    p.add_argument("--governance-features-path", default="results/exp6/governance_feature_sets.json")
-    p.add_argument("--mean-feature-acts-path", default="results/exp6/precompute/mean_feature_acts_it")
-    p.add_argument("--governance-direction-path", default="results/exp6/precompute/governance_directions.npz")
+    p.add_argument("--governance-features-path", default="results/exp06_corrective_direction_steering/governance_feature_sets.json")
+    p.add_argument("--mean-feature-acts-path", default="results/exp06_corrective_direction_steering/precompute/mean_feature_acts_it")
+    p.add_argument("--governance-direction-path", default="results/exp06_corrective_direction_steering/precompute/content_direction_governance.npz")
     p.add_argument("--feature-set", default="method12_top100")
     p.add_argument("--gamma", type=float, default=1.0)
     p.add_argument("--beta", type=float, default=0.0)

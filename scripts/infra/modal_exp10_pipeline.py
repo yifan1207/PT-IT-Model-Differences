@@ -34,7 +34,7 @@ Usage:
 
     # Download results:
     modal volume get phase0-results-v2 cross_model results/cross_model
-    modal volume get exp10-results exp10 results/exp10
+    modal volume get exp10-results exp10 results/exp10_contrastive_activation_patching
 """
 from __future__ import annotations
 
@@ -741,7 +741,7 @@ def run_phase_c():
     for m in MODELS:
         dir_types_per_model[m] = ["exp8"]  # always run exp8
         # Check exp10 go/no-go (if probes exist)
-        probe_summary = Path(f"results/exp10/{m}/probes/probe_summary.json")
+        probe_summary = Path(f"results/exp10_contrastive_activation_patching/{m}/probes/probe_summary.json")
         if probe_summary.exists():
             import json
             summary = json.loads(probe_summary.read_text())
@@ -823,4 +823,4 @@ def main():
     print("\n=== ALL PHASES COMPLETE ===")
     print("Download results:")
     print("  modal volume get phase0-results-v2 cross_model results/cross_model")
-    print("  modal volume get exp10-results exp10 results/exp10")
+    print("  modal volume get exp10-results exp10 results/exp10_contrastive_activation_patching")

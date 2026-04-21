@@ -5,8 +5,8 @@ The old scorer used pre-assigned expected_format metadata (wrong for most IFEval
 This script re-detects the format constraint from prompt text and rescores all conditions.
 
 Usage:
-    uv run python scripts/rescore_format_compliance.py --merged-dir results/exp6/merged_A1_it
-    uv run python scripts/rescore_format_compliance.py --merged-dir results/exp6/merged_A2_pt
+    uv run python scripts/rescore_format_compliance.py --merged-dir results/exp06_corrective_direction_steering/merged_A1_it
+    uv run python scripts/rescore_format_compliance.py --merged-dir results/exp06_corrective_direction_steering/merged_A2_pt
 """
 from __future__ import annotations
 import argparse, csv, json

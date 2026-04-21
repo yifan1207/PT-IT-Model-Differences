@@ -1,0 +1,41 @@
+{
+  "model": "gemma3_4b",
+  "n_prompt_records": 600,
+  "n_prompt_records_full": 600,
+  "pipelines": [
+    "A_pt_raw",
+    "B_early_raw",
+    "B_mid_raw",
+    "B_late_raw",
+    "C_it_chat",
+    "D_early_ptswap",
+    "D_mid_ptswap",
+    "D_late_ptswap"
+  ],
+  "counts_by_condition": {
+    "A_pt_raw": 600,
+    "B_early_raw": 600,
+    "B_late_raw": 600,
+    "B_mid_raw": 600,
+    "C_it_chat": 600,
+    "D_early_ptswap": 600,
+    "D_late_ptswap": 600,
+    "D_mid_ptswap": 600
+  },
+  "forced_choice_counts_by_condition": {
+    "A_pt_raw": 60,
+    "B_early_raw": 60,
+    "B_late_raw": 60,
+    "B_mid_raw": 60,
+    "C_it_chat": 60,
+    "D_early_ptswap": 60,
+    "D_late_ptswap": 60,
+    "D_mid_ptswap": 60
+  },
+  "sample_outputs_path": "/root/exp15_results/exp15_eval_core_600_runpod_a100_dense5_shmcache_t512_20260421_gemma3_4b/exp15_eval_core_600_runpod_a100_dense5_shmcache_t512_20260421_gemma3_4b/sample_outputs.jsonl",
+  "forced_choice_outputs_path": "/root/exp15_results/exp15_eval_core_600_runpod_a100_dense5_shmcache_t512_20260421_gemma3_4b/exp15_eval_core_600_runpod_a100_dense5_shmcache_t512_20260421_gemma3_4b/forced_choice_outputs.jsonl",
+  "new_free_running_rows_written_this_run": 4800,
+  "new_forced_choice_rows_written_this_run": 480,
+  "dataset_manifest_hash": "60d354e35bfa8c19a06c769adcd0a1066bf8d56040d99c6db26a77239cdb764b",
+  "pipeline_manifest_hash": "19ae74ffeae5d71855fd4200963481c6aad2d7d896ce406dedf628baba624103"
+}

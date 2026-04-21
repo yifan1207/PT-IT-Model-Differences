@@ -27,8 +27,8 @@ for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=1; done
 # ── Config ────────────────────────────────────────────────────────────────────
 DATASET="data/eval_dataset_v2.jsonl"
 N_EVAL=1400
-CORR_DIR="results/exp5/precompute_v2/precompute/corrective_directions.npz"
-CONTENT_DIR="results/exp6/precompute/content_direction_aggregate.npz"
+CORR_DIR="results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz"
+CONTENT_DIR="results/exp06_corrective_direction_steering/precompute/content_direction_aggregate.npz"
 JUDGE_MODEL="google/gemini-2.5-flash"
 NW=8
 
@@ -86,11 +86,11 @@ run_experiment() {
     fi
 
     local src_dirs=()
-    for ((i=0; i<NW; i++)); do src_dirs+=("results/exp6/${run_name}_w${i}"); done
+    for ((i=0; i<NW; i++)); do src_dirs+=("results/exp06_corrective_direction_steering/${run_name}_w${i}"); done
 
     if [[ "$DRY_RUN" == "1" ]]; then
-        echo "[dry] merge → results/exp6/merged_${run_name}"
-        echo "[dry] judge → results/exp6/merged_${run_name}/llm_judge_v2_scores.jsonl"
+        echo "[dry] merge → results/exp06_corrective_direction_steering/merged_${run_name}"
+        echo "[dry] judge → results/exp06_corrective_direction_steering/merged_${run_name}/llm_judge_v2_scores.jsonl"
     else
         echo "[$(date +%T)] MERGE $run_name"
         uv run python scripts/merge_steering_workers.py \
@@ -101,7 +101,7 @@ run_experiment() {
 
         echo "[$(date +%T)] JUDGE $run_name"
         uv run python scripts/llm_judge.py \
-            --merged-dir "results/exp6/merged_${run_name}" \
+            --merged-dir "results/exp06_corrective_direction_steering/merged_${run_name}" \
             --model "$JUDGE_MODEL" --workers 16 --tasks g1 g2 s1 s2 \
             > "$log_dir/judge_${run_name}.log" 2>&1
 
@@ -117,37 +117,37 @@ run_experiment A5a_notmpl A5a_notmpl_it_v1
 
 # ── Step 3: Generate plots ─────────────────────────────────────────────────────
 if [[ "$DRY_RUN" == "1" ]]; then
-    echo "[dry] plot A1_notmpl_vs_pt → results/exp6/merged_A1_notmpl_it_v1/plots/"
-    echo "[dry] plot A5a_notmpl_vs_template → results/exp6/plots_notmpl/"
-    echo "[dry] plot A1 updated (with notmpl overlay) → results/exp6/merged_A1_it_v4/plots/"
+    echo "[dry] plot A1_notmpl_vs_pt → results/exp06_corrective_direction_steering/merged_A1_notmpl_it_v1/plots/"
+    echo "[dry] plot A5a_notmpl_vs_template → results/exp06_corrective_direction_steering/plots_notmpl/"
+    echo "[dry] plot A1 updated (with notmpl overlay) → results/exp06_corrective_direction_steering/merged_A1_it_v4/plots/"
 else
     echo "[$(date +%T)] PLOT A1_notmpl_vs_pt"
-    mkdir -p results/exp6/merged_A1_notmpl_it_v1/plots results/exp6/plots_notmpl
+    mkdir -p results/exp06_corrective_direction_steering/merged_A1_notmpl_it_v1/plots results/exp06_corrective_direction_steering/plots_notmpl
     uv run python scripts/plot_steering_dose_response.py \
         --experiment A1_notmpl \
-        --a1-notmpl-dir results/exp6/merged_A1_notmpl_it_v1 \
-        --a2-dir results/exp6/merged_A2_pt_v4 \
+        --a1-notmpl-dir results/exp06_corrective_direction_steering/merged_A1_notmpl_it_v1 \
+        --a2-dir results/exp06_corrective_direction_steering/merged_A2_pt_v4 \
         >> logs/exp6_A1_notmpl_it_v1/plot.log 2>&1
 
     echo "[$(date +%T)] PLOT A5a_notmpl_vs_template"
     uv run python scripts/plot_steering_dose_response.py \
         --experiment A5a_notmpl \
-        --a5a-dir        results/exp6/merged_A5a_it_v1 \
-        --a5a-notmpl-dir results/exp6/merged_A5a_notmpl_it_v1 \
+        --a5a-dir        results/exp06_corrective_direction_steering/merged_A5a_it_v1 \
+        --a5a-notmpl-dir results/exp06_corrective_direction_steering/merged_A5a_notmpl_it_v1 \
         >> logs/exp6_A1_notmpl_it_v1/plot.log 2>&1
 
     echo "[$(date +%T)] PLOT A1 with notmpl overlay"
     uv run python scripts/plot_steering_dose_response.py \
         --experiment A1 \
-        --a1-dir results/exp6/merged_A1_it_v4 \
-        --a2-dir results/exp6/merged_A2_pt_v4 \
-        --a1-notmpl-dir results/exp6/merged_A1_notmpl_it_v1 \
+        --a1-dir results/exp06_corrective_direction_steering/merged_A1_it_v4 \
+        --a2-dir results/exp06_corrective_direction_steering/merged_A2_pt_v4 \
+        --a1-notmpl-dir results/exp06_corrective_direction_steering/merged_A1_notmpl_it_v1 \
         >> logs/exp6_A1_notmpl_it_v1/plot.log 2>&1
 
     echo "[$(date +%T)] PLOTS DONE"
 fi
 
 echo "=== A1_notmpl + A5a_notmpl complete ==="
-echo "  results/exp6/merged_A1_notmpl_it_v1/"
-echo "  results/exp6/merged_A5a_notmpl_it_v1/"
-echo "  results/exp6/plots_notmpl/"
+echo "  results/exp06_corrective_direction_steering/merged_A1_notmpl_it_v1/"
+echo "  results/exp06_corrective_direction_steering/merged_A5a_notmpl_it_v1/"
+echo "  results/exp06_corrective_direction_steering/plots_notmpl/"

@@ -133,7 +133,7 @@ class Exp3Config:
             suffix = "_raw"
         else:
             suffix = ""
-        return f"results/exp3/{self.model_variant}_{variant}_t{self.max_gen_tokens}{suffix}"
+        return f"results/exp03_corrective_stage_characterization/{self.model_variant}_{variant}_t{self.max_gen_tokens}{suffix}"
 
     @property
     def is_instruction_tuned(self) -> bool:

@@ -11,22 +11,22 @@ Also computes:
 
 Usage:
   uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_ci \\
-      --merged-dir results/exp6/merged_A1_it_v4 \\
+      --merged-dir results/exp06_corrective_direction_steering/merged_A1_it_v4 \\
       --cross-model-dir results/cross_model \\
       --n-bootstrap 10000 \\
-      --output-dir results/exp7/0D/
+      --output-dir results/exp07_methodology_validation_tier0/0D/
 
   # Faster test
   uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_ci \\
-      --merged-dir results/exp6/merged_A1_it_v4 \\
+      --merged-dir results/exp06_corrective_direction_steering/merged_A1_it_v4 \\
       --n-bootstrap 500 \\
-      --output-dir results/exp7/0D/
+      --output-dir results/exp07_methodology_validation_tier0/0D/
 
 Outputs:
-  results/exp7/0D/ci_A1_programmatic.json   — STR, format_compliance, reasoning_em, alignment_behavior
-  results/exp7/0D/ci_A1_llm_judge.json      — G1, G2, S1, S2 per-condition CIs
-  results/exp7/0D/ci_cross_model.json       — per-model per-prompt Δ commitment + Δ ID CIs
-  results/exp7/0D/effect_sizes.json         — Cohen's d for PT vs IT per metric
+  results/exp07_methodology_validation_tier0/0D/ci_A1_programmatic.json   — STR, format_compliance, reasoning_em, alignment_behavior
+  results/exp07_methodology_validation_tier0/0D/ci_A1_llm_judge.json      — G1, G2, S1, S2 per-condition CIs
+  results/exp07_methodology_validation_tier0/0D/ci_cross_model.json       — per-model per-prompt Δ commitment + Δ ID CIs
+  results/exp07_methodology_validation_tier0/0D/effect_sizes.json         — Cohen's d for PT vs IT per metric
 """
 from __future__ import annotations
 
@@ -492,7 +492,7 @@ def main() -> None:
     p.add_argument("--dataset-path", default="data/eval_dataset_v2.jsonl")
     p.add_argument("--n-bootstrap", type=int, default=10000)
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--output-dir", default="results/exp7/0D/")
+    p.add_argument("--output-dir", default="results/exp07_methodology_validation_tier0/0D/")
     args = p.parse_args()
 
     merged_dir = Path(args.merged_dir)

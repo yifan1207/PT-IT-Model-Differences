@@ -34,7 +34,7 @@ if [[ ! -f "$GEN_MERGED" ]]; then
     exit 1
 fi
 
-mkdir -p logs/exp7 results/exp7/0H
+mkdir -p logs/exp7 results/exp07_methodology_validation_tier0/0H
 
 # ── Step 1: Create split and collect activations ──────────────────────────────
 echo "=== [0H] Step 1: Activation collection (random-600 + bottom-600, 8 GPUs) ==="
@@ -68,17 +68,17 @@ uv run python -m src.poc.exp07_methodology_validation_tier0.precompute_random_sp
 
 # ── Step 3: A1 on held-out 800 with random direction ─────────────────────────
 echo "=== [0H] Step 3a: A1 on held-out 800 (random direction, 8 GPUs) ==="
-RAND_DIR="results/exp7/0H/random_directions.npz"
+RAND_DIR="results/exp07_methodology_validation_tier0/0H/random_directions.npz"
 if [[ ! -f "$RAND_DIR" ]]; then
     echo "[0H] ERROR: random_directions.npz not found. Step 2 may have failed."
     exit 1
 fi
 
 # Load held-out IDs and compute n-eval
-HELD_OUT_N=$(python3 -c "import json; print(len(json.load(open('results/exp7/0H/held_out_800_ids.json'))))")
+HELD_OUT_N=$(python3 -c "import json; print(len(json.load(open('results/exp07_methodology_validation_tier0/0H/held_out_800_ids.json'))))")
 echo "[0H] held-out records: $HELD_OUT_N"
 
-HELD_OUT_IDS="results/exp7/0H/held_out_800_ids.json"
+HELD_OUT_IDS="results/exp07_methodology_validation_tier0/0H/held_out_800_ids.json"
 
 run_a1_held_out() {
     local RUN_NAME=$1
@@ -93,7 +93,7 @@ run_a1_held_out() {
             --worker-index "$i" --n-workers "$NW" \
             --device "cuda:${i}" \
             --run-name "${RUN_NAME}_w${i}" \
-            --output-base "results/exp7/0H" \
+            --output-base "results/exp07_methodology_validation_tier0/0H" \
             --corrective-direction-path "$DIR_PATH" \
             --eval-record-ids "$HELD_OUT_IDS" \
             "${EXTRA_EVAL_ARGS[@]}" \
@@ -111,25 +111,25 @@ run_a1_held_out() {
     if [[ "$failed" -ne 0 ]]; then exit 1; fi
 
     src_dirs=()
-    for i in $(seq 0 $((NW-1))); do src_dirs+=("results/exp7/0H/${RUN_NAME}_w${i}"); done
+    for i in $(seq 0 $((NW-1))); do src_dirs+=("results/exp07_methodology_validation_tier0/0H/${RUN_NAME}_w${i}"); done
     uv run python scripts/merge_steering_workers.py \
         --experiment A1 --variant it --n-workers "$NW" \
         --merged-name "$RUN_NAME" \
-        --output-base "results/exp7/0H" \
+        --output-base "results/exp07_methodology_validation_tier0/0H" \
         --source-dirs "${src_dirs[@]}"
-    echo "[0H] Done: results/exp7/0H/${RUN_NAME}/"
+    echo "[0H] Done: results/exp07_methodology_validation_tier0/0H/${RUN_NAME}/"
 }
 
 echo "=== [0H] Running A1 with random-600 direction on held-out 800 ==="
 run_a1_held_out "A1_it_random_dir" "$RAND_DIR"
 
 echo "=== [0H] Running A1 with bottom-600 direction on held-out 800 (negative control) ==="
-BOTTOM_DIR="results/exp7/0H/bottom_directions.npz"
+BOTTOM_DIR="results/exp07_methodology_validation_tier0/0H/bottom_directions.npz"
 if [[ -f "$BOTTOM_DIR" ]]; then
     run_a1_held_out "A1_it_bottom_dir" "$BOTTOM_DIR"
 else
     echo "[0H] WARNING: bottom_directions.npz not found, skipping negative control."
 fi
 
-echo "=== [0H] Done. Results in results/exp7/0H/ ==="
+echo "=== [0H] Done. Results in results/exp07_methodology_validation_tier0/0H/ ==="
 echo "Check: A1 dose-response with random direction comparable to governance-selected direction"

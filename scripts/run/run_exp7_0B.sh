@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-CANONICAL="results/exp5/precompute_v2/precompute/corrective_directions.npz"
+CANONICAL="results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz"
 NW=8
 
 mkdir -p logs/exp7
@@ -77,32 +77,32 @@ echo "=== [0B] Computing matched-token direction comparisons ==="
 # (a) Forward + governance: isolates token confound only
 echo "[0B] Forward governance (PT on IT tokens, selected 600)..."
 uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_directions \
-    --it-acts-dir results/exp7/0A/acts/ \
-    --pt-forced-acts-dir results/exp7/0B/forward_governance/acts/ \
+    --it-acts-dir results/exp07_methodology_validation_tier0/0A/acts/ \
+    --pt-forced-acts-dir results/exp07_methodology_validation_tier0/0B/forward_governance/acts/ \
     --canonical-npz "$CANONICAL" \
     --matched-mode --matched-label governance_selected \
-    --output-dir results/exp7/0B/
+    --output-dir results/exp07_methodology_validation_tier0/0B/
 
 # (b) Forward + random: tests token confound + prompt generalization
 echo "[0B] Forward random (PT on IT tokens, random 600)..."
 uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_directions \
-    --it-acts-dir results/exp7/0A/acts/ \
-    --pt-forced-acts-dir results/exp7/0B/forward_random/acts/ \
+    --it-acts-dir results/exp07_methodology_validation_tier0/0A/acts/ \
+    --pt-forced-acts-dir results/exp07_methodology_validation_tier0/0B/forward_random/acts/ \
     --canonical-npz "$CANONICAL" \
     --matched-mode --matched-label random_600 \
-    --output-dir results/exp7/0B/
+    --output-dir results/exp07_methodology_validation_tier0/0B/
 
 # (c) Reverse + governance: IT forced on PT tokens
 echo "[0B] Reverse governance (IT on PT tokens, selected 600)..."
 uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_directions \
-    --it-acts-dir results/exp7/0B/reverse_governance/acts/ \
-    --pt-forced-acts-dir results/exp7/0A/acts/ \
+    --it-acts-dir results/exp07_methodology_validation_tier0/0B/reverse_governance/acts/ \
+    --pt-forced-acts-dir results/exp07_methodology_validation_tier0/0A/acts/ \
     --canonical-npz "$CANONICAL" \
     --matched-mode --matched-label reverse_governance \
-    --output-dir results/exp7/0B/
+    --output-dir results/exp07_methodology_validation_tier0/0B/
 
 echo ""
-echo "=== [0B] Done. Results in results/exp7/0B/ ==="
+echo "=== [0B] Done. Results in results/exp07_methodology_validation_tier0/0B/ ==="
 echo "Files:"
 echo "  matched_cosines_governance_selected.json  — forward, governance 600"
 echo "  matched_cosines_random_600.json           — forward, random 600"

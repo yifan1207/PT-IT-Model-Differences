@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 BASE_RESULTS = Path("results/cross_model")
 PLOT_DIR_CROSS = BASE_RESULTS / "plots"
-PLOT_DIR_EXP7 = Path("results/exp7/plots")
+PLOT_DIR_EXP7 = Path("results/exp07_methodology_validation_tier0/plots")
 DATA_DIR = PLOT_DIR_EXP7 / "data"
 
 MODEL_LABELS = {

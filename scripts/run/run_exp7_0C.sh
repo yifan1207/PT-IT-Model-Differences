@@ -19,13 +19,13 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-CORR_DIR="results/exp5/precompute_v2/precompute/corrective_directions.npz"
+CORR_DIR="results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz"
 if [[ ! -f "$CORR_DIR" ]]; then
     echo "[0C] ERROR: corrective_directions.npz not found at $CORR_DIR"
     exit 1
 fi
 
-OUTPUT_BASE="results/exp7/0C"
+OUTPUT_BASE="results/exp07_methodology_validation_tier0/0C"
 NW=8
 
 mkdir -p logs/exp7 "$OUTPUT_BASE"
@@ -108,7 +108,7 @@ try:
             'pct_above_100': float((arr > 100).mean() * 100),
             'expected_sqrt_d': float(np.sqrt(2560)),
         }
-        out_path = Path('results/exp7/0C/scale_factor_distribution.json')
+        out_path = Path('results/exp07_methodology_validation_tier0/0C/scale_factor_distribution.json')
         out_path.write_text(json.dumps(report, indent=2))
         print(f'Scale factor distribution:')
         print(f'  mean={report[\"mean\"]:.1f}, median={report[\"median\"]:.1f}')

@@ -6,8 +6,8 @@ per (condition, record_id) pair, and writes results to coherent_assistant_scores
 Also updates scores.csv with the new metric.
 
 Usage:
-    uv run python scripts/score_coherent_assistant_rate.py --merged-dir results/exp6/merged_A1_it
-    uv run python scripts/score_coherent_assistant_rate.py --merged-dir results/exp6/merged_A2_pt
+    uv run python scripts/score_coherent_assistant_rate.py --merged-dir results/exp06_corrective_direction_steering/merged_A1_it
+    uv run python scripts/score_coherent_assistant_rate.py --merged-dir results/exp06_corrective_direction_steering/merged_A2_pt
 """
 from __future__ import annotations
 import argparse, csv, json

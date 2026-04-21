@@ -18,7 +18,7 @@ Teacher-forcing method:
     Forward pass: capture MLP output at position -1 (last = forced token)
   Mean over positions: per-record per-layer activation
 
-Output: results/exp7/0B/{direction}_{record_set}/acts/w{N}.npz
+Output: results/exp07_methodology_validation_tier0/0B/{direction}_{record_set}/acts/w{N}.npz
 
 Usage:
   # Forward (PT on IT tokens, governance-selected 600)
@@ -59,7 +59,7 @@ D_MODEL = 2560
 MAX_GEN = 80
 
 WORK_DIR = Path("results/precompute_v2_work")
-BASE_OUTPUT_DIR = Path("results/exp7/0B")
+BASE_OUTPUT_DIR = Path("results/exp07_methodology_validation_tier0/0B")
 
 
 def _get_raw(loaded):
@@ -153,7 +153,7 @@ def _load_record_ids(record_set: str) -> set[str]:
     if record_set == "governance":
         return set(json.loads((WORK_DIR / "selected.json").read_text()))
     elif record_set == "random":
-        random_path = Path("results/exp7/0H/random_600_ids.json")
+        random_path = Path("results/exp07_methodology_validation_tier0/0H/random_600_ids.json")
         if not random_path.exists():
             raise FileNotFoundError(
                 f"random_600_ids.json not found. Run 0H split first."

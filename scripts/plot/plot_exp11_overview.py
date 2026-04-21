@@ -11,8 +11,8 @@ prompt_summaries.jsonl) and emits:
 
 Usage:
     uv run python scripts/plot_exp11_overview.py \\
-        --run-root results/exp11/data/exp11_exp3_all2936_tunedlens_v10 \\
-        --out-dir  results/exp11/plots/exp11_exp3_all2936_tunedlens_v10
+        --run-root results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_all2936_tunedlens_v10 \\
+        --out-dir  results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_all2936_tunedlens_v10
 """
 from __future__ import annotations
 

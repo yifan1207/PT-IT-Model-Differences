@@ -2,8 +2,8 @@
 """Precompute IT-PT corrective directions for early (0-7) and mid (8-19) layers.
 
 Two outputs:
-  1. results/exp6/precompute/ablation_directions_early.npz  — layer_0 … layer_7
-  2. results/exp6/precompute/ablation_directions_mid.npz    — layer_8 … layer_19
+  1. results/exp06_corrective_direction_steering/precompute/ablation_directions_early.npz  — layer_0 … layer_7
+  2. results/exp06_corrective_direction_steering/precompute/ablation_directions_mid.npz    — layer_8 … layer_19
 
 Strategy: compute the TRUE IT-PT MLP-output difference at each target layer
 (same methodology as precompute_extra_directions.py).  Then save per-layer
@@ -73,7 +73,7 @@ def main():
                    help="Number of records to use for direction estimation")
     p.add_argument("--layers", default="0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19",
                    help="Comma-separated layer indices to compute")
-    p.add_argument("--out-dir", default="results/exp6/precompute")
+    p.add_argument("--out-dir", default="results/exp06_corrective_direction_steering/precompute")
     args = p.parse_args()
 
     layer_ids = [int(x.strip()) for x in args.layers.split(",") if x.strip()]

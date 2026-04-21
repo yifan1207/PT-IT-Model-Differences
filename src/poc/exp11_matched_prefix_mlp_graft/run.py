@@ -1415,7 +1415,7 @@ def main() -> None:
     causal_windows = _causal_windows_for_model(args.model, spec) if causal_combined else {}
     late_mechanism_layers = _layer_range_for_final_region(spec) if causal_combined else []
     requested_batch_size = args.batch_size or DEFAULT_BATCH_SIZE[args.model]
-    out_dir = Path(args.out_dir or f"results/exp11/{args.model}")
+    out_dir = Path(args.out_dir or f"results/exp11_matched_prefix_mlp_graft/{args.model}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     dtype = _dtype_from_name(args.dtype)

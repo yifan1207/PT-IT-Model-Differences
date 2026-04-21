@@ -8,8 +8,8 @@ Generates 5 figures:
   4. Patching ΔKL by condition (6-panel) — causal effect on downstream KL
   5. PCA explained variance (6-panel) — rank diagnostic
 
-All data read from results/exp10/{model}/probes/probe_summary.json
-and results/exp10/{model}/patching/patching_summary.json.
+All data read from results/exp10_contrastive_activation_patching/{model}/probes/probe_summary.json
+and results/exp10_contrastive_activation_patching/{model}/patching/patching_summary.json.
 """
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ MODEL_LABELS = {
     "olmo2_7b": "OLMo 2 7B",
 }
 
-BASE = Path("results/exp10")
+BASE = Path("results/exp10_contrastive_activation_patching")
 PLOT_DIR = BASE / "plots"
 DATA_DIR = PLOT_DIR / "data"
 

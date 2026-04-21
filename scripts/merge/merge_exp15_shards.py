@@ -50,7 +50,7 @@ def _copy_first_existing(shard_paths: list[Path], out_path: Path) -> bool:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Merge exp15 shard outputs into a canonical merged dir.")
-    parser.add_argument("--run-root", type=Path, default=Path("results/exp15/data"))
+    parser.add_argument("--run-root", type=Path, default=Path("results/exp15_symmetric_behavioral_causality/data"))
     parser.add_argument("--run-prefix", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--num-shards", type=int, required=True)

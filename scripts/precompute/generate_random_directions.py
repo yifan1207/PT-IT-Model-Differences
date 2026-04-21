@@ -27,7 +27,7 @@ import numpy as np
 
 D_MODEL     = 2560                   # Gemma-3-4B hidden size
 CORR_LAYERS = list(range(20, 34))    # layers 20-33 — A1 ablation target
-DEFAULT_OUT  = "results/exp6/precompute/random_directions.npz"
+DEFAULT_OUT  = "results/exp06_corrective_direction_steering/precompute/random_directions.npz"
 DEFAULT_SEED = 42
 
 

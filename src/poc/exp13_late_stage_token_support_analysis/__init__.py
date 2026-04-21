@@ -8,8 +8,4 @@ This package tracks the analysis-only layer of the exp13/14 story:
 
 Canonical results root:
   results/exp13_late_stage_token_support_analysis/
-
-Compatibility note:
-  results/exp13/ is retained as a legacy aggregation folder, but new exp13-lite
-  outputs should land in the canonical descriptive directory above.
 """

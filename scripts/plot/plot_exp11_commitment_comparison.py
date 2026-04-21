@@ -11,23 +11,23 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-OUT_DIR = Path("results/exp11/plots/exp11_extended")
+OUT_DIR = Path("results/exp11_matched_prefix_mlp_graft/plots/exp11_extended")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ── Load data ──────────────────────────────────────────────────────────────
-with open("results/exp11/data/exp11_exp3_all2936_tunedlens_v10/gemma3_4b/trajectory_summary.json") as f:
+with open("results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_all2936_tunedlens_v10/gemma3_4b/trajectory_summary.json") as f:
     _ = json.load(f)  # just to verify
 
 # Exp11 overview metrics (commitment layers from KL threshold 0.1)
-with open("results/exp11/plots/exp11_exp3_all2936_tunedlens_v10/overview_metrics.json") as f:
+with open("results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_all2936_tunedlens_v10/overview_metrics.json") as f:
     exp11_overview = {d["model"]: d for d in json.load(f)}
 
 # Exp7 0G commitment summary (pure IT vs PT)
-with open("results/exp7/data/0G_commitment_summary.json") as f:
+with open("results/exp07_methodology_validation_tier0/data/0G_commitment_summary.json") as f:
     commitment_0g = json.load(f)
 
 # Exp9 convergence gap values (per-layer KL for IT and PT)
-with open("results/exp9/data/convergence_gap_values.json") as f:
+with open("results/exp09_cross_model_observational_replication/data/convergence_gap_values.json") as f:
     exp9 = json.load(f)
 
 MODELS = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b"]
@@ -101,7 +101,7 @@ for m in MODELS:
     b = exp11_overview[m]["pipeline_b_mean_commitment_layer_kl_0.1"]
     it_rk = commitment_0g["models"][m]["Raw KL"]["it_median"]
     pt_rk = commitment_0g["models"][m]["Raw KL"]["pt_median"]
-    n_layers = len(json.load(open(f"results/exp11/data/exp11_exp3_all2936_tunedlens_v10/{m}/trajectory_summary.json"))["A"]["delta_cosine"])
+    n_layers = len(json.load(open(f"results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_all2936_tunedlens_v10/{m}/trajectory_summary.json"))["A"]["delta_cosine"])
 
     delay_ba = b - a
     delay_itpt = it_rk - pt_rk
@@ -126,7 +126,7 @@ for m in MODELS:
 # PLOT: KL trajectory shape comparison (normalized)
 # Normalize each curve to [0,1] range for shape comparison
 # ═══════════════════════════════════════════════════════════════════════════
-EXP11_DATA = Path("results/exp11/data/exp11_exp3_all2936_tunedlens_v10")
+EXP11_DATA = Path("results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_all2936_tunedlens_v10")
 
 fig, axes = plt.subplots(1, 5, figsize=(24, 4.5))
 fig.suptitle("KL-to-Final Normalized Shape: MLP Graft vs Pure IT vs Pure PT", fontsize=14, y=1.02)

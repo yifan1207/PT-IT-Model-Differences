@@ -27,10 +27,10 @@ DATASET="data/eval_dataset_v2.jsonl"
 N_EVAL=1400
 # All layer groups share a single direction file (layers 1-33).
 # A1/A1_early/A1_mid apply to different layer subsets via their ablation_layers config.
-CORR_DIR="results/exp5/precompute_v2/precompute/corrective_directions.npz"
+CORR_DIR="results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz"
 EARLY_DIR="$CORR_DIR"
 MID_DIR="$CORR_DIR"
-CONTENT_DIR="results/exp6/precompute/content_direction_aggregate.npz"
+CONTENT_DIR="results/exp06_corrective_direction_steering/precompute/content_direction_aggregate.npz"
 JUDGE_MODEL="google/gemini-2.5-flash"
 LOG_DIR="logs/exp6_A_v4"
 
@@ -65,7 +65,7 @@ run_worker() {
 merge_and_judge() {
     local run_name=$1 exp=$2 variant=$3 nw=$4
     local src_dirs=()
-    for ((i=0; i<nw; i++)); do src_dirs+=("results/exp6/${run_name}_w${i}"); done
+    for ((i=0; i<nw; i++)); do src_dirs+=("results/exp06_corrective_direction_steering/${run_name}_w${i}"); done
     local merge_log="$LOG_DIR/merge_${run_name}.log"
     local judge_log="$LOG_DIR/judge_${run_name}.log"
 
@@ -77,13 +77,13 @@ merge_and_judge() {
             --source-dirs "${src_dirs[@]}" > "$merge_log" 2>&1
         echo "[$(date +%T)] JUDGE $run_name"
         uv run python scripts/llm_judge.py \
-            --merged-dir "results/exp6/merged_${run_name}" \
+            --merged-dir "results/exp06_corrective_direction_steering/merged_${run_name}" \
             --model "$JUDGE_MODEL" --workers 16 --tasks g1 g2 s1 s2 \
             > "$judge_log" 2>&1
         echo "[$(date +%T)] JUDGE DONE $run_name"
     else
-        echo "[dry] merge → results/exp6/merged_${run_name}"
-        echo "[dry] judge → results/exp6/merged_${run_name}/llm_judge_v2_scores.jsonl"
+        echo "[dry] merge → results/exp06_corrective_direction_steering/merged_${run_name}"
+        echo "[dry] judge → results/exp06_corrective_direction_steering/merged_${run_name}/llm_judge_v2_scores.jsonl"
     fi
 }
 
@@ -127,5 +127,5 @@ run_experiment        A2         pt   6          2   "A2_pt_v4"          "$CORR_
 wait
 echo "=== ALL DONE ==="
 for n in A1_it_v4 A1_early_it_v4 A1_mid_it_v4 A2_pt_v4; do
-    echo "  results/exp6/merged_${n}/"
+    echo "  results/exp06_corrective_direction_steering/merged_${n}/"
 done

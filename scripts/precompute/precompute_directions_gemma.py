@@ -69,7 +69,7 @@ MAX_GEN    = 80      # max generated tokens per record
 TOP_N      = 600     # high-contrast records to use for direction
 
 WORK_DIR = Path("results/precompute_v2_work")
-OUT_DIR  = Path("results/exp5/precompute_v2/precompute")
+OUT_DIR  = Path("results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute")
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 

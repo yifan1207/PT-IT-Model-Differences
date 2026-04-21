@@ -63,8 +63,8 @@ _CORRECTIVE_START = 20
 _N_FEATURES = 16_384  # width_16k transcoder
 
 # Default paths (match Exp3Config.run_dir structure)
-_IT_SUMMARY = "results/exp3/it_16k_l0_big_affine_t512/feature_importance_summary.npz"
-_PT_SUMMARY = "results/exp3/pt_16k_l0_big_affine_t512/feature_importance_summary.npz"
+_IT_SUMMARY = "results/exp03_corrective_stage_characterization/it_16k_l0_big_affine_t512/feature_importance_summary.npz"
+_PT_SUMMARY = "results/exp03_corrective_stage_characterization/pt_16k_l0_big_affine_t512/feature_importance_summary.npz"
 
 
 # ── Data Loading ─────────────────────────────────────────────────────────────
@@ -316,7 +316,7 @@ _PT_COLOR = "#1565C0"
 def make_plot(
     it_summary_path: str = _IT_SUMMARY,
     pt_summary_path: str = _PT_SUMMARY,
-    output_dir: str = "results/exp3/it_16k_l0_big_affine_t512/plots",
+    output_dir: str = "results/exp03_corrective_stage_characterization/it_16k_l0_big_affine_t512/plots",
 ) -> None:
     """Generate the 6-panel quantitative sniper feature analysis figure."""
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -686,6 +686,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="E3.14 Quantitative Sniper Feature Analysis")
     parser.add_argument("--it-summary", default=_IT_SUMMARY)
     parser.add_argument("--pt-summary", default=_PT_SUMMARY)
-    parser.add_argument("--output-dir", default="results/exp3/it_16k_l0_big_affine_t512/plots")
+    parser.add_argument("--output-dir", default="results/exp03_corrective_stage_characterization/it_16k_l0_big_affine_t512/plots")
     args = parser.parse_args()
     make_plot(args.it_summary, args.pt_summary, args.output_dir)

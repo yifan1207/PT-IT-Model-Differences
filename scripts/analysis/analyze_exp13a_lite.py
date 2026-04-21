@@ -32,10 +32,10 @@ COLLAPSED_CATEGORIES = ["FORMAT", "CONTENT", "FUNCTION_OTHER"]
 DENSE5_MODELS = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b"]
 DEPTH_WINDOWS = ["B_early_raw", "B_mid_raw", "B_late_raw"]
 
-MATCHED_SOURCE_ROOT = Path("results/exp11/data/exp11_exp3_400rand_v11_teacherforced")
-DEPTH_SOURCE_ROOT = Path("results/exp11/data/exp11_exp3_600rand_v11_depthablation")
-DEPTH_FLAT_SOURCE_ROOT = Path("results/exp11/data/exp11_exp3_600rand_v11_depthablation_flat")
-EXP12_JUDGE_SUMMARY = Path("results/exp12/judge_summary_exp12_eval_v1_20260413_v3.json")
+MATCHED_SOURCE_ROOT = Path("results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_400rand_v11_teacherforced")
+DEPTH_SOURCE_ROOT = Path("results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_600rand_v11_depthablation")
+DEPTH_FLAT_SOURCE_ROOT = Path("results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_600rand_v11_depthablation_flat")
+EXP12_JUDGE_SUMMARY = Path("results/exp12_free_running_abc_graft/judge_summary_exp12_eval_v1_20260413_v3.json")
 
 
 def _default_out_dir() -> Path:
@@ -177,7 +177,7 @@ def _fallback_generated_paths(model: str) -> list[Path]:
     candidates = [
         _paths_for_model(model).matched_dir / "generated_texts.jsonl",
         _paths_for_model(model).depth_dir / "generated_texts.jsonl",
-        Path(f"results/exp11/data/exp11_exp3_all2936_tunedlens_v10/{model}/generated_texts.jsonl"),
+        Path(f"results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_all2936_tunedlens_v10/{model}/generated_texts.jsonl"),
     ]
     out: list[Path] = []
     seen = set()

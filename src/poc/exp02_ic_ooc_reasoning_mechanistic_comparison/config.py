@@ -82,7 +82,7 @@ class Exp2Config:
     def run_dir(self) -> str:
         variant = self.transcoder_variant.replace("width_", "")
         suffix = "_notmpl" if not self.apply_chat_template else ""
-        return f"results/exp2/{self.model_variant}_{variant}_t{self.max_gen_tokens}{suffix}"
+        return f"results/exp02_ic_ooc_reasoning_mechanistic_comparison/{self.model_variant}_{variant}_t{self.max_gen_tokens}{suffix}"
 
     @property
     def is_instruction_tuned(self) -> bool:

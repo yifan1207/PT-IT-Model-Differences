@@ -11,8 +11,8 @@ Uses claude-sonnet-4-6 via OpenRouter. Reads existing sample_outputs.jsonl.
 Saves to llm_judge_v2_scores.jsonl (does NOT overwrite llm_judge_scores.jsonl).
 
 Usage:
-    uv run python scripts/llm_judge.py --merged-dir results/exp6/merged_A1_it
-    uv run python scripts/llm_judge.py --merged-dir results/exp6/merged_A1_it \\
+    uv run python scripts/llm_judge.py --merged-dir results/exp06_corrective_direction_steering/merged_A1_it
+    uv run python scripts/llm_judge.py --merged-dir results/exp06_corrective_direction_steering/merged_A1_it \\
         --tasks g1 g2 s1 s2 --workers 16
 """
 from __future__ import annotations

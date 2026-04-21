@@ -40,7 +40,7 @@ D_MODEL = 2560
 MAX_GEN = 80
 N_OOD = 600  # target number of OOD prompts
 
-OUTPUT_DIR = Path("results/exp7/0A/ood_acts")
+OUTPUT_DIR = Path("results/exp07_methodology_validation_tier0/0A/ood_acts")
 
 
 def _get_raw(loaded):

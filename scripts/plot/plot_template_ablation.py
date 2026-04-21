@@ -8,8 +8,8 @@ Expected: if δ-cosine patterns (especially the negative cosine at corrective la
 persist without chat template → weight-intrinsic. If they disappear → template-gated.
 
 Output:
-    results/exp2/plots_notmpl_comparison/plot10_notmpl_vs_template.png
-    results/exp2/plots_notmpl_comparison/plot11_notmpl_vs_template.png
+    results/exp02_ic_ooc_reasoning_mechanistic_comparison/plots_notmpl_comparison/plot10_notmpl_vs_template.png
+    results/exp02_ic_ooc_reasoning_mechanistic_comparison/plots_notmpl_comparison/plot11_notmpl_vs_template.png
 """
 from __future__ import annotations
 import argparse
@@ -126,11 +126,11 @@ def plot11_comparison(results_tmpl: list[dict], results_notmpl: list[dict],
 
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--tmpl-dir",   default="results/exp2/it_16k_l0_big_affine_t512",
+    p.add_argument("--tmpl-dir",   default="results/exp02_ic_ooc_reasoning_mechanistic_comparison/it_16k_l0_big_affine_t512",
                    help="Path to exp2 IT results WITH chat template")
-    p.add_argument("--notmpl-dir", default="results/exp2/it_16k_l0_big_affine_t512_notmpl",
+    p.add_argument("--notmpl-dir", default="results/exp02_ic_ooc_reasoning_mechanistic_comparison/it_16k_l0_big_affine_t512_notmpl",
                    help="Path to exp2 IT results WITHOUT chat template")
-    p.add_argument("--out-dir",    default="results/exp2/plots_notmpl_comparison",
+    p.add_argument("--out-dir",    default="results/exp02_ic_ooc_reasoning_mechanistic_comparison/plots_notmpl_comparison",
                    help="Output directory for comparison plots")
     args = p.parse_args()
 

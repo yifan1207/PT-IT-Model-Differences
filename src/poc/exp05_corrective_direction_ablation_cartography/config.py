@@ -24,7 +24,7 @@ class Exp5Config:
     transcoder_release: str = ""
     transcoder_variant: str = "width_16k_l0_big_affine"
     dataset_path: str = "data/exp3_dataset.jsonl"
-    output_base: str = "results/exp5"
+    output_base: str = "results/exp05_corrective_direction_ablation_cartography"
     run_name: str = ""
 
     prompt_format: str = "B"

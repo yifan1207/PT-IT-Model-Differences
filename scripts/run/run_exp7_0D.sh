@@ -15,10 +15,10 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
-MERGED_DIR="results/exp6/merged_A1_it_v4"
+MERGED_DIR="results/exp06_corrective_direction_steering/merged_A1_it_v4"
 if [[ ! -d "$MERGED_DIR" ]]; then
     echo "[0D] WARNING: $MERGED_DIR not found. Using first available merged A1 dir."
-    MERGED_DIR=$(ls -d results/exp6/merged_A1_it* 2>/dev/null | head -1 || echo "")
+    MERGED_DIR=$(ls -d results/exp06_corrective_direction_steering/merged_A1_it* 2>/dev/null | head -1 || echo "")
     if [[ -z "$MERGED_DIR" ]]; then
         echo "[0D] ERROR: No merged A1 IT results found."
         exit 1
@@ -26,7 +26,7 @@ if [[ ! -d "$MERGED_DIR" ]]; then
     echo "[0D] Using: $MERGED_DIR"
 fi
 
-mkdir -p logs/exp7 results/exp7/0D
+mkdir -p logs/exp7 results/exp07_methodology_validation_tier0/0D
 
 echo "=== Exp7 0D: Bootstrap CIs (CPU, ~30 min) ==="
 echo "[0D] merged-dir: $MERGED_DIR"
@@ -35,9 +35,9 @@ uv run python -m src.poc.exp07_methodology_validation_tier0.bootstrap_ci \
     --merged-dir "$MERGED_DIR" \
     --n-bootstrap 10000 \
     --seed 42 \
-    --output-dir results/exp7/0D/ \
+    --output-dir results/exp07_methodology_validation_tier0/0D/ \
     "${EXTRA_ARGS[@]}" \
     2>&1 | tee logs/exp7/0D.log
 
-echo "=== [0D] Done. Results in results/exp7/0D/ ==="
+echo "=== [0D] Done. Results in results/exp07_methodology_validation_tier0/0D/ ==="
 echo "Check: CI widths < 0.03 on governance metrics"

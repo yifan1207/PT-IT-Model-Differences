@@ -9,8 +9,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-RESULTS_BASE = Path("results/exp10/data")
-OUT_DIR = Path("results/exp10/plots")
+RESULTS_BASE = Path("results/exp10_contrastive_activation_patching/data")
+OUT_DIR = Path("results/exp10_contrastive_activation_patching/plots")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 

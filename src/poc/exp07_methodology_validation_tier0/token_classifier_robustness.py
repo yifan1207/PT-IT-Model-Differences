@@ -12,25 +12,25 @@ Additional analyses:
 
 Usage:
   uv run python -m src.poc.exp07_methodology_validation_tier0.token_classifier_robustness \\
-      --sample-outputs results/exp6/merged_A1_it_v4/sample_outputs.jsonl \\
-      --output-dir results/exp7/0E/
+      --sample-outputs results/exp06_corrective_direction_steering/merged_A1_it_v4/sample_outputs.jsonl \\
+      --output-dir results/exp07_methodology_validation_tier0/0E/
 
   # Quick test
   uv run python -m src.poc.exp07_methodology_validation_tier0.token_classifier_robustness \\
-      --sample-outputs results/exp6/merged_A1_it_v4/sample_outputs.jsonl \\
-      --output-dir results/exp7/0E/ --n-outputs 200
+      --sample-outputs results/exp06_corrective_direction_steering/merged_A1_it_v4/sample_outputs.jsonl \\
+      --output-dir results/exp07_methodology_validation_tier0/0E/ --n-outputs 200
 
   # LLM judge validation (requires API key)
   uv run python -m src.poc.exp07_methodology_validation_tier0.token_classifier_robustness \\
-      --sample-outputs results/exp6/merged_A1_it_v4/sample_outputs.jsonl \\
-      --output-dir results/exp7/0E/ --llm-judge
+      --sample-outputs results/exp06_corrective_direction_steering/merged_A1_it_v4/sample_outputs.jsonl \\
+      --output-dir results/exp07_methodology_validation_tier0/0E/ --llm-judge
 
 Outputs:
-  results/exp7/0E/classifier_documentation.json
-  results/exp7/0E/classifier_robustness.json
-  results/exp7/0E/human_judgment_template.csv
-  results/exp7/0E/category_enrichment.json
-  results/exp7/0E/llm_judge_validation.json   (if --llm-judge)
+  results/exp07_methodology_validation_tier0/0E/classifier_documentation.json
+  results/exp07_methodology_validation_tier0/0E/classifier_robustness.json
+  results/exp07_methodology_validation_tier0/0E/human_judgment_template.csv
+  results/exp07_methodology_validation_tier0/0E/category_enrichment.json
+  results/exp07_methodology_validation_tier0/0E/llm_judge_validation.json   (if --llm-judge)
 """
 from __future__ import annotations
 
@@ -520,7 +520,7 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Token classifier robustness (Exp7 0E)")
     p.add_argument("--sample-outputs", required=True,
                    help="Path to sample_outputs.jsonl from merged A1 run")
-    p.add_argument("--output-dir", default="results/exp7/0E/")
+    p.add_argument("--output-dir", default="results/exp07_methodology_validation_tier0/0E/")
     p.add_argument("--n-outputs", type=int, default=None,
                    help="Cap number of output records (for testing)")
     p.add_argument("--n-perturb", type=int, default=500)

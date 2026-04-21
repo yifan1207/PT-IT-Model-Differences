@@ -5,31 +5,31 @@ script saves per-record mean activation vectors so individual records can be
 bootstrapped independently.
 
 Each worker processes its slice of the 600 selected records and saves:
-  results/exp7/0A/acts/w{N}.npz
+  results/exp07_methodology_validation_tier0/0A/acts/w{N}.npz
     "record_ids"       : str array [n_records_this_worker]
     "it_acts_{L}"      : float32 [n_records, D_MODEL] for L in 1..33
     "pt_acts_{L}"      : float32 [n_records, D_MODEL] for L in 1..33
     "per_record_k"     : int32   [n_records]  (tokens used per record)
 
 After all workers finish, --merge-only concatenates them into:
-  results/exp7/0A/acts/merged.npz  (same structure, all 600 records)
+  results/exp07_methodology_validation_tier0/0A/acts/merged.npz  (same structure, all 600 records)
 
 Usage:
   # 8 parallel workers
   for i in {0..7}; do
       uv run python -m src.poc.exp07_methodology_validation_tier0.collect_per_record_acts \\
           --worker-index $i --n-workers 8 --device cuda:$i \\
-          --output-dir results/exp7/0A/acts/ &
+          --output-dir results/exp07_methodology_validation_tier0/0A/acts/ &
   done; wait
 
   # Merge
   uv run python -m src.poc.exp07_methodology_validation_tier0.collect_per_record_acts \\
-      --merge-only --n-workers 8 --output-dir results/exp7/0A/acts/
+      --merge-only --n-workers 8 --output-dir results/exp07_methodology_validation_tier0/0A/acts/
 
   # Quick test (10 records)
   uv run python -m src.poc.exp07_methodology_validation_tier0.collect_per_record_acts \\
       --worker-index 0 --n-workers 1 --device cuda:0 \\
-      --n-records 10 --output-dir results/exp7/0A/acts/
+      --n-records 10 --output-dir results/exp07_methodology_validation_tier0/0A/acts/
 """
 from __future__ import annotations
 
@@ -244,7 +244,7 @@ def main() -> None:
     p.add_argument("--worker-index", type=int, default=0)
     p.add_argument("--n-workers", type=int, default=8)
     p.add_argument("--device", default="cuda:0")
-    p.add_argument("--output-dir", default="results/exp7/0A/acts/")
+    p.add_argument("--output-dir", default="results/exp07_methodology_validation_tier0/0A/acts/")
     p.add_argument("--n-records", type=int, default=None, help="Cap records per worker (for testing)")
     p.add_argument("--merge-only", action="store_true")
     args = p.parse_args()

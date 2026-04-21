@@ -201,7 +201,7 @@ def main() -> None:
     print(f"  IT → {len(it_rows)} features,  PT → {len(pt_rows)} features")
 
     prompt = _build_prompt(it_rows, pt_rows, args.layer_start)
-    out_dir = Path("results/exp3")
+    out_dir = Path("results/exp03_corrective_stage_characterization")
     (out_dir / "feature_contrast_prompt.txt").write_text(prompt)
     print(f"\nSending IT+PT contrast to Claude Opus 4.6 via OpenRouter ...")
 

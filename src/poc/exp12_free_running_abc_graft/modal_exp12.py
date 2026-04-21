@@ -283,7 +283,7 @@ def full_model_shard_run(
     if model not in VALID_MODELS:
         raise ValueError(f"Unsupported model for exp12 sharded run: {model}")
     dataset_path = _dataset_path(dataset)
-    run_dir = f"/root/results/exp12/{run_name}__shard{shard_index}of{num_shards}"
+    run_dir = f"/root/results/exp12_free_running_abc_graft/{run_name}__shard{shard_index}of{num_shards}"
     shard_total = _count_shard_prompts(
         dataset_path,
         n_prompts=n_prompts,
@@ -341,7 +341,7 @@ def merge_model_shards(
     seed: int = 0,
 ) -> str:
     _setup()
-    base_dir = Path("/root/results/exp12")
+    base_dir = Path("/root/results/exp12_free_running_abc_graft")
     shard_dirs = [base_dir / f"{run_name}__shard{idx}of{num_shards}" for idx in range(num_shards)]
     merged_dir = base_dir / run_name
     merged_dir.mkdir(parents=True, exist_ok=True)
@@ -405,7 +405,7 @@ def smoke_run(
 ) -> str:
     _setup()
     dataset_path = _dataset_path(DEFAULT_DATASET)
-    run_dir = f"/root/results/exp12/{run_name}"
+    run_dir = f"/root/results/exp12_free_running_abc_graft/{run_name}"
     _run_exp12(
         model=model,
         run_dir=run_dir,

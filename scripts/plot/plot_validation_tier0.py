@@ -2,7 +2,7 @@
 
 Generates all Tier 0 plots from precomputed result files.
 All plots include statistical annotations (CIs, n-counts, effect sizes)
-where supported by available data. Core data is saved to results/exp7/plots/data/.
+where supported by available data. Core data is saved to results/exp07_methodology_validation_tier0/plots/data/.
 
 Usage:
     uv run python scripts/plot_validation_tier0.py
@@ -22,13 +22,13 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-PLOTS_DIR = Path("results/exp7/plots")
+PLOTS_DIR = Path("results/exp07_methodology_validation_tier0/plots")
 DATA_DIR = PLOTS_DIR / "data"
 ALL_EXPERIMENTS = ["0A", "0B", "0C", "0D", "0E", "0F", "0G", "0H", "0I", "0J"]
 
 
 def _save_data(name: str, data: dict | list) -> None:
-    """Save core data JSON to results/exp7/plots/data/."""
+    """Save core data JSON to results/exp07_methodology_validation_tier0/plots/data/."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     out = DATA_DIR / f"{name}.json"
     with open(out, "w") as f:
@@ -42,7 +42,7 @@ def _load_0D_ci() -> dict[str, dict[str, dict]]:
     Returns {benchmark: {alpha_float: {ci_low, ci_high, mean}}}.
     Alpha keys are normalized floats for reliable lookup.
     """
-    ci_path = Path("results/exp7/0D/ci_A1_programmatic.json")
+    ci_path = Path("results/exp07_methodology_validation_tier0/0D/ci_A1_programmatic.json")
     if not ci_path.exists():
         return {}
     with open(ci_path) as f:
@@ -133,7 +133,7 @@ def plot_0A_direction_stability(output_dir: Path = PLOTS_DIR) -> None:
     2. Pairwise cosine heatmap at canonical layers (20-33).
     """
     plt = _setup_mpl()
-    results_path = Path("results/exp7/0A/bootstrap_results.json")
+    results_path = Path("results/exp07_methodology_validation_tier0/0A/bootstrap_results.json")
     if not results_path.exists():
         print("[0A] bootstrap_results.json not found — skipping 0A plots", flush=True)
         return
@@ -266,7 +266,7 @@ def plot_0B_matched_cosine(output_dir: Path = PLOTS_DIR) -> None:
     plt = _setup_mpl()
 
     # Support both legacy single file and per-label files
-    base = Path("results/exp7/0B")
+    base = Path("results/exp07_methodology_validation_tier0/0B")
     cosine_files = sorted(base.glob("matched_cosines_*.json"))
     if not cosine_files:
         legacy = base / "matched_cosines.json"
@@ -277,7 +277,7 @@ def plot_0B_matched_cosine(output_dir: Path = PLOTS_DIR) -> None:
             return
 
     # Load 0A bootstrap direction stability for uncertainty band
-    bootstrap_path = Path("results/exp7/0A/bootstrap_results.json")
+    bootstrap_path = Path("results/exp07_methodology_validation_tier0/0A/bootstrap_results.json")
     bootstrap_stds: dict[int, float] = {}
     if bootstrap_path.exists():
         with open(bootstrap_path) as f:
@@ -356,9 +356,9 @@ def plot_0C_rand_matched(output_dir: Path = PLOTS_DIR) -> None:
         except ValueError:
             return None
 
-    a1_dir = Path("results/exp6/merged_A1_it_v4")
-    rand_dir = Path("results/exp7/0C/merged_A1_rand_matched_it_v1")
-    multiseed_dir = Path("results/exp7/0C/merged_A1_rand_multiseed_it_v1")
+    a1_dir = Path("results/exp06_corrective_direction_steering/merged_A1_it_v4")
+    rand_dir = Path("results/exp07_methodology_validation_tier0/0C/merged_A1_rand_matched_it_v1")
+    multiseed_dir = Path("results/exp07_methodology_validation_tier0/0C/merged_A1_rand_multiseed_it_v1")
 
     if not a1_dir.exists() and not rand_dir.exists():
         print("[0C] Neither A1 nor 0C results found — skipping 0C plots", flush=True)
@@ -476,7 +476,7 @@ def plot_0D_bootstrap_ci(output_dir: Path = PLOTS_DIR) -> None:
     """Dose-response with 95% CI shading for main benchmarks."""
     plt = _setup_mpl()
 
-    ci_path = Path("results/exp7/0D/ci_A1_programmatic.json")
+    ci_path = Path("results/exp07_methodology_validation_tier0/0D/ci_A1_programmatic.json")
     if not ci_path.exists():
         print("[0D] ci_A1_programmatic.json not found — skipping 0D plots", flush=True)
         return
@@ -556,7 +556,7 @@ def plot_0E_classifier_robustness(output_dir: Path = PLOTS_DIR) -> None:
     """Bar chart: Δ STR per perturbation type."""
     plt = _setup_mpl()
 
-    rob_path = Path("results/exp7/0E/classifier_robustness.json")
+    rob_path = Path("results/exp07_methodology_validation_tier0/0E/classifier_robustness.json")
     if not rob_path.exists():
         print("[0E] classifier_robustness.json not found — skipping 0E plots", flush=True)
         return
@@ -609,7 +609,7 @@ def plot_0F_layer_range(output_dir: Path = PLOTS_DIR) -> None:
     """Layer range sensitivity with n-annotations. Saves data to plots/data/."""
     plt = _setup_mpl()
 
-    csv_path = Path("results/exp7/0F/layer_range_sensitivity_table.csv")
+    csv_path = Path("results/exp07_methodology_validation_tier0/0F/layer_range_sensitivity_table.csv")
     if not csv_path.exists():
         print("[0F] layer_range_sensitivity_table.csv not found — skipping 0F plots", flush=True)
         return
@@ -633,10 +633,10 @@ def plot_0F_layer_range(output_dir: Path = PLOTS_DIR) -> None:
         return
 
     from src.poc.exp07_methodology_validation_tier0.layer_range_analysis import plot_sensitivity
-    plot_sensitivity(rows, Path("results/exp7/0F"))
+    plot_sensitivity(rows, Path("results/exp07_methodology_validation_tier0/0F"))
 
     # Copy the output to the main plots dir
-    src = Path("results/exp7/0F/plots/layer_range_sensitivity.png")
+    src = Path("results/exp07_methodology_validation_tier0/0F/plots/layer_range_sensitivity.png")
     if src.exists():
         import shutil
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -655,7 +655,7 @@ def plot_0F_layer_range(output_dir: Path = PLOTS_DIR) -> None:
     })
 
     # Also save single-layer importance if available
-    imp_path = Path("results/exp7/0F/single_layer_importance.json")
+    imp_path = Path("results/exp07_methodology_validation_tier0/0F/single_layer_importance.json")
     if imp_path.exists():
         with open(imp_path) as f:
             imp_data = json.load(f)
@@ -668,7 +668,7 @@ def plot_0G_tuned_vs_raw(output_dir: Path = PLOTS_DIR) -> None:
     """Bar chart: raw vs tuned-lens commitment layers for PT and IT."""
     plt = _setup_mpl()
 
-    results_path = Path("results/exp7/0G/tuned_lens_commitment.json")
+    results_path = Path("results/exp07_methodology_validation_tier0/0G/tuned_lens_commitment.json")
     if not results_path.exists():
         print("[0G] tuned_lens_commitment.json not found — skipping 0G plots", flush=True)
         return
@@ -781,16 +781,16 @@ def plot_0H_calibration_split(output_dir: Path = PLOTS_DIR) -> None:
     plt = _setup_mpl()
 
     # Also check if merged bottom_dir exists
-    bottom_dir = Path("results/exp7/0H/A1_it_bottom_dir")
+    bottom_dir = Path("results/exp07_methodology_validation_tier0/0H/A1_it_bottom_dir")
     if not bottom_dir.exists():
-        merged_bottom = Path("results/exp7/0H/merged_A1_it_bottom_dir")
+        merged_bottom = Path("results/exp07_methodology_validation_tier0/0H/merged_A1_it_bottom_dir")
         if merged_bottom.exists():
             bottom_dir = merged_bottom
 
     # (results_dir, color, label, linestyle, marker)
     series = [
-        (Path("results/exp6/merged_A1_it_v4"),              "#2c3e50", "Canonical (top-600)", "-",  "o"),
-        (Path("results/exp7/0H/A1_it_random_dir"),           "#2980b9", "Random-600",          "--", "s"),
+        (Path("results/exp06_corrective_direction_steering/merged_A1_it_v4"),              "#2c3e50", "Canonical (top-600)", "-",  "o"),
+        (Path("results/exp07_methodology_validation_tier0/0H/A1_it_random_dir"),           "#2980b9", "Random-600",          "--", "s"),
         (bottom_dir,                                         "#c0392b", "Bottom-600",          ":",  "D"),
     ]
 
@@ -921,7 +921,7 @@ def plot_0I_formula_comparison(output_dir: Path = PLOTS_DIR) -> None:
     """3-panel: 4 formula lines vs α for governance / content / safety."""
     plt = _setup_mpl()
 
-    scores_path = Path("results/exp7/0I/merged_A1_formula_it_v1/scores.jsonl")
+    scores_path = Path("results/exp07_methodology_validation_tier0/0I/merged_A1_formula_it_v1/scores.jsonl")
     if not scores_path.exists():
         print("[0I] merged A1_formula results not found — skipping 0I plots", flush=True)
         return
@@ -1035,10 +1035,10 @@ def plot_0J_onset_sensitivity(output_dir: Path = PLOTS_DIR) -> None:
     profiles = _load_profiles(CSV_PATH)
     rows = build_onset_table(profiles)
     summary = summarise_sensitivity(rows)
-    plot_sensitivity(rows, summary, Path("results/exp7/0J"))
+    plot_sensitivity(rows, summary, Path("results/exp07_methodology_validation_tier0/0J"))
 
     import shutil
-    src = Path("results/exp7/0J/plots/onset_sensitivity.png")
+    src = Path("results/exp07_methodology_validation_tier0/0J/plots/onset_sensitivity.png")
     if src.exists():
         output_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy(src, output_dir / "0J_onset_sensitivity.png")

@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 # ── paths ──────────────────────────────────────────────────────────────────
-EXP11_DATA = Path("results/exp11/data/exp11_exp3_all2936_tunedlens_v10")
-EXP9_DATA  = Path("results/exp9/data/convergence_gap_values.json")
-OUT_DIR    = Path("results/exp11/plots/exp11_extended")
+EXP11_DATA = Path("results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_all2936_tunedlens_v10")
+EXP9_DATA  = Path("results/exp09_cross_model_observational_replication/data/convergence_gap_values.json")
+OUT_DIR    = Path("results/exp11_matched_prefix_mlp_graft/plots/exp11_extended")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MODELS = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b"]

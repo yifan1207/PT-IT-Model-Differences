@@ -11,14 +11,14 @@ Connects per-layer importance to 0G commitment onset.
 
 Usage:
   uv run python -m src.poc.exp07_methodology_validation_tier0.layer_range_analysis \\
-      --results-dir results/exp7/0F/ \\
-      --output-dir results/exp7/0F/
+      --results-dir results/exp07_methodology_validation_tier0/0F/ \\
+      --output-dir results/exp07_methodology_validation_tier0/0F/
 
 Outputs:
-  results/exp7/0F/layer_range_sensitivity_table.csv
-  results/exp7/0F/single_layer_importance.json
-  results/exp7/0F/plots/layer_range_sensitivity.png
-  results/exp7/0F/plots/single_layer_importance.png
+  results/exp07_methodology_validation_tier0/0F/layer_range_sensitivity_table.csv
+  results/exp07_methodology_validation_tier0/0F/single_layer_importance.json
+  results/exp07_methodology_validation_tier0/0F/plots/layer_range_sensitivity.png
+  results/exp07_methodology_validation_tier0/0F/plots/single_layer_importance.png
 """
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ def save_csv(rows: list[dict], output_path: Path) -> None:
 
 def _load_0D_ci_for_0F() -> dict[str, dict[float, dict]]:
     """Load 0D bootstrap CIs for the canonical 20-33 range overlay."""
-    ci_path = Path("results/exp7/0D/ci_A1_programmatic.json")
+    ci_path = Path("results/exp07_methodology_validation_tier0/0D/ci_A1_programmatic.json")
     if not ci_path.exists():
         return {}
     with open(ci_path) as f:
@@ -376,9 +376,9 @@ def plot_single_layer_importance(importance_data: dict, output_dir: Path) -> Non
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Layer range sensitivity analysis (Exp7 0F)")
-    p.add_argument("--results-dir", default="results/exp7/0F/",
+    p.add_argument("--results-dir", default="results/exp07_methodology_validation_tier0/0F/",
                    help="Directory containing A1_it_layers_* and A1_single_layer_* subdirs")
-    p.add_argument("--output-dir", default="results/exp7/0F/")
+    p.add_argument("--output-dir", default="results/exp07_methodology_validation_tier0/0F/")
     args = p.parse_args()
 
     results_dir = Path(args.results_dir)

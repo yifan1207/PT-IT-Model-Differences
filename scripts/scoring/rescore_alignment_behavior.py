@@ -8,8 +8,8 @@ comply records were mis-scored as 'should refuse'.
 This script reads expected_behavior from the top-level field (correct) and rescores.
 
 Usage:
-    uv run python scripts/rescore_alignment_behavior.py --merged-dir results/exp6/merged_A1_it
-    uv run python scripts/rescore_alignment_behavior.py --merged-dir results/exp6/merged_A2_pt
+    uv run python scripts/rescore_alignment_behavior.py --merged-dir results/exp06_corrective_direction_steering/merged_A1_it
+    uv run python scripts/rescore_alignment_behavior.py --merged-dir results/exp06_corrective_direction_steering/merged_A2_pt
 """
 from __future__ import annotations
 import argparse, csv, json, re

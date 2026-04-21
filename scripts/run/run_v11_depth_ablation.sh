@@ -52,8 +52,8 @@ uv run modal run src/poc/exp11_matched_prefix_mlp_graft/modal_exp11.py \
     --prompt-seed "$PROMPT_SEED" \
     --chunk-size "$CHUNK_SIZE"
 
-LOCAL_DATA_ROOT="results/exp11/data/$RUN_PREFIX"
-LOCAL_PLOT_ROOT="results/exp11/plots/$RUN_PREFIX"
+LOCAL_DATA_ROOT="results/exp11_matched_prefix_mlp_graft/data/$RUN_PREFIX"
+LOCAL_PLOT_ROOT="results/exp11_matched_prefix_mlp_graft/plots/$RUN_PREFIX"
 mkdir -p "$LOCAL_DATA_ROOT" "$LOCAL_PLOT_ROOT"
 
 echo "=== Downloading merged per-model outputs from Modal volume ==="

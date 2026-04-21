@@ -117,7 +117,7 @@ class Exp4Config:
     @property
     def run_dir(self) -> str:
         variant = self.transcoder_variant.replace("width_", "")
-        return f"results/exp4/{self.model_variant}_{variant}"
+        return f"results/exp04_phase_transition_characterization/{self.model_variant}_{variant}"
 
     @property
     def is_instruction_tuned(self) -> bool:

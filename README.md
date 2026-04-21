@@ -32,7 +32,7 @@ The repo has been reorganized into descriptive canonical paths:
 - results: `results/exp##_descriptive_name/`
 - scripts: `scripts/run/`, `scripts/plot/`, `scripts/analysis/`, `scripts/infra/`, etc.
 
-Legacy flat aliases are still kept where practical so older one-liners and notes do not break.
+A few flat script aliases are still kept where practical, but results now live only under the descriptive canonical paths.
 
 ---
 

@@ -54,9 +54,9 @@ echo "========================================"
 # Format: "local_path  gcs_destination  delete_after_upload"
 # Plots are intentionally kept local (tiny, frequently referenced).
 declare -a JOBS=(
-    "${LOCAL_RESULTS}/exp2             ${BUCKET}/results/exp2              yes"
-    "${LOCAL_RESULTS}/exp3             ${BUCKET}/results/exp3              yes"
-    "${LOCAL_RESULTS}/exp4             ${BUCKET}/results/exp4              yes"
+    "${LOCAL_RESULTS}/exp2             ${BUCKET}/results/exp02_ic_ooc_reasoning_mechanistic_comparison              yes"
+    "${LOCAL_RESULTS}/exp3             ${BUCKET}/results/exp03_corrective_stage_characterization              yes"
+    "${LOCAL_RESULTS}/exp4             ${BUCKET}/results/exp04_phase_transition_characterization              yes"
     "${LOCAL_RESULTS}/poc_results.json ${BUCKET}/results/poc_results.json  yes"
     "${LOCAL_RESULTS}/weight_shift     ${BUCKET}/results/weight_shift      yes"
 )

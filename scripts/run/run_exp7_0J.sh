@@ -35,8 +35,8 @@ if [[ ! -f "$CSV_PATH" ]]; then
     exit 1
 fi
 
-CORR_DIR="results/exp5/precompute_v2/precompute/corrective_directions.npz"
-OUTPUT_DIR="results/exp7/0J"
+CORR_DIR="results/exp05_corrective_direction_ablation_cartography/precompute_v2/precompute/corrective_directions.npz"
+OUTPUT_DIR="results/exp07_methodology_validation_tier0/0J"
 NW=8
 
 mkdir -p logs/exp7 "$OUTPUT_DIR"
@@ -148,7 +148,7 @@ run_gemma_a1 "narrower_2sig"  "$ONSET_2"
 # ── Step 4: Plot all results ──────────────────────────────────────────────────
 echo ""
 echo "=== [0J] Step 4: Generating plots ==="
-uv run python scripts/plot_validation_tier0.py --experiments 0J --output-dir results/exp7/plots/
+uv run python scripts/plot_validation_tier0.py --experiments 0J --output-dir results/exp07_methodology_validation_tier0/plots/
 
 echo ""
 echo "=== [0J] Done. Results in $OUTPUT_DIR/ ==="
