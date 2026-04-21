@@ -46,6 +46,14 @@ DEFAULT_BATCH_SIZE = {
     "olmo2_7b": 32,
     "deepseek_v2_lite": 48,
 }
+DEFAULT_MAX_NEW_TOKENS = {
+    "gemma3_4b": 512,
+    "qwen3_4b": 512,
+    "llama31_8b": 512,
+    "mistral_7b": 512,
+    "olmo2_7b": 512,
+    "deepseek_v2_lite": 64,
+}
 FORCED_CHOICE_PROMPT_FORMAT = "C"
 FORCED_CHOICE_MAX_NEW_TOKENS = 3
 
@@ -501,7 +509,7 @@ def main() -> None:
     steering_adapter = get_steering_adapter(args.model)
     depth_windows = _assert_depth_windows(args.model, spec)
     batch_size = args.batch_size or DEFAULT_BATCH_SIZE[args.model]
-    max_new_tokens = args.max_new_tokens or steering_adapter.max_gen_tokens
+    max_new_tokens = args.max_new_tokens or DEFAULT_MAX_NEW_TOKENS[args.model]
 
     run_root = Path(
         args.out_dir

@@ -313,3 +313,9 @@ paper_draft/*
 .DS_Store
 cache/
 docs/
+!docs/
+docs/*
+!docs/assets/
+docs/assets/*
+!docs/assets/readme_broad_convergence_gap.png
+!docs/assets/readme_exp14_causal_main.png

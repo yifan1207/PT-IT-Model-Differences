@@ -212,7 +212,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-prompts", type=int, default=200)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--onset-layer", type=int, default=None)
-    parser.add_argument("--max-new-tokens", type=int, default=200)
+    parser.add_argument("--max-new-tokens", type=int, default=512)
     parser.add_argument("--out-dir", default=None)
     parser.add_argument("--device", default="cuda:0" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--resume", action="store_true")

@@ -1,6 +1,6 @@
-# Instruction Tuning Slows Prediction Convergence
+# Instruction Tuning Creates a Broad Convergence Gap
 
-### Late-Layer Corrective Computation Across Transformer Families
+### A Late-Centered Corrective Computation Across Transformer Families
 
 <p align="center">
   <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white">
@@ -9,13 +9,11 @@
 
 </p>
 
-> **TL;DR** &mdash; The current repo centers a broader story than the original Gemma-only steering result: across six transformer families, instruction tuning produces a **broad convergence gap** and delayed commitment, with the strongest mechanistic leverage concentrated in a **late MLP-centered corrective bottleneck**. The cleanest cross-model causal evidence comes from matched-prefix graft/swap experiments; free-running behavioral experiments test how much of assistant behavior those late interventions actually move.
+> **TL;DR** &mdash; The current paper story is: instruction tuning creates a **broad convergence gap** and delayed commitment under native decoding across six model families. The strongest mechanistic leverage is a **late-layer MLP-centered corrective bottleneck**. The cleanest cross-model internal causal evidence comes from matched-prefix graft/swap experiments, and the free-running behavioral experiments show that the same late intervention family moves a specific component of assistant behavior rather than the full assistant phenotype.
 
-<p align="center">
-  <img src="results/exp09_cross_model_observational_replication/plots/L1_delta_cosine_6panel.png" width="95%">
-  <br>
-  <sub><b>Figure 1.</b> &delta;-cosine profiles &mdash; cos(MLP update, residual stream) &mdash; across six model families. IT (red) opposes the residual stream more strongly than PT (blue dashed) in late layers. The effect is sustained in Gemma, DeepSeek, Mistral, and Llama; concentrated in the final layers of OLMo and Qwen.</sub>
-</p>
+![Broad convergence gap across six model families](docs/assets/readme_broad_convergence_gap.png)
+
+*Figure 1. Tuned-lens KL-to-own-final curves from the main cross-family observational suite. Across all six families, IT stays farther from its own final distribution than PT through much of the stack, making the broad convergence gap the primary cross-model signature.*
 
 ---
 
@@ -50,23 +48,23 @@ The current paper-facing story is best understood in three layers:
 
 What is strongest right now:
 
-- broad IT-vs-PT convergence gap and delayed commitment across 6 families
-- late-layer added correction / opposition as a geometric companion, with architecture-dependent magnitude
-- Gemma steering as the cleanest single-direction causal case
-- matched-prefix graft/swap as the cleanest cross-model internal causal case
-- `exp13A-lite` as a descriptive clarification that the late stage is broader than a formatting-token story
+- broad IT-vs-PT convergence gap and delayed commitment across 6 families under both tuned and raw logit lenses
+- a late-concentrated IT-vs-PT increase in residual opposition as a geometric companion, with architecture-dependent magnitude and spatial extent
+- Gemma steering as the strongest single-direction causal bridge between convergence speed and governance behavior
+- matched-prefix late graft/swap as the cleanest cross-model internal causal evidence for a late MLP-centered bottleneck
+- `exp13A-lite` plus the exp13/14 mechanism summaries as evidence that the late stage is broader than a narrow formatting-token injector
+- free-running A/B/C as a behavioral precision finding: late MLPs move anti-raw-continuation / anti-false-refusal more than polished structure
 
 What remains intentionally careful:
 
 - the free-running six-family observational curves are descriptive, not matched-history estimates
 - `KL(layer || own final)` is useful but endpoint-sensitive
+- dimensionality diagnostics are exploratory / mixed and are not part of the main claim
 - late IT MLPs are a **bottleneck inside a broader circuit**, not a full assistantness module
 
-<p align="center">
-  <img src="results/exp09_cross_model_observational_replication/plots/L2_mean_kl_per_layer_tuned.png" width="95%">
-  <br>
-  <sub><b>Figure 2.</b> Tuned-lens KL-to-own-final curves from the main cross-family observational suite. IT (red) remains farther from its own final distribution than PT (blue dashed) through much of the stack.</sub>
-</p>
+![Late-window sufficiency and necessity under matched-prefix control](docs/assets/readme_exp14_causal_main.png)
+
+*Figure 2. Symmetric matched-prefix exp13/14 summary. The late IT→PT graft is the strongest sufficiency window and the mirrored late PT→IT swap is the strongest necessity window on the primary late-region KL metric, supporting a late-centered MLP bottleneck rather than a diffuse endpoint-only story.*
 
 ---
 
@@ -198,10 +196,10 @@ For a full index, see [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md)
 
 | ID | Analysis | Key result |
 |----|----------|------------|
-| **L1** | &delta;-cosine profiles | IT opposes residual stream more in late layers (6/6, &minus;0.021 to &minus;0.269) |
-| **L2** | Commitment delay (5 metrics &times; 2 lenses) | IT commits 1&ndash;6 layers later (6/6) |
+| **L1** | &delta;-cosine profiles | IT adds more late residual opposition than PT in all 6 families, but with heterogeneous magnitude (&minus;0.021 to &minus;0.269 in the final 20%) |
+| **L2** | Broad convergence gap + delayed commitment (5 metrics &times; 2 lenses) | IT stays farther from its own final distribution through much of the stack and commits later in all 6 families |
 | **L3** | Weight change localization | Gemma: concentrated at corrective layers; others: uniform |
-| **L8** | Intrinsic dimensionality (TwoNN) | IT +1.3 to +4.7 dimensions in late layers (6/6) |
+| **L8** | Geometry follow-up | Exploratory dimensionality / covariance diagnostics are mixed and not part of the core evidence chain |
 | **L9** | Attention entropy divergence | Architecture-dependent |
 
 ### Causal steering (Gemma, extending to all 6)
@@ -213,6 +211,21 @@ For a full index, see [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md)
 | **A1_notmpl** | No chat template | Dose-response preserved &mdash; weight-encoded |
 | **A2** | Inject into PT | Noisy &mdash; PT lacks downstream circuitry |
 | **A5a** | Progressive layer skipping | Final 3 layers: format; earlier: coherence |
+
+### Matched-prefix Internal Causality
+
+| ID | Experiment | Key result |
+|----|-----------|------------|
+| **exp11** | Matched-prefix late IT MLP graft | Late IT MLPs increase late KL-to-own-final and move PT internal predictions toward the IT teacher under shared token history |
+| **exp13A-lite** | Descriptive token-support analysis | Late grafts broadly suppress raw-continuation-like `FUNCTION/OTHER` candidates and increase support for the eventual teacher token |
+| **exp14** | Symmetric sufficiency / necessity | Late IT→PT graft is the strongest sufficiency window and late PT→IT swap is the strongest necessity window across all 6 models on the primary late-region KL metric |
+
+### Free-running Behavioral Causality
+
+| ID | Experiment | Key result |
+|----|-----------|------------|
+| **exp12** | A/B/C free-running graft comparison | Late graft reduces benign false refusals in 6/6 families and improves assistant register in 4/6, but remains far from the full IT endpoint on polished structure |
+| **exp15** | Symmetric behavioral phase | Current canonical follow-up for making the behavioral late-stage claim more symmetric and better localized |
 
 ### Methodology validation (Tier 0)
 
@@ -261,7 +274,7 @@ The adapter system provides a uniform interface across all six architectures, in
 
 ```bibtex
 @article{anonymous2026corrective,
-  title={Instruction Tuning Slows Prediction Convergence: Late-Layer Corrective Computation Across Transformer Families},
+  title={Instruction Tuning Creates a Broad Convergence Gap: A Late-Centered Corrective Computation Across Transformer Families},
   author={Anonymous},
   year={2026}
 }

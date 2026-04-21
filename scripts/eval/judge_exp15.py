@@ -11,7 +11,7 @@ import re
 import statistics
 import time
 from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
@@ -192,7 +192,7 @@ def _normalize_pairwise_result(parsed: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _call_judge(client, model: str, prompt: str, retries: int = 4, max_tokens: int = 80) -> tuple[dict[str, Any], str]:
+def _call_judge(client, model: str, prompt: str, retries: int = 4, max_tokens: int = 192) -> tuple[dict[str, Any], str]:
     for attempt in range(retries):
         try:
             response = client.chat.completions.create(
@@ -298,7 +298,7 @@ def _run_pointwise_stage(
     def score_one(item: dict) -> dict:
         rubric = RUBRICS[item["task"]]
         prompt = rubric.format(question=item["question"], response=item["response"])
-        parsed, raw_text = _call_judge(client, resolved_model, prompt, max_tokens=96)
+        parsed, raw_text = _call_judge(client, resolved_model, prompt, max_tokens=192)
         normalized = _normalize_pointwise_result(item["task"], parsed)
         return {
             "item_id": item["item_id"],
@@ -320,17 +320,33 @@ def _run_pointwise_stage(
     buffered: list[dict] = []
     if todo:
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(score_one, item): item for item in todo}
+            inflight: dict[Any, dict] = {}
+            todo_iter = iter(todo)
+            max_inflight = max(workers * 4, workers)
+
+            def top_up() -> None:
+                while len(inflight) < max_inflight:
+                    try:
+                        item = next(todo_iter)
+                    except StopIteration:
+                        return
+                    inflight[pool.submit(score_one, item)] = item
+
+            top_up()
             done = 0
-            for future in as_completed(futures):
-                row = future.result()
-                buffered.append(row)
-                if len(buffered) >= 32:
-                    _write_jsonl(out_path, buffered, append=True)
-                    buffered.clear()
-                done += 1
-                if done % 100 == 0 or done == len(todo):
-                    print(f"[exp15 judge] {stage_name}: {done}/{len(todo)}", flush=True)
+            while inflight:
+                ready, _ = wait(inflight, return_when=FIRST_COMPLETED)
+                for future in ready:
+                    row = future.result()
+                    inflight.pop(future, None)
+                    buffered.append(row)
+                    if len(buffered) >= 32:
+                        _write_jsonl(out_path, buffered, append=True)
+                        buffered.clear()
+                    done += 1
+                    if done % 100 == 0 or done == len(todo):
+                        print(f"[exp15 judge] {stage_name}: {done}/{len(todo)}", flush=True)
+                top_up()
         if buffered:
             _write_jsonl(out_path, buffered, append=True)
 
@@ -530,7 +546,7 @@ def _run_pairwise_stage(
             response_a=item["response_a"],
             response_b=item["response_b"],
         )
-        parsed, raw_text = _call_judge(client, resolved_model, prompt, max_tokens=80)
+        parsed, raw_text = _call_judge(client, resolved_model, prompt, max_tokens=160)
         normalized = _normalize_pairwise_result(parsed)
         preferred_condition = (
             item["presented_condition_a"]
@@ -560,17 +576,33 @@ def _run_pairwise_stage(
     buffered: list[dict] = []
     if todo:
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {pool.submit(score_one, item): item for item in todo}
+            inflight: dict[Any, dict] = {}
+            todo_iter = iter(todo)
+            max_inflight = max(workers * 4, workers)
+
+            def top_up() -> None:
+                while len(inflight) < max_inflight:
+                    try:
+                        item = next(todo_iter)
+                    except StopIteration:
+                        return
+                    inflight[pool.submit(score_one, item)] = item
+
+            top_up()
             done = 0
-            for future in as_completed(futures):
-                row = future.result()
-                buffered.append(row)
-                if len(buffered) >= 32:
-                    _write_jsonl(out_path, buffered, append=True)
-                    buffered.clear()
-                done += 1
-                if done % 100 == 0 or done == len(todo):
-                    print(f"[exp15 judge] pairwise: {done}/{len(todo)}", flush=True)
+            while inflight:
+                ready, _ = wait(inflight, return_when=FIRST_COMPLETED)
+                for future in ready:
+                    row = future.result()
+                    inflight.pop(future, None)
+                    buffered.append(row)
+                    if len(buffered) >= 32:
+                        _write_jsonl(out_path, buffered, append=True)
+                        buffered.clear()
+                    done += 1
+                    if done % 100 == 0 or done == len(todo):
+                        print(f"[exp15 judge] pairwise: {done}/{len(todo)}", flush=True)
+                top_up()
         if buffered:
             _write_jsonl(out_path, buffered, append=True)
     return _load_jsonl(out_path)

@@ -25,6 +25,14 @@ DEFAULT_BATCH_SIZE = {
     "olmo2_7b": 32,
     "deepseek_v2_lite": 48,
 }
+DEFAULT_MAX_NEW_TOKENS = {
+    "gemma3_4b": 512,
+    "qwen3_4b": 512,
+    "llama31_8b": 512,
+    "mistral_7b": 512,
+    "olmo2_7b": 512,
+    "deepseek_v2_lite": 64,
+}
 
 
 class _RealTokenMaskProcessor(LogitsProcessor):
@@ -358,7 +366,7 @@ def main() -> None:
 
     spec = get_spec(args.model)
     onset_layer = spec.corrective_onset if args.onset_layer is None else args.onset_layer
-    max_new_tokens = args.max_new_tokens or get_steering_adapter(args.model).max_gen_tokens
+    max_new_tokens = args.max_new_tokens or DEFAULT_MAX_NEW_TOKENS[args.model]
     batch_size = args.batch_size or DEFAULT_BATCH_SIZE[args.model]
     out_dir = Path(args.out_dir or f"results/exp12/{args.model}/abc_raw_eval_v1")
     out_dir.mkdir(parents=True, exist_ok=True)
