@@ -21,7 +21,7 @@ SMOKE_GPU=0
 usage() {
   cat <<EOF
 Usage:
-  bash scripts/run_exp13_exp14_local.sh [options]
+  bash scripts/run/run_exp13_exp14_local.sh [options]
 
 Options:
   --mode smoke|full
@@ -84,7 +84,7 @@ run_single() {
   local batch_size
   batch_size="$(batch_hint "$model")"
   CUDA_VISIBLE_DEVICES="$gpu" \
-  uv run python -m src.poc.exp11_matched_prefix_mlp_graft.run \
+  uv run python -m src.poc.exp14_symmetric_matched_prefix_causality \
     --model "$model" \
     --dataset "$DATASET" \
     --n-prompts "$n_prompts" \
@@ -112,8 +112,8 @@ if [[ "$MODE" == "smoke" ]]; then
     1 \
     "${RUN_ROOT}/${MODEL}" \
     "${LOG_DIR}/${MODEL}_smoke.log"
-  uv run python scripts/analyze_exp13_full.py --run-root "$RUN_ROOT" --out "${RUN_ROOT}/exp13_full_summary.json"
-  uv run python scripts/plot_exp13_full.py --summary "${RUN_ROOT}/exp13_full_summary.json" --out-dir "$RUN_ROOT"
+  uv run python scripts/analysis/analyze_exp13_full.py --run-root "$RUN_ROOT" --out "${RUN_ROOT}/exp13_full_summary.json"
+  uv run python scripts/plot/plot_exp13_full.py --summary "${RUN_ROOT}/exp13_full_summary.json" --out-dir "$RUN_ROOT"
   echo "[exp13/14] smoke complete -> ${RUN_ROOT}"
   exit 0
 fi
@@ -160,7 +160,7 @@ uv run python scripts/merge_exp11_shards_local.py --run-root "$RUN_ROOT" --model
 uv run python scripts/merge_exp11_shards_local.py --run-root "$RUN_ROOT" --model mistral_7b --num-shards 2
 uv run python scripts/merge_exp11_shards_local.py --run-root "$RUN_ROOT" --model olmo2_7b --num-shards 2
 
-uv run python scripts/analyze_exp13_full.py --run-root "$RUN_ROOT" --out "${RUN_ROOT}/exp13_full_summary.json"
-uv run python scripts/plot_exp13_full.py --summary "${RUN_ROOT}/exp13_full_summary.json" --out-dir "$RUN_ROOT"
+uv run python scripts/analysis/analyze_exp13_full.py --run-root "$RUN_ROOT" --out "${RUN_ROOT}/exp13_full_summary.json"
+uv run python scripts/plot/plot_exp13_full.py --summary "${RUN_ROOT}/exp13_full_summary.json" --out-dir "$RUN_ROOT"
 
 echo "[exp13/14] full run complete -> ${RUN_ROOT}"

@@ -21,6 +21,24 @@ Flat historical entrypoints such as `scripts/run_phase0_multimodel.sh` and `scri
 - `bash scripts/run/run_phase0_multimodel.sh`
 - `uv run python scripts/plot/plot_validation_tier0.py`
 - `uv run python scripts/precompute/precompute_directions_multimodel.py`
+- `uv run python scripts/infra/repo_doctor.py`
+
+## Health check
+
+For a lightweight project-scoped validation pass, run:
+
+- `uv run python scripts/infra/repo_doctor.py`
+
+Optional:
+
+- `uv run python scripts/infra/repo_doctor.py --pytest`
+
+This checks:
+
+- Python syntax under `src/` and `scripts/`
+- shell syntax for launchers
+- broken script symlinks
+- a few canonical `--help` smoke entrypoints
 
 ## Related docs
 

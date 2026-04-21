@@ -157,9 +157,17 @@ _WC_AT_MOST_RE   = re.compile(r"(?:at most|no more than|fewer than|under) (\d+) 
 _WC_EXACTLY_RE   = re.compile(r"exactly (\d+) words?", re.IGNORECASE)
 _STARTS_WITH_RE  = re.compile(r'start (?:your )?(?:response|reply|answer|essay|letter|email) with ["\']?([^"\'\n]{3,40})["\']?', re.IGNORECASE)
 _FORBIDDEN_RE    = re.compile(r"do not (?:use|include|mention|say|write|contain)\s+(?:the words? |the phrase[s]? )?['\"]?([^'\"\n,;\.]{2,40})['\"]?", re.IGNORECASE)
+_DIRECT_FORMAT_TYPES = {
+    "json",
+    "bullet_list",
+    "markdown",
+    "numbered_list",
+    "code_block",
+    "table",
+}
 
 
-def _detect_format_from_prompt(prompt: str) -> tuple[str, object] | tuple[None, None]:
+def _detect_format_from_prompt(prompt: str | None) -> tuple[str, object] | tuple[None, None]:
     """Detect format constraint from prompt text.
 
     Returns (constraint_type, constraint_value):
@@ -171,6 +179,13 @@ def _detect_format_from_prompt(prompt: str) -> tuple[str, object] | tuple[None, 
 
     Checks in priority order so the most specific match wins.
     """
+    if prompt is None:
+        return None, None
+    prompt = str(prompt).strip()
+    if not prompt:
+        return None, None
+    if prompt in _DIRECT_FORMAT_TYPES:
+        return prompt, None
     p = prompt.lower()
     full = prompt  # for case-sensitive checks
     # Format type checks
@@ -207,16 +222,20 @@ def _detect_format_from_prompt(prompt: str) -> tuple[str, object] | tuple[None, 
     return None, None
 
 
-def _check_format_compliance(text: str, prompt: str) -> float | None:
-    """Check whether output complies with the format constraint detected from the prompt.
+def _check_format_compliance(text: str, prompt: str | None) -> float | None:
+    """Check whether output complies with a detected or explicit format constraint.
 
     Returns 1.0 (compliant), 0.0 (non-compliant), or None (no detectable constraint).
     Covers: json, bullet_list, markdown, numbered_list, code_block, table,
             word_count_min/max/exact, starts_with, forbidden.
 
-    This replaces the old metadata-based checker — detects constraint from prompt text,
-    which is reliable (unlike the pre-assigned expected_format field which was wrong for
-    most IFEval records in our dataset).
+    For backwards compatibility, `prompt` may be either:
+      - the full prompt text, from which we infer the constraint
+      - a direct constraint label such as "json" or "numbered_list"
+      - None, which is treated as unscoreable
+
+    Prompt-text detection is the preferred path because pre-assigned expected_format
+    metadata was wrong for many older IFEval records in our dataset.
     """
     ctype, cval = _detect_format_from_prompt(prompt)
     if ctype is None:
@@ -340,6 +359,10 @@ def score_format_compliance(
             continue
         prompt = rec.get("formats", {}).get("B", "") or rec.get("prompt", "")
         result = _check_format_compliance(out.generated_text, prompt)
+        if result is None:
+            # Keep the deprecated v1 scorer easy to use on older fixtures that only
+            # retained explicit format labels rather than the original prompt text.
+            result = _check_format_compliance(out.generated_text, rec.get("expected_format"))
         if result is not None:
             scores.append(result)
     if not scores:
