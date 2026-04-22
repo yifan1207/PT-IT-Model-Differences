@@ -1,10 +1,10 @@
 {
   "run_prefix": "exp15_eval_core_600_t512_dense5",
-  "run_root": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data",
+  "run_root": "results/exp15_symmetric_behavioral_causality/data",
   "models": {
     "gemma3_4b": {
       "model": "gemma3_4b",
-      "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_gemma3_4b/exp15_eval_core_600_t512_dense5_gemma3_4b",
+      "run_dir": "results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_gemma3_4b/exp15_eval_core_600_t512_dense5_gemma3_4b",
       "judge_manifest": {
         "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_gemma3_4b/exp15_eval_core_600_t512_dense5_gemma3_4b",
         "judge_models": {
@@ -878,7 +878,7 @@
     },
     "qwen3_4b": {
       "model": "qwen3_4b",
-      "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_qwen3_4b/exp15_eval_core_600_t512_dense5_qwen3_4b",
+      "run_dir": "results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_qwen3_4b/exp15_eval_core_600_t512_dense5_qwen3_4b",
       "judge_manifest": {
         "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_qwen3_4b/exp15_eval_core_600_t512_dense5_qwen3_4b",
         "judge_models": {
@@ -1753,7 +1753,7 @@
     },
     "llama31_8b": {
       "model": "llama31_8b",
-      "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_llama31_8b/exp15_eval_core_600_t512_dense5_llama31_8b",
+      "run_dir": "results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_llama31_8b/exp15_eval_core_600_t512_dense5_llama31_8b",
       "judge_manifest": {
         "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_llama31_8b/exp15_eval_core_600_t512_dense5_llama31_8b",
         "judge_models": {
@@ -2628,7 +2628,7 @@
     },
     "mistral_7b": {
       "model": "mistral_7b",
-      "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_mistral_7b/exp15_eval_core_600_t512_dense5_mistral_7b",
+      "run_dir": "results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_mistral_7b/exp15_eval_core_600_t512_dense5_mistral_7b",
       "judge_manifest": {
         "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_mistral_7b/exp15_eval_core_600_t512_dense5_mistral_7b",
         "judge_models": {
@@ -3503,7 +3503,7 @@
     },
     "olmo2_7b": {
       "model": "olmo2_7b",
-      "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_olmo2_7b/exp15_eval_core_600_t512_dense5_olmo2_7b",
+      "run_dir": "results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_olmo2_7b/exp15_eval_core_600_t512_dense5_olmo2_7b",
       "judge_manifest": {
         "run_dir": "/Users/Yifan/Research/structral-semantic-features/results/exp15_symmetric_behavioral_causality/data/exp15_eval_core_600_t512_dense5_olmo2_7b/exp15_eval_core_600_t512_dense5_olmo2_7b",
         "judge_models": {

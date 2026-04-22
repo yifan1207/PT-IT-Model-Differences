@@ -892,6 +892,122 @@ def _plot_programmatic_deltas(summary: dict[str, Any], out_path: Path) -> None:
     plt.close(fig)
 
 
+def _plot_paper_behavior_main(summary: dict[str, Any], out_path: Path) -> None:
+    fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.9), constrained_layout=True)
+
+    # Panel A: IT-side depth ranking only, where the late-centered necessity story is strongest.
+    ax = axes[0]
+    tasks = [("g2", "G2"), ("s2", "S2")]
+    x = np.arange(len(tasks))
+    width = 0.23
+    for idx, condition in enumerate(IT_WINDOWS):
+        means = [summary["dense_pooled"]["it"][task][condition]["mean"] for task, _ in tasks]
+        cis = [summary["dense_pooled"]["it"][task][condition]["ci95"] for task, _ in tasks]
+        yerr = np.array([[mean - lo, hi - mean] for mean, (lo, hi) in zip(means, cis)]).T
+        xpos = x + (idx - 1) * width
+        ax.bar(
+            xpos,
+            means,
+            width=width,
+            color=WINDOW_COLORS[condition],
+            yerr=yerr,
+            capsize=3,
+            label=WINDOW_DISPLAY[condition],
+            alpha=0.92,
+        )
+        for xp, mean in zip(xpos, means):
+            ax.text(xp, mean + 0.018, f"{mean:+.2f}", ha="center", va="bottom", fontsize=8)
+    ax.axhline(0.0, color="black", linewidth=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels([label for _, label in tasks])
+    ax.set_ylabel("Behavioral worsening vs C_it_chat")
+    ax.set_title("IT-side necessity: late swap is strongest")
+    ax.grid(axis="y", alpha=0.25)
+    ax.legend(frameon=False, loc="upper left")
+
+    # Panels B/C: pairwise late-vs-baseline comparisons, which are cleaner than full pointwise PT-side bars.
+    pairwise_panels = [
+        ("pt_late_vs_a", "PT late graft vs PT baseline"),
+        ("it_c_vs_dlate", "IT baseline vs late PT swap"),
+    ]
+    for ax, (comparison, title) in zip(axes[1:], pairwise_panels):
+        pairwise = summary["dense_pairwise"][comparison]
+        tasks = [task for task in ["pairwise_g2", "pairwise_s2"] if task in pairwise]
+        x = np.arange(len(tasks))
+        target_rates = [pairwise[task]["target_win_rate"] for task in tasks]
+        other_rates = [pairwise[task]["other_win_rate"] for task in tasks]
+        tie_rates = [pairwise[task]["tie_rate"] for task in tasks]
+        ax.bar(x, target_rates, color="#54A24B", label="Target preferred")
+        ax.bar(x, tie_rates, bottom=target_rates, color="#BDBDBD", label="Tie")
+        ax.bar(x, other_rates, bottom=np.asarray(target_rates) + np.asarray(tie_rates), color="#E45756", label="Other preferred")
+        ax.set_xticks(x)
+        ax.set_xticklabels(
+            [
+                f"{'G2' if task == 'pairwise_g2' else 'S2'}\n(n={pairwise[task]['n']})"
+                for task in tasks
+            ]
+        )
+        ax.set_ylim(0.0, 1.0)
+        ax.set_title(title)
+        ax.grid(axis="y", alpha=0.25)
+        for xi, (target_rate, tie_rate, other_rate) in enumerate(zip(target_rates, tie_rates, other_rates)):
+            ax.text(xi, target_rate / 2, f"{target_rate:.0%}", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
+            if tie_rate > 0.04:
+                ax.text(xi, target_rate + tie_rate / 2, f"{tie_rate:.0%}", ha="center", va="center", fontsize=9)
+            ax.text(
+                xi,
+                target_rate + tie_rate + other_rate / 2,
+                f"{other_rate:.0%}",
+                ha="center",
+                va="center",
+                fontsize=10,
+                color="white",
+                fontweight="bold",
+            )
+    handles, labels = axes[1].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.04), ncol=3, frameon=False)
+    fig.suptitle(
+        "Exp15 paper-facing behavioral summary\n"
+        "Late is the clearest behavioral necessity window in IT, while late grafting into PT shows partial sufficiency under blind pairwise judging.",
+        fontsize=14,
+    )
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_paper_it_targeting(summary: dict[str, Any], out_path: Path) -> None:
+    bucket_deltas = summary["dense_g2_bucket_deltas"]["it"]
+    fig, ax = plt.subplots(1, 1, figsize=(8.8, 4.8), constrained_layout=True)
+    width = 0.23
+    x = np.arange(len(ASSISTANT_BUCKETS))
+    for idx, condition in enumerate(IT_WINDOWS):
+        means = [bucket_deltas[bucket_key][condition]["mean"] for bucket_key, _ in ASSISTANT_BUCKETS]
+        cis = [bucket_deltas[bucket_key][condition]["ci95"] for bucket_key, _ in ASSISTANT_BUCKETS]
+        yerr = np.array([[mean - lo, hi - mean] for mean, (lo, hi) in zip(means, cis)]).T
+        xpos = x + (idx - 1) * width
+        ax.bar(
+            xpos,
+            means,
+            width=width,
+            color=WINDOW_COLORS[condition],
+            yerr=yerr,
+            capsize=3,
+            label=WINDOW_DISPLAY[condition],
+            alpha=0.92,
+        )
+        for xp, mean in zip(xpos, means):
+            ax.text(xp, mean + 0.02, f"{mean:+.2f}", ha="center", va="bottom", fontsize=8)
+    ax.axhline(0.0, color="black", linewidth=1)
+    ax.set_xticks(x)
+    ax.set_xticklabels([label for _, label in ASSISTANT_BUCKETS])
+    ax.set_ylabel("G2 loss vs C_it_chat")
+    ax.set_title("IT-side assistant-register degradation is targeted\nlate PT swap is strongest across assistant-facing prompt buckets")
+    ax.grid(axis="y", alpha=0.25)
+    ax.legend(frameon=False, ncol=3, loc="upper left")
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _write_plot_notes(summary: dict[str, Any], out_dir: Path) -> None:
     acceptance = summary["acceptance_checks"]
     pt_pair = summary["dense_pairwise"]["pt_late_vs_a"]
@@ -1071,6 +1187,8 @@ def main() -> None:
     _plot_bucket_g2_deltas(summary, args.out_dir / "exp15_g2_bucket_deltas.png")
     _plot_generation_diagnostics(summary, args.out_dir / "exp15_generation_diagnostics.png")
     _plot_programmatic_deltas(summary, args.out_dir / "exp15_programmatic_deltas.png")
+    _plot_paper_behavior_main(summary, args.out_dir / "exp15_paper_behavior_main.png")
+    _plot_paper_it_targeting(summary, args.out_dir / "exp15_paper_it_targeting.png")
     _write_plot_notes(summary, args.out_dir)
     print(f"Wrote Exp15 analysis to {args.out_dir}")
 
