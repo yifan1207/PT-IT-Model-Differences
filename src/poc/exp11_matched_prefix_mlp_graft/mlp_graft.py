@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -507,6 +508,16 @@ def _kl_between(log_probs_p: torch.Tensor, log_probs_q: torch.Tensor) -> torch.T
         torch.zeros_like(probs_p),
     )
     return torch.nan_to_num(terms.sum(dim=-1), nan=0.0, posinf=0.0, neginf=0.0)
+
+
+def symmetric_js_from_logits(logits_p: torch.Tensor, logits_q: torch.Tensor) -> torch.Tensor:
+    """Return symmetric Jensen-Shannon divergence over the final vocab dimension."""
+    log_probs_p = torch.log_softmax(logits_p, dim=-1)
+    log_probs_q = torch.log_softmax(logits_q, dim=-1)
+    log_mix = torch.logaddexp(log_probs_p, log_probs_q) - math.log(2.0)
+    kl_p_mix = _kl_between(log_probs_p, log_mix)
+    kl_q_mix = _kl_between(log_probs_q, log_mix)
+    return 0.5 * (kl_p_mix + kl_q_mix)
 
 
 def _rank_of_token(logits: torch.Tensor, token_id: int) -> int:

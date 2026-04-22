@@ -95,6 +95,9 @@ uv run python scripts/infra/repo_doctor.py --pytest
 # Canonical exp14 matched-prefix causal runner
 uv run python -m src.poc.exp14_symmetric_matched_prefix_causality --help
 
+# Canonical exp16 matched-prefix native-JS replay runner
+uv run python -m src.poc.exp16_matched_prefix_js_gap --help
+
 # Canonical exp15 free-running behavioral runner
 uv run python -m src.poc.exp15_symmetric_behavioral_causality --help
 
@@ -115,6 +118,10 @@ uv run python scripts/plot/plot_exp13a_lite.py --help
 # Exp13 full + Exp14 causal summary plots
 uv run python scripts/analysis/analyze_exp13_full.py --help
 uv run python scripts/plot/plot_exp13_full.py --help
+
+# Exp16 native-JS replay analysis + plots
+uv run python scripts/analysis/analyze_exp16.py --help
+uv run python scripts/plot/plot_exp16.py --help
 ```
 
 ### Canonical run scripts
@@ -126,6 +133,9 @@ bash scripts/run/run_phase0_multimodel.sh --step steer
 
 # Exp13 + Exp14 local causal campaign
 bash scripts/run/run_exp13_exp14_local.sh --mode full
+
+# Exp16 local JS replay over the frozen exp14 teacher stream
+bash scripts/run/run_exp16_js_replay_local.sh --mode smoke
 ```
 
 ---
@@ -165,6 +175,7 @@ src/poc/
   exp13_late_stage_token_support_analysis/
   exp14_symmetric_matched_prefix_causality/
   exp15_symmetric_behavioral_causality/
+  exp16_matched_prefix_js_gap/
 
 scripts/
   analysis/                                      # Post-hoc summaries, cross-checks, paper stats
@@ -218,6 +229,7 @@ For a full index, see [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md)
 |----|-----------|------------|
 | **exp11** | Matched-prefix late IT MLP graft | Late IT MLPs increase late KL-to-own-final and move PT internal predictions toward the IT teacher under shared token history |
 | **exp13A-lite** | Descriptive token-support analysis | Late grafts broadly suppress raw-continuation-like `FUNCTION/OTHER` candidates and increase support for the eventual teacher token |
+| **exp16** | Matched-prefix native-JS replay | Direct same-layer JS under frozen exp14 teacher histories removes unmatched-history and own-final-endpoint dependence from the main internal divergence readout |
 | **exp14** | Symmetric sufficiency / necessity | Late IT→PT graft is the strongest sufficiency window and late PT→IT swap is the strongest necessity window across all 6 models on the primary late-region KL metric |
 
 ### Free-running Behavioral Causality
