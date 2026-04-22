@@ -61,6 +61,17 @@ WINDOW_COLORS = {
 PAIRWISE_TARGET = {
     "pt_late_vs_a": "B_late_raw",
     "it_c_vs_dlate": "C_it_chat",
+    "it_c_vs_a": "C_it_chat",
+}
+PAIRWISE_DISPLAY = {
+    "pt_late_vs_a": "PT late graft vs PT baseline",
+    "it_c_vs_dlate": "IT baseline vs late PT swap",
+    "it_c_vs_a": "IT baseline vs PT baseline",
+}
+PAIRWISE_PANEL_TITLE = {
+    "pt_late_vs_a": "B_late_raw preferred vs A_pt_raw",
+    "it_c_vs_dlate": "C_it_chat preferred vs D_late_ptswap",
+    "it_c_vs_a": "C_it_chat preferred vs A_pt_raw",
 }
 MODEL_SHORT = {
     "gemma3_4b": "Ge",
@@ -462,11 +473,12 @@ def _analyze_model(run_dir: Path, model: str, n_boot: int) -> dict[str, Any]:
             task_rows = [row for row in comp_rows if row["task"] == task]
             counts = Counter(row["preferred_condition"] for row in task_rows)
             target = PAIRWISE_TARGET[comparison]
+            comparison_idx = sorted(PAIRWISE_TARGET).index(comparison)
             by_task[task] = _pairwise_rate_summary_from_counts(
                 counts=counts,
                 target=target,
                 n_boot=n_boot,
-                seed=201 + 10 * task_idx + (0 if comparison == "pt_late_vs_a" else 100),
+                seed=201 + 100 * comparison_idx + 10 * task_idx,
             )
         pairwise_summary[comparison] = by_task
 
@@ -766,11 +778,11 @@ def _plot_primary_bars(summary: dict[str, Any], out_path: Path) -> None:
 
 
 def _plot_pairwise(summary: dict[str, Any], out_path: Path) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4.8), constrained_layout=True)
-    panels = [
-        ("pt_late_vs_a", "B_late_raw preferred vs A_pt_raw"),
-        ("it_c_vs_dlate", "C_it_chat preferred vs D_late_ptswap"),
-    ]
+    comparisons = [comparison for comparison in PAIRWISE_TARGET if comparison in summary["dense_pairwise"]]
+    fig, axes = plt.subplots(1, len(comparisons), figsize=(6.0 * len(comparisons), 4.8), constrained_layout=True)
+    if len(comparisons) == 1:
+        axes = np.asarray([axes])
+    panels = [(comparison, PAIRWISE_PANEL_TITLE[comparison]) for comparison in comparisons]
     for ax, (comparison, title) in zip(axes, panels):
         pairwise = summary["dense_pairwise"][comparison]
         tasks = [task for task in ["pairwise_g2", "pairwise_s2"] if task in pairwise]
@@ -1038,8 +1050,8 @@ def _plot_paper_behavior_main(summary: dict[str, Any], out_path: Path) -> None:
 
     # Panels B/C: pairwise late-vs-baseline comparisons, which are cleaner than full pointwise PT-side bars.
     pairwise_panels = [
-        ("pt_late_vs_a", "PT late graft vs PT baseline"),
-        ("it_c_vs_dlate", "IT baseline vs late PT swap"),
+        ("pt_late_vs_a", PAIRWISE_DISPLAY["pt_late_vs_a"]),
+        ("it_c_vs_dlate", PAIRWISE_DISPLAY["it_c_vs_dlate"]),
     ]
     for ax, (comparison, title) in zip(axes[1:], pairwise_panels):
         pairwise = summary["dense_pairwise"][comparison]
@@ -1124,12 +1136,13 @@ def _write_plot_notes(summary: dict[str, Any], out_dir: Path) -> None:
     acceptance = summary["acceptance_checks"]
     pt_pair = summary["dense_pairwise"]["pt_late_vs_a"]
     it_pair = summary["dense_pairwise"]["it_c_vs_dlate"]
+    ac_pair = summary["dense_pairwise"].get("it_c_vs_a")
     notes = f"""# Exp15 Plot Notes
 
 ## What This Folder Contains
 
 - `exp15_primary_bars.png`: Dense-5 pooled pointwise effects on the two main behavioral endpoints.
-- `exp15_pairwise.png`: Dense-5 pooled pairwise preferences for late-vs-baseline comparisons.
+- `exp15_pairwise.png`: Dense-5 pooled pairwise preferences for late-vs-baseline comparisons plus the direct PT-vs-IT baseline.
 - `exp15_per_model_deltas.png`: Model-by-model paired deltas with 95% bootstrap CIs across PT-side sufficiency and IT-side necessity.
 - `exp15_internal_scatter.png`: Cross-condition link between matched-prefix internal deltas and free-running behavioral deltas.
 - `exp15_g2_bucket_deltas.png`: Assistant-register deltas split by prompt subtype.
@@ -1140,6 +1153,7 @@ def _write_plot_notes(summary: dict[str, Any], out_dir: Path) -> None:
 
 - The cleanest behavioral result is on the IT-side necessity test: late PT-swaps hurt behavior most strongly on pooled `S2` and `G2`.
 - PT-side late grafts are behaviorally real but not pointwise-maximal: `B_late_raw` beats `A_pt_raw` pairwise, yet `B_mid_raw` is strongest on pooled pointwise PT-side `S2` and `G2`.
+- The direct `A_pt_raw` vs `C_it_chat` pairwise baseline gives the missing context for the size of the full behavioral PT-to-IT gap under the same setup.
 - A likely reason is visible in `exp15_generation_diagnostics.png`: PT mid windows often shorten outputs and reduce cap saturation, while PT late windows frequently remain near the `512`-token cap.
 
 ## Plot-By-Plot Guide
@@ -1153,14 +1167,21 @@ def _write_plot_notes(summary: dict[str, Any], out_dir: Path) -> None:
 
 ### `exp15_pairwise.png`
 
-- These plots compare only the late branch to its baseline under blind pairwise judging.
+- These plots compare the late branches to their baselines under blind pairwise judging, plus the direct PT-vs-IT baseline.
 - PT side pooled late-vs-A preference:
   - `G2`: target preferred `{pt_pair['pairwise_g2']['target_win_rate']:.1%}` (95% CI `{pt_pair['pairwise_g2']['target_win_ci95'][0]:.1%}` to `{pt_pair['pairwise_g2']['target_win_ci95'][1]:.1%}`), other preferred `{pt_pair['pairwise_g2']['other_win_rate']:.1%}`, tie `{pt_pair['pairwise_g2']['tie_rate']:.1%}`
   - `S2`: target preferred `{pt_pair['pairwise_s2']['target_win_rate']:.1%}` (95% CI `{pt_pair['pairwise_s2']['target_win_ci95'][0]:.1%}` to `{pt_pair['pairwise_s2']['target_win_ci95'][1]:.1%}`), other preferred `{pt_pair['pairwise_s2']['other_win_rate']:.1%}`, tie `{pt_pair['pairwise_s2']['tie_rate']:.1%}`
 - IT side pooled C-vs-Dlate preference:
   - `G2`: target preferred `{it_pair['pairwise_g2']['target_win_rate']:.1%}` (95% CI `{it_pair['pairwise_g2']['target_win_ci95'][0]:.1%}` to `{it_pair['pairwise_g2']['target_win_ci95'][1]:.1%}`)
   - `S2`: target preferred `{it_pair['pairwise_s2']['target_win_rate']:.1%}` (95% CI `{it_pair['pairwise_s2']['target_win_ci95'][0]:.1%}` to `{it_pair['pairwise_s2']['target_win_ci95'][1]:.1%}`)
-
+"""
+    if ac_pair:
+        notes += f"""
+- Direct PT-vs-IT baseline (`C_it_chat` vs `A_pt_raw`):
+  - `G2`: target preferred `{ac_pair['pairwise_g2']['target_win_rate']:.1%}` (95% CI `{ac_pair['pairwise_g2']['target_win_ci95'][0]:.1%}` to `{ac_pair['pairwise_g2']['target_win_ci95'][1]:.1%}`)
+  - `S2`: target preferred `{ac_pair['pairwise_s2']['target_win_rate']:.1%}` (95% CI `{ac_pair['pairwise_s2']['target_win_ci95'][0]:.1%}` to `{ac_pair['pairwise_s2']['target_win_ci95'][1]:.1%}`)
+"""
+    notes += f"""
 ### `exp15_g2_bucket_deltas.png`
 
 - This explains where assistant-register effects come from.
@@ -1201,6 +1222,7 @@ def _write_plot_notes(summary: dict[str, Any], out_dir: Path) -> None:
 
 - Use `exp15` primarily as a late-centered behavioral **necessity** result.
 - Treat the PT-side behavioral sufficiency result as **real but partial**, with clear late pairwise gains but stronger mid pointwise gains under capped free-running decoding.
+- Use the direct `A`-vs-`C` baseline as contextual denominator, but not as a linear fraction-of-gap estimator.
 - Keep `exp11/13/14` as the main localization backbone, and use `exp15` to show that the same circuit matters under natural decoding rather than to claim a perfectly symmetric late-only behavioral story.
 """
     (out_dir / "README.md").write_text(notes, encoding="utf-8")
@@ -1250,11 +1272,12 @@ def main() -> None:
                 if not entry:
                     continue
                 counts.update(entry["counts"])
+            comparison_idx = sorted(PAIRWISE_TARGET).index(comparison)
             dense_pairwise[comparison][task] = _pairwise_rate_summary_from_counts(
                 counts=counts,
                 target=target,
                 n_boot=args.bootstrap_samples,
-                seed=301 + (0 if comparison == "pt_late_vs_a" else 100) + (0 if task == "pairwise_g2" else 10),
+                seed=301 + 100 * comparison_idx + (0 if task == "pairwise_g2" else 10),
             )
 
     dense_programmatic = _collect_dense_programmatic_deltas(model_summaries, n_boot=args.bootstrap_samples)

@@ -64,6 +64,7 @@ Reply with ONLY a JSON object:
 PAIRWISE_COMPARISONS = {
     "pt_late_vs_a": ("B_late_raw", "A_pt_raw"),
     "it_c_vs_dlate": ("C_it_chat", "D_late_ptswap"),
+    "it_c_vs_a": ("C_it_chat", "A_pt_raw"),
 }
 S1_CLASSES = {"REFUSE", "COMPLY", "INCOHERENT"}
 TASK_TITLE = {
