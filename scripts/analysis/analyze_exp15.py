@@ -220,6 +220,91 @@ def _assistant_g2_bucket_summary(pointwise_rows: list[dict], records_by_id: dict
     return out
 
 
+def _condition_task_scores(pointwise_rows: list[dict], condition: str, task: str) -> dict[str, float]:
+    return {
+        row["record_id"]: float(row["numeric_score"])
+        for row in pointwise_rows
+        if row["condition"] == condition and row["task"] == task
+    }
+
+
+def _paired_pointwise_delta_summary(
+    *,
+    pointwise_rows: list[dict],
+    baseline_condition: str,
+    condition: str,
+    task: str,
+    side: str,
+    n_boot: int,
+    seed: int,
+) -> dict[str, Any]:
+    baseline_scores = _condition_task_scores(pointwise_rows, baseline_condition, task)
+    condition_scores = _condition_task_scores(pointwise_rows, condition, task)
+    record_ids = sorted(set(baseline_scores) & set(condition_scores))
+    values = []
+    for record_id in record_ids:
+        baseline = baseline_scores[record_id]
+        current = condition_scores[record_id]
+        if side == "pt":
+            delta = baseline - current if task == "s2" else current - baseline
+        else:
+            delta = current - baseline if task == "s2" else baseline - current
+        values.append(delta)
+    stats = _bootstrap_mean(values, n_boot=n_boot, seed=seed)
+    return {
+        "n": len(values),
+        "mean": stats["mean"],
+        "ci95": [stats["lo"], stats["hi"]],
+    }
+
+
+def _pairwise_rate_summary_from_counts(
+    *,
+    counts: Counter,
+    target: str,
+    n_boot: int,
+    seed: int,
+) -> dict[str, Any]:
+    total = int(sum(counts.values()))
+    target_count = int(counts.get(target, 0))
+    tie_count = int(counts.get("TIE", 0))
+    other_count = int(sum(v for key, v in counts.items() if key not in {target, "TIE"}))
+
+    target_values = [1] * target_count + [0] * (total - target_count)
+    tie_values = [1] * tie_count + [0] * (total - tie_count)
+    other_values = [1] * other_count + [0] * (total - other_count)
+    target_stats = _bootstrap_rate(target_values, n_boot=n_boot, seed=seed)
+    tie_stats = _bootstrap_rate(tie_values, n_boot=n_boot, seed=seed + 1)
+    other_stats = _bootstrap_rate(other_values, n_boot=n_boot, seed=seed + 2)
+
+    resolved_total = total - tie_count
+    resolved_target_values = [1] * target_count + [0] * other_count
+    resolved_other_values = [1] * other_count + [0] * target_count
+    if resolved_total > 0:
+        resolved_target_stats = _bootstrap_rate(resolved_target_values, n_boot=n_boot, seed=seed + 3)
+        resolved_other_stats = _bootstrap_rate(resolved_other_values, n_boot=n_boot, seed=seed + 4)
+    else:
+        resolved_target_stats = {"mean": float("nan"), "lo": float("nan"), "hi": float("nan")}
+        resolved_other_stats = {"mean": float("nan"), "lo": float("nan"), "hi": float("nan")}
+
+    return {
+        "n": total,
+        "counts": dict(counts),
+        "target_condition": target,
+        "target_win_rate": target_stats["mean"],
+        "target_win_ci95": [target_stats["lo"], target_stats["hi"]],
+        "other_win_rate": other_stats["mean"],
+        "other_win_ci95": [other_stats["lo"], other_stats["hi"]],
+        "tie_rate": tie_stats["mean"],
+        "tie_rate_ci95": [tie_stats["lo"], tie_stats["hi"]],
+        "resolved_n": resolved_total,
+        "target_win_rate_resolved": resolved_target_stats["mean"],
+        "target_win_rate_resolved_ci95": [resolved_target_stats["lo"], resolved_target_stats["hi"]],
+        "other_win_rate_resolved": resolved_other_stats["mean"],
+        "other_win_rate_resolved_ci95": [resolved_other_stats["lo"], resolved_other_stats["hi"]],
+    }
+
+
 def _generation_diagnostics(
     *,
     records_by_id: dict[str, dict],
@@ -330,6 +415,34 @@ def _analyze_model(run_dir: Path, model: str, n_boot: int) -> dict[str, Any]:
             "s2": _pointwise_metric_summary(cond_rows, "s2", n_boot=n_boot),
         }
 
+    paired_pointwise_deltas = {"pt": {}, "it": {}}
+    for idx, condition in enumerate(PT_WINDOWS):
+        paired_pointwise_deltas["pt"][condition] = {
+            task: _paired_pointwise_delta_summary(
+                pointwise_rows=pointwise_rows,
+                baseline_condition="A_pt_raw",
+                condition=condition,
+                task=task,
+                side="pt",
+                n_boot=n_boot,
+                seed=101 + 10 * idx + (0 if task == "g2" else 1),
+            )
+            for task in ("g2", "s2")
+        }
+    for idx, condition in enumerate(IT_WINDOWS):
+        paired_pointwise_deltas["it"][condition] = {
+            task: _paired_pointwise_delta_summary(
+                pointwise_rows=pointwise_rows,
+                baseline_condition="C_it_chat",
+                condition=condition,
+                task=task,
+                side="it",
+                n_boot=n_boot,
+                seed=151 + 10 * idx + (0 if task == "g2" else 1),
+            )
+            for task in ("g2", "s2")
+        }
+
     programmatic = _programmatic_metrics(
         records_by_id=records_by_id,
         sample_rows_by_condition=sample_rows_by_condition,
@@ -345,21 +458,16 @@ def _analyze_model(run_dir: Path, model: str, n_boot: int) -> dict[str, Any]:
     for comparison in sorted({row["comparison"] for row in pairwise_rows}):
         comp_rows = [row for row in pairwise_rows if row["comparison"] == comparison]
         by_task: dict[str, Any] = {}
-        for task in sorted({row["task"] for row in comp_rows}):
+        for task_idx, task in enumerate(sorted({row["task"] for row in comp_rows})):
             task_rows = [row for row in comp_rows if row["task"] == task]
             counts = Counter(row["preferred_condition"] for row in task_rows)
-            total = len(task_rows)
             target = PAIRWISE_TARGET[comparison]
-            by_task[task] = {
-                "n": total,
-                "counts": dict(counts),
-                "target_condition": target,
-                "target_win_rate": counts.get(target, 0) / total if total else float("nan"),
-                "other_win_rate": (
-                    sum(v for key, v in counts.items() if key not in {target, "TIE"}) / total if total else float("nan")
-                ),
-                "tie_rate": counts.get("TIE", 0) / total if total else float("nan"),
-            }
+            by_task[task] = _pairwise_rate_summary_from_counts(
+                counts=counts,
+                target=target,
+                n_boot=n_boot,
+                seed=201 + 10 * task_idx + (0 if comparison == "pt_late_vs_a" else 100),
+            )
         pairwise_summary[comparison] = by_task
 
     return {
@@ -367,6 +475,7 @@ def _analyze_model(run_dir: Path, model: str, n_boot: int) -> dict[str, Any]:
         "run_dir": str(run_dir),
         "judge_manifest": judge_manifest,
         "pointwise": pointwise_by_condition,
+        "paired_pointwise_deltas": paired_pointwise_deltas,
         "programmatic": programmatic,
         "assistant_g2_buckets": assistant_g2_buckets,
         "generation_diagnostics": generation_diagnostics,
@@ -375,19 +484,11 @@ def _analyze_model(run_dir: Path, model: str, n_boot: int) -> dict[str, Any]:
 
 
 def _pt_improvement(model_summary: dict[str, Any], condition: str, task: str) -> float:
-    baseline = model_summary["pointwise"]["A_pt_raw"][task]["mean"]
-    current = model_summary["pointwise"][condition][task]["mean"]
-    if task == "s2":
-        return baseline - current
-    return current - baseline
+    return model_summary["paired_pointwise_deltas"]["pt"][condition][task]["mean"]
 
 
 def _it_worsening(model_summary: dict[str, Any], condition: str, task: str) -> float:
-    baseline = model_summary["pointwise"]["C_it_chat"][task]["mean"]
-    current = model_summary["pointwise"][condition][task]["mean"]
-    if task == "s2":
-        return current - baseline
-    return baseline - current
+    return model_summary["paired_pointwise_deltas"]["it"][condition][task]["mean"]
 
 
 def _programmatic_delta(model_summary: dict[str, Any], baseline_condition: str, condition: str, metric_name: str) -> float:
@@ -656,7 +757,8 @@ def _plot_primary_bars(summary: dict[str, Any], out_path: Path) -> None:
             ax.text(xi, mean + offset, f"{mean:+.2f}", ha="center", va=va, fontsize=9, fontweight="bold")
     fig.suptitle(
         "Exp15: Dense-5 pooled free-running behavioral effects\n"
-        "Positive bars mean expected-direction movement: PT improves vs A_pt_raw, IT degrades vs C_it_chat.",
+        "Positive bars mean expected-direction movement: PT improves vs A_pt_raw, IT degrades vs C_it_chat.\n"
+        "Error bars show 95% bootstrap CIs across the five dense families.",
         fontsize=15,
     )
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
@@ -760,14 +862,22 @@ def _plot_per_model(summary: dict[str, Any], out_path: Path) -> None:
         ax_it = axes[row_idx, 1]
         x_pt = np.arange(len(PT_WINDOWS))
         x_it = np.arange(len(IT_WINDOWS))
-        pt_s2 = [_pt_improvement(model_summary, condition, "s2") for condition in PT_WINDOWS]
-        pt_g2 = [_pt_improvement(model_summary, condition, "g2") for condition in PT_WINDOWS]
-        it_s2 = [_it_worsening(model_summary, condition, "s2") for condition in IT_WINDOWS]
-        it_g2 = [_it_worsening(model_summary, condition, "g2") for condition in IT_WINDOWS]
-        ax_pt.plot(x_pt, pt_s2, marker="o", color="#E45756", label="S2")
-        ax_pt.plot(x_pt, pt_g2, marker="s", color="#4C78A8", label="G2")
-        ax_it.plot(x_it, it_s2, marker="o", color="#E45756", label="S2")
-        ax_it.plot(x_it, it_g2, marker="s", color="#4C78A8", label="G2")
+        pt_s2 = [model_summary["paired_pointwise_deltas"]["pt"][condition]["s2"]["mean"] for condition in PT_WINDOWS]
+        pt_s2_cis = [model_summary["paired_pointwise_deltas"]["pt"][condition]["s2"]["ci95"] for condition in PT_WINDOWS]
+        pt_g2 = [model_summary["paired_pointwise_deltas"]["pt"][condition]["g2"]["mean"] for condition in PT_WINDOWS]
+        pt_g2_cis = [model_summary["paired_pointwise_deltas"]["pt"][condition]["g2"]["ci95"] for condition in PT_WINDOWS]
+        it_s2 = [model_summary["paired_pointwise_deltas"]["it"][condition]["s2"]["mean"] for condition in IT_WINDOWS]
+        it_s2_cis = [model_summary["paired_pointwise_deltas"]["it"][condition]["s2"]["ci95"] for condition in IT_WINDOWS]
+        it_g2 = [model_summary["paired_pointwise_deltas"]["it"][condition]["g2"]["mean"] for condition in IT_WINDOWS]
+        it_g2_cis = [model_summary["paired_pointwise_deltas"]["it"][condition]["g2"]["ci95"] for condition in IT_WINDOWS]
+
+        def _yerr(values: list[float], cis: list[list[float]]) -> np.ndarray:
+            return np.array([[value - lo, hi - value] for value, (lo, hi) in zip(values, cis)]).T
+
+        ax_pt.errorbar(x_pt, pt_s2, yerr=_yerr(pt_s2, pt_s2_cis), marker="o", capsize=3, color="#E45756", label="S2")
+        ax_pt.errorbar(x_pt, pt_g2, yerr=_yerr(pt_g2, pt_g2_cis), marker="s", capsize=3, color="#4C78A8", label="G2")
+        ax_it.errorbar(x_it, it_s2, yerr=_yerr(it_s2, it_s2_cis), marker="o", capsize=3, color="#E45756", label="S2")
+        ax_it.errorbar(x_it, it_g2, yerr=_yerr(it_g2, it_g2_cis), marker="s", capsize=3, color="#4C78A8", label="G2")
         for ax, xvals, conditions, title in (
             (ax_pt, x_pt, PT_WINDOWS, f"{MODEL_DISPLAY[model]} PT side"),
             (ax_it, x_it, IT_WINDOWS, f"{MODEL_DISPLAY[model]} IT side"),
@@ -780,6 +890,7 @@ def _plot_per_model(summary: dict[str, Any], out_path: Path) -> None:
         if row_idx == 0:
             ax_pt.legend(frameon=False)
             ax_it.legend(frameon=False)
+    fig.suptitle("Exp15 per-model paired late-effect deltas with 95% bootstrap CIs", fontsize=14)
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
 
@@ -968,7 +1079,8 @@ def _plot_paper_behavior_main(summary: dict[str, Any], out_path: Path) -> None:
     fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.04), ncol=3, frameon=False)
     fig.suptitle(
         "Exp15 paper-facing behavioral summary\n"
-        "Late is the clearest behavioral necessity window in IT, while late grafting into PT shows partial sufficiency under blind pairwise judging.",
+        "Late is the clearest behavioral necessity window in IT, while late grafting into PT shows partial sufficiency under blind pairwise judging.\n"
+        "The IT-side pooled pointwise bars use 95% bootstrap CIs across the five dense families.",
         fontsize=14,
     )
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
@@ -1018,7 +1130,7 @@ def _write_plot_notes(summary: dict[str, Any], out_dir: Path) -> None:
 
 - `exp15_primary_bars.png`: Dense-5 pooled pointwise effects on the two main behavioral endpoints.
 - `exp15_pairwise.png`: Dense-5 pooled pairwise preferences for late-vs-baseline comparisons.
-- `exp15_per_model_deltas.png`: Model-by-model heterogeneity across PT-side sufficiency and IT-side necessity.
+- `exp15_per_model_deltas.png`: Model-by-model paired deltas with 95% bootstrap CIs across PT-side sufficiency and IT-side necessity.
 - `exp15_internal_scatter.png`: Cross-condition link between matched-prefix internal deltas and free-running behavioral deltas.
 - `exp15_g2_bucket_deltas.png`: Assistant-register deltas split by prompt subtype.
 - `exp15_generation_diagnostics.png`: Assistant-facing output length and 512-token cap-rate diagnostics.
@@ -1043,11 +1155,11 @@ def _write_plot_notes(summary: dict[str, Any], out_dir: Path) -> None:
 
 - These plots compare only the late branch to its baseline under blind pairwise judging.
 - PT side pooled late-vs-A preference:
-  - `G2`: target preferred `{pt_pair['pairwise_g2']['target_win_rate']:.1%}`, other preferred `{pt_pair['pairwise_g2']['other_win_rate']:.1%}`, tie `{pt_pair['pairwise_g2']['tie_rate']:.1%}`
-  - `S2`: target preferred `{pt_pair['pairwise_s2']['target_win_rate']:.1%}`, other preferred `{pt_pair['pairwise_s2']['other_win_rate']:.1%}`, tie `{pt_pair['pairwise_s2']['tie_rate']:.1%}`
+  - `G2`: target preferred `{pt_pair['pairwise_g2']['target_win_rate']:.1%}` (95% CI `{pt_pair['pairwise_g2']['target_win_ci95'][0]:.1%}` to `{pt_pair['pairwise_g2']['target_win_ci95'][1]:.1%}`), other preferred `{pt_pair['pairwise_g2']['other_win_rate']:.1%}`, tie `{pt_pair['pairwise_g2']['tie_rate']:.1%}`
+  - `S2`: target preferred `{pt_pair['pairwise_s2']['target_win_rate']:.1%}` (95% CI `{pt_pair['pairwise_s2']['target_win_ci95'][0]:.1%}` to `{pt_pair['pairwise_s2']['target_win_ci95'][1]:.1%}`), other preferred `{pt_pair['pairwise_s2']['other_win_rate']:.1%}`, tie `{pt_pair['pairwise_s2']['tie_rate']:.1%}`
 - IT side pooled C-vs-Dlate preference:
-  - `G2`: target preferred `{it_pair['pairwise_g2']['target_win_rate']:.1%}`
-  - `S2`: target preferred `{it_pair['pairwise_s2']['target_win_rate']:.1%}`
+  - `G2`: target preferred `{it_pair['pairwise_g2']['target_win_rate']:.1%}` (95% CI `{it_pair['pairwise_g2']['target_win_ci95'][0]:.1%}` to `{it_pair['pairwise_g2']['target_win_ci95'][1]:.1%}`)
+  - `S2`: target preferred `{it_pair['pairwise_s2']['target_win_rate']:.1%}` (95% CI `{it_pair['pairwise_s2']['target_win_ci95'][0]:.1%}` to `{it_pair['pairwise_s2']['target_win_ci95'][1]:.1%}`)
 
 ### `exp15_g2_bucket_deltas.png`
 
@@ -1131,7 +1243,6 @@ def main() -> None:
         for task in sorted(available_tasks):
             target = PAIRWISE_TARGET[comparison]
             counts = Counter()
-            total = 0
             for model in DENSE_MODELS:
                 if model not in model_summaries:
                     continue
@@ -1139,17 +1250,12 @@ def main() -> None:
                 if not entry:
                     continue
                 counts.update(entry["counts"])
-                total += entry["n"]
-            dense_pairwise[comparison][task] = {
-                "n": total,
-                "counts": dict(counts),
-                "target_condition": target,
-                "target_win_rate": counts.get(target, 0) / total if total else float("nan"),
-                "other_win_rate": (
-                    sum(v for key, v in counts.items() if key not in {target, "TIE"}) / total if total else float("nan")
-                ),
-                "tie_rate": counts.get("TIE", 0) / total if total else float("nan"),
-            }
+            dense_pairwise[comparison][task] = _pairwise_rate_summary_from_counts(
+                counts=counts,
+                target=target,
+                n_boot=args.bootstrap_samples,
+                seed=301 + (0 if comparison == "pt_late_vs_a" else 100) + (0 if task == "pairwise_g2" else 10),
+            )
 
     dense_programmatic = _collect_dense_programmatic_deltas(model_summaries, n_boot=args.bootstrap_samples)
     dense_g2_bucket_deltas = _collect_dense_bucket_g2_deltas(model_summaries, n_boot=args.bootstrap_samples)

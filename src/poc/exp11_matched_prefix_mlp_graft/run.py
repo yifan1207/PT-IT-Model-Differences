@@ -656,6 +656,30 @@ def _teacher_tokens_by_prompt(rows: list[dict[str, Any]]) -> dict[str, list[int]
     }
 
 
+def _trim_teacher_manifest_rows(
+    rows: list[dict[str, Any]],
+    *,
+    eos_token_ids: set[int],
+) -> list[dict[str, Any]]:
+    if not eos_token_ids:
+        return rows
+    trimmed_rows: list[dict[str, Any]] = []
+    for row in rows:
+        token_ids = [int(token_id) for token_id in row["token_ids"]]
+        cutoff = len(token_ids)
+        for idx, token_id in enumerate(token_ids):
+            if token_id in eos_token_ids:
+                cutoff = idx + 1
+                break
+        trimmed_row = dict(row)
+        trimmed_row["token_ids"] = token_ids[:cutoff]
+        generated_tokens = row.get("generated_tokens")
+        if isinstance(generated_tokens, list):
+            trimmed_row["generated_tokens"] = list(generated_tokens[:cutoff])
+        trimmed_rows.append(trimmed_row)
+    return trimmed_rows
+
+
 def _apply_real_token_mask(logits: torch.Tensor, real_token_mask: torch.Tensor) -> torch.Tensor:
     masked = logits.clone()
     if masked.ndim == 1:
@@ -1251,25 +1275,37 @@ def _decode_fixed_batch(
     if js_pair_configs:
         if js_current_readout is None or js_accumulator is None:
             raise ValueError("js_current_readout and js_accumulator are required when js_pair_configs are provided")
-        js_current_logits = raw_logits_from_residuals(js_current_readout, step_tensors.residual_output)
-        step_indices = [
-            len(requests_by_id[prompt_id].generated_token_ids)
-            for prompt_id in active.request_ids
+        unfinished_row_indices = [
+            row_idx
+            for row_idx in range(len(active.request_ids))
+            if not bool(active.finished_mask[row_idx].item())
         ]
         n_layers = len(step_tensors.residual_output)
-        for pair in js_pair_configs:
-            baseline_raw_logits = _build_js_baseline_raw_logits(
-                request_ids=list(active.request_ids),
-                step_indices=step_indices,
-                baseline_lookup=pair.baseline_lookup,
-                baseline_raw_readout=pair.baseline_raw_readout,
-                n_layers=n_layers,
-            )
-            js_results_by_pair[pair.name] = _masked_symmetric_js(
-                logits_p=js_current_logits,
-                logits_q=baseline_raw_logits,
-                comparison_mask=pair.comparison_mask,
-            ).cpu()
+        if unfinished_row_indices:
+            js_current_logits = raw_logits_from_residuals(js_current_readout, step_tensors.residual_output)
+            js_current_logits = js_current_logits[unfinished_row_indices]
+            request_ids_subset = [active.request_ids[row_idx] for row_idx in unfinished_row_indices]
+            step_indices_subset = [
+                len(requests_by_id[prompt_id].generated_token_ids)
+                for prompt_id in request_ids_subset
+            ]
+            for pair in js_pair_configs:
+                baseline_raw_logits = _build_js_baseline_raw_logits(
+                    request_ids=request_ids_subset,
+                    step_indices=step_indices_subset,
+                    baseline_lookup=pair.baseline_lookup,
+                    baseline_raw_readout=pair.baseline_raw_readout,
+                    n_layers=n_layers,
+                )
+                subset_js = _masked_symmetric_js(
+                    logits_p=js_current_logits,
+                    logits_q=baseline_raw_logits,
+                    comparison_mask=pair.comparison_mask,
+                ).cpu()
+                full_js = torch.zeros((len(active.request_ids), n_layers), dtype=subset_js.dtype)
+                for subset_idx, row_idx in enumerate(unfinished_row_indices):
+                    full_js[row_idx] = subset_js[subset_idx]
+                js_results_by_pair[pair.name] = full_js
 
     next_inputs: list[int] = []
     updated_valid_lengths = active.valid_lengths.clone()
@@ -2107,6 +2143,12 @@ def main() -> None:
     eos_ids_pt = set(steering_adapter.eos_token_ids(tokenizer_pt))
     eos_ids_it = set(steering_adapter.eos_token_ids(tokenizer_it))
     eos_ids_pt_or_it = eos_ids_pt | eos_ids_it
+    if teacher_manifest_rows is not None:
+        teacher_manifest_rows = _trim_teacher_manifest_rows(
+            teacher_manifest_rows,
+            eos_token_ids=eos_ids_it,
+        )
+        teacher_tokens_manifest_by_prompt = _teacher_tokens_by_prompt(teacher_manifest_rows)
     arch_probe = ArchitectureProbe()
     pad_token_id_pt = tokenizer_pt.pad_token_id
     pad_token_id_it = tokenizer_it.pad_token_id
@@ -2502,15 +2544,13 @@ def main() -> None:
                 "C_it_chat" if (depth_ablation or causal_combined) else "C"
             ] = batch_size_c
             c_baseline_lookup = {pid: run.baseline_cache for pid, run in runs_c.items()}
-            if js_only:
-                if teacher_tokens_manifest_by_prompt is None:
-                    raise ValueError("js_only mode requires teacher_tokens_manifest_by_prompt")
-                teacher_tokens_chunk = {
-                    record["id"]: list(teacher_tokens_manifest_by_prompt[record["id"]])
-                    for record in chunk
-                }
-            else:
-                teacher_tokens_chunk = {pid: list(run.generated_token_ids) for pid, run in runs_c.items()}
+            if js_only and teacher_tokens_manifest_by_prompt is None:
+                raise ValueError("js_only mode requires teacher_tokens_manifest_by_prompt")
+            # In js-only replay, the external manifest defines C's teacher stream,
+            # but downstream branches should follow the exact tokens that C actually
+            # replayed under the current runner semantics to guarantee step alignment
+            # with the cached C baseline residuals.
+            teacher_tokens_chunk = {pid: list(run.generated_token_ids) for pid, run in runs_c.items()}
             _assert_used_token_ids_compatible(
                 tokenizer_it,
                 tokenizer_pt,

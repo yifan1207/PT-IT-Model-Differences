@@ -4,7 +4,7 @@
 
 - `exp15_primary_bars.png`: Dense-5 pooled pointwise effects on the two main behavioral endpoints.
 - `exp15_pairwise.png`: Dense-5 pooled pairwise preferences for late-vs-baseline comparisons.
-- `exp15_per_model_deltas.png`: Model-by-model heterogeneity across PT-side sufficiency and IT-side necessity.
+- `exp15_per_model_deltas.png`: Model-by-model paired deltas with 95% bootstrap CIs across PT-side sufficiency and IT-side necessity.
 - `exp15_internal_scatter.png`: Cross-condition link between matched-prefix internal deltas and free-running behavioral deltas.
 - `exp15_g2_bucket_deltas.png`: Assistant-register deltas split by prompt subtype.
 - `exp15_generation_diagnostics.png`: Assistant-facing output length and 512-token cap-rate diagnostics.
@@ -29,11 +29,11 @@
 
 - These plots compare only the late branch to its baseline under blind pairwise judging.
 - PT side pooled late-vs-A preference:
-  - `G2`: target preferred `49.2%`, other preferred `38.1%`, tie `12.7%`
-  - `S2`: target preferred `51.7%`, other preferred `29.3%`, tie `18.9%`
+  - `G2`: target preferred `49.2%` (95% CI `46.2%` to `52.0%`), other preferred `38.1%`, tie `12.7%`
+  - `S2`: target preferred `51.7%` (95% CI `46.7%` to `56.8%`), other preferred `29.3%`, tie `18.9%`
 - IT side pooled C-vs-Dlate preference:
-  - `G2`: target preferred `75.3%`
-  - `S2`: target preferred `76.3%`
+  - `G2`: target preferred `75.3%` (95% CI `72.8%` to `77.9%`)
+  - `S2`: target preferred `76.3%` (95% CI `72.0%` to `80.3%`)
 
 ### `exp15_g2_bucket_deltas.png`
 

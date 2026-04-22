@@ -1,6 +1,6 @@
 # Instruction Tuning Creates a Broad Convergence Gap
 
-### A Late-Centered Corrective Computation Across Transformer Families
+### Late-Window Localization and Behavioral Consequences Across Transformer Families
 
 <p align="center">
   <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white">
@@ -9,7 +9,7 @@
 
 </p>
 
-> **TL;DR** &mdash; The current paper story is: instruction tuning creates a **broad convergence gap** and delayed commitment under native decoding across six model families. The strongest mechanistic leverage is a **late-layer MLP-centered corrective bottleneck**. The cleanest cross-model internal causal evidence comes from matched-prefix graft/swap experiments, and the free-running behavioral experiments show that the same late intervention family moves a specific component of assistant behavior rather than the full assistant phenotype.
+> **TL;DR** &mdash; The current paper story is: instruction tuning creates a **broad convergence gap** and delayed commitment under native decoding across six model families. The strongest tested internal leverage on that gap lies in a **late MLP window** under matched-prefix control. The cleanest cross-model internal evidence comes from graft/swap experiments, and the free-running behavioral experiments show that the same late intervention family moves a real but partial slice of assistant behavior rather than the full assistant phenotype.
 
 ![Broad convergence gap across six model families](docs/assets/readme_broad_convergence_gap.png)
 
@@ -24,7 +24,7 @@ If you are new to the repo, these are the most useful entrypoints:
 - [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md): canonical experiment map and path conventions
 - [scripts/README.md](scripts/README.md): grouped script layout and common commands
 - `uv run python scripts/infra/repo_doctor.py`: lightweight repo health check
-- [paper_draft/PAPER_DRAFT_v12.md](paper_draft/PAPER_DRAFT_v12.md): current paper framing
+- [paper_draft/PAPER_DRAFT_v13.md](paper_draft/PAPER_DRAFT_v13.md): current paper framing
 
 The repo has been reorganized into descriptive canonical paths:
 
@@ -43,15 +43,15 @@ The current paper-facing story is best understood in three layers:
 | Layer | Best current claim | Main evidence |
 |---|---|---|
 | Observational | Instruction tuning creates a broad convergence-gap signature under native decoding | `exp09` cross-model PT/IT analyses |
-| Internal causal | The strongest cross-model mechanistic leverage is late-centered and MLP-heavy | `exp11` matched-prefix grafts + `exp14` symmetric sufficiency/necessity |
-| Behavioral | The same late intervention family moves a real but partial slice of assistant behavior | `exp12` free-running A/B/C, with `exp15` as the next symmetric behavioral phase |
+| Internal causal | The strongest tested leverage on the convergence gap is late-centered and MLP-heavy | `exp11` matched-prefix grafts + `exp14` symmetric sufficiency/necessity |
+| Behavioral | The same late intervention family moves a real but partial slice of assistant behavior, strongest on the IT-side necessity test | `exp12` free-running A/B/C + `exp15` symmetric behavioral analysis |
 
 What is strongest right now:
 
 - broad IT-vs-PT convergence gap and delayed commitment across 6 families under both tuned and raw logit lenses
 - a late-concentrated IT-vs-PT increase in residual opposition as a geometric companion, with architecture-dependent magnitude and spatial extent
 - Gemma steering as the strongest single-direction causal bridge between convergence speed and governance behavior
-- matched-prefix late graft/swap as the cleanest cross-model internal causal evidence for a late MLP-centered bottleneck
+- matched-prefix late graft/swap as the cleanest cross-model internal evidence for late-window MLP localization of the convergence gap
 - `exp13A-lite` plus the exp13/14 mechanism summaries as evidence that the late stage is broader than a narrow formatting-token injector
 - free-running A/B/C as a behavioral precision finding: late MLPs move anti-raw-continuation / anti-false-refusal more than polished structure
 
@@ -60,11 +60,11 @@ What remains intentionally careful:
 - the free-running six-family observational curves are descriptive, not matched-history estimates
 - `KL(layer || own final)` is useful but endpoint-sensitive
 - dimensionality diagnostics are exploratory / mixed and are not part of the main claim
-- late IT MLPs are a **bottleneck inside a broader circuit**, not a full assistantness module
+- late IT MLPs are the **strongest tested leverage window inside a broader middle-to-late circuit**, not a full assistantness module
 
 ![Late-window sufficiency and necessity under matched-prefix control](docs/assets/readme_exp14_causal_main.png)
 
-*Figure 2. Symmetric matched-prefix exp13/14 summary. The late IT→PT graft is the strongest sufficiency window and the mirrored late PT→IT swap is the strongest necessity window on the primary late-region KL metric, supporting a late-centered MLP bottleneck rather than a diffuse endpoint-only story.*
+*Figure 2. Symmetric matched-prefix exp13/14 summary. The late IT→PT graft is the strongest sufficiency window and the mirrored late PT→IT swap is the strongest necessity window on the primary late-region KL metric, supporting late-window localization with the strongest tested leverage at the end of the stack rather than a diffuse endpoint-only story.*
 
 ---
 
@@ -142,14 +142,16 @@ bash scripts/run/run_exp16_js_replay_local.sh --mode smoke
 
 ## Models
 
-| Model | Layers | d_model | Architecture | Post-training |
-|-------|--------|---------|-------------|---------------|
-| **Gemma 3 4B** (primary) | 34 | 2560 | GQA, hybrid local/global (5:1) | KD + supervised / preference / rule-based stages |
-| **Llama 3.1 8B** | 32 | 4096 | GQA, all global | Iterative supervised + preference optimization |
-| **Qwen 3 4B** | 36 | 2560 | GQA, all global | Multi-stage SFT / RL post-training |
-| **Mistral 7B v0.3** | 32 | 4096 | GQA, sliding window (4096) | Instruct checkpoint |
-| **DeepSeek-V2-Lite** | 27 | 2048 | MLA, MoE (2 shared + 64 routed, top-6) | Chat checkpoint / GRPO-style post-training |
-| **OLMo 2 7B** | 32 | 4096 | MHA, all global | SFT + DPO + RLVR (T&uuml;lu 3) |
+| Model | Layers | d_model | Architecture | Pretraining / Post-training |
+|-------|--------|---------|-------------|-----------------------------|
+| **Gemma 3 4B** (primary) | 34 | 2560 | GQA, hybrid local/global (5:1) | Undisclosed pretraining / KD + supervised + preference + rule-based stages |
+| **Llama 3.1 8B** | 32 | 4096 | GQA, all global | 15T-token pretraining / iterative supervised + preference optimization |
+| **Qwen 3 4B** | 36 | 2560 | GQA, all global | 36T-token multilingual pretraining / multi-stage SFT + RL post-training |
+| **Mistral 7B v0.3** | 32 | 4096 | GQA, sliding window (4096) | Undisclosed pretraining / instruct checkpoint |
+| **DeepSeek-V2-Lite** | 27 | 2048 | MLA, MoE (2 shared + 64 routed, top-6) | 5.7T-token pretraining / **SFT-only** chat checkpoint |
+| **OLMo 2 7B** | 32 | 4096 | MHA, all global | `OLMo-mix-1124` pretraining / T&uuml;lu 3-style SFT + DPO + RLVR |
+
+OLMo 2 uses a staged base-model recipe with a late `Dolmino-mix-1124` curriculum, so the earlier single-dataset shorthand is inaccurate for this checkpoint. DeepSeek-V2-Lite-Chat is both the only MoE family here and an SFT-only chat checkpoint, so we treat it as a post-training outlier rather than as evidence for a uniform six-family IT recipe.
 
 All main observational analyses use each IT model's native chat template and raw prompting for PT. Template-free conditions are treated as ablations rather than replacement primaries.
 
@@ -237,7 +239,7 @@ For a full index, see [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md)
 | ID | Experiment | Key result |
 |----|-----------|------------|
 | **exp12** | A/B/C free-running graft comparison | Late graft reduces benign false refusals in 6/6 families and improves assistant register in 4/6, but remains far from the full IT endpoint on polished structure |
-| **exp15** | Symmetric behavioral phase | Current canonical follow-up for making the behavioral late-stage claim more symmetric and better localized |
+| **exp15** | Symmetric behavioral causality | Current canonical behavioral estimate of the same late intervention family, with the clearest effects on the IT-side necessity test and weaker but real PT-side recovery |
 
 ### Methodology validation (Tier 0)
 
