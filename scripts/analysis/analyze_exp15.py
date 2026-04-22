@@ -14,6 +14,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.lines import Line2D
 
 from src.poc.exp05_corrective_direction_ablation_cartography.benchmarks.custom import evaluate_custom_benchmark
 from src.poc.exp05_corrective_direction_ablation_cartography.runtime import GeneratedSample as GeneratedSample5
@@ -60,6 +61,35 @@ WINDOW_COLORS = {
 PAIRWISE_TARGET = {
     "pt_late_vs_a": "B_late_raw",
     "it_c_vs_dlate": "C_it_chat",
+}
+MODEL_SHORT = {
+    "gemma3_4b": "Ge",
+    "qwen3_4b": "Qw",
+    "llama31_8b": "Ll",
+    "mistral_7b": "Mi",
+    "olmo2_7b": "Ol",
+    "deepseek_v2_lite": "Ds",
+}
+ASSISTANT_BUCKETS = [
+    ("conv_source", "Conversational source"),
+    ("gov_register", "GOV-REGISTER"),
+    ("gov_conv_extra", "GOV-CONV"),
+]
+PROGRAMMATIC_METRIC_ORDER = [
+    "format_compliance_v2",
+    "structural_token_ratio",
+    "exp3_reasoning_em",
+    "mmlu_forced_choice",
+]
+PROGRAMMATIC_METRIC_DISPLAY = {
+    "format_compliance_v2": "Format",
+    "structural_token_ratio": "Structural",
+    "exp3_reasoning_em": "Reasoning EM",
+    "mmlu_forced_choice": "Forced-choice",
+}
+BASELINE_DISPLAY = {
+    "A_pt_raw": "A (PT)",
+    "C_it_chat": "C (IT)",
 }
 
 
@@ -144,6 +174,77 @@ def _sample5_from_row(row: dict) -> GeneratedSample5:
         logit_lens_entropy=[],
         top1_token_per_layer=[],
     )
+
+
+def _token_count(row: dict) -> int:
+    tokens = row.get("generated_tokens", [])
+    if isinstance(tokens, list):
+        return len(tokens)
+    if isinstance(tokens, int):
+        return tokens
+    try:
+        return int(tokens)
+    except Exception:
+        return 0
+
+
+def _assistant_bucket_keys(record: dict) -> set[str]:
+    buckets: set[str] = set()
+    if record.get("exp15_conversation_source"):
+        buckets.add("conv_source")
+    if record.get("category") == "GOV-REGISTER":
+        buckets.add("gov_register")
+    if record.get("category") == "GOV-CONV":
+        buckets.add("gov_conv_extra")
+    return buckets
+
+
+def _assistant_g2_bucket_summary(pointwise_rows: list[dict], records_by_id: dict[str, dict], n_boot: int) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    conditions = sorted({row["condition"] for row in pointwise_rows})
+    for condition in conditions:
+        cond_rows = [row for row in pointwise_rows if row["condition"] == condition and row["task"] == "g2"]
+        out[condition] = {}
+        for bucket_key, _ in ASSISTANT_BUCKETS:
+            values = [
+                float(row["numeric_score"])
+                for row in cond_rows
+                if bucket_key in _assistant_bucket_keys(records_by_id[row["record_id"]])
+            ]
+            stats = _bootstrap_mean(values, n_boot=n_boot, seed=23)
+            out[condition][bucket_key] = {
+                "n": len(values),
+                "mean": stats["mean"],
+                "ci95": [stats["lo"], stats["hi"]],
+            }
+    return out
+
+
+def _generation_diagnostics(
+    *,
+    records_by_id: dict[str, dict],
+    sample_rows_by_condition: dict[str, list[dict]],
+) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for condition, rows in sample_rows_by_condition.items():
+        out[condition] = {}
+        subsets = {
+            "all": rows,
+            "assistant_facing": [row for row in rows if records_by_id[row["record_id"]].get("exp15_assistant_facing")],
+        }
+        for subset_name, subset_rows in subsets.items():
+            token_counts = [_token_count(row) for row in subset_rows]
+            caps = [1 if count >= 512 else 0 for count in token_counts]
+            empty_count = sum(1 for row in subset_rows if not row.get("generated_text", "").strip())
+            n = len(subset_rows)
+            out[condition][subset_name] = {
+                "n": n,
+                "mean_tokens": float(sum(token_counts) / n) if n else float("nan"),
+                "cap_rate": float(sum(caps) / n) if n else float("nan"),
+                "empty_count": empty_count,
+                "empty_rate": float(empty_count / n) if n else float("nan"),
+            }
+    return out
 
 
 def _pointwise_metric_summary(rows: list[dict], task: str, n_boot: int) -> dict[str, Any]:
@@ -234,6 +335,11 @@ def _analyze_model(run_dir: Path, model: str, n_boot: int) -> dict[str, Any]:
         sample_rows_by_condition=sample_rows_by_condition,
         forced_rows_by_condition=forced_rows_by_condition,
     )
+    assistant_g2_buckets = _assistant_g2_bucket_summary(pointwise_rows, records_by_id, n_boot=n_boot)
+    generation_diagnostics = _generation_diagnostics(
+        records_by_id=records_by_id,
+        sample_rows_by_condition=sample_rows_by_condition,
+    )
 
     pairwise_summary: dict[str, dict[str, Any]] = {}
     for comparison in sorted({row["comparison"] for row in pairwise_rows}):
@@ -262,6 +368,8 @@ def _analyze_model(run_dir: Path, model: str, n_boot: int) -> dict[str, Any]:
         "judge_manifest": judge_manifest,
         "pointwise": pointwise_by_condition,
         "programmatic": programmatic,
+        "assistant_g2_buckets": assistant_g2_buckets,
+        "generation_diagnostics": generation_diagnostics,
         "pairwise": pairwise_summary,
     }
 
@@ -317,6 +425,109 @@ def _collect_dense_effects(
     return out
 
 
+def _collect_dense_programmatic_deltas(
+    model_summaries: dict[str, dict],
+    *,
+    n_boot: int,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    out: dict[str, dict[str, dict[str, Any]]] = {"pt": {}, "it": {}}
+    for metric_name in PROGRAMMATIC_METRIC_ORDER:
+        out["pt"][metric_name] = {}
+        for condition in PT_WINDOWS:
+            values = [
+                _programmatic_delta(model_summaries[model], "A_pt_raw", condition, metric_name)
+                for model in DENSE_MODELS
+                if model in model_summaries
+            ]
+            stats = _bootstrap_mean(values, n_boot=n_boot, seed=31)
+            out["pt"][metric_name][condition] = {
+                "mean": stats["mean"],
+                "ci95": [stats["lo"], stats["hi"]],
+                "values": values,
+            }
+        out["it"][metric_name] = {}
+        for condition in IT_WINDOWS:
+            values = [
+                _programmatic_delta(model_summaries[model], "C_it_chat", condition, metric_name)
+                for model in DENSE_MODELS
+                if model in model_summaries
+            ]
+            stats = _bootstrap_mean(values, n_boot=n_boot, seed=37)
+            out["it"][metric_name][condition] = {
+                "mean": stats["mean"],
+                "ci95": [stats["lo"], stats["hi"]],
+                "values": values,
+            }
+    return out
+
+
+def _collect_dense_bucket_g2_deltas(
+    model_summaries: dict[str, dict],
+    *,
+    n_boot: int,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    out: dict[str, dict[str, dict[str, Any]]] = {"pt": {}, "it": {}}
+    for bucket_key, _ in ASSISTANT_BUCKETS:
+        out["pt"][bucket_key] = {}
+        for condition in PT_WINDOWS:
+            values = []
+            for model in DENSE_MODELS:
+                if model not in model_summaries:
+                    continue
+                baseline = model_summaries[model]["assistant_g2_buckets"]["A_pt_raw"][bucket_key]["mean"]
+                current = model_summaries[model]["assistant_g2_buckets"][condition][bucket_key]["mean"]
+                values.append(current - baseline)
+            stats = _bootstrap_mean(values, n_boot=n_boot, seed=41)
+            out["pt"][bucket_key][condition] = {
+                "mean": stats["mean"],
+                "ci95": [stats["lo"], stats["hi"]],
+                "values": values,
+            }
+        out["it"][bucket_key] = {}
+        for condition in IT_WINDOWS:
+            values = []
+            for model in DENSE_MODELS:
+                if model not in model_summaries:
+                    continue
+                baseline = model_summaries[model]["assistant_g2_buckets"]["C_it_chat"][bucket_key]["mean"]
+                current = model_summaries[model]["assistant_g2_buckets"][condition][bucket_key]["mean"]
+                values.append(baseline - current)
+            stats = _bootstrap_mean(values, n_boot=n_boot, seed=43)
+            out["it"][bucket_key][condition] = {
+                "mean": stats["mean"],
+                "ci95": [stats["lo"], stats["hi"]],
+                "values": values,
+            }
+    return out
+
+
+def _collect_dense_generation_profiles(
+    model_summaries: dict[str, dict],
+    *,
+    n_boot: int,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    out: dict[str, dict[str, dict[str, Any]]] = {"pt": {}, "it": {}}
+    for side, conditions in (
+        ("pt", ["A_pt_raw", *PT_WINDOWS]),
+        ("it", ["C_it_chat", *IT_WINDOWS]),
+    ):
+        out[side] = {"mean_tokens": {}, "cap_rate": {}, "empty_rate": {}}
+        for metric_name in ("mean_tokens", "cap_rate", "empty_rate"):
+            for condition in conditions:
+                values = [
+                    model_summaries[model]["generation_diagnostics"][condition]["assistant_facing"][metric_name]
+                    for model in DENSE_MODELS
+                    if model in model_summaries
+                ]
+                stats = _bootstrap_mean(values, n_boot=n_boot, seed=47)
+                out[side][metric_name][condition] = {
+                    "mean": stats["mean"],
+                    "ci95": [stats["lo"], stats["hi"]],
+                    "values": values,
+                }
+    return out
+
+
 def _acceptance_checks(model_summaries: dict[str, dict]) -> dict[str, Any]:
     pt_s2_strongest = 0
     it_s2_strongest = 0
@@ -348,10 +559,10 @@ def _acceptance_checks(model_summaries: dict[str, dict]) -> dict[str, Any]:
 
 def _internal_scatter_payload(model_summaries: dict[str, dict], internal_summary: dict[str, Any]) -> dict[str, Any]:
     payload = {
-        "pt_s2": {"x": [], "y": [], "labels": []},
-        "pt_g2": {"x": [], "y": [], "labels": []},
-        "it_s2": {"x": [], "y": [], "labels": []},
-        "it_g2": {"x": [], "y": [], "labels": []},
+        "pt_s2": {"x": [], "y": [], "labels": [], "model_keys": [], "window_keys": []},
+        "pt_g2": {"x": [], "y": [], "labels": [], "model_keys": [], "window_keys": []},
+        "it_s2": {"x": [], "y": [], "labels": [], "model_keys": [], "window_keys": []},
+        "it_g2": {"x": [], "y": [], "labels": [], "model_keys": [], "window_keys": []},
     }
     for model in DENSE_MODELS:
         if model not in model_summaries or model not in internal_summary.get("models", {}):
@@ -362,17 +573,25 @@ def _internal_scatter_payload(model_summaries: dict[str, dict], internal_summary
             payload["pt_s2"]["x"].append(x)
             payload["pt_s2"]["y"].append(_pt_improvement(model_summaries[model], condition, "s2"))
             payload["pt_s2"]["labels"].append(f"{MODEL_DISPLAY[model]} {WINDOW_DISPLAY[condition]}")
+            payload["pt_s2"]["model_keys"].append(model)
+            payload["pt_s2"]["window_keys"].append(WINDOW_DISPLAY[condition])
             payload["pt_g2"]["x"].append(x)
             payload["pt_g2"]["y"].append(_pt_improvement(model_summaries[model], condition, "g2"))
             payload["pt_g2"]["labels"].append(f"{MODEL_DISPLAY[model]} {WINDOW_DISPLAY[condition]}")
+            payload["pt_g2"]["model_keys"].append(model)
+            payload["pt_g2"]["window_keys"].append(WINDOW_DISPLAY[condition])
         for condition in IT_WINDOWS:
             x = -internal_model["it_side"][condition]["regions"]["final_20pct"]["kl_to_own_final"]["delta"]
             payload["it_s2"]["x"].append(x)
             payload["it_s2"]["y"].append(_it_worsening(model_summaries[model], condition, "s2"))
             payload["it_s2"]["labels"].append(f"{MODEL_DISPLAY[model]} {WINDOW_DISPLAY[condition]}")
+            payload["it_s2"]["model_keys"].append(model)
+            payload["it_s2"]["window_keys"].append(WINDOW_DISPLAY[condition])
             payload["it_g2"]["x"].append(x)
             payload["it_g2"]["y"].append(_it_worsening(model_summaries[model], condition, "g2"))
             payload["it_g2"]["labels"].append(f"{MODEL_DISPLAY[model]} {WINDOW_DISPLAY[condition]}")
+            payload["it_g2"]["model_keys"].append(model)
+            payload["it_g2"]["window_keys"].append(WINDOW_DISPLAY[condition])
     payload["correlations"] = {
         key: _safe_corr(value["x"], value["y"])
         for key, value in payload.items()
@@ -386,6 +605,12 @@ def _plot_primary_bars(summary: dict[str, Any], out_path: Path) -> None:
     pt_g2 = summary["dense_pooled"]["pt"]["g2"]
     it_s2 = summary["dense_pooled"]["it"]["s2"]
     it_g2 = summary["dense_pooled"]["it"]["g2"]
+    ranking_map = {
+        "PT side: S2 improvement": summary["dense_pooled_rankings"]["pt_s2"],
+        "PT side: G2 improvement": summary["dense_pooled_rankings"]["pt_g2"],
+        "IT side: S2 worsening": summary["dense_pooled_rankings"]["it_s2"],
+        "IT side: G2 worsening": summary["dense_pooled_rankings"]["it_g2"],
+    }
 
     fig, axes = plt.subplots(2, 2, figsize=(12.5, 8.5), constrained_layout=True)
     panels = [
@@ -413,7 +638,27 @@ def _plot_primary_bars(summary: dict[str, Any], out_path: Path) -> None:
         ax.set_title(title)
         ax.set_ylabel(ylabel)
         ax.grid(axis="y", alpha=0.25)
-    fig.suptitle("Exp15: Dense-5 pooled free-running behavioral effects", fontsize=15)
+        ordering = " > ".join(WINDOW_DISPLAY[condition] for condition in ranking_map[title])
+        ax.text(
+            0.02,
+            0.97,
+            f"Ordering: {ordering}",
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=9,
+            bbox={"boxstyle": "round,pad=0.25", "facecolor": "white", "alpha": 0.85, "edgecolor": "#cccccc"},
+        )
+        y_range = max((max(means) - min(means)), 0.1)
+        for xi, mean in enumerate(means):
+            offset = 0.04 * y_range if mean >= 0 else -0.06 * y_range
+            va = "bottom" if mean >= 0 else "top"
+            ax.text(xi, mean + offset, f"{mean:+.2f}", ha="center", va=va, fontsize=9, fontweight="bold")
+    fig.suptitle(
+        "Exp15: Dense-5 pooled free-running behavioral effects\n"
+        "Positive bars mean expected-direction movement: PT improves vs A_pt_raw, IT degrades vs C_it_chat.",
+        fontsize=15,
+    )
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
 
@@ -435,10 +680,29 @@ def _plot_pairwise(summary: dict[str, Any], out_path: Path) -> None:
         ax.bar(x, tie_rates, bottom=target_rates, color="#BDBDBD", label="Tie")
         ax.bar(x, other_rates, bottom=np.asarray(target_rates) + np.asarray(tie_rates), color="#E45756", label="Other preferred")
         ax.set_xticks(x)
-        ax.set_xticklabels(["G2" if task == "pairwise_g2" else "S2" for task in tasks])
+        ax.set_xticklabels(
+            [
+                f"{'G2' if task == 'pairwise_g2' else 'S2'}\n(n={pairwise[task]['n']})"
+                for task in tasks
+            ]
+        )
         ax.set_ylim(0.0, 1.0)
         ax.set_title(title)
         ax.grid(axis="y", alpha=0.25)
+        for xi, (target_rate, tie_rate, other_rate) in enumerate(zip(target_rates, tie_rates, other_rates)):
+            ax.text(xi, target_rate / 2, f"{target_rate:.0%}", ha="center", va="center", fontsize=10, color="white", fontweight="bold")
+            if tie_rate > 0.04:
+                ax.text(xi, target_rate + tie_rate / 2, f"{tie_rate:.0%}", ha="center", va="center", fontsize=9)
+            ax.text(
+                xi,
+                target_rate + tie_rate + other_rate / 2,
+                f"{other_rate:.0%}",
+                ha="center",
+                va="center",
+                fontsize=10,
+                color="white",
+                fontweight="bold",
+            )
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 1.05), ncol=3, frameon=False)
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
@@ -454,19 +718,33 @@ def _plot_internal_scatter(scatter: dict[str, Any], out_path: Path) -> None:
         ("it_g2", "IT: internal collapse vs G2 worsening", "Final-20% KL collapse (C - D)", "G2 worsening"),
     ]
     color_map = {"Early": "#72B7B2", "Mid": "#F58518", "Late": "#E45756"}
+    legend_handles = [
+        Line2D([0], [0], marker="o", color="w", markerfacecolor=color_map[window], markersize=8, label=window)
+        for window in ("Early", "Mid", "Late")
+    ]
     for ax, (key, title, xlabel, ylabel) in zip(axes.flat, panels):
         xs = scatter[key]["x"]
         ys = scatter[key]["y"]
-        labels = scatter[key]["labels"]
-        for x, y, label in zip(xs, ys, labels):
-            color = color_map["Late" if "Late" in label else "Mid" if "Mid" in label else "Early"]
+        model_keys = scatter[key]["model_keys"]
+        window_keys = scatter[key]["window_keys"]
+        for x, y, model_key, window_key in zip(xs, ys, model_keys, window_keys):
+            color = color_map[window_key]
             ax.scatter(x, y, s=55, color=color, alpha=0.9)
+            ax.annotate(
+                f"{MODEL_SHORT[model_key]}-{window_key[0]}",
+                (x, y),
+                textcoords="offset points",
+                xytext=(4, 4),
+                fontsize=7,
+                color="#333333",
+            )
         corr = scatter["correlations"].get(key)
         corr_text = f"r={corr:.2f}" if corr is not None else "r=n/a"
         ax.set_title(f"{title}\n{corr_text}")
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.grid(alpha=0.25)
+        ax.legend(handles=legend_handles, loc="best", frameon=False, fontsize=8)
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
 
@@ -504,6 +782,200 @@ def _plot_per_model(summary: dict[str, Any], out_path: Path) -> None:
             ax_it.legend(frameon=False)
     fig.savefig(out_path, dpi=220, bbox_inches="tight")
     plt.close(fig)
+
+
+def _plot_bucket_g2_deltas(summary: dict[str, Any], out_path: Path) -> None:
+    bucket_deltas = summary["dense_g2_bucket_deltas"]
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 4.8), constrained_layout=True)
+    panels = [
+        ("pt", PT_WINDOWS, "PT side: assistant-register gain by prompt bucket", "G2 gain vs A_pt_raw"),
+        ("it", IT_WINDOWS, "IT side: assistant-register loss by prompt bucket", "G2 loss vs C_it_chat"),
+    ]
+    width = 0.23
+    x = np.arange(len(ASSISTANT_BUCKETS))
+    for ax, (side, conditions, title, ylabel) in zip(axes, panels):
+        for idx, condition in enumerate(conditions):
+            means = [bucket_deltas[side][bucket_key][condition]["mean"] for bucket_key, _ in ASSISTANT_BUCKETS]
+            cis = [bucket_deltas[side][bucket_key][condition]["ci95"] for bucket_key, _ in ASSISTANT_BUCKETS]
+            yerr = np.array([[mean - lo, hi - mean] for mean, (lo, hi) in zip(means, cis)]).T
+            xpos = x + (idx - 1) * width
+            ax.bar(
+                xpos,
+                means,
+                width=width,
+                color=WINDOW_COLORS[condition],
+                yerr=yerr,
+                capsize=3,
+                label=WINDOW_DISPLAY[condition],
+                alpha=0.92,
+            )
+            for xp, mean in zip(xpos, means):
+                ax.text(xp, mean + 0.015, f"{mean:+.2f}", ha="center", va="bottom", fontsize=8)
+        ax.axhline(0.0, color="black", linewidth=1)
+        ax.set_xticks(x)
+        ax.set_xticklabels([label for _, label in ASSISTANT_BUCKETS])
+        ax.set_title(title)
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", alpha=0.25)
+    axes[0].legend(frameon=False, ncol=3, bbox_to_anchor=(0.02, 1.12), loc="upper left")
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_generation_diagnostics(summary: dict[str, Any], out_path: Path) -> None:
+    profiles = summary["dense_generation_profiles"]
+    fig, axes = plt.subplots(2, 2, figsize=(12.8, 8.4), constrained_layout=True)
+    panels = [
+        ("pt", "mean_tokens", ["A_pt_raw", *PT_WINDOWS], axes[0, 0], "PT side: assistant-facing mean output length", "Mean generated tokens"),
+        ("pt", "cap_rate", ["A_pt_raw", *PT_WINDOWS], axes[0, 1], "PT side: 512-token cap rate", "Cap-hit rate"),
+        ("it", "mean_tokens", ["C_it_chat", *IT_WINDOWS], axes[1, 0], "IT side: assistant-facing mean output length", "Mean generated tokens"),
+        ("it", "cap_rate", ["C_it_chat", *IT_WINDOWS], axes[1, 1], "IT side: 512-token cap rate", "Cap-hit rate"),
+    ]
+    for side, metric_name, conditions, ax, title, ylabel in panels:
+        values = [profiles[side][metric_name][condition]["mean"] for condition in conditions]
+        cis = [profiles[side][metric_name][condition]["ci95"] for condition in conditions]
+        x = np.arange(len(conditions))
+        colors = ["#4C78A8"] + [WINDOW_COLORS[condition] for condition in conditions[1:]]
+        labels = [BASELINE_DISPLAY.get(conditions[0], conditions[0])] + [WINDOW_DISPLAY[condition] for condition in conditions[1:]]
+        yerr = np.array([[mean - lo, hi - mean] for mean, (lo, hi) in zip(values, cis)]).T
+        ax.bar(x, values, yerr=yerr, capsize=4, color=colors, alpha=0.92)
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        ax.set_title(title)
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", alpha=0.25)
+        for xi, value in enumerate(values):
+            text = f"{value:.0f}" if metric_name == "mean_tokens" else f"{value:.0%}"
+            ax.text(xi, value + (8 if metric_name == "mean_tokens" else 0.02), text, ha="center", va="bottom", fontsize=9)
+    fig.suptitle(
+        "Exp15 generation diagnostics\n"
+        "Mid often shortens outputs and lowers cap saturation, while late more often remains near the 512-token ceiling.",
+        fontsize=14,
+    )
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _plot_programmatic_deltas(summary: dict[str, Any], out_path: Path) -> None:
+    dense_programmatic = summary["dense_programmatic_deltas"]
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 4.8), constrained_layout=True)
+    panels = [
+        ("pt", PT_WINDOWS, "PT side: programmatic changes vs A_pt_raw"),
+        ("it", IT_WINDOWS, "IT side: programmatic losses vs C_it_chat"),
+    ]
+    width = 0.23
+    x = np.arange(len(PROGRAMMATIC_METRIC_ORDER))
+    for ax, (side, conditions, title) in zip(axes, panels):
+        for idx, condition in enumerate(conditions):
+            means = [dense_programmatic[side][metric_name][condition]["mean"] for metric_name in PROGRAMMATIC_METRIC_ORDER]
+            cis = [dense_programmatic[side][metric_name][condition]["ci95"] for metric_name in PROGRAMMATIC_METRIC_ORDER]
+            yerr = np.array([[mean - lo, hi - mean] for mean, (lo, hi) in zip(means, cis)]).T
+            xpos = x + (idx - 1) * width
+            ax.bar(
+                xpos,
+                means,
+                width=width,
+                color=WINDOW_COLORS[condition],
+                yerr=yerr,
+                capsize=3,
+                label=WINDOW_DISPLAY[condition],
+                alpha=0.92,
+            )
+        ax.axhline(0.0, color="black", linewidth=1)
+        ax.set_xticks(x)
+        ax.set_xticklabels([PROGRAMMATIC_METRIC_DISPLAY[metric] for metric in PROGRAMMATIC_METRIC_ORDER])
+        ax.set_title(title)
+        ax.grid(axis="y", alpha=0.25)
+    axes[0].set_ylabel("Delta")
+    axes[0].legend(frameon=False, ncol=3, bbox_to_anchor=(0.02, 1.12), loc="upper left")
+    fig.savefig(out_path, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _write_plot_notes(summary: dict[str, Any], out_dir: Path) -> None:
+    acceptance = summary["acceptance_checks"]
+    pt_pair = summary["dense_pairwise"]["pt_late_vs_a"]
+    it_pair = summary["dense_pairwise"]["it_c_vs_dlate"]
+    notes = f"""# Exp15 Plot Notes
+
+## What This Folder Contains
+
+- `exp15_primary_bars.png`: Dense-5 pooled pointwise effects on the two main behavioral endpoints.
+- `exp15_pairwise.png`: Dense-5 pooled pairwise preferences for late-vs-baseline comparisons.
+- `exp15_per_model_deltas.png`: Model-by-model heterogeneity across PT-side sufficiency and IT-side necessity.
+- `exp15_internal_scatter.png`: Cross-condition link between matched-prefix internal deltas and free-running behavioral deltas.
+- `exp15_g2_bucket_deltas.png`: Assistant-register deltas split by prompt subtype.
+- `exp15_generation_diagnostics.png`: Assistant-facing output length and 512-token cap-rate diagnostics.
+- `exp15_programmatic_deltas.png`: Programmatic cross-checks for structure/format/content.
+
+## High-Level Read
+
+- The cleanest behavioral result is on the IT-side necessity test: late PT-swaps hurt behavior most strongly on pooled `S2` and `G2`.
+- PT-side late grafts are behaviorally real but not pointwise-maximal: `B_late_raw` beats `A_pt_raw` pairwise, yet `B_mid_raw` is strongest on pooled pointwise PT-side `S2` and `G2`.
+- A likely reason is visible in `exp15_generation_diagnostics.png`: PT mid windows often shorten outputs and reduce cap saturation, while PT late windows frequently remain near the `512`-token cap.
+
+## Plot-By-Plot Guide
+
+### `exp15_primary_bars.png`
+
+- Positive bars always mean movement in the expected causal direction.
+- PT side: improvement relative to `A_pt_raw`.
+- IT side: degradation relative to `C_it_chat`.
+- Main message: late is strongest on the IT side, but mid is strongest on the PT-side pointwise bars.
+
+### `exp15_pairwise.png`
+
+- These plots compare only the late branch to its baseline under blind pairwise judging.
+- PT side pooled late-vs-A preference:
+  - `G2`: target preferred `{pt_pair['pairwise_g2']['target_win_rate']:.1%}`, other preferred `{pt_pair['pairwise_g2']['other_win_rate']:.1%}`, tie `{pt_pair['pairwise_g2']['tie_rate']:.1%}`
+  - `S2`: target preferred `{pt_pair['pairwise_s2']['target_win_rate']:.1%}`, other preferred `{pt_pair['pairwise_s2']['other_win_rate']:.1%}`, tie `{pt_pair['pairwise_s2']['tie_rate']:.1%}`
+- IT side pooled C-vs-Dlate preference:
+  - `G2`: target preferred `{it_pair['pairwise_g2']['target_win_rate']:.1%}`
+  - `S2`: target preferred `{it_pair['pairwise_s2']['target_win_rate']:.1%}`
+
+### `exp15_g2_bucket_deltas.png`
+
+- This explains where assistant-register effects come from.
+- PT mid gains are concentrated especially on conversational-source prompts and extra conversational governance prompts.
+- IT late losses are broader and remain strong on conversational and register-focused prompts.
+
+### `exp15_generation_diagnostics.png`
+
+- This is the main cautionary diagnostic for interpreting PT-side free-running sufficiency.
+- Under capped `512`-token generation, a branch can look more assistant-like partly because it reaches a shorter, cleaner stopping point.
+- The PT mid branch often reduces mean length and cap rate more than the PT late branch.
+
+### `exp15_programmatic_deltas.png`
+
+- These are non-judge cross-checks.
+- They help separate structure/format changes from broad content collapse.
+- In this run, PT mid is also stronger than PT late on several format-like programmatic views, while IT late remains the strongest broad necessity window behaviorally.
+
+### `exp15_internal_scatter.png`
+
+- Each point is a model-window condition.
+- Colors are depth windows; labels use model abbreviations plus `E/M/L`.
+- The IT-side correlations are materially cleaner than the PT-side ones:
+  - PT `S2`: `r={summary['internal_scatter']['correlations']['pt_s2']:.2f}`
+  - PT `G2`: `r={summary['internal_scatter']['correlations']['pt_g2']:.2f}`
+  - IT `S2`: `r={summary['internal_scatter']['correlations']['it_s2']:.2f}`
+  - IT `G2`: `r={summary['internal_scatter']['correlations']['it_g2']:.2f}`
+
+## Acceptance Snapshot
+
+- Dense models available: `{acceptance['dense_models_available']}`
+- PT-side `S2` late-strongest count: `{acceptance['pt_side_s2_late_strongest_count']}/5`
+- IT-side `S2` late-strongest count: `{acceptance['it_side_s2_late_strongest_count']}/5`
+- PT-side any-primary late-strongest count: `{acceptance['pt_side_any_primary_late_strongest_count']}/5`
+- IT-side any-primary late-strongest count: `{acceptance['it_side_any_primary_late_strongest_count']}/5`
+
+## Recommended Paper Framing
+
+- Use `exp15` primarily as a late-centered behavioral **necessity** result.
+- Treat the PT-side behavioral sufficiency result as **real but partial**, with clear late pairwise gains but stronger mid pointwise gains under capped free-running decoding.
+- Keep `exp11/13/14` as the main localization backbone, and use `exp15` to show that the same circuit matters under natural decoding rather than to claim a perfectly symmetric late-only behavioral story.
+"""
+    (out_dir / "README.md").write_text(notes, encoding="utf-8")
 
 
 def main() -> None:
@@ -563,24 +1035,9 @@ def main() -> None:
                 "tie_rate": counts.get("TIE", 0) / total if total else float("nan"),
             }
 
-    dense_programmatic: dict[str, dict[str, dict[str, float]]] = {"pt": {}, "it": {}}
-    for metric_name in ("structural_token_ratio", "format_compliance_v2", "mmlu_forced_choice", "exp3_reasoning_em"):
-        dense_programmatic["pt"][metric_name] = {}
-        for condition in PT_WINDOWS:
-            values = [
-                _programmatic_delta(model_summaries[model], "A_pt_raw", condition, metric_name)
-                for model in DENSE_MODELS
-                if model in model_summaries
-            ]
-            dense_programmatic["pt"][metric_name][condition] = _dense_mean(values)
-        dense_programmatic["it"][metric_name] = {}
-        for condition in IT_WINDOWS:
-            values = [
-                _programmatic_delta(model_summaries[model], "C_it_chat", condition, metric_name)
-                for model in DENSE_MODELS
-                if model in model_summaries
-            ]
-            dense_programmatic["it"][metric_name][condition] = _dense_mean(values)
+    dense_programmatic = _collect_dense_programmatic_deltas(model_summaries, n_boot=args.bootstrap_samples)
+    dense_g2_bucket_deltas = _collect_dense_bucket_g2_deltas(model_summaries, n_boot=args.bootstrap_samples)
+    dense_generation_profiles = _collect_dense_generation_profiles(model_summaries, n_boot=args.bootstrap_samples)
 
     deepseek_summary = model_summaries.get("deepseek_v2_lite")
     acceptance = _acceptance_checks(model_summaries)
@@ -593,6 +1050,8 @@ def main() -> None:
         "dense_pooled": dense_pooled,
         "dense_pairwise": dense_pairwise,
         "dense_programmatic_deltas": dense_programmatic,
+        "dense_g2_bucket_deltas": dense_g2_bucket_deltas,
+        "dense_generation_profiles": dense_generation_profiles,
         "acceptance_checks": acceptance,
         "internal_scatter": scatter_payload,
         "deepseek_separate": deepseek_summary,
@@ -609,6 +1068,10 @@ def main() -> None:
     _plot_pairwise(summary, args.out_dir / "exp15_pairwise.png")
     _plot_internal_scatter(scatter_payload, args.out_dir / "exp15_internal_scatter.png")
     _plot_per_model(summary, args.out_dir / "exp15_per_model_deltas.png")
+    _plot_bucket_g2_deltas(summary, args.out_dir / "exp15_g2_bucket_deltas.png")
+    _plot_generation_diagnostics(summary, args.out_dir / "exp15_generation_diagnostics.png")
+    _plot_programmatic_deltas(summary, args.out_dir / "exp15_programmatic_deltas.png")
+    _write_plot_notes(summary, args.out_dir)
     print(f"Wrote Exp15 analysis to {args.out_dir}")
 
 

@@ -10,7 +10,7 @@ import random
 import re
 import statistics
 import time
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
@@ -383,15 +383,14 @@ def _run_pointwise_stage(
     if todo:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             inflight: dict[Any, dict] = {}
-            todo_iter = iter(todo)
+            pending_items = deque(todo)
+            attempt_counts: dict[str, int] = defaultdict(int)
             max_inflight = max(workers * 4, workers)
+            max_item_attempts = 3
 
             def top_up() -> None:
-                while len(inflight) < max_inflight:
-                    try:
-                        item = next(todo_iter)
-                    except StopIteration:
-                        return
+                while len(inflight) < max_inflight and pending_items:
+                    item = pending_items.popleft()
                     inflight[pool.submit(score_one, item)] = item
 
             top_up()
@@ -399,8 +398,27 @@ def _run_pointwise_stage(
             while inflight:
                 ready, _ = wait(inflight, return_when=FIRST_COMPLETED)
                 for future in ready:
-                    row = future.result()
-                    inflight.pop(future, None)
+                    item = inflight.pop(future, None)
+                    if item is None:
+                        continue
+                    try:
+                        row = future.result()
+                    except Exception as exc:
+                        attempt_counts[item["item_id"]] += 1
+                        if attempt_counts[item["item_id"]] >= max_item_attempts:
+                            raise RuntimeError(
+                                f"[exp15 judge] {stage_name}: item {item['item_id']} failed "
+                                f"after {attempt_counts[item['item_id']]} stage attempts"
+                            ) from exc
+                        print(
+                            f"[exp15 judge] {stage_name}: retrying {item['item_id']} "
+                            f"(attempt {attempt_counts[item['item_id']] + 1}/{max_item_attempts}) "
+                            f"after error: {exc}",
+                            flush=True,
+                        )
+                        pending_items.append(item)
+                        continue
+
                     buffered.append(row)
                     if len(buffered) >= 32:
                         _write_jsonl(out_path, buffered, append=True)
@@ -643,15 +661,14 @@ def _run_pairwise_stage(
     if todo:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             inflight: dict[Any, dict] = {}
-            todo_iter = iter(todo)
+            pending_items = deque(todo)
+            attempt_counts: dict[str, int] = defaultdict(int)
             max_inflight = max(workers * 4, workers)
+            max_item_attempts = 3
 
             def top_up() -> None:
-                while len(inflight) < max_inflight:
-                    try:
-                        item = next(todo_iter)
-                    except StopIteration:
-                        return
+                while len(inflight) < max_inflight and pending_items:
+                    item = pending_items.popleft()
                     inflight[pool.submit(score_one, item)] = item
 
             top_up()
@@ -659,8 +676,27 @@ def _run_pairwise_stage(
             while inflight:
                 ready, _ = wait(inflight, return_when=FIRST_COMPLETED)
                 for future in ready:
-                    row = future.result()
-                    inflight.pop(future, None)
+                    item = inflight.pop(future, None)
+                    if item is None:
+                        continue
+                    try:
+                        row = future.result()
+                    except Exception as exc:
+                        attempt_counts[item["item_id"]] += 1
+                        if attempt_counts[item["item_id"]] >= max_item_attempts:
+                            raise RuntimeError(
+                                f"[exp15 judge] pairwise: item {item['item_id']} failed "
+                                f"after {attempt_counts[item['item_id']]} stage attempts"
+                            ) from exc
+                        print(
+                            f"[exp15 judge] pairwise: retrying {item['item_id']} "
+                            f"(attempt {attempt_counts[item['item_id']] + 1}/{max_item_attempts}) "
+                            f"after error: {exc}",
+                            flush=True,
+                        )
+                        pending_items.append(item)
+                        continue
+
                     buffered.append(row)
                     if len(buffered) >= 32:
                         _write_jsonl(out_path, buffered, append=True)

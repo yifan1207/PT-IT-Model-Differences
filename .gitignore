@@ -331,16 +331,8 @@ results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/*
 results/exp15_symmetric_behavioral_causality/*
 !results/exp15_symmetric_behavioral_causality/plots/
 !results/exp15_symmetric_behavioral_causality/plots/**
-!results/exp15_symmetric_behavioral_causality/data/
-!results/exp15_symmetric_behavioral_causality/data/**
-results/exp15_symmetric_behavioral_causality/data/**/*.jsonl
-results/exp15_symmetric_behavioral_causality/data/**/*.csv
-results/exp15_symmetric_behavioral_causality/data/**/*.log
-!results/exp15_symmetric_behavioral_causality/data/**/config.json
-!results/exp15_symmetric_behavioral_causality/data/**/summary.json
-!results/exp15_symmetric_behavioral_causality/data/**/pipeline_manifest.json
-results/exp15_symmetric_behavioral_causality/data/**/judge_pointwise_bulk.jsonl
-results/exp15_symmetric_behavioral_causality/data/**/judge_run.log
+results/exp15_symmetric_behavioral_causality/data/
+results/exp15_symmetric_behavioral_causality/data/**
 
 paper_draft/*
 
