@@ -8,6 +8,13 @@ import torch
 import torch.nn.functional as F
 
 from src.poc.exp03_corrective_stage_characterization.analysis.word_categories import classify_generated_tokens_by_word
+from src.poc.exp19_late_mlp_specificity_controls.controls import (
+    CONTROL_MODE_RANDOM_NORM,
+    CONTROL_MODE_RANDOM_RESPROJ,
+    CONTROL_MODE_TRUE,
+    matched_random_delta,
+    stable_int_seed,
+)
 
 
 @dataclass
@@ -151,6 +158,10 @@ class PipelineCapture:
         graft_start_layer: int | None = None,
         graft_end_layer_exclusive: int | None = None,
         graft_it_model_raw=None,
+        graft_layer_map: dict[int, int] | None = None,
+        graft_control_mode: str = CONTROL_MODE_TRUE,
+        graft_random_seed: int = 0,
+        graft_control_name: str | None = None,
     ) -> None:
         self.model_raw = model_raw
         self.adapter = adapter
@@ -166,6 +177,11 @@ class PipelineCapture:
             graft_end_layer_exclusive = len(self.layers)
         self.graft_start_layer = graft_start_layer
         self.graft_end_layer_exclusive = graft_end_layer_exclusive
+        self.graft_layer_map = dict(graft_layer_map or {})
+        self.graft_control_mode = graft_control_mode
+        self.graft_random_seed = int(graft_random_seed)
+        self.graft_control_name = graft_control_name or graft_control_mode
+        self._inside_donor_call = 0
         self._current = self._empty_store()
         self._handles = self._register()
 
@@ -226,6 +242,8 @@ class PipelineCapture:
                 handles.append(norm_module.register_forward_hook(norm_hook))
 
             def mlp_hook(_module, args, output, li=layer_idx, capture_mode=capture_spec.mode):
+                if self._inside_donor_call > 0:
+                    return output
                 if capture_mode == "mlp_input_direct":
                     self._current["pre_mlp_residual"][li] = args[0][:, -1, :].detach()
                     self._current["normed_mlp_input"][li] = args[0][:, -1, :].detach()
@@ -242,14 +260,47 @@ class PipelineCapture:
                     # DeepSeek-V2-Lite, `.mlp(...)` is the full MoE module, so the graft
                     # also swaps router behavior plus shared/routed experts rather than
                     # only a single dense feed-forward transformation.
+                    donor_layer_idx = self.graft_layer_map.get(li, li)
+                    if donor_layer_idx < 0 or donor_layer_idx >= len(self.graft_it_layers):
+                        raise IndexError(
+                            f"Invalid donor layer {donor_layer_idx} for host layer {li}; "
+                            f"donor has {len(self.graft_it_layers)} layers"
+                        )
                     with torch.no_grad():
-                        it_out = self.graft_it_layers[li].mlp(args[0])
-                    diff = it_out[:, -1, :].float() - pt_out[:, -1, :].float()
+                        self._inside_donor_call += 1
+                        try:
+                            donor_out = self.graft_it_layers[donor_layer_idx].mlp(args[0])
+                        finally:
+                            self._inside_donor_call -= 1
+                        if self.graft_control_mode == CONTROL_MODE_TRUE:
+                            graft_out = donor_out
+                        elif self.graft_control_mode in {
+                            CONTROL_MODE_RANDOM_NORM,
+                            CONTROL_MODE_RANDOM_RESPROJ,
+                        }:
+                            true_delta = donor_out - pt_out
+                            random_delta = matched_random_delta(
+                                true_delta=true_delta,
+                                residual_reference=args[0],
+                                mode=self.graft_control_mode,
+                                seed=stable_int_seed(
+                                    "exp19",
+                                    self.graft_random_seed,
+                                    self.graft_control_name,
+                                    li,
+                                    donor_layer_idx,
+                                    tuple(true_delta.shape),
+                                ),
+                            )
+                            graft_out = pt_out + random_delta.to(dtype=pt_out.dtype)
+                        else:
+                            raise ValueError(f"Unsupported graft_control_mode={self.graft_control_mode!r}")
+                    diff = graft_out[:, -1, :].float() - pt_out[:, -1, :].float()
                     diff_norm = diff.norm(dim=-1).detach()
                     self._current["diff_norm"][li] = diff_norm
                     self._current["relative_diff"][li] = (diff_norm / pt_norm.clamp_min(1e-12)).detach()
-                    self._current["mlp_output"][li] = it_out[:, -1, :].detach()
-                    return it_out
+                    self._current["mlp_output"][li] = graft_out[:, -1, :].detach()
+                    return graft_out
 
                 self._current["diff_norm"][li] = torch.zeros_like(pt_norm)
                 self._current["relative_diff"][li] = torch.zeros_like(pt_norm)

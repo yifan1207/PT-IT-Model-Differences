@@ -42,6 +42,12 @@ from src.poc.exp11_matched_prefix_mlp_graft.mlp_graft import (
     symmetric_js_from_logits,
 )
 from src.poc.exp11_matched_prefix_mlp_graft.structural_tokens import build_structural_token_masks
+from src.poc.exp19_late_mlp_specificity_controls.controls import (
+    CONTROL_MODE_RANDOM_NORM,
+    CONTROL_MODE_RANDOM_RESPROJ,
+    CONTROL_MODE_TRUE,
+    layer_permutation_map,
+)
 
 
 VALID_MODELS = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b", "deepseek_v2_lite"]
@@ -110,6 +116,8 @@ DEPTH_ABLATION_WINDOWS = {
     },
 }
 CAUSAL_MECHANISM_CORE_PIPELINES = {"A_prime_raw", "B_late_raw", "C_it_chat", "D_late_ptswap"}
+SPECIFICITY_RANDOM_SEEDS_DEFAULT = [0, 1, 2]
+SPECIFICITY_BASE_PIPELINES = ["C_it_chat", "A_prime_raw"]
 CAUSAL_MECHANISM_AXES = ["anti_top1", "support_teacher", "anti_kl_final"]
 JS_TARGET_PAIR_NAME = {
     "A_prime_raw": "JS_AC",
@@ -475,6 +483,27 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--specificity-controls",
+        action="store_true",
+        help=(
+            "Teacher-forced Exp19 depth-matched specificity controls: true PT-side "
+            "IT grafts at early/mid/late windows plus same-window identity, "
+            "layer-permutation, and matched-random output-delta controls."
+        ),
+    )
+    parser.add_argument(
+        "--specificity-random-seeds",
+        nargs="*",
+        type=int,
+        default=SPECIFICITY_RANDOM_SEEDS_DEFAULT,
+        help="Random seeds for Exp19 residual-projection matched controls.",
+    )
+    parser.add_argument(
+        "--specificity-include-rand-norm",
+        action="store_true",
+        help="Also include norm-matched random controls for Exp19 diagnostics.",
+    )
+    parser.add_argument(
         "--prompt-seed",
         type=int,
         default=None,
@@ -818,6 +847,88 @@ def _causal_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
         }
     )
     return out
+
+
+def _is_specificity_controls(args: argparse.Namespace) -> bool:
+    return bool(args.teacher_forced and getattr(args, "specificity_controls", False))
+
+
+def _specificity_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
+    depth_windows = _depth_windows_for_model(model, spec)
+    return {
+        "early": depth_windows["B_early_raw"],
+        "mid": depth_windows["B_mid_raw"],
+        "late": depth_windows["B_late_raw"],
+    }
+
+
+def _specificity_pipeline_specs(
+    *,
+    model: str,
+    spec,
+    random_seeds: list[int],
+    include_rand_norm: bool,
+) -> dict[str, dict[str, Any]]:
+    specs: dict[str, dict[str, Any]] = {}
+    for window_name, (start, end) in _specificity_windows_for_model(model, spec).items():
+        specs[f"B_{window_name}_true"] = {
+            "side": "pt",
+            "prompt_mode": "raw_format_b",
+            "host_variant": "pt",
+            "donor_variant": "it",
+            "control_mode": CONTROL_MODE_TRUE,
+            "layer_map": None,
+            "seed": None,
+            "graft_start_layer": start,
+            "graft_end_layer_exclusive": end,
+        }
+        specs[f"B_{window_name}_identity"] = {
+            "side": "pt",
+            "prompt_mode": "raw_format_b",
+            "host_variant": "pt",
+            "donor_variant": "pt",
+            "control_mode": CONTROL_MODE_TRUE,
+            "layer_map": None,
+            "seed": None,
+            "graft_start_layer": start,
+            "graft_end_layer_exclusive": end,
+        }
+        specs[f"B_{window_name}_layerperm"] = {
+            "side": "pt",
+            "prompt_mode": "raw_format_b",
+            "host_variant": "pt",
+            "donor_variant": "it",
+            "control_mode": CONTROL_MODE_TRUE,
+            "layer_map": layer_permutation_map(start, end),
+            "seed": None,
+            "graft_start_layer": start,
+            "graft_end_layer_exclusive": end,
+        }
+        for seed in random_seeds:
+            specs[f"B_{window_name}_rand_resproj_s{seed}"] = {
+                "side": "pt",
+                "prompt_mode": "raw_format_b",
+                "host_variant": "pt",
+                "donor_variant": "it",
+                "control_mode": CONTROL_MODE_RANDOM_RESPROJ,
+                "layer_map": None,
+                "seed": int(seed),
+                "graft_start_layer": start,
+                "graft_end_layer_exclusive": end,
+            }
+            if include_rand_norm:
+                specs[f"B_{window_name}_rand_norm_s{seed}"] = {
+                    "side": "pt",
+                    "prompt_mode": "raw_format_b",
+                    "host_variant": "pt",
+                    "donor_variant": "it",
+                    "control_mode": CONTROL_MODE_RANDOM_NORM,
+                    "layer_map": None,
+                    "seed": int(seed),
+                    "graft_start_layer": start,
+                    "graft_end_layer_exclusive": end,
+                }
+    return specs
 
 
 def _make_request_states(
@@ -2088,8 +2199,15 @@ def main() -> None:
         raise ValueError("--depth-ablation requires --teacher-forced")
     if args.causal_combined and not args.teacher_forced:
         raise ValueError("--causal-combined requires --teacher-forced")
-    if args.depth_ablation and args.causal_combined:
-        raise ValueError("--depth-ablation and --causal-combined are mutually exclusive")
+    if args.specificity_controls and not args.teacher_forced:
+        raise ValueError("--specificity-controls requires --teacher-forced")
+    selected_special_modes = [
+        bool(args.depth_ablation),
+        bool(args.causal_combined),
+        bool(args.specificity_controls),
+    ]
+    if sum(selected_special_modes) > 1:
+        raise ValueError("--depth-ablation, --causal-combined, and --specificity-controls are mutually exclusive")
     if args.num_shards < 1:
         raise ValueError("--num-shards must be >= 1")
     if not 0 <= args.shard_index < args.num_shards:
@@ -2098,11 +2216,22 @@ def main() -> None:
     onset_layer = spec.corrective_onset if args.onset_layer is None else args.onset_layer
     depth_ablation = _is_depth_ablation(args)
     causal_combined = _is_causal_combined(args)
+    specificity_controls = _is_specificity_controls(args)
     js_only = bool(args.js_only)
     depth_windows = _depth_windows_for_model(args.model, spec) if depth_ablation else {}
-    causal_windows = _causal_windows_for_model(args.model, spec) if causal_combined else {}
+    causal_windows = _causal_windows_for_model(args.model, spec) if (causal_combined or specificity_controls) else {}
+    specificity_specs = (
+        _specificity_pipeline_specs(
+            model=args.model,
+            spec=spec,
+            random_seeds=list(args.specificity_random_seeds),
+            include_rand_norm=bool(args.specificity_include_rand_norm),
+        )
+        if specificity_controls
+        else {}
+    )
     final_region_layers = _layer_range_for_final_region(spec)
-    late_mechanism_layers = final_region_layers if (causal_combined and not js_only) else []
+    late_mechanism_layers = final_region_layers if ((causal_combined or specificity_controls) and not js_only) else []
     requested_batch_size = args.batch_size or DEFAULT_BATCH_SIZE[args.model]
     out_dir = Path(args.out_dir or f"results/exp11_matched_prefix_mlp_graft/{args.model}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2271,7 +2400,7 @@ def main() -> None:
             teacher_tokens_to_run,
             context="teacher-token manifest on PT backbone",
         )
-    if args.teacher_forced and not depth_ablation and not causal_combined:
+    if args.teacher_forced and not depth_ablation and not causal_combined and not specificity_controls:
         _assert_used_token_ids_compatible(
             tokenizer_it,
             tokenizer_pt,
@@ -2281,11 +2410,16 @@ def main() -> None:
 
     chunk_size = args.chunk_size if args.chunk_size else len(prompts_to_run) or 1
     secondary_accumulator = None
-    if args.readout_mode == "both" and not causal_combined and not js_only:
+    if args.readout_mode == "both" and not causal_combined and not specificity_controls and not js_only:
         secondary_accumulator = TrajectoryAccumulator(metric_names=TRAJECTORY_METRICS, n_layers=spec.n_layers)
     mechanism_accumulators: dict[str, GradientDirectionAccumulator] = {}
-    if causal_combined and not js_only:
-        for pipeline_name in CAUSAL_MECHANISM_CORE_PIPELINES:
+    if (causal_combined or specificity_controls) and not js_only:
+        mechanism_pipeline_names = (
+            set(SPECIFICITY_BASE_PIPELINES) | set(specificity_specs)
+            if specificity_controls
+            else CAUSAL_MECHANISM_CORE_PIPELINES
+        )
+        for pipeline_name in mechanism_pipeline_names:
             mechanism_accumulators[pipeline_name] = init_gradient_direction_accumulator(
                 axis_names=CAUSAL_MECHANISM_AXES,
                 layer_indices=late_mechanism_layers,
@@ -2308,7 +2442,26 @@ def main() -> None:
     batch_size_by_pipeline: dict[str, int] = {}
     pipeline_primary_readouts: dict[str, str] = {}
     pipeline_raw_readouts: dict[str, str] = {}
-    if causal_combined:
+    if specificity_controls:
+        pipelines = ["C_it_chat", "A_prime_raw", *specificity_specs.keys()]
+        pipeline_prompt_modes = {
+            "C_it_chat": "it_chat_template",
+            "A_prime_raw": "raw_format_b",
+            **{
+                name: str(spec_payload["prompt_mode"])
+                for name, spec_payload in specificity_specs.items()
+            },
+        }
+        for name in pipelines:
+            if name.startswith("D_") or name == "C_it_chat":
+                pipeline_primary_readouts[name] = tuned_readout_it.name
+                pipeline_raw_readouts[name] = raw_readout_it.name
+            else:
+                pipeline_primary_readouts[name] = tuned_readout_pt.name
+                pipeline_raw_readouts[name] = raw_readout_pt.name
+        pipeline_aliases = None
+        secondary_names = None
+    elif causal_combined:
         pipelines = [
             "C_it_chat",
             "A_prime_raw",
@@ -2434,7 +2587,7 @@ def main() -> None:
         "n_prompts_sampled_after_sharding": len(prompts),
         "readout_mode": args.readout_mode,
         "js_only": js_only,
-        "primary_readout_name": None if causal_combined else tuned_readout_pt.name,
+        "primary_readout_name": None if (causal_combined or specificity_controls) else tuned_readout_pt.name,
         "secondary_readout_name": "mixed_by_pipeline" if secondary_names is not None else None,
         "secondary_readout_names_by_pipeline": secondary_names,
         "primary_readout_names_by_pipeline": pipeline_primary_readouts,
@@ -2449,6 +2602,8 @@ def main() -> None:
         "teacher_forced": bool(args.teacher_forced),
         "depth_ablation": depth_ablation,
         "causal_combined": causal_combined,
+        "specificity_controls": specificity_controls,
+        "specificity_random_seeds": list(args.specificity_random_seeds) if specificity_controls else None,
         "pipelines": pipelines,
         "pipeline_prompt_modes": pipeline_prompt_modes,
         "pipeline_aliases": pipeline_aliases,
@@ -2471,10 +2626,27 @@ def main() -> None:
                 for name, (start, end) in causal_windows.items()
             }
             if causal_combined
+            else {
+                name: {
+                    "start_layer": int(spec_payload["graft_start_layer"]),
+                    "end_layer_exclusive": int(spec_payload["graft_end_layer_exclusive"]),
+                    "display_range": (
+                        f"{int(spec_payload['graft_start_layer'])}-"
+                        f"{int(spec_payload['graft_end_layer_exclusive']) - 1}"
+                    ),
+                    "control_mode": str(spec_payload["control_mode"]),
+                    "host_variant": str(spec_payload["host_variant"]),
+                    "donor_variant": str(spec_payload["donor_variant"]),
+                    "seed": spec_payload["seed"],
+                    "layer_map": spec_payload["layer_map"],
+                }
+                for name, spec_payload in specificity_specs.items()
+            }
+            if specificity_controls
             else None
         ),
         "final_region_layers": final_region_layers,
-        "late_mechanism_layers": late_mechanism_layers if (causal_combined and not js_only) else None,
+        "late_mechanism_layers": late_mechanism_layers if ((causal_combined or specificity_controls) and not js_only) else None,
         "n_prompts_after_teacher_filter": len(prompts),
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
@@ -2566,6 +2738,8 @@ def main() -> None:
         c_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None
         a_prime_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None
         teacher_tokens_chunk: dict[str, list[int]] | None = None
+        specificity_runs: dict[str, dict[str, PipelineRun]] = {}
+        specificity_requests: dict[str, list[RequestState]] = {}
 
         if args.teacher_forced:
             requests_c = _make_request_states(
@@ -2602,10 +2776,10 @@ def main() -> None:
                 baseline_secondary_readout=None,
                 secondary_accumulator=secondary_accumulator,
                 record_step_metrics=not js_only,
-                mechanism_readout=raw_readout_it if causal_combined and "C_it_chat" in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                mechanism_readout=raw_readout_it if (causal_combined or specificity_controls) and "C_it_chat" in mechanism_accumulators else None,
                 mechanism_baseline_lookup=None,
                 mechanism_baseline_raw_readout=None,
-                mechanism_layer_indices=late_mechanism_layers if causal_combined and "C_it_chat" in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                mechanism_layer_indices=late_mechanism_layers if (causal_combined or specificity_controls) and "C_it_chat" in mechanism_accumulators else None,
                 gradient_accumulator=mechanism_accumulators.get("C_it_chat"),
                 teacher_tokens_by_prompt=(
                     {
@@ -2660,7 +2834,7 @@ def main() -> None:
                 max_new_tokens=args.max_new_tokens,
                 inactive_token_id=inactive_token_id_pt,
                 batch_size=batch_size_a,
-                store_baseline=causal_combined,
+                store_baseline=(causal_combined or specificity_controls),
                 baseline_lookup=c_baseline_lookup,
                 primary_readout=raw_readout_pt if js_only else tuned_readout_pt,
                 secondary_readout=None if causal_combined else (tuned_readout_pt if args.readout_mode == "both" else None),
@@ -2668,10 +2842,10 @@ def main() -> None:
                 baseline_secondary_readout=tuned_readout_it if args.readout_mode == "both" and not causal_combined else None,
                 secondary_accumulator=secondary_accumulator,
                 record_step_metrics=not js_only,
-                mechanism_readout=raw_readout_pt if causal_combined and "A_prime_raw" in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                mechanism_readout=raw_readout_pt if (causal_combined or specificity_controls) and "A_prime_raw" in mechanism_accumulators else None,
                 mechanism_baseline_lookup=None,
                 mechanism_baseline_raw_readout=None,
-                mechanism_layer_indices=late_mechanism_layers if causal_combined and "A_prime_raw" in CAUSAL_MECHANISM_CORE_PIPELINES else None,
+                mechanism_layer_indices=late_mechanism_layers if (causal_combined or specificity_controls) and "A_prime_raw" in mechanism_accumulators else None,
                 gradient_accumulator=mechanism_accumulators.get("A_prime_raw"),
                 teacher_tokens_by_prompt=teacher_tokens_chunk,
                 js_current_readout=raw_readout_pt if js_only else None,
@@ -2695,10 +2869,85 @@ def main() -> None:
             batch_size_by_pipeline[
                 "A_prime_raw" if (depth_ablation or causal_combined) else "A_prime"
             ] = batch_size_a_prime
-            if causal_combined:
+            if causal_combined or specificity_controls:
                 a_prime_baseline_lookup = {pid: run.baseline_cache for pid, run in runs_a_prime.items()}
 
-            if causal_combined:
+            if specificity_controls:
+                for pipeline_name, spec_payload in specificity_specs.items():
+                    host_variant = str(spec_payload["host_variant"])
+                    donor_variant = str(spec_payload["donor_variant"])
+                    tokenizer_branch = tokenizer_pt if host_variant == "pt" else tokenizer_it
+                    model_raw_branch = model_raw_pt if host_variant == "pt" else model_raw_it
+                    donor_model_raw = model_raw_pt if donor_variant == "pt" else model_raw_it
+                    prompt_text_by_id = raw_prompt_text_by_id if host_variant == "pt" else it_chat_prompt_text_by_id
+                    prompt_token_ids_by_id = (
+                        raw_prompt_token_ids_pt_by_id if host_variant == "pt" else it_chat_prompt_token_ids_it_by_id
+                    )
+                    branch_requests = _make_request_states(
+                        chunk,
+                        tokenizer_branch,
+                        set(),
+                        prompt_text_by_id=prompt_text_by_id,
+                        prompt_token_ids_by_id=prompt_token_ids_by_id,
+                    )
+                    specificity_requests[pipeline_name] = branch_requests
+                    graft_start = int(spec_payload["graft_start_layer"])
+                    graft_end = int(spec_payload["graft_end_layer_exclusive"])
+                    primary_readout = tuned_readout_pt if host_variant == "pt" else tuned_readout_it
+                    raw_readout = raw_readout_pt if host_variant == "pt" else raw_readout_it
+                    real_token_mask = real_token_mask_pt if host_variant == "pt" else real_token_mask_it
+                    tier1_mask = structural_masks_pt.tier1 if host_variant == "pt" else structural_masks_it.tier1
+                    pad_token_id = pad_token_id_pt if host_variant == "pt" else pad_token_id_it
+                    inactive_token_id = inactive_token_id_pt if host_variant == "pt" else inactive_token_id_it
+                    eos_token_ids = eos_ids_pt_or_it if host_variant == "pt" else eos_ids_it
+                    baseline_lookup = c_baseline_lookup
+                    baseline_primary_readout = tuned_readout_pt if host_variant == "pt" else tuned_readout_it
+                    mechanism_baseline_lookup = a_prime_baseline_lookup if host_variant == "pt" else c_baseline_lookup
+                    mechanism_baseline_raw_readout = raw_readout_pt if host_variant == "pt" else raw_readout_it
+                    specificity_runs[pipeline_name], batch_size_by_pipeline[pipeline_name] = _run_pipeline_with_batch_fallback(
+                        pipeline_name=pipeline_name,
+                        requests=branch_requests,
+                        model_raw=model_raw_branch,
+                        capture_factory=lambda payload=spec_payload, host_model=model_raw_branch, donor_model=donor_model_raw, control_name=pipeline_name: PipelineCapture(
+                            model_raw=host_model,
+                            adapter=steering_adapter,
+                            arch_probe=arch_probe,
+                            graft_start_layer=int(payload["graft_start_layer"]),
+                            graft_end_layer_exclusive=int(payload["graft_end_layer_exclusive"]),
+                            graft_it_model_raw=donor_model,
+                            graft_layer_map=payload["layer_map"],
+                            graft_control_mode=str(payload["control_mode"]),
+                            graft_random_seed=int(payload["seed"] or 0),
+                            graft_control_name=control_name,
+                        ),
+                        tokenizer=tokenizer_branch,
+                        pad_token_id=pad_token_id,
+                        real_token_mask=real_token_mask,
+                        tier1_mask=tier1_mask,
+                        eos_token_ids=eos_token_ids,
+                        max_new_tokens=args.max_new_tokens,
+                        inactive_token_id=inactive_token_id,
+                        batch_size=batch_size_a,
+                        store_baseline=False,
+                        baseline_lookup=baseline_lookup,
+                        primary_readout=primary_readout,
+                        secondary_readout=None,
+                        baseline_primary_readout=baseline_primary_readout,
+                        baseline_secondary_readout=None,
+                        secondary_accumulator=None,
+                        record_step_metrics=True,
+                        mechanism_readout=raw_readout,
+                        mechanism_baseline_lookup=mechanism_baseline_lookup,
+                        mechanism_baseline_raw_readout=mechanism_baseline_raw_readout,
+                        mechanism_layer_indices=late_mechanism_layers,
+                        gradient_accumulator=mechanism_accumulators.get(pipeline_name),
+                        teacher_tokens_by_prompt=teacher_tokens_chunk,
+                    )
+                runs_b_late = specificity_runs.get("B_late_true", {})
+                runs_d_late = specificity_runs.get("D_late_true", {})
+                requests_b_late = specificity_requests.get("B_late_true", [])
+                requests_d_late = specificity_requests.get("D_late_true", [])
+            elif causal_combined:
                 branch_requests_pt = {
                     name: _make_request_states(
                         chunk,
@@ -3074,7 +3323,22 @@ def main() -> None:
                 summary_row["divergence_step"] = divergence_step
                 summary_row["pipeline_a"] = _summarize_pipeline(run_a)
                 summary_row["pipeline_b"] = _summarize_pipeline(run_b)
-            if causal_combined and run_c is not None and run_a_prime is not None:
+            if specificity_controls and run_c is not None and run_a_prime is not None:
+                c_tokens = list(run_c.generated_token_ids)
+                summary_row["pipeline_c_it_chat"] = _summarize_pipeline(run_c)
+                summary_row["pipeline_a_prime_raw"] = _summarize_pipeline(run_a_prime)
+                summary_row["divergence_step_a_prime_raw_vs_c"] = _first_divergence_step(
+                    c_tokens, list(run_a_prime.free_argmax_token_ids)
+                )
+                for pipeline_name, run_branch_map in specificity_runs.items():
+                    run_branch = run_branch_map.get(record["id"])
+                    if run_branch is None:
+                        continue
+                    summary_row[f"pipeline_{pipeline_name.lower()}"] = _summarize_pipeline(run_branch)
+                    summary_row[f"divergence_step_{pipeline_name.lower()}_vs_c"] = _first_divergence_step(
+                        c_tokens, list(run_branch.free_argmax_token_ids)
+                    )
+            elif causal_combined and run_c is not None and run_a_prime is not None:
                 c_tokens = list(run_c.generated_token_ids)
                 summary_row["pipeline_c_it_chat"] = _summarize_pipeline(run_c)
                 summary_row["pipeline_a_prime_raw"] = _summarize_pipeline(run_a_prime)
@@ -3177,7 +3441,35 @@ def main() -> None:
                         "prompt_mode": "raw_format_b",
                     }
                 )
-            if causal_combined and run_c is not None and run_a_prime is not None:
+            if specificity_controls and run_c is not None and run_a_prime is not None:
+                for pipeline_name, run_branch, prompt_mode in (
+                    ("C_it_chat", run_c, "it_chat_template"),
+                    ("A_prime_raw", run_a_prime, "raw_format_b"),
+                ):
+                    row = {
+                        "prompt_id": record["id"],
+                        "pipeline": pipeline_name,
+                        "generated_text": run_branch.generated_text,
+                        "generated_tokens": run_branch.generated_tokens,
+                        "prompt_mode": prompt_mode,
+                    }
+                    if pipeline_name != "C_it_chat":
+                        row["free_argmax_token_ids"] = list(run_branch.free_argmax_token_ids)
+                    gen_rows.append(row)
+                for pipeline_name, run_branch_map in specificity_runs.items():
+                    run_branch = run_branch_map.get(record["id"])
+                    if run_branch is None:
+                        continue
+                    row = {
+                        "prompt_id": record["id"],
+                        "pipeline": pipeline_name,
+                        "generated_text": run_branch.generated_text,
+                        "generated_tokens": run_branch.generated_tokens,
+                        "prompt_mode": pipeline_prompt_modes[pipeline_name],
+                        "free_argmax_token_ids": list(run_branch.free_argmax_token_ids),
+                    }
+                    gen_rows.append(row)
+            elif causal_combined and run_c is not None and run_a_prime is not None:
                 for pipeline_name, run_branch, prompt_mode in (
                     ("C_it_chat", run_c, "it_chat_template"),
                     ("A_prime_raw", run_a_prime, "raw_format_b"),
@@ -3265,7 +3557,18 @@ def main() -> None:
             pipelines_to_log: list[tuple[str, PipelineRun]] = []
             if run_a is not None:
                 pipelines_to_log.append(("A", run_a))
-            if causal_combined and run_c is not None and run_a_prime is not None:
+            if specificity_controls and run_c is not None and run_a_prime is not None:
+                pipelines_to_log.extend(
+                    [
+                        ("C_it_chat", run_c),
+                        ("A_prime_raw", run_a_prime),
+                    ]
+                )
+                for pipeline_name, run_branch_map in specificity_runs.items():
+                    run_branch = run_branch_map.get(record["id"])
+                    if run_branch is not None:
+                        pipelines_to_log.append((pipeline_name, run_branch))
+            elif causal_combined and run_c is not None and run_a_prime is not None:
                 pipelines_to_log.extend(
                     [
                         ("C_it_chat", run_c),
@@ -3318,14 +3621,25 @@ def main() -> None:
             if step_rows:
                 _write_jsonl(out_dir / "step_metrics.jsonl", step_rows, append=True)
 
-            if causal_combined and not js_only:
+            if (causal_combined or specificity_controls) and not js_only:
                 mechanism_rows: list[dict[str, Any]] = []
-                for pipeline_name, run in (
-                    ("C_it_chat", run_c),
-                    ("A_prime_raw", run_a_prime),
-                    ("B_late_raw", run_b_late),
-                    ("D_late_ptswap", run_d_late),
-                ):
+                if specificity_controls:
+                    mechanism_iter = [
+                        ("C_it_chat", run_c),
+                        ("A_prime_raw", run_a_prime),
+                    ]
+                    mechanism_iter.extend(
+                        (pipeline_name, run_branch_map.get(record["id"]))
+                        for pipeline_name, run_branch_map in specificity_runs.items()
+                    )
+                else:
+                    mechanism_iter = [
+                        ("C_it_chat", run_c),
+                        ("A_prime_raw", run_a_prime),
+                        ("B_late_raw", run_b_late),
+                        ("D_late_ptswap", run_d_late),
+                    ]
+                for pipeline_name, run in mechanism_iter:
                     if run is None:
                         continue
                     for step_idx, step in enumerate(run.step_records):
@@ -3374,6 +3688,15 @@ def main() -> None:
         if not args.teacher_forced:
             del runs_b, requests_b
             del runs_a, requests_a
+        elif specificity_controls:
+            del runs_c, runs_a_prime, specificity_runs
+            del requests_c, requests_a_prime, specificity_requests
+            if c_baseline_lookup is not None:
+                del c_baseline_lookup
+            if a_prime_baseline_lookup is not None:
+                del a_prime_baseline_lookup
+            if teacher_tokens_chunk is not None:
+                del teacher_tokens_chunk
         elif causal_combined:
             del runs_c, runs_a_prime, runs_b_early, runs_b_mid, runs_b_late, runs_d_early, runs_d_mid, runs_d_late
             del requests_c, requests_a_prime, requests_b_early, requests_b_mid, requests_b_late, requests_d_early, requests_d_mid, requests_d_late
@@ -3417,7 +3740,7 @@ def main() -> None:
             )
             secondary_path.write_text(json.dumps(merged_secondary, indent=2))
 
-        if causal_combined and not js_only:
+        if (causal_combined or specificity_controls) and not js_only:
             gradient_payload = {
                 pipeline_name: gradient_direction_payload(acc)
                 for pipeline_name, acc in mechanism_accumulators.items()
