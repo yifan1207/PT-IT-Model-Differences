@@ -38,6 +38,7 @@ from src.poc.exp11_matched_prefix_mlp_graft.mlp_graft import (
     logits_from_residuals,
     raw_logits_from_residuals,
     select_row_step_tensors,
+    select_rows_step_tensors,
     symmetric_js_from_logits,
 )
 from src.poc.exp11_matched_prefix_mlp_graft.structural_tokens import build_structural_token_masks
@@ -487,7 +488,17 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Explicit teacher-token manifest. Accepts either a dedicated teacher manifest or "
-            "a generated_texts.jsonl file containing C_it_chat rows."
+            "a generated_texts.jsonl-style file; use --teacher-pipeline when the file contains "
+            "multiple pipelines/conditions."
+        ),
+    )
+    parser.add_argument(
+        "--teacher-pipeline",
+        default=None,
+        help=(
+            "Optional pipeline/condition name to select from --teacher-token-manifest. "
+            "If omitted, the loader prefers canonical IT teacher rows (C_it_chat/C) and "
+            "otherwise auto-detects a single available pipeline."
         ),
     )
     parser.add_argument(
@@ -610,12 +621,35 @@ def _load_prompts_from_manifest(
     return rows
 
 
-def _canonical_teacher_manifest_rows(path: Path) -> list[dict[str, Any]]:
+def _canonical_teacher_manifest_rows(
+    path: Path,
+    *,
+    teacher_pipeline: str | None = None,
+) -> list[dict[str, Any]]:
     rows = _load_jsonl_rows(path)
+    requested_pipeline = teacher_pipeline.strip() if teacher_pipeline else None
+    available_pipelines = sorted(
+        {
+            str(row.get("pipeline") or row.get("condition")).strip()
+            for row in rows
+            if (row.get("pipeline") is not None or row.get("condition") is not None)
+            and str(row.get("pipeline") or row.get("condition")).strip()
+        }
+    )
+    if requested_pipeline is None:
+        for candidate in ("C_it_chat", "C"):
+            if candidate in available_pipelines:
+                requested_pipeline = candidate
+                break
+        if requested_pipeline is None and len(available_pipelines) == 1:
+            requested_pipeline = available_pipelines[0]
     out: list[dict[str, Any]] = []
     for row in rows:
-        pipeline = row.get("pipeline")
-        if pipeline is not None and pipeline not in {"C_it_chat", "C"}:
+        pipeline = row.get("pipeline") or row.get("condition")
+        if requested_pipeline is not None:
+            if pipeline is None or str(pipeline).strip() != requested_pipeline:
+                continue
+        elif pipeline is not None and str(pipeline).strip() not in {"C_it_chat", "C"}:
             continue
         prompt_id = row.get("prompt_id") or row.get("id")
         if prompt_id is None:
@@ -634,11 +668,21 @@ def _canonical_teacher_manifest_rows(path: Path) -> list[dict[str, Any]]:
         out.append(
             {
                 "prompt_id": str(prompt_id),
-                "pipeline": row.get("pipeline", "C_it_chat"),
+                "pipeline": str(pipeline).strip() if pipeline is not None else (requested_pipeline or "C_it_chat"),
                 "prompt_mode": row.get("prompt_mode", "it_chat_template"),
                 "token_ids": [int(token_id) for token_id in token_ids],
                 "generated_tokens": generated_tokens,
             }
+        )
+    if requested_pipeline is not None and not out:
+        raise ValueError(
+            f"No teacher rows found for pipeline={requested_pipeline!r} in {path}. "
+            f"Available pipelines={available_pipelines}"
+        )
+    if requested_pipeline is None and available_pipelines and not out:
+        raise ValueError(
+            f"Could not infer teacher pipeline from {path}. "
+            f"Available pipelines={available_pipelines}; pass --teacher-pipeline explicitly."
         )
     by_prompt: dict[str, dict[str, Any]] = {}
     for row in out:
@@ -1247,44 +1291,52 @@ def _decode_fixed_batch(
             else:
                 next_token_ids[row_idx] = teacher_seq[step_idx]
 
-    mechanism_results: list[MechanismLayerMetrics] | None = None
+    eligible_row_indices = [
+        row_idx
+        for row_idx in range(len(active.request_ids))
+        if not bool(active.finished_mask[row_idx].item()) and not forced_exhausted[row_idx]
+    ]
+
+    mechanism_results: dict[int, MechanismLayerMetrics] | None = None
     if mechanism_readout is not None and mechanism_layer_indices:
-        step_indices = [
-            len(requests_by_id[prompt_id].generated_token_ids)
-            for prompt_id in active.request_ids
-        ]
-        baseline_raw_logits = _build_mechanism_baseline_raw_logits(
-            request_ids=list(active.request_ids),
-            step_indices=step_indices,
-            baseline_lookup=mechanism_baseline_lookup,
-            baseline_raw_readout=mechanism_baseline_raw_readout,
-            fallback_step_tensors=step_tensors,
-            layer_indices=mechanism_layer_indices,
-        )
-        mechanism_results = compute_batched_mechanism_metrics(
-            raw_readout=mechanism_readout,
-            step_tensors=step_tensors,
-            chosen_token_ids=next_token_ids,
-            tokenizer=tokenizer,
-            layer_indices=mechanism_layer_indices,
-            baseline_raw_logits=baseline_raw_logits,
-            gradient_accumulator=gradient_accumulator,
-        )
+        if eligible_row_indices:
+            eligible_step_tensors = select_rows_step_tensors(step_tensors, eligible_row_indices)
+            request_ids_subset = [active.request_ids[row_idx] for row_idx in eligible_row_indices]
+            step_indices_subset = [
+                len(requests_by_id[prompt_id].generated_token_ids)
+                for prompt_id in request_ids_subset
+            ]
+            baseline_raw_logits = _build_mechanism_baseline_raw_logits(
+                request_ids=request_ids_subset,
+                step_indices=step_indices_subset,
+                baseline_lookup=mechanism_baseline_lookup,
+                baseline_raw_readout=mechanism_baseline_raw_readout,
+                fallback_step_tensors=eligible_step_tensors,
+                layer_indices=mechanism_layer_indices,
+            )
+            mechanism_subset = compute_batched_mechanism_metrics(
+                raw_readout=mechanism_readout,
+                step_tensors=eligible_step_tensors,
+                chosen_token_ids=next_token_ids[eligible_row_indices],
+                tokenizer=tokenizer,
+                layer_indices=mechanism_layer_indices,
+                baseline_raw_logits=baseline_raw_logits,
+                gradient_accumulator=gradient_accumulator,
+            )
+            mechanism_results = {
+                row_idx: mechanism_subset[subset_idx]
+                for subset_idx, row_idx in enumerate(eligible_row_indices)
+            }
 
     js_results_by_pair: dict[str, torch.Tensor] = {}
     if js_pair_configs:
         if js_current_readout is None or js_accumulator is None:
             raise ValueError("js_current_readout and js_accumulator are required when js_pair_configs are provided")
-        unfinished_row_indices = [
-            row_idx
-            for row_idx in range(len(active.request_ids))
-            if not bool(active.finished_mask[row_idx].item())
-        ]
         n_layers = len(step_tensors.residual_output)
-        if unfinished_row_indices:
+        if eligible_row_indices:
             js_current_logits = raw_logits_from_residuals(js_current_readout, step_tensors.residual_output)
-            js_current_logits = js_current_logits[unfinished_row_indices]
-            request_ids_subset = [active.request_ids[row_idx] for row_idx in unfinished_row_indices]
+            js_current_logits = js_current_logits[eligible_row_indices]
+            request_ids_subset = [active.request_ids[row_idx] for row_idx in eligible_row_indices]
             step_indices_subset = [
                 len(requests_by_id[prompt_id].generated_token_ids)
                 for prompt_id in request_ids_subset
@@ -1303,7 +1355,7 @@ def _decode_fixed_batch(
                     comparison_mask=pair.comparison_mask,
                 ).cpu()
                 full_js = torch.zeros((len(active.request_ids), n_layers), dtype=subset_js.dtype)
-                for subset_idx, row_idx in enumerate(unfinished_row_indices):
+                for subset_idx, row_idx in enumerate(eligible_row_indices):
                     full_js[row_idx] = subset_js[subset_idx]
                 js_results_by_pair[pair.name] = full_js
 
@@ -1368,7 +1420,7 @@ def _decode_fixed_batch(
                 tier1_mask=tier1_mask,
                 **metric_kwargs,
             )
-            if mechanism_results is not None:
+            if mechanism_results is not None and row_idx in mechanism_results:
                 _apply_mechanism_metrics(
                     metrics,
                     mechanism_results[row_idx],
@@ -2096,7 +2148,10 @@ def main() -> None:
     teacher_manifest_rows: list[dict[str, Any]] | None = None
     teacher_tokens_manifest_by_prompt: dict[str, list[int]] | None = None
     if teacher_token_manifest_path is not None:
-        teacher_manifest_rows_all = _canonical_teacher_manifest_rows(teacher_token_manifest_path)
+        teacher_manifest_rows_all = _canonical_teacher_manifest_rows(
+            teacher_token_manifest_path,
+            teacher_pipeline=args.teacher_pipeline,
+        )
         teacher_manifest_by_prompt = {row["prompt_id"]: row for row in teacher_manifest_rows_all}
         missing_teacher_prompts = [record["id"] for record in prompts if record["id"] not in teacher_manifest_by_prompt]
         if missing_teacher_prompts:

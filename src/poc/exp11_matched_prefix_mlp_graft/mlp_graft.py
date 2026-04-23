@@ -373,6 +373,21 @@ def select_row_step_tensors(step_tensors: BatchedStepTensors, row_idx: int) -> S
     )
 
 
+def select_rows_step_tensors(step_tensors: BatchedStepTensors, row_indices: list[int]) -> BatchedStepTensors:
+    if not row_indices:
+        raise ValueError("row_indices must be non-empty")
+    index = torch.tensor(row_indices, device=step_tensors.residual_output[0].device, dtype=torch.long)
+    return BatchedStepTensors(
+        pre_mlp_residual=[tensor.index_select(0, index) for tensor in step_tensors.pre_mlp_residual],
+        normed_mlp_input=[tensor.index_select(0, index) for tensor in step_tensors.normed_mlp_input],
+        mlp_output=[tensor.index_select(0, index) for tensor in step_tensors.mlp_output],
+        residual_output=[tensor.index_select(0, index) for tensor in step_tensors.residual_output],
+        diff_norm=[tensor.index_select(0, index) for tensor in step_tensors.diff_norm],
+        pt_mlp_norm=[tensor.index_select(0, index) for tensor in step_tensors.pt_mlp_norm],
+        relative_diff=[tensor.index_select(0, index) for tensor in step_tensors.relative_diff],
+    )
+
+
 def compute_batched_mechanism_metrics(
     *,
     raw_readout: ReadoutSpec,

@@ -45,6 +45,24 @@ def _pair_curve(payload: dict, pair_name: str) -> list[float]:
     return [float(v) if v is not None else np.nan for v in curve]
 
 
+def _resample_curve(values: list[float], out_bins: int) -> list[float]:
+    if out_bins <= 0:
+        return []
+    if not values:
+        return [np.nan] * out_bins
+    if len(values) == 1:
+        return [values[0]] * out_bins
+    xs_old = np.linspace(0.0, 1.0, len(values))
+    xs_new = np.linspace(0.0, 1.0, out_bins)
+    arr = np.asarray(values, dtype=float)
+    valid = ~np.isnan(arr)
+    if valid.sum() == 0:
+        return [np.nan] * out_bins
+    if valid.sum() == 1:
+        return [float(arr[valid][0])] * out_bins
+    return np.interp(xs_new, xs_old[valid], arr[valid]).tolist()
+
+
 def _window_delta(bundle: dict, side_key: str, window: str) -> float:
     value = bundle[side_key][window]["final_20pct"]["weighted_delta"]
     return float(value) if value is not None else np.nan
@@ -53,19 +71,39 @@ def _window_delta(bundle: dict, side_key: str, window: str) -> float:
 def _plot_main(summary: dict, out_path: Path) -> None:
     dense = summary["dense5"]
     models = [model for model in MODEL_ORDER if model in summary["models"] and model != "deepseek_v2_lite"]
-    x_layers = np.arange(dense["n_layers"])
+    axis_mode = dense.get("layer_axis_mode", "layer_index")
+    pooled_curve = _pair_curve(dense, "JS_AC")
+    if axis_mode == "normalized_depth":
+        x_layers = np.asarray(dense.get("layer_axis_values", np.linspace(0.0, 1.0, len(pooled_curve))), dtype=float)
+        x_label = "Normalized depth"
+        curve_title = "Matched-prefix broad-gap curve\nDense-5 pooled JS(A', C) by normalized depth"
+        onset_marker = float(dense["corrective_onset_frac"])
+        final_region_start = float(dense["final_region_start_frac"])
+        dense_curve = pooled_curve
+        model_curves = {
+            model: _resample_curve(_pair_curve(summary["models"][model], "JS_AC"), len(x_layers))
+            for model in models
+        }
+    else:
+        x_layers = np.arange(dense["n_layers"])
+        x_label = "Layer"
+        curve_title = "Matched-prefix broad-gap curve\nJS(A', C) by layer"
+        onset_marker = dense["corrective_onset"] - 0.5
+        final_region_start = dense["final_region_start"] - 0.5
+        dense_curve = pooled_curve
+        model_curves = {model: _pair_curve(summary["models"][model], "JS_AC") for model in models}
 
     fig, axes = plt.subplots(1, 3, figsize=(18, 5.5))
     ax_curve, ax_pt, ax_it = axes
 
     for model in models:
-        curve = _pair_curve(summary["models"][model], "JS_AC")
+        curve = model_curves[model]
         ax_curve.plot(x_layers, curve, color="#BDBDBD", alpha=0.5, linewidth=1.0)
-    ax_curve.plot(x_layers, _pair_curve(dense, "JS_AC"), color="#1f4b99", linewidth=2.8, label="Dense-5 pooled")
-    ax_curve.axvline(dense["corrective_onset"] - 0.5, color="#444444", linestyle="--", linewidth=1.0)
-    ax_curve.axvspan(dense["final_region_start"] - 0.5, dense["n_layers"] - 0.5, color="#E8EEF9", alpha=0.8)
-    ax_curve.set_title("Matched-prefix broad-gap curve\nJS(A', C) by layer")
-    ax_curve.set_xlabel("Layer")
+    ax_curve.plot(x_layers, dense_curve, color="#1f4b99", linewidth=2.8, label="Dense-5 pooled")
+    ax_curve.axvline(onset_marker, color="#444444", linestyle="--", linewidth=1.0)
+    ax_curve.axvspan(final_region_start, x_layers[-1], color="#E8EEF9", alpha=0.8)
+    ax_curve.set_title(curve_title)
+    ax_curve.set_xlabel(x_label)
     ax_curve.set_ylabel("Symmetric JS divergence")
     ax_curve.grid(alpha=0.2)
     ax_curve.legend(frameon=False, loc="upper left")

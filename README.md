@@ -1,6 +1,6 @@
-# Instruction Tuning Creates a Broad Convergence Gap
+# Instruction Tuning Creates a Broad Convergence-Gap Signature: Strongest Tested Leverage Lies in Late MLPs
 
-### Late-Window Localization and Behavioral Consequences Across Transformer Families
+### Cross-Family Localization and Behavioral Consequences Across Transformer Families
 
 <p align="center">
   <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white">
@@ -9,7 +9,7 @@
 
 </p>
 
-> **TL;DR** &mdash; The current paper story is: instruction tuning creates a **broad convergence gap** and delayed commitment under native decoding across six model families. The strongest tested internal leverage on that gap lies in a **late MLP window** under matched-prefix control. The cleanest cross-model internal evidence comes from graft/swap experiments, and the free-running behavioral experiments show that the same late intervention family moves a real but partial slice of assistant behavior rather than the full assistant phenotype.
+> **TL;DR** &mdash; The current paper story is paired: instruction tuning creates a **broad convergence-gap signature** under native decoding across six model families, and the strongest tested internal leverage on that signature lies in a **late MLP window** under matched-prefix control. The matched-prefix graft/swap experiments are the cross-model internal backbone, the free-running behavioral experiments show that the same late intervention family moves a real but partial slice of assistant behavior, and Gemma steering serves as a concrete single-model bridge rather than the main cross-family evidence base.
 
 ![Broad convergence gap across six model families](docs/assets/readme_broad_convergence_gap.png)
 
@@ -50,8 +50,8 @@ What is strongest right now:
 
 - broad IT-vs-PT convergence gap and delayed commitment across 6 families under both tuned and raw logit lenses
 - a late-concentrated IT-vs-PT increase in residual opposition as a geometric companion, with architecture-dependent magnitude and spatial extent
-- Gemma steering as the strongest single-direction causal bridge between convergence speed and governance behavior
-- matched-prefix late graft/swap as the cleanest cross-model internal evidence for late-window MLP localization of the convergence gap
+- matched-prefix late graft/swap as the main cross-model internal backbone for late-window MLP localization of the convergence gap
+- Gemma steering as the clearest single-direction causal bridge between convergence speed and governance behavior, consistent with that cross-family backbone
 - `exp13A-lite` plus the exp13/14 mechanism summaries as evidence that the late stage is broader than a narrow formatting-token injector
 - free-running A/B/C as a behavioral precision finding: late MLPs move anti-raw-continuation / anti-false-refusal more than polished structure
 

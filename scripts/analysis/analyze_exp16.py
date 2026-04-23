@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -166,6 +167,7 @@ def _aggregate_prompt_rows(rows_by_model: list[list[dict[str, Any]]]) -> dict[st
 
 def _aggregate_pair_stats(pair_stats_list: list[dict[str, Any]]) -> dict[str, Any]:
     first = pair_stats_list[0]
+    max_len = max(len(pair_stats.get("sum", [])) for pair_stats in pair_stats_list)
     merged = {
         "pair_name": first["pair_name"],
         "current_pipeline": first["current_pipeline"],
@@ -174,8 +176,8 @@ def _aggregate_pair_stats(pair_stats_list: list[dict[str, Any]]) -> dict[str, An
         "current_prompt_mode": first["current_prompt_mode"],
         "baseline_prompt_mode": first["baseline_prompt_mode"],
         "graft_window": first.get("graft_window"),
-        "sum": [0.0] * len(first.get("sum", [])),
-        "count": [0] * len(first.get("count", [])),
+        "sum": [0.0] * max_len,
+        "count": [0] * max_len,
     }
     for pair_stats in pair_stats_list:
         for idx, value in enumerate(pair_stats.get("sum", [])):
@@ -183,6 +185,92 @@ def _aggregate_pair_stats(pair_stats_list: list[dict[str, Any]]) -> dict[str, An
         for idx, value in enumerate(pair_stats.get("count", [])):
             merged["count"][idx] += int(value)
     return merged
+
+
+def _resample_curve(values: list[float | None], out_bins: int) -> list[float]:
+    if out_bins <= 0:
+        return []
+    filtered = [float("nan") if value is None else float(value) for value in values]
+    if not filtered:
+        return [float("nan")] * out_bins
+    if len(filtered) == 1:
+        return [filtered[0]] * out_bins
+
+    out: list[float] = []
+    last_idx = len(filtered) - 1
+    for out_idx in range(out_bins):
+        pos = (out_idx / (out_bins - 1)) * last_idx
+        left = int(math.floor(pos))
+        right = int(math.ceil(pos))
+        if left == right:
+            out.append(filtered[left])
+            continue
+        left_val = filtered[left]
+        right_val = filtered[right]
+        frac = pos - left
+        if math.isnan(left_val) and math.isnan(right_val):
+            out.append(float("nan"))
+        elif math.isnan(left_val):
+            out.append(right_val)
+        elif math.isnan(right_val):
+            out.append(left_val)
+        else:
+            out.append(left_val + frac * (right_val - left_val))
+    return out
+
+
+def _combine_region_weighted(pair_payloads: list[dict[str, Any]], region_name: str) -> dict[str, Any]:
+    total_sum = 0.0
+    total_count = 0
+    for payload in pair_payloads:
+        region = payload["regions_weighted"][region_name]
+        mean = region.get("mean")
+        count = int(region.get("count", 0))
+        if mean is None or count <= 0:
+            continue
+        total_sum += float(mean) * count
+        total_count += count
+    return {
+        "mean": _safe_mean(total_sum, float(total_count)),
+        "count": total_count,
+    }
+
+
+def _combine_pair_payloads(
+    *,
+    pair_payloads: list[dict[str, Any]],
+    prompt_rows: list[dict[str, Any]],
+    curve_bins: int = 101,
+) -> dict[str, Any]:
+    metadata = dict(pair_payloads[0]["metadata"])
+    region_names = ["full_stack", "pre_corrective", "final_20pct", "graft_window"]
+    prompt_summary: dict[str, Any] = {}
+    for region_name in region_names:
+        mean_key = f"{region_name}_mean"
+        count_key = f"{region_name}_count"
+        values = [float(row[mean_key]) for row in prompt_rows if row.get(mean_key) is not None]
+        counts = [int(row.get(count_key, 0)) for row in prompt_rows if row.get(mean_key) is not None]
+        prompt_summary[region_name] = {
+            "mean": (sum(values) / len(values)) if values else None,
+            "n_prompts": len(values),
+            "support_count_sum": int(sum(counts)),
+        }
+
+    resampled = [_resample_curve(payload["layer_curve"], curve_bins) for payload in pair_payloads]
+    pooled_curve: list[float | None] = []
+    for idx in range(curve_bins):
+        values = [curve[idx] for curve in resampled if not math.isnan(curve[idx])]
+        pooled_curve.append((sum(values) / len(values)) if values else None)
+
+    return {
+        "metadata": metadata,
+        "layer_curve": pooled_curve,
+        "regions_weighted": {
+            region_name: _combine_region_weighted(pair_payloads, region_name)
+            for region_name in region_names
+        },
+        "regions_prompt_mean": prompt_summary,
+    }
 
 
 def _bundle_payload(
@@ -193,23 +281,50 @@ def _bundle_payload(
 ) -> dict[str, Any]:
     if not models:
         return {"name": name, "models": []}
-    n_layers = int(model_payloads[models[0]]["n_layers"])
-    corrective_onset = int(model_payloads[models[0]]["corrective_onset"])
-    final_region_start = int(model_payloads[models[0]]["final_region_start"])
+    n_layers_list = [int(model_payloads[model]["n_layers"]) for model in models]
+    corrective_onset_list = [int(model_payloads[model]["corrective_onset"]) for model in models]
+    final_region_start_list = [int(model_payloads[model]["final_region_start"]) for model in models]
+    same_geometry = (
+        len(set(n_layers_list)) == 1
+        and len(set(corrective_onset_list)) == 1
+        and len(set(final_region_start_list)) == 1
+    )
+
+    n_layers = n_layers_list[0]
+    corrective_onset = corrective_onset_list[0]
+    final_region_start = final_region_start_list[0]
     prompt_rows_by_model = [model_payloads[model]["prompt_rows"] for model in models]
     aggregated_prompt_rows = _aggregate_prompt_rows(prompt_rows_by_model)
 
     pair_names = sorted(model_payloads[models[0]]["pair_stats"].keys())
     pairs: dict[str, Any] = {}
     for pair_name in pair_names:
-        pair_stats = _aggregate_pair_stats([model_payloads[model]["pair_stats"][pair_name] for model in models])
-        pairs[pair_name] = _pair_payload(
-            pair_stats=pair_stats,
-            n_layers=n_layers,
-            corrective_onset=corrective_onset,
-            final_region_start=final_region_start,
-            prompt_rows=aggregated_prompt_rows.get(pair_name, []),
-        )
+        pair_payloads = []
+        for model in models:
+            payload = model_payloads[model]
+            pair_payloads.append(
+                _pair_payload(
+                    pair_stats=payload["pair_stats"][pair_name],
+                    n_layers=int(payload["n_layers"]),
+                    corrective_onset=int(payload["corrective_onset"]),
+                    final_region_start=int(payload["final_region_start"]),
+                    prompt_rows=[row for row in payload["prompt_rows"] if row["pair_name"] == pair_name],
+                )
+            )
+        if same_geometry:
+            pair_stats = _aggregate_pair_stats([model_payloads[model]["pair_stats"][pair_name] for model in models])
+            pairs[pair_name] = _pair_payload(
+                pair_stats=pair_stats,
+                n_layers=n_layers,
+                corrective_onset=corrective_onset,
+                final_region_start=final_region_start,
+                prompt_rows=aggregated_prompt_rows.get(pair_name, []),
+            )
+        else:
+            pairs[pair_name] = _combine_pair_payloads(
+                pair_payloads=pair_payloads,
+                prompt_rows=aggregated_prompt_rows.get(pair_name, []),
+            )
 
     baseline = pairs["JS_AC"]
     pt_side = {
@@ -235,9 +350,27 @@ def _bundle_payload(
     return {
         "name": name,
         "models": models,
-        "n_layers": n_layers,
-        "corrective_onset": corrective_onset,
-        "final_region_start": final_region_start,
+        "n_layers": n_layers if same_geometry else None,
+        "corrective_onset": corrective_onset if same_geometry else None,
+        "final_region_start": final_region_start if same_geometry else None,
+        "layer_axis_mode": "layer_index" if same_geometry else "normalized_depth",
+        "layer_axis_values": (
+            list(range(n_layers))
+            if same_geometry
+            else [idx / 100.0 for idx in range(101)]
+        ),
+        "corrective_onset_frac": (
+            corrective_onset / max(n_layers - 1, 1)
+            if same_geometry
+            else sum(onset / max(nl - 1, 1) for onset, nl in zip(corrective_onset_list, n_layers_list, strict=True))
+            / len(models)
+        ),
+        "final_region_start_frac": (
+            final_region_start / max(n_layers - 1, 1)
+            if same_geometry
+            else sum(start / max(nl - 1, 1) for start, nl in zip(final_region_start_list, n_layers_list, strict=True))
+            / len(models)
+        ),
         "pairs": pairs,
         "pt_side_gap_closure": pt_side,
         "it_side_gap_collapse": it_side,
