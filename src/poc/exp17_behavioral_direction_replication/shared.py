@@ -111,6 +111,14 @@ def load_exp17_model(
 ) -> LoadedExp17Model:
     spec = get_spec(model_name)
     model_id = model_id_for_variant(spec, variant)
+    log.info(
+        "exp17 loading model=%s variant=%s model_id=%s device=%s dtype=%s",
+        model_name,
+        variant,
+        model_id,
+        device,
+        dtype,
+    )
     model, tokenizer = load_model_and_tokenizer(
         model_id,
         device=device,
@@ -120,6 +128,14 @@ def load_exp17_model(
     _ensure_pad_token(tokenizer)
     adapter = get_adapter(model_name)
     runtime_device = next(model.parameters()).device
+    log.info(
+        "exp17 loaded model=%s variant=%s runtime_device=%s layers=%d d_model=%d",
+        model_name,
+        variant,
+        runtime_device,
+        spec.n_layers,
+        spec.d_model,
+    )
     return LoadedExp17Model(
         model_name=model_name,
         variant=variant,
@@ -141,6 +157,14 @@ def build_prompts(
     prefix: str = "",
     suffix: str = "",
 ) -> list[str]:
+    log.info(
+        "exp17 building prompts rows=%d text_field=%s apply_chat_template=%s prefix_len=%d suffix_len=%d",
+        len(rows),
+        text_field,
+        apply_chat_template,
+        len(prefix),
+        len(suffix),
+    )
     prompts: list[str] = []
     for row in rows:
         if text_field not in row:
@@ -149,6 +173,7 @@ def build_prompts(
         if loaded.variant == "it" and apply_chat_template:
             text = loaded.adapter.apply_template(loaded.tokenizer, text, is_it=True)
         prompts.append(text)
+    log.info("exp17 built prompts rows=%d", len(prompts))
     return prompts
 
 

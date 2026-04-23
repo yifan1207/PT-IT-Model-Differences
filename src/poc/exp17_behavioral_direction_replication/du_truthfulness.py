@@ -85,6 +85,18 @@ def main() -> None:
     rows, labels = _load_rows(args)
     n_true = sum(label == "true" for label in labels)
     n_false = sum(label == "false" for label in labels)
+    log.info(
+        "exp17 truthfulness start model=%s variant=%s dataset=%s rows=%d true=%d false=%d batch_size=%d max_length=%d device=%s",
+        args.model,
+        args.variant,
+        args.dataset,
+        len(rows),
+        n_true,
+        n_false,
+        args.batch_size,
+        args.max_length,
+        args.device,
+    )
     if n_true == 0 or n_false == 0:
         raise ValueError(f"Dataset must contain both true and false rows, got true={n_true}, false={n_false}")
 
@@ -164,7 +176,7 @@ def main() -> None:
             "selected_layer_note": "No paper-faithful best-layer selection yet; using per-layer extraction only.",
         },
     )
-    log.info("Saved truthfulness directions -> %s", out_dir)
+    log.info("exp17 truthfulness saved directions -> %s", out_dir)
 
 
 if __name__ == "__main__":

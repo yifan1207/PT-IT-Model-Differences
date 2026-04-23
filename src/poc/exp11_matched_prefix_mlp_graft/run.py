@@ -724,6 +724,10 @@ def _trim_teacher_manifest_rows(
     return trimmed_rows
 
 
+def _empty_teacher_prompt_ids(rows: list[dict[str, Any]]) -> list[str]:
+    return [str(row["prompt_id"]) for row in rows if len(row.get("token_ids", [])) == 0]
+
+
 def _apply_real_token_mask(logits: torch.Tensor, real_token_mask: torch.Tensor) -> torch.Tensor:
     masked = logits.clone()
     if masked.ndim == 1:
@@ -2147,6 +2151,7 @@ def main() -> None:
     teacher_manifest_rows_all: list[dict[str, Any]] | None = None
     teacher_manifest_rows: list[dict[str, Any]] | None = None
     teacher_tokens_manifest_by_prompt: dict[str, list[int]] | None = None
+    empty_teacher_prompt_ids_dropped: list[str] = []
     if teacher_token_manifest_path is not None:
         teacher_manifest_rows_all = _canonical_teacher_manifest_rows(
             teacher_token_manifest_path,
@@ -2203,6 +2208,19 @@ def main() -> None:
             teacher_manifest_rows,
             eos_token_ids=eos_ids_it,
         )
+        empty_teacher_prompt_ids_dropped = _empty_teacher_prompt_ids(teacher_manifest_rows)
+        if empty_teacher_prompt_ids_dropped:
+            empty_teacher_prompt_id_set = set(empty_teacher_prompt_ids_dropped)
+            prompts = [record for record in prompts if record["id"] not in empty_teacher_prompt_id_set]
+            teacher_manifest_rows = [
+                row for row in teacher_manifest_rows if row["prompt_id"] not in empty_teacher_prompt_id_set
+            ]
+            print(
+                "[exp11] dropping "
+                f"{len(empty_teacher_prompt_ids_dropped)} prompts with empty teacher continuations; "
+                f"first={empty_teacher_prompt_ids_dropped[:5]}",
+                flush=True,
+            )
         teacher_tokens_manifest_by_prompt = _teacher_tokens_by_prompt(teacher_manifest_rows)
     arch_probe = ArchitectureProbe()
     pad_token_id_pt = tokenizer_pt.pad_token_id
@@ -2426,6 +2444,8 @@ def main() -> None:
         "teacher_token_manifest_sha256": (
             _jsonl_hash(teacher_token_manifest_path) if teacher_token_manifest_path is not None else None
         ),
+        "teacher_empty_prompt_count_dropped": len(empty_teacher_prompt_ids_dropped),
+        "teacher_empty_prompt_ids_dropped": empty_teacher_prompt_ids_dropped,
         "teacher_forced": bool(args.teacher_forced),
         "depth_ablation": depth_ablation,
         "causal_combined": causal_combined,
@@ -2455,6 +2475,7 @@ def main() -> None:
         ),
         "final_region_layers": final_region_layers,
         "late_mechanism_layers": late_mechanism_layers if (causal_combined and not js_only) else None,
+        "n_prompts_after_teacher_filter": len(prompts),
     }
     (out_dir / "config.json").write_text(json.dumps(config, indent=2))
     _write_jsonl(out_dir / "prompts.jsonl", prompts, append=False)

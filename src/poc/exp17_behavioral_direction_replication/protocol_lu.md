@@ -4,6 +4,7 @@ Primary source:
 - Christina Lu et al., "The Assistant Axis: Situating and Stabilizing the
   Default Persona of Language Models", arXiv:2601.10387.
 - Public code: `safety-research/assistant-axis`.
+- Pinned upstream commit for repo replication: `a98961956072224eaf244eb289d6c01700b63795`.
 
 Repo-facing stance:
 
@@ -12,6 +13,8 @@ Repo-facing stance:
   reimplementing it inside this repo.
 - Local code in `exp17` only wraps the upstream pipeline, records launch
   metadata, and maps outputs into the canonical repo result layout.
+- Canonical bootstrap command:
+  `bash scripts/infra/setup_exp17_upstreams.sh`
 
 What should not be folded into the replication:
 
