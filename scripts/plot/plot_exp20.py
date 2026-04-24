@@ -5,32 +5,31 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-CONDITIONS = [
-    "A_pt_raw",
-    "B_early_raw",
-    "B_mid_raw",
-    "B_late_raw",
-    "C_it_chat",
-    "D_early_ptswap",
-    "D_mid_ptswap",
-    "D_late_ptswap",
-]
+from src.poc.exp20_divergence_token_counterfactual.metrics import CONDITION_ORDER
+
+CONDITIONS = CONDITION_ORDER
 
 COLORS = {
     "A_pt_raw": "#4C566A",
     "B_early_raw": "#88C0D0",
     "B_mid_raw": "#5E81AC",
     "B_late_raw": "#2E3440",
+    "B_midlate_raw": "#1B3A57",
     "C_it_chat": "#A3BE8C",
     "D_early_ptswap": "#EBCB8B",
     "D_mid_ptswap": "#D08770",
     "D_late_ptswap": "#BF616A",
+    "D_midlate_ptswap": "#8F314A",
 }
 
 
@@ -113,10 +112,12 @@ def make_plot(summary: dict, out_path: Path, pool: str) -> None:
         "A_pt_raw__B_early_raw",
         "A_pt_raw__B_mid_raw",
         "A_pt_raw__B_late_raw",
+        "A_pt_raw__B_midlate_raw",
         "A_pt_raw__C_it_chat",
         "C_it_chat__D_early_ptswap",
         "C_it_chat__D_mid_ptswap",
         "C_it_chat__D_late_ptswap",
+        "C_it_chat__D_midlate_ptswap",
     ]
     agreement = [
         _mean(pairwise, [pair, "agreement_fraction"])

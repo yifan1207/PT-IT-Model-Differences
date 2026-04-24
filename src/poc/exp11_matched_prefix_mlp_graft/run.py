@@ -499,9 +499,53 @@ def parse_args() -> argparse.Namespace:
         help="Random seeds for Exp19 residual-projection matched controls.",
     )
     parser.add_argument(
+        "--specificity-random-seeds-by-window",
+        nargs="*",
+        default=None,
+        help=(
+            "Optional per-window seed override for Exp19 random controls, e.g. "
+            "'early:0 mid:0 late:0,1,2'. This lets the cheap validation keep "
+            "more late random seeds without paying for the same seed count at "
+            "every window."
+        ),
+    )
+    parser.add_argument(
+        "--specificity-windows",
+        nargs="*",
+        choices=["early", "mid", "late"],
+        default=["early", "mid", "late"],
+        help=(
+            "Depth windows to include for Exp19 specificity controls. Defaults to "
+            "all three windows; use e.g. '--specificity-windows late' for a "
+            "cheap late-only random-control validation."
+        ),
+    )
+    parser.add_argument(
+        "--specificity-control-kinds",
+        nargs="*",
+        choices=["true", "identity", "layerperm", "rand_resproj", "rand_norm"],
+        default=None,
+        help=(
+            "Subset of Exp19 control families to run. Default preserves the full "
+            "original design: true, identity, layerperm, and rand_resproj "
+            "(plus rand_norm when --specificity-include-rand-norm is set). "
+            "For the low-cost structured-vs-random control use "
+            "'--specificity-control-kinds rand_resproj'."
+        ),
+    )
+    parser.add_argument(
         "--specificity-include-rand-norm",
         action="store_true",
         help="Also include norm-matched random controls for Exp19 diagnostics.",
+    )
+    parser.add_argument(
+        "--disable-mechanism-capture",
+        action="store_true",
+        help=(
+            "Skip Exp13/14 late-stage mechanism-gradient summaries. This keeps "
+            "Exp19 specificity-control runs focused on trajectory/rank metrics "
+            "without changing the graft/control branches."
+        ),
     )
     parser.add_argument(
         "--prompt-seed",
@@ -862,61 +906,96 @@ def _specificity_windows_for_model(model: str, spec) -> dict[str, tuple[int, int
     }
 
 
+def _parse_seed_plan(seed_specs: list[str] | None) -> dict[str, list[int]] | None:
+    if not seed_specs:
+        return None
+    out: dict[str, list[int]] = {}
+    valid_windows = {"early", "mid", "late"}
+    for item in seed_specs:
+        if ":" not in item:
+            raise ValueError(f"Invalid --specificity-random-seeds-by-window item {item!r}; expected window:seed,seed")
+        window, seeds_raw = item.split(":", 1)
+        if window not in valid_windows:
+            raise ValueError(f"Invalid specificity window {window!r}; expected one of {sorted(valid_windows)}")
+        seeds = [int(seed) for seed in seeds_raw.split(",") if seed != ""]
+        if not seeds:
+            raise ValueError(f"No seeds supplied for specificity window {window!r}")
+        out[window] = seeds
+    return out
+
+
 def _specificity_pipeline_specs(
     *,
     model: str,
     spec,
     random_seeds: list[int],
     include_rand_norm: bool,
+    windows: list[str] | None = None,
+    control_kinds: list[str] | None = None,
+    random_seeds_by_window: dict[str, list[int]] | None = None,
 ) -> dict[str, dict[str, Any]]:
     specs: dict[str, dict[str, Any]] = {}
+    selected_windows = set(windows or ["early", "mid", "late"])
+    if control_kinds is None:
+        selected_controls = {"true", "identity", "layerperm", "rand_resproj"}
+        if include_rand_norm:
+            selected_controls.add("rand_norm")
+    else:
+        selected_controls = set(control_kinds)
     for window_name, (start, end) in _specificity_windows_for_model(model, spec).items():
-        specs[f"B_{window_name}_true"] = {
-            "side": "pt",
-            "prompt_mode": "raw_format_b",
-            "host_variant": "pt",
-            "donor_variant": "it",
-            "control_mode": CONTROL_MODE_TRUE,
-            "layer_map": None,
-            "seed": None,
-            "graft_start_layer": start,
-            "graft_end_layer_exclusive": end,
-        }
-        specs[f"B_{window_name}_identity"] = {
-            "side": "pt",
-            "prompt_mode": "raw_format_b",
-            "host_variant": "pt",
-            "donor_variant": "pt",
-            "control_mode": CONTROL_MODE_TRUE,
-            "layer_map": None,
-            "seed": None,
-            "graft_start_layer": start,
-            "graft_end_layer_exclusive": end,
-        }
-        specs[f"B_{window_name}_layerperm"] = {
-            "side": "pt",
-            "prompt_mode": "raw_format_b",
-            "host_variant": "pt",
-            "donor_variant": "it",
-            "control_mode": CONTROL_MODE_TRUE,
-            "layer_map": layer_permutation_map(start, end),
-            "seed": None,
-            "graft_start_layer": start,
-            "graft_end_layer_exclusive": end,
-        }
-        for seed in random_seeds:
-            specs[f"B_{window_name}_rand_resproj_s{seed}"] = {
+        if window_name not in selected_windows:
+            continue
+        if "true" in selected_controls:
+            specs[f"B_{window_name}_true"] = {
                 "side": "pt",
                 "prompt_mode": "raw_format_b",
                 "host_variant": "pt",
                 "donor_variant": "it",
-                "control_mode": CONTROL_MODE_RANDOM_RESPROJ,
+                "control_mode": CONTROL_MODE_TRUE,
                 "layer_map": None,
-                "seed": int(seed),
+                "seed": None,
                 "graft_start_layer": start,
                 "graft_end_layer_exclusive": end,
             }
-            if include_rand_norm:
+        if "identity" in selected_controls:
+            specs[f"B_{window_name}_identity"] = {
+                "side": "pt",
+                "prompt_mode": "raw_format_b",
+                "host_variant": "pt",
+                "donor_variant": "pt",
+                "control_mode": CONTROL_MODE_TRUE,
+                "layer_map": None,
+                "seed": None,
+                "graft_start_layer": start,
+                "graft_end_layer_exclusive": end,
+            }
+        if "layerperm" in selected_controls:
+            specs[f"B_{window_name}_layerperm"] = {
+                "side": "pt",
+                "prompt_mode": "raw_format_b",
+                "host_variant": "pt",
+                "donor_variant": "it",
+                "control_mode": CONTROL_MODE_TRUE,
+                "layer_map": layer_permutation_map(start, end),
+                "seed": None,
+                "graft_start_layer": start,
+                "graft_end_layer_exclusive": end,
+            }
+        window_random_seeds = random_seeds_by_window.get(window_name, random_seeds) if random_seeds_by_window else random_seeds
+        for seed in window_random_seeds:
+            if "rand_resproj" in selected_controls:
+                specs[f"B_{window_name}_rand_resproj_s{seed}"] = {
+                    "side": "pt",
+                    "prompt_mode": "raw_format_b",
+                    "host_variant": "pt",
+                    "donor_variant": "it",
+                    "control_mode": CONTROL_MODE_RANDOM_RESPROJ,
+                    "layer_map": None,
+                    "seed": int(seed),
+                    "graft_start_layer": start,
+                    "graft_end_layer_exclusive": end,
+                }
+            if "rand_norm" in selected_controls:
                 specs[f"B_{window_name}_rand_norm_s{seed}"] = {
                     "side": "pt",
                     "prompt_mode": "raw_format_b",
@@ -2220,18 +2299,23 @@ def main() -> None:
     js_only = bool(args.js_only)
     depth_windows = _depth_windows_for_model(args.model, spec) if depth_ablation else {}
     causal_windows = _causal_windows_for_model(args.model, spec) if (causal_combined or specificity_controls) else {}
+    specificity_seed_plan = _parse_seed_plan(args.specificity_random_seeds_by_window) if specificity_controls else None
     specificity_specs = (
         _specificity_pipeline_specs(
             model=args.model,
             spec=spec,
             random_seeds=list(args.specificity_random_seeds),
             include_rand_norm=bool(args.specificity_include_rand_norm),
+            windows=list(args.specificity_windows),
+            control_kinds=list(args.specificity_control_kinds) if args.specificity_control_kinds is not None else None,
+            random_seeds_by_window=specificity_seed_plan,
         )
         if specificity_controls
         else {}
     )
     final_region_layers = _layer_range_for_final_region(spec)
-    late_mechanism_layers = final_region_layers if ((causal_combined or specificity_controls) and not js_only) else []
+    capture_mechanism = (causal_combined or specificity_controls) and not js_only and not args.disable_mechanism_capture
+    late_mechanism_layers = final_region_layers if capture_mechanism else []
     requested_batch_size = args.batch_size or DEFAULT_BATCH_SIZE[args.model]
     out_dir = Path(args.out_dir or f"results/exp11_matched_prefix_mlp_graft/{args.model}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -2413,7 +2497,7 @@ def main() -> None:
     if args.readout_mode == "both" and not causal_combined and not specificity_controls and not js_only:
         secondary_accumulator = TrajectoryAccumulator(metric_names=TRAJECTORY_METRICS, n_layers=spec.n_layers)
     mechanism_accumulators: dict[str, GradientDirectionAccumulator] = {}
-    if (causal_combined or specificity_controls) and not js_only:
+    if capture_mechanism:
         mechanism_pipeline_names = (
             set(SPECIFICITY_BASE_PIPELINES) | set(specificity_specs)
             if specificity_controls
@@ -2604,6 +2688,14 @@ def main() -> None:
         "causal_combined": causal_combined,
         "specificity_controls": specificity_controls,
         "specificity_random_seeds": list(args.specificity_random_seeds) if specificity_controls else None,
+        "specificity_random_seeds_by_window": specificity_seed_plan,
+        "specificity_windows": list(args.specificity_windows) if specificity_controls else None,
+        "specificity_control_kinds": (
+            list(args.specificity_control_kinds)
+            if specificity_controls and args.specificity_control_kinds is not None
+            else None
+        ),
+        "specificity_include_rand_norm": bool(args.specificity_include_rand_norm) if specificity_controls else None,
         "pipelines": pipelines,
         "pipeline_prompt_modes": pipeline_prompt_modes,
         "pipeline_aliases": pipeline_aliases,

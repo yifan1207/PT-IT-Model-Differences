@@ -6,21 +6,18 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-CONDITIONS = [
-    "A_pt_raw",
-    "B_early_raw",
-    "B_mid_raw",
-    "B_late_raw",
-    "C_it_chat",
-    "D_early_ptswap",
-    "D_mid_ptswap",
-    "D_late_ptswap",
-]
+from src.poc.exp20_divergence_token_counterfactual.metrics import CONDITION_ORDER
+
+CONDITIONS = CONDITION_ORDER
 
 DIVERGENCE_KINDS = ["first_diff", "first_nonformat_diff", "first_assistant_marker_diff"]
 PRIMARY_WINDOWS = ["early", "mid_policy", "late_reconciliation"]

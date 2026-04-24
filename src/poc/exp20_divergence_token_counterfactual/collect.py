@@ -60,10 +60,12 @@ CONDITIONS = {
     "B_early_raw": ConditionSpec("B_early_raw", "pt", "it", "early"),
     "B_mid_raw": ConditionSpec("B_mid_raw", "pt", "it", "mid"),
     "B_late_raw": ConditionSpec("B_late_raw", "pt", "it", "late"),
+    "B_midlate_raw": ConditionSpec("B_midlate_raw", "pt", "it", "midlate"),
     "C_it_chat": ConditionSpec("C_it_chat", "it", None, None),
     "D_early_ptswap": ConditionSpec("D_early_ptswap", "it", "pt", "early"),
     "D_mid_ptswap": ConditionSpec("D_mid_ptswap", "it", "pt", "mid"),
     "D_late_ptswap": ConditionSpec("D_late_ptswap", "it", "pt", "late"),
+    "D_midlate_ptswap": ConditionSpec("D_midlate_ptswap", "it", "pt", "midlate"),
 }
 
 
@@ -77,6 +79,18 @@ def _window_defs(model_name: str, n_layers: int) -> dict[str, tuple[int, int]]:
         "exp11_mid": DEPTH_ABLATION_WINDOWS[model_name]["mid"],
         "exp11_late": DEPTH_ABLATION_WINDOWS[model_name]["late"],
     }
+
+
+def read_done_ids_any_worker(out_dir: Path) -> set[str]:
+    """Return prompt ids completed by any worker file in this output directory.
+
+    This keeps resume safe when an interrupted one-worker run is continued with
+    multiple workers, or vice versa.
+    """
+    done: set[str] = set()
+    for path in sorted(out_dir.glob("exp20_records_w*.jsonl")):
+        done.update(read_done_ids(path))
+    return done
 
 
 def _prompt_for_condition(
@@ -98,6 +112,10 @@ def _prompt_for_condition(
 def _graft_window(model_name: str, condition: ConditionSpec) -> tuple[int, int] | None:
     if condition.graft_kind is None:
         return None
+    if condition.graft_kind == "midlate":
+        mid_start, mid_end = DEPTH_ABLATION_WINDOWS[model_name]["mid"]
+        late_start, late_end = DEPTH_ABLATION_WINDOWS[model_name]["late"]
+        return min(mid_start, late_start), max(mid_end, late_end)
     return DEPTH_ABLATION_WINDOWS[model_name][condition.graft_kind]
 
 
@@ -143,7 +161,7 @@ def _call_model(model_name: str, model: Any, input_ids: torch.Tensor, attention_
         "past_key_values": past_key_values,
         "use_cache": use_cache,
     }
-    if model_name != "deepseek_v2_lite" and attention_mask is not None:
+    if attention_mask is not None:
         kwargs["attention_mask"] = attention_mask
     return model(**kwargs)
 
@@ -439,7 +457,15 @@ def run_worker(args: argparse.Namespace) -> None:
     )
     args.out_dir.mkdir(parents=True, exist_ok=True)
     out_path = args.out_dir / f"exp20_records_w{args.worker_index}.jsonl"
-    done = read_done_ids(out_path)
+    done = read_done_ids_any_worker(args.out_dir)
+    log.info(
+        "[exp20] %s worker %d/%d resume: %d prompt ids already complete in %s",
+        args.model,
+        args.worker_index,
+        args.n_workers,
+        len(done),
+        args.out_dir,
+    )
     with out_path.open("a") as fout:
         for idx, record in enumerate(records):
             prompt_id = str(record.get("id", record.get("record_id", f"rec_{idx}")))
@@ -467,6 +493,7 @@ def run_worker(args: argparse.Namespace) -> None:
 
 def merge_workers(out_dir: Path, n_workers: int) -> Path:
     merged = out_dir / "exp20_records.jsonl"
+    seen: set[str] = set()
     with merged.open("w") as fout:
         for idx in range(n_workers):
             path = out_dir / f"exp20_records_w{idx}.jsonl"
@@ -475,8 +502,19 @@ def merge_workers(out_dir: Path, n_workers: int) -> Path:
                 continue
             with path.open() as fin:
                 for line in fin:
-                    if line.strip():
-                        fout.write(line)
+                    if not line.strip():
+                        continue
+                    try:
+                        payload = json.loads(line)
+                        prompt_id = str(payload.get("prompt_id", ""))
+                    except json.JSONDecodeError:
+                        log.warning("Skipping malformed jsonl row in %s", path)
+                        continue
+                    if prompt_id and prompt_id in seen:
+                        continue
+                    if prompt_id:
+                        seen.add(prompt_id)
+                    fout.write(line)
     return merged
 
 

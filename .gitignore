@@ -335,6 +335,8 @@ results/exp15_symmetric_behavioral_causality/data/
 results/exp15_symmetric_behavioral_causality/data/**
 
 paper_draft/*
+!paper_draft/PAPER_DRAFT_v14.md
+!paper_draft/PAPER_DRAFT_v15.md
 
 .DS_Store
 cache/

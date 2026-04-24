@@ -11,10 +11,12 @@ CONDITION_ORDER = [
     "B_early_raw",
     "B_mid_raw",
     "B_late_raw",
+    "B_midlate_raw",
     "C_it_chat",
     "D_early_ptswap",
     "D_mid_ptswap",
     "D_late_ptswap",
+    "D_midlate_ptswap",
 ]
 
 DIVERGENCE_KINDS = ["first_diff", "first_nonformat_diff", "first_assistant_marker_diff"]
