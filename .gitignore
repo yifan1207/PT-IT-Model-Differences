@@ -394,6 +394,7 @@ results/exp21_productive_opposition/**
 paper_draft/*
 !paper_draft/PAPER_DRAFT_v14.md
 !paper_draft/PAPER_DRAFT_v15.md
+!paper_draft/PAPER_DRAFT_v18.md
 
 .DS_Store
 cache/

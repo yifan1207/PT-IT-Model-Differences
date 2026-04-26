@@ -124,12 +124,6 @@ We use four main data regimes.
 
 Throughout, pooled paper claims are made on the five dense families. DeepSeek is used only as a separate MoE/SFT-only side case in experiments where we actually ran it, and it is not part of the canonical judged behavioral pool.
 
-### 2.4 Code and artifact availability
-
-The full codebase, prompt datasets, paper-facing figures, and summary artifacts are publicly released at `https://github.com/yifan1207/structral-semantic-features`. The repository contains the experiment packages under `src/poc/`, launch scripts under `scripts/run/`, plotting and analysis scripts under `scripts/plot/` and `scripts/analysis/`, and the exact data files used for the paper's reported tables and figures under `results/`.
-
-For reproducibility, we commit all non-binary paper-facing summaries needed to audit the main claims: JSON/CSV/MD summaries, bootstrap intervals, human-evaluation summaries, and final figure PNGs. Large regenerated artifacts--raw activation tensors, probe/model checkpoints, and multi-gigabyte per-token trace dumps--are excluded from git by file type or result-folder policy, but the scripts that produce them are included. Appendix G maps each main claim to its code path, committed result path, and rerun entrypoint.
-
 ---
 
 ## 3. The Convergence-Gap Signature and a Mid-to-Late Handoff
@@ -610,27 +604,3 @@ The appendix table makes the novelty claim deliberately concrete. Prior rows con
 **Missing mid+late interaction.** The current evidence does not yet establish that IT late layers amplify IT-mid-selected candidates in the strongest factorial sense. Exp20 includes `PT + IT mid` and `PT + IT late`, but not `PT + IT mid+late`. Therefore the exact test `P(match IT token | PT + IT mid+late) > P(match IT token | PT + IT mid)` remains future work. If that interaction is positive, the paper can strengthen the mediation claim. If it is weak while margins increase, the current division-of-labor story becomes sharper: mid layers control identity, late layers control readout confidence.
 
 **Geometry and mediation.** Negative late `δ`-cosine is not new by itself and is present in pretrained models. The geometric claim is the additional IT-minus-PT late shift. Teacher support and current-top suppression are more output-relevant summaries of the late intervention, but they remain descriptive summaries rather than a full causal decomposition.
-
-## Appendix G: Reproducibility and Artifact Map
-
-**Public release.** Code, prompt datasets, paper-facing result summaries, and final plots are released at `https://github.com/yifan1207/structral-semantic-features`. The repository is organized so that each experiment has a source package under `src/poc/exp##_descriptive_name/`, script entrypoints under `scripts/`, and committed paper-facing artifacts under `results/`. The canonical evaluation datasets are committed at `data/eval_dataset_v2.jsonl`, `data/eval_dataset_v2_holdout_0600_1199.jsonl`, `data/exp3_dataset.jsonl`, `data/exp6_dataset.jsonl`, and `data/gold_standard_v1.csv`.
-
-**Environment.** The Python environment is specified by `pyproject.toml` and `uv.lock`. The main hardware-dependent experiments require local access to the listed Hugging Face checkpoints and GPU memory sufficient for 4B-8B models. We used deterministic greedy decoding for the reported generation traces unless a script explicitly states otherwise.
-
-**Committed versus regenerated artifacts.** The repository commits all paper-facing summaries and plots used to produce the manuscript numbers. This includes JSON/CSV/MD summary tables, bootstrap confidence intervals, human-evaluation summaries, and final figure PNGs. Large intermediate files are regenerated rather than committed: raw activation arrays (`*.npy`, `*.npz`), model/probe tensors (`*.pt`, `*.safetensors`), tuned-lens checkpoints, and multi-gigabyte raw per-token trace JSONL/GZ files. Those exclusions are size controls, not confidentiality controls; the scripts and prompt manifests needed to regenerate them are public in the same repository.
-
-**Main claim-to-artifact map.**
-
-| Paper claim | Code entrypoints | Committed artifacts |
-|---|---|---|
-| Six-family convergence gap and commitment delay | `src/poc/exp09_cross_model_observational_replication/`; cross-model utilities in `src/poc/cross_model/` | `results/exp09_cross_model_observational_replication/data/`, `results/exp09_cross_model_observational_replication/plots/` |
-| Gemma corrective-direction steering and validation controls | `src/poc/exp06_corrective_direction_steering/`; `scripts/run/run_exp7_0*.sh`; `scripts/plot/plot_validation_tier0.py` | `results/exp06_corrective_direction_steering/plots/`, `results/exp07_methodology_validation_tier0/data/`, `results/exp07_methodology_validation_tier0/plots/` |
-| Matched-prefix graft depth ablation | `src/poc/exp11_matched_prefix_mlp_graft/` | `results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/` and selected summaries under `results/exp11_matched_prefix_mlp_graft/data/` |
-| Symmetric graft/swap sufficiency and necessity | `src/poc/exp14_symmetric_matched_prefix_causality/` and related Exp13 analysis scripts | `results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/` |
-| Free-running behavioral consequence and human-eval checks | `src/poc/exp15_symmetric_behavioral_causality/`; `scripts/eval/llm_judge.py` | `results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/`, `results/exp15_symmetric_behavioral_causality/human_eval/` |
-| Endpoint-free matched-prefix JS replay | `src/poc/exp16_matched_prefix_js_gap/` | `results/exp16_matched_prefix_js_gap/exp16_js_replay_runpod_20260422_075307/`, `results/exp16_matched_prefix_js_gap/exp16_js_reverse_pt_teacher_20260422_165259/` |
-| Exp18 final-token handoff flow | `src/poc/exp18_midlate_token_handoff/`; `scripts/run/run_exp18_yanda_full.sh` | `results/exp18_midlate_token_handoff/full_runpod_20260423_095122/`, `results/exp18_midlate_token_handoff/matched_prefix_latest/` |
-| Exp20 first-divergence identity/readout split | `src/poc/exp20_divergence_token_counterfactual/`; Exp20 analysis scripts under `scripts/analysis/` | `results/exp20_divergence_token_counterfactual/full_runpod_20260423_2148_combined_final/deep_dive/`, `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/` |
-| Exp21 productive-opposition audit and Exp20/21 synthesis | `src/poc/exp21_productive_opposition/`; `scripts/analysis/analyze_exp21_productive_opposition.py`; `scripts/analysis/build_exp20_exp21_handoff_synthesis.py` | `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/`, `results/paper_synthesis/` |
-
-**Reproduction workflow.** A reviewer can audit the paper numbers directly from the committed summaries, regenerate plots with the plotting scripts, or rerun the GPU-heavy collection jobs from the script entrypoints. Typical reruns use `uv run python -m ...` for source packages and `bash scripts/run/...` for multi-model orchestration. Worker outputs are merged with `scripts/merge/merge_steering_workers.py` where applicable. The codebase uses canonical descriptive experiment folders and result roots, so new reruns should write to `src/poc/exp##_descriptive_name/` and `results/exp##_descriptive_name/` rather than older flat aliases.

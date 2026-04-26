@@ -24,7 +24,7 @@ If you are new to the repo, these are the most useful entrypoints:
 - [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md): canonical experiment map and path conventions
 - [scripts/README.md](scripts/README.md): grouped script layout and common commands
 - `uv run python scripts/infra/repo_doctor.py`: lightweight repo health check
-- [paper_draft/PAPER_DRAFT_v15.md](paper_draft/PAPER_DRAFT_v15.md): current paper framing, including the reproducibility and artifact map
+- [paper_draft/PAPER_DRAFT_v18.md](paper_draft/PAPER_DRAFT_v18.md): current paper framing, including the reproducibility and artifact map
 
 The repo has been reorganized into descriptive canonical paths:
 
