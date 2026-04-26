@@ -112,6 +112,10 @@ def _prompt_for_condition(
 def _graft_window(model_name: str, condition: ConditionSpec) -> tuple[int, int] | None:
     if condition.graft_kind is None:
         return None
+    if condition.graft_kind == "earlymid":
+        early_start, early_end = DEPTH_ABLATION_WINDOWS[model_name]["early"]
+        mid_start, mid_end = DEPTH_ABLATION_WINDOWS[model_name]["mid"]
+        return min(early_start, mid_start), max(early_end, mid_end)
     if condition.graft_kind == "midlate":
         mid_start, mid_end = DEPTH_ABLATION_WINDOWS[model_name]["mid"]
         late_start, late_end = DEPTH_ABLATION_WINDOWS[model_name]["late"]
