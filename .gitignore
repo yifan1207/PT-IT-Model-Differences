@@ -278,6 +278,8 @@ results/exp11_matched_prefix_mlp_graft/plots/*
 !results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_all2936_tunedlens_v10/**
 !results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_400rand_v11_teacherforced/
 !results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_400rand_v11_teacherforced/**
+!results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/
+!results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/**
 !results/exp11_matched_prefix_mlp_graft/data/
 results/exp11_matched_prefix_mlp_graft/data/*
 !results/exp11_matched_prefix_mlp_graft/data/exp11_exp3_all2936_tunedlens_v10/
@@ -327,6 +329,15 @@ results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/*
 !results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json
 !results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_causal_main.png
 !results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_causal_appendix.png
+!results/exp19_late_mlp_specificity_controls/
+results/exp19_late_mlp_specificity_controls/**
+!results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/
+!results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/**/
+!results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/**/*.json
+!results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/**/*.csv
+!results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/**/*.md
+!results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/**/*.png
+!results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/**/*.pdf
 !results/exp15_symmetric_behavioral_causality/
 results/exp15_symmetric_behavioral_causality/*
 !results/exp15_symmetric_behavioral_causality/plots/
@@ -380,6 +391,8 @@ results/exp20_divergence_token_counterfactual/**
 !results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/**/*.csv
 !results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/**/*.md
 !results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/**/*.png
+!results/exp20_divergence_token_counterfactual/exp20_midlate_factorial_compact_20260424/
+!results/exp20_divergence_token_counterfactual/exp20_midlate_factorial_compact_20260424/GCS_URIS.txt
 !results/exp21_productive_opposition/
 results/exp21_productive_opposition/**
 !results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/
@@ -395,6 +408,7 @@ paper_draft/*
 !paper_draft/PAPER_DRAFT_v14.md
 !paper_draft/PAPER_DRAFT_v15.md
 !paper_draft/PAPER_DRAFT_v18.md
+!paper_draft/PAPER_DRAFT_v19.md
 
 .DS_Store
 cache/

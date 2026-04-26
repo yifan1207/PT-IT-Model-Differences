@@ -94,21 +94,29 @@ def _logits_by_layer(
     real_token_mask: torch.Tensor,
     readout: ProbeReadout,
 ) -> torch.Tensor:
-    logits: list[torch.Tensor] = []
     norm_dtype = _module_dtype(final_norm)
     head_dtype = _module_dtype(lm_head)
-    for layer_idx, hidden in enumerate(residuals):
-        h = hidden.to(device=real_token_mask.device)
-        if readout.probes is not None:
+    if readout.probes is None:
+        hidden_stack = torch.stack(
+            [hidden.to(device=real_token_mask.device) for hidden in residuals],
+            dim=0,
+        )
+    else:
+        probed: list[torch.Tensor] = []
+        for layer_idx, hidden in enumerate(residuals):
             if layer_idx not in readout.probes:
                 raise KeyError(f"missing tuned probe for layer {layer_idx}")
-            h = readout.probes[layer_idx](h.to(dtype=norm_dtype).view(1, -1)).view(-1)
-        normed = final_norm(h.to(dtype=norm_dtype).view(1, 1, -1)).view(-1).to(dtype=head_dtype)
-        row = lm_head(normed).float()
-        row = row.clone()
-        row[~real_token_mask.to(row.device)] = float("-inf")
-        logits.append(row)
-    return torch.stack(logits, dim=0)
+            probe = readout.probes[layer_idx]
+            probe_dtype = _module_dtype(probe)
+            h = hidden.to(device=real_token_mask.device, dtype=probe_dtype)
+            probed.append(probe(h.view(1, -1)).view(-1))
+        hidden_stack = torch.stack(probed, dim=0)
+
+    normed = final_norm(hidden_stack.to(dtype=norm_dtype).view(len(residuals), 1, -1)).view(len(residuals), -1)
+    logits = lm_head(normed.to(dtype=head_dtype)).float()
+    logits = logits.clone()
+    logits[:, ~real_token_mask.to(logits.device)] = float("-inf")
+    return logits
 
 
 def _read_done_ids(path: Path) -> set[str]:
@@ -375,4 +383,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
