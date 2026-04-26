@@ -24,7 +24,7 @@ If you are new to the repo, these are the most useful entrypoints:
 - [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md): canonical experiment map and path conventions
 - [scripts/README.md](scripts/README.md): grouped script layout and common commands
 - `uv run python scripts/infra/repo_doctor.py`: lightweight repo health check
-- [paper_draft/PAPER_DRAFT_v14.md](paper_draft/PAPER_DRAFT_v14.md): current paper framing
+- [paper_draft/PAPER_DRAFT_v15.md](paper_draft/PAPER_DRAFT_v15.md): current paper framing, including the reproducibility and artifact map
 
 The repo has been reorganized into descriptive canonical paths:
 
@@ -33,6 +33,10 @@ The repo has been reorganized into descriptive canonical paths:
 - scripts: `scripts/run/`, `scripts/plot/`, `scripts/analysis/`, `scripts/infra/`, etc.
 
 A few flat script aliases are still kept where practical, but results now live only under the descriptive canonical paths.
+
+### Reproducibility artifacts
+
+The public code release is this repository: `https://github.com/yifan1207/structral-semantic-features`. Paper-facing summaries and plots are committed under `results/`, including JSON/CSV/MD tables, bootstrap intervals, human-evaluation summaries, and final figures for the main claims. Large regenerated intermediates such as raw activation arrays, model/probe tensors, tuned-lens checkpoints, and multi-gigabyte raw per-token traces stay out of git, with the corresponding scripts and prompt datasets included for reruns.
 
 ---
 

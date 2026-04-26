@@ -1,0 +1,9 @@
+{
+  "n_prompts": 120,
+  "max_new_tokens_asserted": 512,
+  "n_at_cap": 108,
+  "fraction_at_cap": 0.9,
+  "mean_teacher_length": 484.3833333333333,
+  "median_teacher_length": 512.0,
+  "max_teacher_length": 512
+}

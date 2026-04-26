@@ -1,0 +1,15 @@
+# Exp20/Exp21 Handoff Synthesis
+
+Paper insertion summary: mid layers are more diagnostic of candidate identity, late IT MLPs are the strongest tested native readout/write-out stage, and negative residual opposition is a geometric companion rather than direct write-in evidence.
+
+| Evidence | Metric | Comparison | Dense5 value | Interpretation | Caveat |
+|---|---|---|---:|---|---|
+| Exp20 identity | raw-shared IT-token fraction under PT host | PT+IT mid vs PT+IT late | 26.0% vs 17.6% | Middle grafts transfer opposite-model token identity more than late grafts. | Raw-shared is the cleaner identity control but not the native IT deployment prompt. |
+| Exp20 native readout | native IT-host margin drop | pure IT minus PT early/mid/late swap | early 11.534, mid 12.009, late 13.248 | Late swap causes the largest single-window loss of native IT-vs-PT token margin. | First-divergence token margin is a causal proxy, not direct human-rated behavior. |
+| Exp20 combined windows | native IT-host margin drop | pure IT minus PT early+mid / mid+late swap | early+mid 16.001, mid+late 17.098 | Multi-window swaps hurt more than any single window, supporting a distributed circuit. | The strongest claim is distributed mid-to-late handoff, not a late-only module. |
+| Exp21 MLP support | pure IT support_it_token | early vs mid vs late MLP windows | early -0.041, mid 0.021, late 0.789 | Direct IT-token write-out in pure IT is overwhelmingly late. | Logit deltas are local MLP finite differences, not probabilities. |
+| Exp21 IT shift | IT-minus-PT support_it_token | early vs mid vs late MLP windows | early 0.034, mid 0.070, late 0.715 | Instruction tuning mostly increases late MLP support for the IT divergent token. | Absolute support magnitudes are compared within the same fixed-prefix readout design. |
+| Exp21 IT-host necessity | late-window MLP IT-vs-PT margin drop | C_it_chat minus D early/mid/late swap | early 0.222, mid 0.160, late 0.292 | Removing IT late layers causes the largest single-window MLP margin loss. | This is fixed-prefix MLP write-in, not free-running behavioral causality. |
+| Exp21 PT-host sufficiency | late-window MLP IT-vs-PT margin gain | B_late - A and B_midlate - B_mid | B_late-A 0.004; B_midlate-B_mid 0.012 | IT late weights alone are weak in a PT upstream state. | Late readout appears context-gated by earlier IT computation. |
+| Exp21 source decomposition | 2x2 late-window MLP margin effects | late weights vs upstream context vs interaction | late weights 0.148, upstream 0.403, interaction 0.288 | Upstream IT context is larger than the late-weight main effect, with positive interaction. | Late layers are important but not standalone sufficient. |
+| Exp21 residual-opposition caveat | negative-parallel vs full-update IT-vs-PT margin | pure IT late MLP update | full update 0.768; negative-parallel -0.005; delta-cosine IT-PT -0.080 | Token-specific full-update write-in is the mechanism evidence. | Negative residual opposition is a geometric marker, not direct IT-token write-in. |

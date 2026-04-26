@@ -1,0 +1,18 @@
+{
+  "IT teacher (original)": {
+    "weighted_pre_corrective": 0.10566313034221163,
+    "weighted_final20": 0.16909400464260788,
+    "weighted_full_stack": 0.13029613792161815,
+    "prompt_mean_pre_corrective": 0.12087137830346867,
+    "prompt_mean_final20": 0.19558364230213074,
+    "prompt_mean_full_stack": 0.14839094107741718
+  },
+  "PT teacher (reverse)": {
+    "weighted_pre_corrective": 0.09421750560714506,
+    "weighted_final20": 0.10874636667845404,
+    "weighted_full_stack": 0.10657901805407018,
+    "prompt_mean_pre_corrective": 0.15184768061390455,
+    "prompt_mean_final20": 0.20311482199666614,
+    "prompt_mean_full_stack": 0.1736501972799274
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "counts": {
+    "native/deepseek_v2_lite": 600,
+    "native/gemma3_4b": 600,
+    "native/llama31_8b": 600,
+    "native/mistral_7b": 600,
+    "native/olmo2_7b": 600,
+    "native/qwen3_4b": 600,
+    "raw_shared/deepseek_v2_lite": 600,
+    "raw_shared/gemma3_4b": 600,
+    "raw_shared/llama31_8b": 600,
+    "raw_shared/mistral_7b": 600,
+    "raw_shared/olmo2_7b": 600,
+    "raw_shared/qwen3_4b": 600
+  },
+  "missing": [],
+  "ok": true,
+  "root": "results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736"
+}

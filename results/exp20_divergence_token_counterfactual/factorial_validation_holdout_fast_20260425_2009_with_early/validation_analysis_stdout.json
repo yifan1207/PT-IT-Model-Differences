@@ -1,0 +1,3908 @@
+{
+  "by_model": {
+    "native/gemma3_4b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "pt": 600
+          },
+          "class_fractions": {
+            "pt": 1.0
+          },
+          "count": 600,
+          "late_margin_mean": -6.479216804504395
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "other": 144,
+            "pt": 456
+          },
+          "class_fractions": {
+            "other": 0.24,
+            "pt": 0.76
+          },
+          "count": 600,
+          "late_margin_mean": -5.513751093546549
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "other": 229,
+            "pt": 371
+          },
+          "class_fractions": {
+            "other": 0.38166666666666665,
+            "pt": 0.6183333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -5.861253801981608
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "other": 178,
+            "pt": 422
+          },
+          "class_fractions": {
+            "other": 0.2966666666666667,
+            "pt": 0.7033333333333334
+          },
+          "count": 600,
+          "late_margin_mean": -8.551760749816895
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "other": 192,
+            "pt": 408
+          },
+          "class_fractions": {
+            "other": 0.32,
+            "pt": 0.68
+          },
+          "count": 600,
+          "late_margin_mean": -6.595941365559896
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "it": 1,
+            "other": 219,
+            "pt": 380
+          },
+          "class_fractions": {
+            "it": 0.0016666666666666668,
+            "other": 0.365,
+            "pt": 0.6333333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -8.55894266764323
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 600
+          },
+          "class_fractions": {
+            "it": 1.0
+          },
+          "count": 600,
+          "late_margin_mean": 53.128717041015626
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 404,
+            "other": 196
+          },
+          "class_fractions": {
+            "it": 0.6733333333333333,
+            "other": 0.32666666666666666
+          },
+          "count": 600,
+          "late_margin_mean": 18.23377461751302
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 161,
+            "other": 439
+          },
+          "class_fractions": {
+            "it": 0.2683333333333333,
+            "other": 0.7316666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 10.240264282226562
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 215,
+            "other": 385
+          },
+          "class_fractions": {
+            "it": 0.35833333333333334,
+            "other": 0.6416666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 10.13767822265625
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 184,
+            "other": 416
+          },
+          "class_fractions": {
+            "it": 0.30666666666666664,
+            "other": 0.6933333333333334
+          },
+          "count": 600,
+          "late_margin_mean": 14.68296875
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 70,
+            "other": 530
+          },
+          "class_fractions": {
+            "it": 0.11666666666666667,
+            "other": 0.8833333333333333
+          },
+          "count": 600,
+          "late_margin_mean": 5.188212890625
+        }
+      },
+      "first_diff_missing": 0,
+      "first_diff_present": 600,
+      "n_records": 600
+    },
+    "native/llama31_8b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "pt": 600
+          },
+          "class_fractions": {
+            "pt": 1.0
+          },
+          "count": 600,
+          "late_margin_mean": -7.447156944274902
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "other": 193,
+            "pt": 407
+          },
+          "class_fractions": {
+            "other": 0.32166666666666666,
+            "pt": 0.6783333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -7.22026357014974
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "other": 251,
+            "pt": 349
+          },
+          "class_fractions": {
+            "other": 0.41833333333333333,
+            "pt": 0.5816666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -6.99144234975179
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "other": 226,
+            "pt": 374
+          },
+          "class_fractions": {
+            "other": 0.37666666666666665,
+            "pt": 0.6233333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -8.16884947458903
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "other": 153,
+            "pt": 447
+          },
+          "class_fractions": {
+            "other": 0.255,
+            "pt": 0.745
+          },
+          "count": 600,
+          "late_margin_mean": -7.134588495890299
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "other": 281,
+            "pt": 319
+          },
+          "class_fractions": {
+            "other": 0.4683333333333333,
+            "pt": 0.5316666666666666
+          },
+          "count": 600,
+          "late_margin_mean": -7.687031885782877
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 600
+          },
+          "class_fractions": {
+            "it": 1.0
+          },
+          "count": 600,
+          "late_margin_mean": 20.20283275604248
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 384,
+            "other": 216
+          },
+          "class_fractions": {
+            "it": 0.64,
+            "other": 0.36
+          },
+          "count": 600,
+          "late_margin_mean": 12.584243977864583
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 313,
+            "other": 287
+          },
+          "class_fractions": {
+            "it": 0.5216666666666666,
+            "other": 0.47833333333333333
+          },
+          "count": 600,
+          "late_margin_mean": 8.585375518798829
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 462,
+            "other": 138
+          },
+          "class_fractions": {
+            "it": 0.77,
+            "other": 0.23
+          },
+          "count": 600,
+          "late_margin_mean": 12.456982638041179
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 435,
+            "other": 165
+          },
+          "class_fractions": {
+            "it": 0.725,
+            "other": 0.275
+          },
+          "count": 600,
+          "late_margin_mean": 13.931415354410808
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 391,
+            "other": 209
+          },
+          "class_fractions": {
+            "it": 0.6516666666666666,
+            "other": 0.34833333333333333
+          },
+          "count": 600,
+          "late_margin_mean": 9.273519439697266
+        }
+      },
+      "first_diff_missing": 0,
+      "first_diff_present": 600,
+      "n_records": 600
+    },
+    "native/mistral_7b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "it": 2,
+            "pt": 598
+          },
+          "class_fractions": {
+            "it": 0.0033333333333333335,
+            "pt": 0.9966666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -1.9970079549153645
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "it": 25,
+            "other": 65,
+            "pt": 510
+          },
+          "class_fractions": {
+            "it": 0.041666666666666664,
+            "other": 0.10833333333333334,
+            "pt": 0.85
+          },
+          "count": 600,
+          "late_margin_mean": -1.9860011800130208
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "it": 73,
+            "other": 91,
+            "pt": 436
+          },
+          "class_fractions": {
+            "it": 0.12166666666666667,
+            "other": 0.15166666666666667,
+            "pt": 0.7266666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -1.8700961303710937
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "it": 35,
+            "other": 47,
+            "pt": 518
+          },
+          "class_fractions": {
+            "it": 0.058333333333333334,
+            "other": 0.07833333333333334,
+            "pt": 0.8633333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -1.6637918090820312
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "it": 45,
+            "other": 55,
+            "pt": 500
+          },
+          "class_fractions": {
+            "it": 0.075,
+            "other": 0.09166666666666666,
+            "pt": 0.8333333333333334
+          },
+          "count": 600,
+          "late_margin_mean": -2.0085160319010416
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "it": 79,
+            "other": 85,
+            "pt": 436
+          },
+          "class_fractions": {
+            "it": 0.13166666666666665,
+            "other": 0.14166666666666666,
+            "pt": 0.7266666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -1.6381840006510417
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 600
+          },
+          "class_fractions": {
+            "it": 1.0
+          },
+          "count": 600,
+          "late_margin_mean": 8.812860781351725
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 208,
+            "other": 292,
+            "pt": 100
+          },
+          "class_fractions": {
+            "it": 0.3466666666666667,
+            "other": 0.4866666666666667,
+            "pt": 0.16666666666666666
+          },
+          "count": 600,
+          "late_margin_mean": 2.874448089599609
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 134,
+            "other": 318,
+            "pt": 148
+          },
+          "class_fractions": {
+            "it": 0.22333333333333333,
+            "other": 0.53,
+            "pt": 0.24666666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 1.1731061808268228
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 410,
+            "other": 158,
+            "pt": 32
+          },
+          "class_fractions": {
+            "it": 0.6833333333333333,
+            "other": 0.2633333333333333,
+            "pt": 0.05333333333333334
+          },
+          "count": 600,
+          "late_margin_mean": 4.520131289164225
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 378,
+            "other": 174,
+            "pt": 48
+          },
+          "class_fractions": {
+            "it": 0.63,
+            "other": 0.29,
+            "pt": 0.08
+          },
+          "count": 600,
+          "late_margin_mean": 7.110220082600912
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 283,
+            "other": 247,
+            "pt": 70
+          },
+          "class_fractions": {
+            "it": 0.4716666666666667,
+            "other": 0.4116666666666667,
+            "pt": 0.11666666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 2.9350638326009113
+        }
+      },
+      "first_diff_missing": 0,
+      "first_diff_present": 600,
+      "n_records": 600
+    },
+    "native/olmo2_7b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "pt": 600
+          },
+          "class_fractions": {
+            "pt": 1.0
+          },
+          "count": 600,
+          "late_margin_mean": -5.284905843734741
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "other": 195,
+            "pt": 405
+          },
+          "class_fractions": {
+            "other": 0.325,
+            "pt": 0.675
+          },
+          "count": 600,
+          "late_margin_mean": -4.86141617457072
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "other": 248,
+            "pt": 352
+          },
+          "class_fractions": {
+            "other": 0.41333333333333333,
+            "pt": 0.5866666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -4.849487272898356
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "other": 152,
+            "pt": 448
+          },
+          "class_fractions": {
+            "other": 0.25333333333333335,
+            "pt": 0.7466666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -5.901826937993367
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "other": 167,
+            "pt": 433
+          },
+          "class_fractions": {
+            "other": 0.2783333333333333,
+            "pt": 0.7216666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -5.232736701965332
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "other": 235,
+            "pt": 365
+          },
+          "class_fractions": {
+            "other": 0.39166666666666666,
+            "pt": 0.6083333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -5.683153266906738
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 600
+          },
+          "class_fractions": {
+            "it": 1.0
+          },
+          "count": 600,
+          "late_margin_mean": 14.40341318766276
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 452,
+            "other": 148
+          },
+          "class_fractions": {
+            "it": 0.7533333333333333,
+            "other": 0.24666666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 14.1298952404658
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 363,
+            "other": 237
+          },
+          "class_fractions": {
+            "it": 0.605,
+            "other": 0.395
+          },
+          "count": 600,
+          "late_margin_mean": 12.332770182291666
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 485,
+            "other": 115
+          },
+          "class_fractions": {
+            "it": 0.8083333333333333,
+            "other": 0.19166666666666668
+          },
+          "count": 600,
+          "late_margin_mean": 10.800008239746093
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 427,
+            "other": 173
+          },
+          "class_fractions": {
+            "it": 0.7116666666666667,
+            "other": 0.28833333333333333
+          },
+          "count": 600,
+          "late_margin_mean": 12.171190478006999
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 395,
+            "other": 205
+          },
+          "class_fractions": {
+            "it": 0.6583333333333333,
+            "other": 0.3416666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 9.81941598256429
+        }
+      },
+      "first_diff_missing": 0,
+      "first_diff_present": 600,
+      "n_records": 600
+    },
+    "native/qwen3_4b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "pt": 600
+          },
+          "class_fractions": {
+            "pt": 1.0
+          },
+          "count": 600,
+          "late_margin_mean": -6.375012512207031
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "other": 171,
+            "pt": 429
+          },
+          "class_fractions": {
+            "other": 0.285,
+            "pt": 0.715
+          },
+          "count": 600,
+          "late_margin_mean": -5.505904858907064
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "it": 1,
+            "other": 218,
+            "pt": 381
+          },
+          "class_fractions": {
+            "it": 0.0016666666666666668,
+            "other": 0.36333333333333334,
+            "pt": 0.635
+          },
+          "count": 600,
+          "late_margin_mean": -6.119954528808594
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "other": 352,
+            "pt": 248
+          },
+          "class_fractions": {
+            "other": 0.5866666666666667,
+            "pt": 0.41333333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -7.515422668457031
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "other": 197,
+            "pt": 403
+          },
+          "class_fractions": {
+            "other": 0.3283333333333333,
+            "pt": 0.6716666666666666
+          },
+          "count": 600,
+          "late_margin_mean": -5.603616358439128
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "other": 318,
+            "pt": 282
+          },
+          "class_fractions": {
+            "other": 0.53,
+            "pt": 0.47
+          },
+          "count": 600,
+          "late_margin_mean": -6.876031723022461
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 600
+          },
+          "class_fractions": {
+            "it": 1.0
+          },
+          "count": 600,
+          "late_margin_mean": 26.07637840270996
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 383,
+            "other": 217
+          },
+          "class_fractions": {
+            "it": 0.6383333333333333,
+            "other": 0.3616666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 17.13412790934245
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 72,
+            "other": 528
+          },
+          "class_fractions": {
+            "it": 0.12,
+            "other": 0.88
+          },
+          "count": 600,
+          "late_margin_mean": 10.28919708251953
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 458,
+            "other": 142
+          },
+          "class_fractions": {
+            "it": 0.7633333333333333,
+            "other": 0.23666666666666666
+          },
+          "count": 600,
+          "late_margin_mean": 18.470055770874023
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 355,
+            "other": 245
+          },
+          "class_fractions": {
+            "it": 0.5916666666666667,
+            "other": 0.4083333333333333
+          },
+          "count": 600,
+          "late_margin_mean": 14.68497548421224
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 391,
+            "other": 209
+          },
+          "class_fractions": {
+            "it": 0.6516666666666666,
+            "other": 0.34833333333333333
+          },
+          "count": 600,
+          "late_margin_mean": 9.917829081217448
+        }
+      },
+      "first_diff_missing": 0,
+      "first_diff_present": 600,
+      "n_records": 600
+    },
+    "raw_shared/gemma3_4b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "it": 2,
+            "other": 6,
+            "pt": 592
+          },
+          "class_fractions": {
+            "it": 0.0033333333333333335,
+            "other": 0.01,
+            "pt": 0.9866666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -1.5120792643229166
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "it": 102,
+            "other": 200,
+            "pt": 298
+          },
+          "class_fractions": {
+            "it": 0.17,
+            "other": 0.3333333333333333,
+            "pt": 0.49666666666666665
+          },
+          "count": 600,
+          "late_margin_mean": -0.7976171875
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "it": 290,
+            "other": 162,
+            "pt": 148
+          },
+          "class_fractions": {
+            "it": 0.48333333333333334,
+            "other": 0.27,
+            "pt": 0.24666666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 0.9667708333333334
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "it": 77,
+            "other": 208,
+            "pt": 315
+          },
+          "class_fractions": {
+            "it": 0.12833333333333333,
+            "other": 0.3466666666666667,
+            "pt": 0.525
+          },
+          "count": 600,
+          "late_margin_mean": -1.5053605143229167
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "it": 168,
+            "other": 198,
+            "pt": 234
+          },
+          "class_fractions": {
+            "it": 0.28,
+            "other": 0.33,
+            "pt": 0.39
+          },
+          "count": 600,
+          "late_margin_mean": -0.301572265625
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "it": 208,
+            "other": 229,
+            "pt": 163
+          },
+          "class_fractions": {
+            "it": 0.3466666666666667,
+            "other": 0.38166666666666665,
+            "pt": 0.27166666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 0.5056673177083333
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 597,
+            "other": 3
+          },
+          "class_fractions": {
+            "it": 0.995,
+            "other": 0.005
+          },
+          "count": 600,
+          "late_margin_mean": 6.654313659667968
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 200,
+            "other": 220,
+            "pt": 180
+          },
+          "class_fractions": {
+            "it": 0.3333333333333333,
+            "other": 0.36666666666666664,
+            "pt": 0.3
+          },
+          "count": 600,
+          "late_margin_mean": 0.37781789143880207
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 82,
+            "other": 174,
+            "pt": 344
+          },
+          "class_fractions": {
+            "it": 0.13666666666666666,
+            "other": 0.29,
+            "pt": 0.5733333333333334
+          },
+          "count": 600,
+          "late_margin_mean": -1.289896240234375
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 271,
+            "other": 220,
+            "pt": 109
+          },
+          "class_fractions": {
+            "it": 0.45166666666666666,
+            "other": 0.36666666666666664,
+            "pt": 0.18166666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 1.0951339721679687
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 132,
+            "other": 210,
+            "pt": 258
+          },
+          "class_fractions": {
+            "it": 0.22,
+            "other": 0.35,
+            "pt": 0.43
+          },
+          "count": 600,
+          "late_margin_mean": -0.5594442749023437
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 88,
+            "other": 231,
+            "pt": 281
+          },
+          "class_fractions": {
+            "it": 0.14666666666666667,
+            "other": 0.385,
+            "pt": 0.4683333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -0.8476734415690104
+        }
+      },
+      "first_diff_missing": 0,
+      "first_diff_present": 600,
+      "n_records": 600
+    },
+    "raw_shared/llama31_8b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "it": 4,
+            "other": 3,
+            "pt": 593
+          },
+          "class_fractions": {
+            "it": 0.006666666666666667,
+            "other": 0.005,
+            "pt": 0.9883333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -1.5257870356241863
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "it": 104,
+            "other": 154,
+            "pt": 342
+          },
+          "class_fractions": {
+            "it": 0.17333333333333334,
+            "other": 0.25666666666666665,
+            "pt": 0.57
+          },
+          "count": 600,
+          "late_margin_mean": -1.2458806482950846
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "it": 251,
+            "other": 129,
+            "pt": 220
+          },
+          "class_fractions": {
+            "it": 0.41833333333333333,
+            "other": 0.215,
+            "pt": 0.36666666666666664
+          },
+          "count": 600,
+          "late_margin_mean": -0.7828421401977539
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "it": 129,
+            "other": 193,
+            "pt": 278
+          },
+          "class_fractions": {
+            "it": 0.215,
+            "other": 0.32166666666666666,
+            "pt": 0.4633333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -0.7789364496866862
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "it": 161,
+            "other": 104,
+            "pt": 335
+          },
+          "class_fractions": {
+            "it": 0.2683333333333333,
+            "other": 0.17333333333333334,
+            "pt": 0.5583333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -1.2383550564448038
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "it": 226,
+            "other": 205,
+            "pt": 169
+          },
+          "class_fractions": {
+            "it": 0.37666666666666665,
+            "other": 0.3416666666666667,
+            "pt": 0.2816666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -0.5215370225906372
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 596,
+            "other": 1,
+            "pt": 3
+          },
+          "class_fractions": {
+            "it": 0.9933333333333333,
+            "other": 0.0016666666666666668,
+            "pt": 0.005
+          },
+          "count": 600,
+          "late_margin_mean": 2.714121348063151
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 293,
+            "other": 173,
+            "pt": 134
+          },
+          "class_fractions": {
+            "it": 0.48833333333333334,
+            "other": 0.28833333333333333,
+            "pt": 0.22333333333333333
+          },
+          "count": 600,
+          "late_margin_mean": 0.5125955200195312
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 193,
+            "other": 181,
+            "pt": 226
+          },
+          "class_fractions": {
+            "it": 0.32166666666666666,
+            "other": 0.3016666666666667,
+            "pt": 0.37666666666666665
+          },
+          "count": 600,
+          "late_margin_mean": 0.0887277857462565
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 336,
+            "other": 146,
+            "pt": 118
+          },
+          "class_fractions": {
+            "it": 0.56,
+            "other": 0.24333333333333335,
+            "pt": 0.19666666666666666
+          },
+          "count": 600,
+          "late_margin_mean": 1.072561289469401
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 248,
+            "other": 183,
+            "pt": 169
+          },
+          "class_fractions": {
+            "it": 0.41333333333333333,
+            "other": 0.305,
+            "pt": 0.2816666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 0.5279975891113281
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 147,
+            "other": 201,
+            "pt": 252
+          },
+          "class_fractions": {
+            "it": 0.245,
+            "other": 0.335,
+            "pt": 0.42
+          },
+          "count": 600,
+          "late_margin_mean": -0.2595870463053385
+        }
+      },
+      "first_diff_missing": 0,
+      "first_diff_present": 600,
+      "n_records": 600
+    },
+    "raw_shared/mistral_7b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "it": 4,
+            "other": 3,
+            "pt": 590
+          },
+          "class_fractions": {
+            "it": 0.006700167504187605,
+            "other": 0.005025125628140704,
+            "pt": 0.9882747068676717
+          },
+          "count": 597,
+          "late_margin_mean": -1.1951705958176297
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "it": 102,
+            "other": 143,
+            "pt": 352
+          },
+          "class_fractions": {
+            "it": 0.1708542713567839,
+            "other": 0.23953098827470687,
+            "pt": 0.5896147403685092
+          },
+          "count": 597,
+          "late_margin_mean": -0.8372736184840626
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "it": 223,
+            "other": 147,
+            "pt": 227
+          },
+          "class_fractions": {
+            "it": 0.37353433835845895,
+            "other": 0.24623115577889448,
+            "pt": 0.38023450586264657
+          },
+          "count": 597,
+          "late_margin_mean": -0.18531571840321398
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "it": 77,
+            "other": 82,
+            "pt": 438
+          },
+          "class_fractions": {
+            "it": 0.12897822445561138,
+            "other": 0.1373534338358459,
+            "pt": 0.7336683417085427
+          },
+          "count": 597,
+          "late_margin_mean": -0.7099057298209799
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "it": 117,
+            "other": 121,
+            "pt": 359
+          },
+          "class_fractions": {
+            "it": 0.19597989949748743,
+            "other": 0.20268006700167504,
+            "pt": 0.6013400335008375
+          },
+          "count": 597,
+          "late_margin_mean": -0.8136738277160542
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "it": 202,
+            "other": 143,
+            "pt": 252
+          },
+          "class_fractions": {
+            "it": 0.33835845896147404,
+            "other": 0.23953098827470687,
+            "pt": 0.4221105527638191
+          },
+          "count": 597,
+          "late_margin_mean": -0.17896381934084485
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 589,
+            "other": 3,
+            "pt": 5
+          },
+          "class_fractions": {
+            "it": 0.9865996649916248,
+            "other": 0.005025125628140704,
+            "pt": 0.008375209380234505
+          },
+          "count": 597,
+          "late_margin_mean": 3.570351298729978
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 285,
+            "other": 137,
+            "pt": 175
+          },
+          "class_fractions": {
+            "it": 0.47738693467336685,
+            "other": 0.22948073701842547,
+            "pt": 0.2931323283082077
+          },
+          "count": 597,
+          "late_margin_mean": 0.6294133427554439
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 157,
+            "other": 133,
+            "pt": 307
+          },
+          "class_fractions": {
+            "it": 0.2629815745393635,
+            "other": 0.22278056951423786,
+            "pt": 0.5142378559463987
+          },
+          "count": 597,
+          "late_margin_mean": -0.29201917792085424
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 376,
+            "other": 121,
+            "pt": 100
+          },
+          "class_fractions": {
+            "it": 0.6298157453936348,
+            "other": 0.20268006700167504,
+            "pt": 0.16750418760469013
+          },
+          "count": 597,
+          "late_margin_mean": 1.0915248749443833
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 273,
+            "other": 140,
+            "pt": 184
+          },
+          "class_fractions": {
+            "it": 0.457286432160804,
+            "other": 0.23450586264656617,
+            "pt": 0.3082077051926298
+          },
+          "count": 597,
+          "late_margin_mean": 0.6515142035045016
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 180,
+            "other": 154,
+            "pt": 263
+          },
+          "class_fractions": {
+            "it": 0.3015075376884422,
+            "other": 0.25795644891122277,
+            "pt": 0.440536013400335
+          },
+          "count": 597,
+          "late_margin_mean": -0.37641188527271774
+        }
+      },
+      "first_diff_missing": 3,
+      "first_diff_present": 597,
+      "n_records": 600
+    },
+    "raw_shared/olmo2_7b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "other": 1,
+            "pt": 585
+          },
+          "class_fractions": {
+            "other": 0.0017064846416382253,
+            "pt": 0.9982935153583617
+          },
+          "count": 586,
+          "late_margin_mean": -0.6779443037794719
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "it": 80,
+            "other": 164,
+            "pt": 342
+          },
+          "class_fractions": {
+            "it": 0.13651877133105803,
+            "other": 0.27986348122866894,
+            "pt": 0.5836177474402731
+          },
+          "count": 586,
+          "late_margin_mean": -0.5144652539145824
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "it": 181,
+            "other": 168,
+            "pt": 237
+          },
+          "class_fractions": {
+            "it": 0.30887372013651876,
+            "other": 0.28668941979522183,
+            "pt": 0.4044368600682594
+          },
+          "count": 586,
+          "late_margin_mean": -0.11822124064578945
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "it": 98,
+            "other": 138,
+            "pt": 350
+          },
+          "class_fractions": {
+            "it": 0.16723549488054607,
+            "other": 0.2354948805460751,
+            "pt": 0.5972696245733788
+          },
+          "count": 586,
+          "late_margin_mean": -0.09410496213737202
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "it": 108,
+            "other": 134,
+            "pt": 344
+          },
+          "class_fractions": {
+            "it": 0.18430034129692832,
+            "other": 0.22866894197952217,
+            "pt": 0.5870307167235495
+          },
+          "count": 586,
+          "late_margin_mean": -0.4207661859818286
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "it": 211,
+            "other": 161,
+            "pt": 214
+          },
+          "class_fractions": {
+            "it": 0.36006825938566556,
+            "other": 0.27474402730375425,
+            "pt": 0.3651877133105802
+          },
+          "count": 586,
+          "late_margin_mean": 0.25437265858308444
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 585,
+            "other": 1
+          },
+          "class_fractions": {
+            "it": 0.9982935153583617,
+            "other": 0.0017064846416382253
+          },
+          "count": 586,
+          "late_margin_mean": 3.0331383402437075
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 341,
+            "other": 149,
+            "pt": 96
+          },
+          "class_fractions": {
+            "it": 0.5819112627986348,
+            "other": 0.25426621160409557,
+            "pt": 0.16382252559726962
+          },
+          "count": 586,
+          "late_margin_mean": 1.4491998457664517
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 211,
+            "other": 188,
+            "pt": 187
+          },
+          "class_fractions": {
+            "it": 0.36006825938566556,
+            "other": 0.32081911262798635,
+            "pt": 0.3191126279863481
+          },
+          "count": 586,
+          "late_margin_mean": 0.5016219103295648
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 309,
+            "other": 152,
+            "pt": 125
+          },
+          "class_fractions": {
+            "it": 0.5273037542662116,
+            "other": 0.2593856655290102,
+            "pt": 0.21331058020477817
+          },
+          "count": 586,
+          "late_margin_mean": 1.0912698218440033
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 266,
+            "other": 180,
+            "pt": 140
+          },
+          "class_fractions": {
+            "it": 0.4539249146757679,
+            "other": 0.30716723549488056,
+            "pt": 0.23890784982935154
+          },
+          "count": 586,
+          "late_margin_mean": 0.9252477652383746
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 157,
+            "other": 179,
+            "pt": 250
+          },
+          "class_fractions": {
+            "it": 0.26791808873720135,
+            "other": 0.3054607508532423,
+            "pt": 0.42662116040955633
+          },
+          "count": 586,
+          "late_margin_mean": 0.08512810716856868
+        }
+      },
+      "first_diff_missing": 14,
+      "first_diff_present": 586,
+      "n_records": 600
+    },
+    "raw_shared/qwen3_4b": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "it": 3,
+            "other": 2,
+            "pt": 595
+          },
+          "class_fractions": {
+            "it": 0.005,
+            "other": 0.0033333333333333335,
+            "pt": 0.9916666666666667
+          },
+          "count": 600,
+          "late_margin_mean": -1.440983378092448
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "it": 188,
+            "other": 92,
+            "pt": 320
+          },
+          "class_fractions": {
+            "it": 0.31333333333333335,
+            "other": 0.15333333333333332,
+            "pt": 0.5333333333333333
+          },
+          "count": 600,
+          "late_margin_mean": -0.7685511271158855
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "it": 284,
+            "other": 91,
+            "pt": 225
+          },
+          "class_fractions": {
+            "it": 0.47333333333333333,
+            "other": 0.15166666666666667,
+            "pt": 0.375
+          },
+          "count": 600,
+          "late_margin_mean": -0.1376361083984375
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "it": 143,
+            "other": 236,
+            "pt": 221
+          },
+          "class_fractions": {
+            "it": 0.23833333333333334,
+            "other": 0.3933333333333333,
+            "pt": 0.36833333333333335
+          },
+          "count": 600,
+          "late_margin_mean": -0.9400458780924479
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "it": 223,
+            "other": 98,
+            "pt": 279
+          },
+          "class_fractions": {
+            "it": 0.37166666666666665,
+            "other": 0.16333333333333333,
+            "pt": 0.465
+          },
+          "count": 600,
+          "late_margin_mean": -0.47353271484375
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "it": 219,
+            "other": 214,
+            "pt": 167
+          },
+          "class_fractions": {
+            "it": 0.365,
+            "other": 0.3566666666666667,
+            "pt": 0.2783333333333333
+          },
+          "count": 600,
+          "late_margin_mean": 0.21792561848958333
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 596,
+            "other": 2,
+            "pt": 2
+          },
+          "class_fractions": {
+            "it": 0.9933333333333333,
+            "other": 0.0033333333333333335,
+            "pt": 0.0033333333333333335
+          },
+          "count": 600,
+          "late_margin_mean": 2.4794688924153645
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 374,
+            "other": 106,
+            "pt": 120
+          },
+          "class_fractions": {
+            "it": 0.6233333333333333,
+            "other": 0.17666666666666667,
+            "pt": 0.2
+          },
+          "count": 600,
+          "late_margin_mean": 1.3283512369791666
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 253,
+            "other": 113,
+            "pt": 234
+          },
+          "class_fractions": {
+            "it": 0.4216666666666667,
+            "other": 0.18833333333333332,
+            "pt": 0.39
+          },
+          "count": 600,
+          "late_margin_mean": -0.07827213287353516
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 254,
+            "other": 177,
+            "pt": 169
+          },
+          "class_fractions": {
+            "it": 0.42333333333333334,
+            "other": 0.295,
+            "pt": 0.2816666666666667
+          },
+          "count": 600,
+          "late_margin_mean": 0.8503933715820312
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 311,
+            "other": 109,
+            "pt": 180
+          },
+          "class_fractions": {
+            "it": 0.5183333333333333,
+            "other": 0.18166666666666667,
+            "pt": 0.3
+          },
+          "count": 600,
+          "late_margin_mean": 0.5674398040771484
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 189,
+            "other": 168,
+            "pt": 243
+          },
+          "class_fractions": {
+            "it": 0.315,
+            "other": 0.28,
+            "pt": 0.405
+          },
+          "count": 600,
+          "late_margin_mean": -0.08685707092285157
+        }
+      },
+      "first_diff_missing": 0,
+      "first_diff_present": 600,
+      "n_records": 600
+    }
+  },
+  "effects": [
+    {
+      "ci_high": 0.10166666666666667,
+      "ci_low": 0.03162500000000001,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.06666666666666667,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.24,
+      "ci_low": 0.16666666666666666,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.20333333333333334,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.016666666666666666,
+      "ci_low": -0.09833333333333333,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": -0.058333333333333334,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.9723997395833334,
+      "ci_low": 0.6385833333333333,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": 0.8072395833333333,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 1.4116716308593749,
+      "ci_low": 1.1376626790364583,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 1.2683430989583333,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.8861067708333332,
+      "ci_low": 0.7159322916666667,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.8005208333333333,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.7016666666666667,
+      "ci_low": 0.6233333333333333,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.6616666666666666,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.5816666666666667,
+      "ci_low": 0.5016666666666667,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.5433333333333333,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.885,
+      "ci_low": 0.83,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.8583333333333333,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.8766666666666667,
+      "ci_low": 0.8183333333333334,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.8483333333333334,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 6.704891344706217,
+      "ci_low": 5.861950134277343,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 6.276495768229167,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 7.604495450337728,
+      "ci_low": 6.8255767695109055,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 7.213757934570313,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 5.88269921875,
+      "ci_low": 5.231402994791667,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 5.5591796875,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 8.381660939534505,
+      "ci_low": 7.49626077524821,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 7.944209899902344,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 7.921213549296061,
+      "ci_low": 7.0862487691243485,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 7.501987101236979,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.15533203125000017,
+      "ci_low": -0.42016276041666667,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -0.28822916666666665,
+      "mode": "raw_shared",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.03833333333333333,
+      "ci_low": -0.055,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": -0.006666666666666667,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.13166666666666665,
+      "ci_low": 0.07333333333333333,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.10166666666666667,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.19166666666666668,
+      "ci_low": -0.285,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": -0.24,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.8555494791666665,
+      "ci_low": 0.5222656250000001,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": 0.6914583333333333,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.44373583475748696,
+      "ci_low": 0.23214254252115887,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.3358966064453125,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.24958854166666664,
+      "ci_low": 0.13467968749999998,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.19052083333333333,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.4083333333333333,
+      "ci_low": 0.33166666666666667,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.37,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.6083333333333333,
+      "ci_low": 0.5299583333333333,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.57,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.61,
+      "ci_low": 0.5316249999999999,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.5716666666666667,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.715,
+      "ci_low": 0.6416666666666667,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.6783333333333333,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 1.3479563471476232,
+      "ci_low": 0.9642076594034831,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 1.151117655436198,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 2.1130643806457514,
+      "ci_low": 1.7095406487782796,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 1.912029088338216,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 1.8578896484375,
+      "ci_low": 1.4135777994791667,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 1.6290755208333334,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 2.8081023925145465,
+      "ci_low": 2.297884213765462,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 2.5577410252889,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 2.821031852722168,
+      "ci_low": 2.3134499994913735,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 2.5663259633382163,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.45653450520833366,
+      "ci_low": -0.84965625,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -0.654296875,
+      "mode": "raw_shared",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.14333333333333334,
+      "ci_low": 0.07333333333333333,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.10833333333333334,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.185,
+      "ci_low": 0.115,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.15,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.058333333333333334,
+      "ci_low": -0.14166666666666666,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": -0.1,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.7963852539062499,
+      "ci_low": 0.6376617838541667,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": 0.7168180338541666,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.5903078470230103,
+      "ci_low": 0.3424879866838455,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.45551291624705,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.006031005859374987,
+      "ci_low": -0.06517594401041667,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": -0.030032552083333334,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.5466666666666666,
+      "ci_low": 0.4666666666666667,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.505,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.4717083333333331,
+      "ci_low": 0.395,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.43333333333333335,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.7083333333333334,
+      "ci_low": 0.6333333333333333,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.6716666666666666,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.7833333333333333,
+      "ci_low": 0.7133333333333334,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.7483333333333333,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 2.583138951619466,
+      "ci_low": 1.8417848790486653,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 2.2015258280436196,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 2.4926447105407714,
+      "ci_low": 1.8731077931722007,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 2.186123758951823,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 1.7909378662109374,
+      "ci_low": 1.5009527384440102,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 1.64156005859375,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 3.0091518551508583,
+      "ci_low": 2.2605424982706706,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 2.6253935623168947,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 3.295028667449951,
+      "ci_low": 2.674707815806071,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 2.9737083943684897,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.7104222005208334,
+      "ci_low": -0.867716552734375,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -0.7875846354166667,
+      "mode": "raw_shared",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.17257118927973178,
+      "ci_low": 0.11222780569514237,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.1423785594639866,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.21273031825795644,
+      "ci_low": 0.1440536013400335,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.17755443886097153,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.05527638190954774,
+      "ci_low": -0.018425460636515914,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": 0.020100502512562814,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.6999378402428811,
+      "ci_low": 0.573832050879397,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": 0.6347100083752094,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.7208458036234229,
+      "ci_low": 0.5411502576153882,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.6283581093128402,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.1820842493718593,
+      "ci_low": 0.11965687814070351,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.14944514237855946,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.5511306532663315,
+      "ci_low": 0.46901172529313234,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.509212730318258,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.3953098827470687,
+      "ci_low": 0.3165829145728643,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.35678391959798994,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.7604690117252931,
+      "ci_low": 0.6884422110552764,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.7236180904522613,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.7236180904522613,
+      "ci_low": 0.6465661641541038,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.6850921273031826,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 3.165035001157316,
+      "ci_low": 2.7066356218040886,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 2.940937955974534,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 3.1398549001620246,
+      "ci_low": 2.7017255862953276,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 2.9188370952254763,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 2.6529287060301505,
+      "ci_low": 2.3130895362227806,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 2.478826423785595,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 4.148638818891004,
+      "ci_low": 3.5844084147033177,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 3.8623704766508324,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 4.214884449049855,
+      "ci_low": 3.682687734479281,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 3.946763184002696,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": -0.9294081082495812,
+      "ci_low": -1.1299518425460637,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -1.0279260887772195,
+      "mode": "raw_shared",
+      "model": "mistral_7b",
+      "n": 597
+    },
+    {
+      "ci_high": 0.2133532423208189,
+      "ci_low": 0.13993174061433447,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.1757679180887372,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.15533276450511924,
+      "ci_low": 0.09385665529010238,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.12457337883959044,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.04778156996587031,
+      "ci_low": -0.030716723549488054,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": 0.008532423208191127,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.7593650401248866,
+      "ci_low": 0.5932229611653924,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": 0.675138844564913,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.3957889459238931,
+      "ci_low": 0.21392231833812728,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.30254494533603915,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.14265881984307083,
+      "ci_low": 0.03200110502210494,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.09129950292281323,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.45563139931740615,
+      "ci_low": 0.37542662116040953,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.41638225255972694,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.5119453924914675,
+      "ci_low": 0.431740614334471,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.4709897610921502,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.6774744027303754,
+      "ci_low": 0.5972269624573379,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.6382252559726962,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.764505119453925,
+      "ci_low": 0.6944965870307167,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.7303754266211604,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 1.79620977668632,
+      "ci_low": 1.3704893313984008,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 1.5839384944772557,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 2.3235540656913263,
+      "ci_low": 1.899700667345483,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 2.107890575005333,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 2.0614802845508975,
+      "ci_low": 1.8292825594696982,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 1.941868518399704,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 2.799527888900184,
+      "ci_low": 2.272251256740948,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 2.5315164299141424,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 3.1828478061298457,
+      "ci_low": 2.7217513178802593,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 2.9480102330751388,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": -0.7523791160192913,
+      "ci_low": -0.9333627668257053,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -0.8401196580698059,
+      "mode": "raw_shared",
+      "model": "olmo2_7b",
+      "n": 586
+    },
+    {
+      "ci_high": 0.005,
+      "ci_low": 0.0,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.0016666666666666668,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.0,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.005,
+      "ci_low": 0.0,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": 0.0016666666666666668,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -1.793543701171875,
+      "ci_low": -2.1268740234375,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": -1.9630013020833332,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.8646259927749633,
+      "ci_low": 0.5967792390187582,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.7346875635782878,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.19060285441080718,
+      "ci_low": 0.03322736612955729,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.10954264322916667,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.365,
+      "ci_low": 0.29,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.32666666666666666,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.6816666666666666,
+      "ci_low": 0.605,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.6416666666666667,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.7666666666666667,
+      "ci_low": 0.6966666666666667,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.7316666666666667,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.91,
+      "ci_low": 0.8566666666666667,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.8833333333333333,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 36.36022993469238,
+      "ci_low": 33.41106525166829,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 34.894942423502606,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 40.01496587117513,
+      "ci_low": 36.952558868408204,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 38.445748291015626,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 44.593666412353514,
+      "ci_low": 41.41834888712565,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 42.99103881835938,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 44.463897303263344,
+      "ci_low": 41.24281576538086,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 42.888452758789064,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 49.604488098144536,
+      "ci_low": 46.2662159016927,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 47.94050415039062,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -9.142289265950522,
+      "ci_low": -9.802708170572917,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -9.494755859375,
+      "mode": "native",
+      "model": "gemma3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.0,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.005041666666666439,
+      "ci_low": 0.0,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.0016666666666666668,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": 0.0,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -1.0736844075520833,
+      "ci_low": -1.4765965169270834,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": -1.2724153645833334,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.4136801153818769,
+      "ci_low": -0.6231399428049723,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": -0.5163381703694662,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.06480875651041668,
+      "ci_low": -0.19727897135416667,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": -0.13200520833333335,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.4,
+      "ci_low": 0.3233333333333333,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.3616666666666667,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.26837499999999975,
+      "ci_low": 0.205,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.23666666666666666,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.905,
+      "ci_low": 0.8516666666666667,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.88,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.385,
+      "ci_low": 0.31166666666666665,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.34833333333333333,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 9.691935539881388,
+      "ci_low": 8.223681023279825,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 8.942250493367514,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 12.045475011825562,
+      "ci_low": 10.76540919939677,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 11.391402918497722,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 8.211617772420247,
+      "ci_low": 7.01290446472168,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 7.606322631835938,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 16.4971188398997,
+      "ci_low": 15.020473435084025,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 15.78718132019043,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 16.84435996945699,
+      "ci_low": 15.439083116531371,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 16.15854932149251,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": -4.463336151123047,
+      "ci_low": -5.080648315429688,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -4.767146402994792,
+      "mode": "native",
+      "model": "qwen3_4b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.0,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.0,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": 0.0,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.4564376118977865,
+      "ci_low": -0.6516499315897625,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": -0.5524433898925781,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.27675538317362464,
+      "ci_low": 0.022117658933003742,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.14314614613850912,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.1981340808868408,
+      "ci_low": 0.13835286140441894,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.16924914042154948,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.3983333333333333,
+      "ci_low": 0.32166666666666666,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.36,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.2633333333333333,
+      "ci_low": 0.19833333333333333,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.23,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.5183749999999998,
+      "ci_low": 0.43833333333333335,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.47833333333333333,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.3883333333333333,
+      "ci_low": 0.31,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.34833333333333333,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 8.011021163622537,
+      "ci_low": 7.2490032787322995,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 7.618588778177897,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 6.57259073638916,
+      "ci_low": 5.985881739616394,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 6.271417401631673,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 8.077966061909994,
+      "ci_low": 7.402921778361002,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 7.745850118001302,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 12.057275813420611,
+      "ci_low": 11.159388858477275,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 11.617457237243652,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 11.340124793052674,
+      "ci_low": 10.500130228360495,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 10.929313316345215,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": -4.468605143229167,
+      "ci_low": -4.849573532104492,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -4.657895914713541,
+      "mode": "native",
+      "model": "llama31_8b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.07833333333333334,
+      "ci_low": 0.03666666666666667,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.056666666666666664,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.06504166666666644,
+      "ci_low": 0.028333333333333332,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.04666666666666667,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.02666666666666667,
+      "ci_low": -0.023333333333333334,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": 0.0016666666666666668,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.42486344401041665,
+      "ci_low": 0.3190553385416666,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": 0.37033203125,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.2110514272054036,
+      "ci_low": 0.07020131429036458,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.1384199015299479,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.06121158854166666,
+      "ci_low": 0.013821126302083334,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.03711588541666667,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.69,
+      "ci_low": 0.6149583333333333,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.6533333333333333,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.3516666666666667,
+      "ci_low": 0.28,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.31666666666666665,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.8100416666666664,
+      "ci_low": 0.7416666666666667,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.7766666666666666,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.5683333333333334,
+      "ci_low": 0.49,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.5283333333333333,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 6.231046700795492,
+      "ci_low": 5.648160977045695,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 5.938412691752116,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 1.8828437954584758,
+      "ci_low": 1.5208235562642414,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 1.7026406987508138,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 4.5054854329427085,
+      "ci_low": 4.070405354817709,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 4.2927294921875,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 7.954210078557332,
+      "ci_low": 7.326335669199625,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 7.639754600524903,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 6.156005508740742,
+      "ci_low": 5.587014002164206,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 5.877796948750814,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": -3.941634114583333,
+      "ci_low": -4.418936197916667,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -4.17515625,
+      "mode": "native",
+      "model": "mistral_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.0,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.0,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": 0.0,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": -0.3729141966501872,
+      "ci_low": -0.5200373287200928,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": -0.45041656494140625,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.47183259359995516,
+      "ci_low": 0.2974063622156779,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.3832494290669759,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.1992028776804606,
+      "ci_low": 0.13415770626068116,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.16650452931722004,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.28,
+      "ci_low": 0.21166666666666667,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.24666666666666667,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.22333333333333333,
+      "ci_low": 0.16,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.19166666666666668,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.43666666666666665,
+      "ci_low": 0.355,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.395,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.37833333333333335,
+      "ci_low": 0.3016666666666667,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.3416666666666667,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.5454486943880715,
+      "ci_low": 0.023492380738258364,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 0.27351794719696043,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 2.4708939603169755,
+      "ci_low": 2.000138697306315,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 2.232222709655762,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 3.800707580566406,
+      "ci_low": 3.3877448018391925,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 3.6034049479166668,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 2.399597680409749,
+      "ci_low": 1.728748331705729,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 2.070643005371094,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 4.892815183321635,
+      "ci_low": 4.292657885233561,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 4.58399720509847,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": -2.218737243652344,
+      "ci_low": -2.4892018432617187,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -2.3517744954427084,
+      "mode": "native",
+      "model": "olmo2_7b",
+      "n": 600
+    },
+    {
+      "ci_high": 0.11331713040563186,
+      "ci_low": 0.080782769024472,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.096882333221589,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 0.16694602748910492,
+      "ci_low": 0.1364398256788468,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.1515253100905129,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": -0.05631076097888037,
+      "ci_low": -0.09186221924237345,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": -0.0744217230975528,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 0.7594899859477959,
+      "ci_low": 0.6523433756916226,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": 0.7052842132844583,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 0.6503608017050896,
+      "ci_low": 0.5486915798743539,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.5994879994023138,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 0.26750456183059795,
+      "ci_low": 0.21332022295755865,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.24114171218999952,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 0.5108950720750922,
+      "ci_low": 0.47502514247401945,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.4927924907810929,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 0.49212202480724104,
+      "ci_low": 0.457257794166946,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.47502514247401945,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 0.7090177673483071,
+      "ci_low": 0.6761649346295675,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.6929265839758633,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 0.7536037546094536,
+      "ci_low": 0.7224270868253436,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.7381830372108615,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 2.987987052311323,
+      "ci_low": 2.677765512802119,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 2.836544240196399,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 3.417634566150733,
+      "ci_low": 3.1288611237810158,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 3.273521988574906,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 2.765687570626249,
+      "ci_low": 2.5480281169966807,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 2.6535982188865157,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 4.0683589829800715,
+      "ci_low": 3.7439382442483313,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 3.9107309738501903,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 4.14964360586557,
+      "ci_low": 3.8346112087913458,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 3.9922777381152703,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": -0.6632037913123914,
+      "ci_low": -0.7760297477944681,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -0.7187557495403641,
+      "mode": "raw_shared",
+      "model": "dense5",
+      "n": 2983
+    },
+    {
+      "ci_high": 0.016,
+      "ci_low": 0.007333333333333333,
+      "effect": "PT host identity: mid+late minus mid",
+      "kind": "identity",
+      "mean": 0.011666666666666667,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 0.013666666666666667,
+      "ci_low": 0.005666666666666667,
+      "effect": "PT host identity: early+mid minus mid",
+      "kind": "identity",
+      "mean": 0.009666666666666667,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 0.005666666666666667,
+      "ci_low": -0.004333333333333333,
+      "effect": "PT host identity interaction: [ML-M]-[L-A]",
+      "kind": "identity_interaction",
+      "mean": 0.0006666666666666666,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": -0.7045243977228801,
+      "ci_low": -0.8376306149164835,
+      "effect": "PT host margin: mid+late minus mid",
+      "kind": "margin",
+      "mean": -0.7735889180501302,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 0.22525669972101844,
+      "ci_low": 0.12917901878356935,
+      "effect": "PT host margin: early+mid minus mid",
+      "kind": "margin",
+      "mean": 0.17663297398885092,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 0.09338532238006592,
+      "ci_low": 0.04610778719584147,
+      "effect": "PT host margin interaction: [ML-M]-[L-A]",
+      "kind": "margin_interaction",
+      "mean": 0.07008139801025391,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 0.407,
+      "ci_low": 0.372,
+      "effect": "IT host identity: pure IT minus PT early swap",
+      "kind": "identity",
+      "mean": 0.38966666666666666,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 0.34,
+      "ci_low": 0.307,
+      "effect": "IT host identity: pure IT minus PT late swap",
+      "kind": "identity",
+      "mean": 0.3233333333333333,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 0.6690083333333333,
+      "ci_low": 0.6356666666666667,
+      "effect": "IT host identity: pure IT minus PT early+mid swap",
+      "kind": "identity",
+      "mean": 0.6523333333333333,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 0.5073333333333333,
+      "ci_low": 0.47265833333333335,
+      "effect": "IT host identity: pure IT minus PT mid+late swap",
+      "kind": "identity",
+      "mean": 0.49,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 12.11286967315674,
+      "ci_low": 10.98971763416926,
+      "effect": "IT host margin: pure IT minus PT early swap",
+      "kind": "margin",
+      "mean": 11.533542466799418,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 12.617805764834086,
+      "ci_low": 11.362005119005838,
+      "effect": "IT host margin: pure IT minus PT mid swap",
+      "kind": "margin",
+      "mean": 12.00868640391032,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 13.901935356140138,
+      "ci_low": 12.599745503234864,
+      "effect": "IT host margin: pure IT minus PT late swap",
+      "kind": "margin",
+      "mean": 13.247869201660157,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 16.681866789182028,
+      "ci_low": 15.378885377756754,
+      "effect": "IT host margin: pure IT minus PT early+mid swap",
+      "kind": "margin",
+      "mean": 16.000697784423828,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": 17.785436414718628,
+      "ci_low": 16.39642660821279,
+      "effect": "IT host margin: pure IT minus PT mid+late swap",
+      "kind": "margin",
+      "mean": 17.098032188415527,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    },
+    {
+      "ci_high": -4.951985325113932,
+      "ci_low": -5.23541650390625,
+      "effect": "IT host margin: PT mid+late swap minus PT mid swap",
+      "kind": "margin",
+      "mean": -5.089345784505208,
+      "mode": "native",
+      "model": "dense5",
+      "n": 3000
+    }
+  ],
+  "models": [
+    "gemma3_4b",
+    "qwen3_4b",
+    "llama31_8b",
+    "mistral_7b",
+    "olmo2_7b"
+  ],
+  "pooled": {
+    "native": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "it": 2,
+            "pt": 2998
+          },
+          "class_fractions": {
+            "it": 0.0006666666666666666,
+            "pt": 0.9993333333333333
+          },
+          "count": 3000,
+          "late_margin_mean": -5.516660011927287
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "it": 25,
+            "other": 768,
+            "pt": 2207
+          },
+          "class_fractions": {
+            "it": 0.008333333333333333,
+            "other": 0.256,
+            "pt": 0.7356666666666667
+          },
+          "count": 3000,
+          "late_margin_mean": -5.017467375437419
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "it": 74,
+            "other": 1037,
+            "pt": 1889
+          },
+          "class_fractions": {
+            "it": 0.024666666666666667,
+            "other": 0.3456666666666667,
+            "pt": 0.6296666666666667
+          },
+          "count": 3000,
+          "late_margin_mean": -5.138446816762288
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "it": 35,
+            "other": 955,
+            "pt": 2010
+          },
+          "class_fractions": {
+            "it": 0.011666666666666667,
+            "other": 0.31833333333333336,
+            "pt": 0.67
+          },
+          "count": 3000,
+          "late_margin_mean": -6.360330327987671
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "it": 45,
+            "other": 764,
+            "pt": 2191
+          },
+          "class_fractions": {
+            "it": 0.015,
+            "other": 0.25466666666666665,
+            "pt": 0.7303333333333333
+          },
+          "count": 3000,
+          "late_margin_mean": -5.315079790751139
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "it": 80,
+            "other": 1138,
+            "pt": 1782
+          },
+          "class_fractions": {
+            "it": 0.02666666666666667,
+            "other": 0.37933333333333336,
+            "pt": 0.594
+          },
+          "count": 3000,
+          "late_margin_mean": -6.088668708801269
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 3000
+          },
+          "class_fractions": {
+            "it": 1.0
+          },
+          "count": 3000,
+          "late_margin_mean": 24.52484043375651
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 1831,
+            "other": 1069,
+            "pt": 100
+          },
+          "class_fractions": {
+            "it": 0.6103333333333333,
+            "other": 0.35633333333333334,
+            "pt": 0.03333333333333333
+          },
+          "count": 3000,
+          "late_margin_mean": 12.991297966957092
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 1043,
+            "other": 1809,
+            "pt": 148
+          },
+          "class_fractions": {
+            "it": 0.3476666666666667,
+            "other": 0.603,
+            "pt": 0.04933333333333333
+          },
+          "count": 3000,
+          "late_margin_mean": 8.524142649332683
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 2030,
+            "other": 938,
+            "pt": 32
+          },
+          "class_fractions": {
+            "it": 0.6766666666666666,
+            "other": 0.31266666666666665,
+            "pt": 0.010666666666666666
+          },
+          "count": 3000,
+          "late_margin_mean": 11.276971232096354
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 1779,
+            "other": 1173,
+            "pt": 48
+          },
+          "class_fractions": {
+            "it": 0.593,
+            "other": 0.391,
+            "pt": 0.016
+          },
+          "count": 3000,
+          "late_margin_mean": 12.516154029846192
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 1530,
+            "other": 1400,
+            "pt": 70
+          },
+          "class_fractions": {
+            "it": 0.51,
+            "other": 0.4666666666666667,
+            "pt": 0.023333333333333334
+          },
+          "count": 3000,
+          "late_margin_mean": 7.426808245340983
+        }
+      },
+      "first_diff_present": 3000,
+      "n_records": 3000
+    },
+    "raw_shared": {
+      "conditions": {
+        "A_pt_raw": {
+          "class_counts": {
+            "it": 13,
+            "other": 15,
+            "pt": 2955
+          },
+          "class_fractions": {
+            "it": 0.004358028830036876,
+            "other": 0.005028494803888703,
+            "pt": 0.9906134763660744
+          },
+          "count": 2983,
+          "late_margin_mean": -1.2732490829841188
+        },
+        "B_early_raw": {
+          "class_counts": {
+            "it": 576,
+            "other": 753,
+            "pt": 1654
+          },
+          "class_fractions": {
+            "it": 0.19309420046932618,
+            "other": 0.25243043915521285,
+            "pt": 0.554475360375461
+          },
+          "count": 2983,
+          "late_margin_mean": -0.8342468544336281
+        },
+        "B_earlymid_raw": {
+          "class_counts": {
+            "it": 1229,
+            "other": 697,
+            "pt": 1057
+          },
+          "class_fractions": {
+            "it": 0.4120013409319477,
+            "other": 0.2336573918873617,
+            "pt": 0.3543412671806906
+          },
+          "count": 2983,
+          "late_margin_mean": -0.051000864922181095
+        },
+        "B_late_raw": {
+          "class_counts": {
+            "it": 524,
+            "other": 857,
+            "pt": 1602
+          },
+          "class_fractions": {
+            "it": 0.1756620851491787,
+            "other": 0.2872946697955079,
+            "pt": 0.5370432450553134
+          },
+          "count": 2983,
+          "late_margin_mean": -0.8091065818896599
+        },
+        "B_mid_raw": {
+          "class_counts": {
+            "it": 777,
+            "other": 655,
+            "pt": 1551
+          },
+          "class_fractions": {
+            "it": 0.2604760308414348,
+            "other": 0.21957760643647334,
+            "pt": 0.5199463627220918
+          },
+          "count": 2983,
+          "late_margin_mean": -0.6504888643244949
+        },
+        "B_midlate_raw": {
+          "class_counts": {
+            "it": 1066,
+            "other": 952,
+            "pt": 965
+          },
+          "class_fractions": {
+            "it": 0.3573583640630238,
+            "other": 0.31914180355346966,
+            "pt": 0.32349983238350655
+          },
+          "count": 2983,
+          "late_margin_mean": 0.054795348959963394
+        },
+        "C_it_chat": {
+          "class_counts": {
+            "it": 2963,
+            "other": 10,
+            "pt": 10
+          },
+          "class_fractions": {
+            "it": 0.9932953402614817,
+            "other": 0.003352329869259135,
+            "pt": 0.003352329869259135
+          },
+          "count": 2983,
+          "late_margin_mean": 3.693483450490278
+        },
+        "D_early_ptswap": {
+          "class_counts": {
+            "it": 1493,
+            "other": 785,
+            "pt": 705
+          },
+          "class_fractions": {
+            "it": 0.5005028494803889,
+            "other": 0.2631578947368421,
+            "pt": 0.23633925578276901
+          },
+          "count": 2983,
+          "late_margin_mean": 0.8569392102938789
+        },
+        "D_earlymid_ptswap": {
+          "class_counts": {
+            "it": 896,
+            "other": 789,
+            "pt": 1298
+          },
+          "class_fractions": {
+            "it": 0.3003687562856185,
+            "other": 0.2644988266845458,
+            "pt": 0.43513241702983574
+          },
+          "count": 2983,
+          "late_margin_mean": -0.2172475233599119
+        },
+        "D_late_ptswap": {
+          "class_counts": {
+            "it": 1546,
+            "other": 816,
+            "pt": 621
+          },
+          "class_fractions": {
+            "it": 0.5182701977874623,
+            "other": 0.27355011733154544,
+            "pt": 0.20817968488099228
+          },
+          "count": 2983,
+          "late_margin_mean": 1.0398852316037626
+        },
+        "D_mid_ptswap": {
+          "class_counts": {
+            "it": 1230,
+            "other": 822,
+            "pt": 931
+          },
+          "class_fractions": {
+            "it": 0.41233657391887363,
+            "other": 0.2755615152531009,
+            "pt": 0.31210191082802546
+          },
+          "count": 2983,
+          "late_margin_mean": 0.419961461915372
+        },
+        "D_midlate_ptswap": {
+          "class_counts": {
+            "it": 761,
+            "other": 933,
+            "pt": 1289
+          },
+          "class_fractions": {
+            "it": 0.25511230305062016,
+            "other": 0.3127723768018773,
+            "pt": 0.43211532014750254
+          },
+          "count": 2983,
+          "late_margin_mean": -0.29879428762499216
+        }
+      },
+      "first_diff_present": 2983,
+      "n_records": 3000
+    }
+  },
+  "root": "results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early"
+}

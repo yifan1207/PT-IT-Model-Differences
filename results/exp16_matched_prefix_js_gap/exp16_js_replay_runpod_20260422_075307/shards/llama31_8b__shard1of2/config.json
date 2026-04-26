@@ -1,0 +1,131 @@
+{
+  "model": "llama31_8b",
+  "n_layers": 32,
+  "corrective_onset": 19,
+  "pt_model_id": "meta-llama/Llama-3.1-8B",
+  "it_model_id": "meta-llama/Llama-3.1-8B-Instruct",
+  "dataset": "data/exp3_dataset.jsonl",
+  "prompt_manifest": "exp16_source_bundle/merged/llama31_8b/prompts.jsonl",
+  "prompt_manifest_sha256": "ce94c770edf69a590a4913bdf39b8acd9c59725ae1ef6784307755a89aa6d4f2",
+  "n_prompts": 600,
+  "seed": 0,
+  "prompt_seed": null,
+  "onset_layer": 19,
+  "max_new_tokens": 512,
+  "categories": null,
+  "dtype": "bfloat16",
+  "batch_size_requested": 48,
+  "batch_size_pipeline_a": null,
+  "batch_size_pipeline_b": 48,
+  "scheduler_mode": "fixed_batches",
+  "continuous_admission": false,
+  "shard_index": 1,
+  "num_shards": 2,
+  "limit_prompts": null,
+  "chunk_size": 32,
+  "n_prompts_sampled_after_sharding": 300,
+  "readout_mode": "raw",
+  "js_only": true,
+  "primary_readout_name": null,
+  "secondary_readout_name": null,
+  "secondary_readout_names_by_pipeline": null,
+  "primary_readout_names_by_pipeline": {
+    "C_it_chat": "raw_logit_lens_it",
+    "A_prime_raw": "raw_logit_lens_pt",
+    "B_early_raw": "raw_logit_lens_pt",
+    "B_mid_raw": "raw_logit_lens_pt",
+    "B_late_raw": "raw_logit_lens_pt",
+    "D_early_ptswap": "raw_logit_lens_it",
+    "D_mid_ptswap": "raw_logit_lens_it",
+    "D_late_ptswap": "raw_logit_lens_it"
+  },
+  "raw_readout_names_by_pipeline": {
+    "C_it_chat": "raw_logit_lens_it",
+    "A_prime_raw": "raw_logit_lens_pt",
+    "B_early_raw": "raw_logit_lens_pt",
+    "B_mid_raw": "raw_logit_lens_pt",
+    "B_late_raw": "raw_logit_lens_pt",
+    "D_early_ptswap": "raw_logit_lens_it",
+    "D_mid_ptswap": "raw_logit_lens_it",
+    "D_late_ptswap": "raw_logit_lens_it"
+  },
+  "tuned_lens_dir": null,
+  "teacher_token_manifest": "exp16_source_bundle/merged/llama31_8b/generated_texts.jsonl",
+  "teacher_token_manifest_sha256": "507f9cfc4f8d2a02cb5af3970de188b03af7020c736e6583e7f1dcc0016b4460",
+  "teacher_forced": true,
+  "depth_ablation": false,
+  "causal_combined": true,
+  "pipelines": [
+    "C_it_chat",
+    "A_prime_raw",
+    "B_early_raw",
+    "B_mid_raw",
+    "B_late_raw",
+    "D_early_ptswap",
+    "D_mid_ptswap",
+    "D_late_ptswap"
+  ],
+  "pipeline_prompt_modes": {
+    "C_it_chat": "it_chat_template",
+    "A_prime_raw": "raw_format_b",
+    "B_early_raw": "raw_format_b",
+    "B_mid_raw": "raw_format_b",
+    "B_late_raw": "raw_format_b",
+    "D_early_ptswap": "it_chat_template",
+    "D_mid_ptswap": "it_chat_template",
+    "D_late_ptswap": "it_chat_template"
+  },
+  "pipeline_aliases": null,
+  "graft_windows_by_pipeline": {
+    "B_early_raw": {
+      "start_layer": 0,
+      "end_layer_exclusive": 13,
+      "display_range": "0-12"
+    },
+    "B_mid_raw": {
+      "start_layer": 9,
+      "end_layer_exclusive": 22,
+      "display_range": "9-21"
+    },
+    "B_late_raw": {
+      "start_layer": 19,
+      "end_layer_exclusive": 32,
+      "display_range": "19-31"
+    },
+    "D_early_ptswap": {
+      "start_layer": 0,
+      "end_layer_exclusive": 13,
+      "display_range": "0-12"
+    },
+    "D_mid_ptswap": {
+      "start_layer": 9,
+      "end_layer_exclusive": 22,
+      "display_range": "9-21"
+    },
+    "D_late_ptswap": {
+      "start_layer": 19,
+      "end_layer_exclusive": 32,
+      "display_range": "19-31"
+    }
+  },
+  "final_region_layers": [
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+  ],
+  "late_mechanism_layers": null,
+  "batch_size_by_pipeline": {
+    "C_it_chat": 48,
+    "A_prime_raw": 48,
+    "B_early_raw": 48,
+    "B_mid_raw": 48,
+    "B_late_raw": 48,
+    "D_early_ptswap": 48,
+    "D_mid_ptswap": 48,
+    "D_late_ptswap": 48
+  }
+}

@@ -7,11 +7,16 @@ import argparse
 import gzip
 import json
 import math
+import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from src.poc.exp22_endpoint_deconfounded_gap.metrics import as_float, derived_step_metrics
 
@@ -565,4 +570,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

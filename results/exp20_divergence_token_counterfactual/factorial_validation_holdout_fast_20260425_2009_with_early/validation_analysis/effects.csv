@@ -1,0 +1,193 @@
+mode,model,effect,kind,n,mean,ci_low,ci_high
+raw_shared,gemma3_4b,PT host identity: mid+late minus mid,identity,600,0.06666666666666667,0.03162500000000001,0.10166666666666667
+raw_shared,gemma3_4b,PT host identity: early+mid minus mid,identity,600,0.20333333333333334,0.16666666666666666,0.24
+raw_shared,gemma3_4b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,600,-0.058333333333333334,-0.09833333333333333,-0.016666666666666666
+raw_shared,gemma3_4b,PT host margin: mid+late minus mid,margin,600,0.8072395833333333,0.6385833333333333,0.9723997395833334
+raw_shared,gemma3_4b,PT host margin: early+mid minus mid,margin,600,1.2683430989583333,1.1376626790364583,1.4116716308593749
+raw_shared,gemma3_4b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,600,0.8005208333333333,0.7159322916666667,0.8861067708333332
+raw_shared,gemma3_4b,IT host identity: pure IT minus PT early swap,identity,600,0.6616666666666666,0.6233333333333333,0.7016666666666667
+raw_shared,gemma3_4b,IT host identity: pure IT minus PT late swap,identity,600,0.5433333333333333,0.5016666666666667,0.5816666666666667
+raw_shared,gemma3_4b,IT host identity: pure IT minus PT early+mid swap,identity,600,0.8583333333333333,0.83,0.885
+raw_shared,gemma3_4b,IT host identity: pure IT minus PT mid+late swap,identity,600,0.8483333333333334,0.8183333333333334,0.8766666666666667
+raw_shared,gemma3_4b,IT host margin: pure IT minus PT early swap,margin,600,6.276495768229167,5.861950134277343,6.704891344706217
+raw_shared,gemma3_4b,IT host margin: pure IT minus PT mid swap,margin,600,7.213757934570313,6.8255767695109055,7.604495450337728
+raw_shared,gemma3_4b,IT host margin: pure IT minus PT late swap,margin,600,5.5591796875,5.231402994791667,5.88269921875
+raw_shared,gemma3_4b,IT host margin: pure IT minus PT early+mid swap,margin,600,7.944209899902344,7.49626077524821,8.381660939534505
+raw_shared,gemma3_4b,IT host margin: pure IT minus PT mid+late swap,margin,600,7.501987101236979,7.0862487691243485,7.921213549296061
+raw_shared,gemma3_4b,IT host margin: PT mid+late swap minus PT mid swap,margin,600,-0.28822916666666665,-0.42016276041666667,-0.15533203125000017
+raw_shared,qwen3_4b,PT host identity: mid+late minus mid,identity,600,-0.006666666666666667,-0.055,0.03833333333333333
+raw_shared,qwen3_4b,PT host identity: early+mid minus mid,identity,600,0.10166666666666667,0.07333333333333333,0.13166666666666665
+raw_shared,qwen3_4b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,600,-0.24,-0.285,-0.19166666666666668
+raw_shared,qwen3_4b,PT host margin: mid+late minus mid,margin,600,0.6914583333333333,0.5222656250000001,0.8555494791666665
+raw_shared,qwen3_4b,PT host margin: early+mid minus mid,margin,600,0.3358966064453125,0.23214254252115887,0.44373583475748696
+raw_shared,qwen3_4b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,600,0.19052083333333333,0.13467968749999998,0.24958854166666664
+raw_shared,qwen3_4b,IT host identity: pure IT minus PT early swap,identity,600,0.37,0.33166666666666667,0.4083333333333333
+raw_shared,qwen3_4b,IT host identity: pure IT minus PT late swap,identity,600,0.57,0.5299583333333333,0.6083333333333333
+raw_shared,qwen3_4b,IT host identity: pure IT minus PT early+mid swap,identity,600,0.5716666666666667,0.5316249999999999,0.61
+raw_shared,qwen3_4b,IT host identity: pure IT minus PT mid+late swap,identity,600,0.6783333333333333,0.6416666666666667,0.715
+raw_shared,qwen3_4b,IT host margin: pure IT minus PT early swap,margin,600,1.151117655436198,0.9642076594034831,1.3479563471476232
+raw_shared,qwen3_4b,IT host margin: pure IT minus PT mid swap,margin,600,1.912029088338216,1.7095406487782796,2.1130643806457514
+raw_shared,qwen3_4b,IT host margin: pure IT minus PT late swap,margin,600,1.6290755208333334,1.4135777994791667,1.8578896484375
+raw_shared,qwen3_4b,IT host margin: pure IT minus PT early+mid swap,margin,600,2.5577410252889,2.297884213765462,2.8081023925145465
+raw_shared,qwen3_4b,IT host margin: pure IT minus PT mid+late swap,margin,600,2.5663259633382163,2.3134499994913735,2.821031852722168
+raw_shared,qwen3_4b,IT host margin: PT mid+late swap minus PT mid swap,margin,600,-0.654296875,-0.84965625,-0.45653450520833366
+raw_shared,llama31_8b,PT host identity: mid+late minus mid,identity,600,0.10833333333333334,0.07333333333333333,0.14333333333333334
+raw_shared,llama31_8b,PT host identity: early+mid minus mid,identity,600,0.15,0.115,0.185
+raw_shared,llama31_8b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,600,-0.1,-0.14166666666666666,-0.058333333333333334
+raw_shared,llama31_8b,PT host margin: mid+late minus mid,margin,600,0.7168180338541666,0.6376617838541667,0.7963852539062499
+raw_shared,llama31_8b,PT host margin: early+mid minus mid,margin,600,0.45551291624705,0.3424879866838455,0.5903078470230103
+raw_shared,llama31_8b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,600,-0.030032552083333334,-0.06517594401041667,0.006031005859374987
+raw_shared,llama31_8b,IT host identity: pure IT minus PT early swap,identity,600,0.505,0.4666666666666667,0.5466666666666666
+raw_shared,llama31_8b,IT host identity: pure IT minus PT late swap,identity,600,0.43333333333333335,0.395,0.4717083333333331
+raw_shared,llama31_8b,IT host identity: pure IT minus PT early+mid swap,identity,600,0.6716666666666666,0.6333333333333333,0.7083333333333334
+raw_shared,llama31_8b,IT host identity: pure IT minus PT mid+late swap,identity,600,0.7483333333333333,0.7133333333333334,0.7833333333333333
+raw_shared,llama31_8b,IT host margin: pure IT minus PT early swap,margin,600,2.2015258280436196,1.8417848790486653,2.583138951619466
+raw_shared,llama31_8b,IT host margin: pure IT minus PT mid swap,margin,600,2.186123758951823,1.8731077931722007,2.4926447105407714
+raw_shared,llama31_8b,IT host margin: pure IT minus PT late swap,margin,600,1.64156005859375,1.5009527384440102,1.7909378662109374
+raw_shared,llama31_8b,IT host margin: pure IT minus PT early+mid swap,margin,600,2.6253935623168947,2.2605424982706706,3.0091518551508583
+raw_shared,llama31_8b,IT host margin: pure IT minus PT mid+late swap,margin,600,2.9737083943684897,2.674707815806071,3.295028667449951
+raw_shared,llama31_8b,IT host margin: PT mid+late swap minus PT mid swap,margin,600,-0.7875846354166667,-0.867716552734375,-0.7104222005208334
+raw_shared,mistral_7b,PT host identity: mid+late minus mid,identity,597,0.1423785594639866,0.11222780569514237,0.17257118927973178
+raw_shared,mistral_7b,PT host identity: early+mid minus mid,identity,597,0.17755443886097153,0.1440536013400335,0.21273031825795644
+raw_shared,mistral_7b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,597,0.020100502512562814,-0.018425460636515914,0.05527638190954774
+raw_shared,mistral_7b,PT host margin: mid+late minus mid,margin,597,0.6347100083752094,0.573832050879397,0.6999378402428811
+raw_shared,mistral_7b,PT host margin: early+mid minus mid,margin,597,0.6283581093128402,0.5411502576153882,0.7208458036234229
+raw_shared,mistral_7b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,597,0.14944514237855946,0.11965687814070351,0.1820842493718593
+raw_shared,mistral_7b,IT host identity: pure IT minus PT early swap,identity,597,0.509212730318258,0.46901172529313234,0.5511306532663315
+raw_shared,mistral_7b,IT host identity: pure IT minus PT late swap,identity,597,0.35678391959798994,0.3165829145728643,0.3953098827470687
+raw_shared,mistral_7b,IT host identity: pure IT minus PT early+mid swap,identity,597,0.7236180904522613,0.6884422110552764,0.7604690117252931
+raw_shared,mistral_7b,IT host identity: pure IT minus PT mid+late swap,identity,597,0.6850921273031826,0.6465661641541038,0.7236180904522613
+raw_shared,mistral_7b,IT host margin: pure IT minus PT early swap,margin,597,2.940937955974534,2.7066356218040886,3.165035001157316
+raw_shared,mistral_7b,IT host margin: pure IT minus PT mid swap,margin,597,2.9188370952254763,2.7017255862953276,3.1398549001620246
+raw_shared,mistral_7b,IT host margin: pure IT minus PT late swap,margin,597,2.478826423785595,2.3130895362227806,2.6529287060301505
+raw_shared,mistral_7b,IT host margin: pure IT minus PT early+mid swap,margin,597,3.8623704766508324,3.5844084147033177,4.148638818891004
+raw_shared,mistral_7b,IT host margin: pure IT minus PT mid+late swap,margin,597,3.946763184002696,3.682687734479281,4.214884449049855
+raw_shared,mistral_7b,IT host margin: PT mid+late swap minus PT mid swap,margin,597,-1.0279260887772195,-1.1299518425460637,-0.9294081082495812
+raw_shared,olmo2_7b,PT host identity: mid+late minus mid,identity,586,0.1757679180887372,0.13993174061433447,0.2133532423208189
+raw_shared,olmo2_7b,PT host identity: early+mid minus mid,identity,586,0.12457337883959044,0.09385665529010238,0.15533276450511924
+raw_shared,olmo2_7b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,586,0.008532423208191127,-0.030716723549488054,0.04778156996587031
+raw_shared,olmo2_7b,PT host margin: mid+late minus mid,margin,586,0.675138844564913,0.5932229611653924,0.7593650401248866
+raw_shared,olmo2_7b,PT host margin: early+mid minus mid,margin,586,0.30254494533603915,0.21392231833812728,0.3957889459238931
+raw_shared,olmo2_7b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,586,0.09129950292281323,0.03200110502210494,0.14265881984307083
+raw_shared,olmo2_7b,IT host identity: pure IT minus PT early swap,identity,586,0.41638225255972694,0.37542662116040953,0.45563139931740615
+raw_shared,olmo2_7b,IT host identity: pure IT minus PT late swap,identity,586,0.4709897610921502,0.431740614334471,0.5119453924914675
+raw_shared,olmo2_7b,IT host identity: pure IT minus PT early+mid swap,identity,586,0.6382252559726962,0.5972269624573379,0.6774744027303754
+raw_shared,olmo2_7b,IT host identity: pure IT minus PT mid+late swap,identity,586,0.7303754266211604,0.6944965870307167,0.764505119453925
+raw_shared,olmo2_7b,IT host margin: pure IT minus PT early swap,margin,586,1.5839384944772557,1.3704893313984008,1.79620977668632
+raw_shared,olmo2_7b,IT host margin: pure IT minus PT mid swap,margin,586,2.107890575005333,1.899700667345483,2.3235540656913263
+raw_shared,olmo2_7b,IT host margin: pure IT minus PT late swap,margin,586,1.941868518399704,1.8292825594696982,2.0614802845508975
+raw_shared,olmo2_7b,IT host margin: pure IT minus PT early+mid swap,margin,586,2.5315164299141424,2.272251256740948,2.799527888900184
+raw_shared,olmo2_7b,IT host margin: pure IT minus PT mid+late swap,margin,586,2.9480102330751388,2.7217513178802593,3.1828478061298457
+raw_shared,olmo2_7b,IT host margin: PT mid+late swap minus PT mid swap,margin,586,-0.8401196580698059,-0.9333627668257053,-0.7523791160192913
+native,gemma3_4b,PT host identity: mid+late minus mid,identity,600,0.0016666666666666668,0.0,0.005
+native,gemma3_4b,PT host identity: early+mid minus mid,identity,600,0.0,0.0,0.0
+native,gemma3_4b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,600,0.0016666666666666668,0.0,0.005
+native,gemma3_4b,PT host margin: mid+late minus mid,margin,600,-1.9630013020833332,-2.1268740234375,-1.793543701171875
+native,gemma3_4b,PT host margin: early+mid minus mid,margin,600,0.7346875635782878,0.5967792390187582,0.8646259927749633
+native,gemma3_4b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,600,0.10954264322916667,0.03322736612955729,0.19060285441080718
+native,gemma3_4b,IT host identity: pure IT minus PT early swap,identity,600,0.32666666666666666,0.29,0.365
+native,gemma3_4b,IT host identity: pure IT minus PT late swap,identity,600,0.6416666666666667,0.605,0.6816666666666666
+native,gemma3_4b,IT host identity: pure IT minus PT early+mid swap,identity,600,0.7316666666666667,0.6966666666666667,0.7666666666666667
+native,gemma3_4b,IT host identity: pure IT minus PT mid+late swap,identity,600,0.8833333333333333,0.8566666666666667,0.91
+native,gemma3_4b,IT host margin: pure IT minus PT early swap,margin,600,34.894942423502606,33.41106525166829,36.36022993469238
+native,gemma3_4b,IT host margin: pure IT minus PT mid swap,margin,600,38.445748291015626,36.952558868408204,40.01496587117513
+native,gemma3_4b,IT host margin: pure IT minus PT late swap,margin,600,42.99103881835938,41.41834888712565,44.593666412353514
+native,gemma3_4b,IT host margin: pure IT minus PT early+mid swap,margin,600,42.888452758789064,41.24281576538086,44.463897303263344
+native,gemma3_4b,IT host margin: pure IT minus PT mid+late swap,margin,600,47.94050415039062,46.2662159016927,49.604488098144536
+native,gemma3_4b,IT host margin: PT mid+late swap minus PT mid swap,margin,600,-9.494755859375,-9.802708170572917,-9.142289265950522
+native,qwen3_4b,PT host identity: mid+late minus mid,identity,600,0.0,0.0,0.0
+native,qwen3_4b,PT host identity: early+mid minus mid,identity,600,0.0016666666666666668,0.0,0.005041666666666439
+native,qwen3_4b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,600,0.0,0.0,0.0
+native,qwen3_4b,PT host margin: mid+late minus mid,margin,600,-1.2724153645833334,-1.4765965169270834,-1.0736844075520833
+native,qwen3_4b,PT host margin: early+mid minus mid,margin,600,-0.5163381703694662,-0.6231399428049723,-0.4136801153818769
+native,qwen3_4b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,600,-0.13200520833333335,-0.19727897135416667,-0.06480875651041668
+native,qwen3_4b,IT host identity: pure IT minus PT early swap,identity,600,0.3616666666666667,0.3233333333333333,0.4
+native,qwen3_4b,IT host identity: pure IT minus PT late swap,identity,600,0.23666666666666666,0.205,0.26837499999999975
+native,qwen3_4b,IT host identity: pure IT minus PT early+mid swap,identity,600,0.88,0.8516666666666667,0.905
+native,qwen3_4b,IT host identity: pure IT minus PT mid+late swap,identity,600,0.34833333333333333,0.31166666666666665,0.385
+native,qwen3_4b,IT host margin: pure IT minus PT early swap,margin,600,8.942250493367514,8.223681023279825,9.691935539881388
+native,qwen3_4b,IT host margin: pure IT minus PT mid swap,margin,600,11.391402918497722,10.76540919939677,12.045475011825562
+native,qwen3_4b,IT host margin: pure IT minus PT late swap,margin,600,7.606322631835938,7.01290446472168,8.211617772420247
+native,qwen3_4b,IT host margin: pure IT minus PT early+mid swap,margin,600,15.78718132019043,15.020473435084025,16.4971188398997
+native,qwen3_4b,IT host margin: pure IT minus PT mid+late swap,margin,600,16.15854932149251,15.439083116531371,16.84435996945699
+native,qwen3_4b,IT host margin: PT mid+late swap minus PT mid swap,margin,600,-4.767146402994792,-5.080648315429688,-4.463336151123047
+native,llama31_8b,PT host identity: mid+late minus mid,identity,600,0.0,0.0,0.0
+native,llama31_8b,PT host identity: early+mid minus mid,identity,600,0.0,0.0,0.0
+native,llama31_8b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,600,0.0,0.0,0.0
+native,llama31_8b,PT host margin: mid+late minus mid,margin,600,-0.5524433898925781,-0.6516499315897625,-0.4564376118977865
+native,llama31_8b,PT host margin: early+mid minus mid,margin,600,0.14314614613850912,0.022117658933003742,0.27675538317362464
+native,llama31_8b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,600,0.16924914042154948,0.13835286140441894,0.1981340808868408
+native,llama31_8b,IT host identity: pure IT minus PT early swap,identity,600,0.36,0.32166666666666666,0.3983333333333333
+native,llama31_8b,IT host identity: pure IT minus PT late swap,identity,600,0.23,0.19833333333333333,0.2633333333333333
+native,llama31_8b,IT host identity: pure IT minus PT early+mid swap,identity,600,0.47833333333333333,0.43833333333333335,0.5183749999999998
+native,llama31_8b,IT host identity: pure IT minus PT mid+late swap,identity,600,0.34833333333333333,0.31,0.3883333333333333
+native,llama31_8b,IT host margin: pure IT minus PT early swap,margin,600,7.618588778177897,7.2490032787322995,8.011021163622537
+native,llama31_8b,IT host margin: pure IT minus PT mid swap,margin,600,6.271417401631673,5.985881739616394,6.57259073638916
+native,llama31_8b,IT host margin: pure IT minus PT late swap,margin,600,7.745850118001302,7.402921778361002,8.077966061909994
+native,llama31_8b,IT host margin: pure IT minus PT early+mid swap,margin,600,11.617457237243652,11.159388858477275,12.057275813420611
+native,llama31_8b,IT host margin: pure IT minus PT mid+late swap,margin,600,10.929313316345215,10.500130228360495,11.340124793052674
+native,llama31_8b,IT host margin: PT mid+late swap minus PT mid swap,margin,600,-4.657895914713541,-4.849573532104492,-4.468605143229167
+native,mistral_7b,PT host identity: mid+late minus mid,identity,600,0.056666666666666664,0.03666666666666667,0.07833333333333334
+native,mistral_7b,PT host identity: early+mid minus mid,identity,600,0.04666666666666667,0.028333333333333332,0.06504166666666644
+native,mistral_7b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,600,0.0016666666666666668,-0.023333333333333334,0.02666666666666667
+native,mistral_7b,PT host margin: mid+late minus mid,margin,600,0.37033203125,0.3190553385416666,0.42486344401041665
+native,mistral_7b,PT host margin: early+mid minus mid,margin,600,0.1384199015299479,0.07020131429036458,0.2110514272054036
+native,mistral_7b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,600,0.03711588541666667,0.013821126302083334,0.06121158854166666
+native,mistral_7b,IT host identity: pure IT minus PT early swap,identity,600,0.6533333333333333,0.6149583333333333,0.69
+native,mistral_7b,IT host identity: pure IT minus PT late swap,identity,600,0.31666666666666665,0.28,0.3516666666666667
+native,mistral_7b,IT host identity: pure IT minus PT early+mid swap,identity,600,0.7766666666666666,0.7416666666666667,0.8100416666666664
+native,mistral_7b,IT host identity: pure IT minus PT mid+late swap,identity,600,0.5283333333333333,0.49,0.5683333333333334
+native,mistral_7b,IT host margin: pure IT minus PT early swap,margin,600,5.938412691752116,5.648160977045695,6.231046700795492
+native,mistral_7b,IT host margin: pure IT minus PT mid swap,margin,600,1.7026406987508138,1.5208235562642414,1.8828437954584758
+native,mistral_7b,IT host margin: pure IT minus PT late swap,margin,600,4.2927294921875,4.070405354817709,4.5054854329427085
+native,mistral_7b,IT host margin: pure IT minus PT early+mid swap,margin,600,7.639754600524903,7.326335669199625,7.954210078557332
+native,mistral_7b,IT host margin: pure IT minus PT mid+late swap,margin,600,5.877796948750814,5.587014002164206,6.156005508740742
+native,mistral_7b,IT host margin: PT mid+late swap minus PT mid swap,margin,600,-4.17515625,-4.418936197916667,-3.941634114583333
+native,olmo2_7b,PT host identity: mid+late minus mid,identity,600,0.0,0.0,0.0
+native,olmo2_7b,PT host identity: early+mid minus mid,identity,600,0.0,0.0,0.0
+native,olmo2_7b,PT host identity interaction: [ML-M]-[L-A],identity_interaction,600,0.0,0.0,0.0
+native,olmo2_7b,PT host margin: mid+late minus mid,margin,600,-0.45041656494140625,-0.5200373287200928,-0.3729141966501872
+native,olmo2_7b,PT host margin: early+mid minus mid,margin,600,0.3832494290669759,0.2974063622156779,0.47183259359995516
+native,olmo2_7b,PT host margin interaction: [ML-M]-[L-A],margin_interaction,600,0.16650452931722004,0.13415770626068116,0.1992028776804606
+native,olmo2_7b,IT host identity: pure IT minus PT early swap,identity,600,0.24666666666666667,0.21166666666666667,0.28
+native,olmo2_7b,IT host identity: pure IT minus PT late swap,identity,600,0.19166666666666668,0.16,0.22333333333333333
+native,olmo2_7b,IT host identity: pure IT minus PT early+mid swap,identity,600,0.395,0.355,0.43666666666666665
+native,olmo2_7b,IT host identity: pure IT minus PT mid+late swap,identity,600,0.3416666666666667,0.3016666666666667,0.37833333333333335
+native,olmo2_7b,IT host margin: pure IT minus PT early swap,margin,600,0.27351794719696043,0.023492380738258364,0.5454486943880715
+native,olmo2_7b,IT host margin: pure IT minus PT mid swap,margin,600,2.232222709655762,2.000138697306315,2.4708939603169755
+native,olmo2_7b,IT host margin: pure IT minus PT late swap,margin,600,3.6034049479166668,3.3877448018391925,3.800707580566406
+native,olmo2_7b,IT host margin: pure IT minus PT early+mid swap,margin,600,2.070643005371094,1.728748331705729,2.399597680409749
+native,olmo2_7b,IT host margin: pure IT minus PT mid+late swap,margin,600,4.58399720509847,4.292657885233561,4.892815183321635
+native,olmo2_7b,IT host margin: PT mid+late swap minus PT mid swap,margin,600,-2.3517744954427084,-2.4892018432617187,-2.218737243652344
+raw_shared,dense5,PT host identity: mid+late minus mid,identity,2983,0.096882333221589,0.080782769024472,0.11331713040563186
+raw_shared,dense5,PT host identity: early+mid minus mid,identity,2983,0.1515253100905129,0.1364398256788468,0.16694602748910492
+raw_shared,dense5,PT host identity interaction: [ML-M]-[L-A],identity_interaction,2983,-0.0744217230975528,-0.09186221924237345,-0.05631076097888037
+raw_shared,dense5,PT host margin: mid+late minus mid,margin,2983,0.7052842132844583,0.6523433756916226,0.7594899859477959
+raw_shared,dense5,PT host margin: early+mid minus mid,margin,2983,0.5994879994023138,0.5486915798743539,0.6503608017050896
+raw_shared,dense5,PT host margin interaction: [ML-M]-[L-A],margin_interaction,2983,0.24114171218999952,0.21332022295755865,0.26750456183059795
+raw_shared,dense5,IT host identity: pure IT minus PT early swap,identity,2983,0.4927924907810929,0.47502514247401945,0.5108950720750922
+raw_shared,dense5,IT host identity: pure IT minus PT late swap,identity,2983,0.47502514247401945,0.457257794166946,0.49212202480724104
+raw_shared,dense5,IT host identity: pure IT minus PT early+mid swap,identity,2983,0.6929265839758633,0.6761649346295675,0.7090177673483071
+raw_shared,dense5,IT host identity: pure IT minus PT mid+late swap,identity,2983,0.7381830372108615,0.7224270868253436,0.7536037546094536
+raw_shared,dense5,IT host margin: pure IT minus PT early swap,margin,2983,2.836544240196399,2.677765512802119,2.987987052311323
+raw_shared,dense5,IT host margin: pure IT minus PT mid swap,margin,2983,3.273521988574906,3.1288611237810158,3.417634566150733
+raw_shared,dense5,IT host margin: pure IT minus PT late swap,margin,2983,2.6535982188865157,2.5480281169966807,2.765687570626249
+raw_shared,dense5,IT host margin: pure IT minus PT early+mid swap,margin,2983,3.9107309738501903,3.7439382442483313,4.0683589829800715
+raw_shared,dense5,IT host margin: pure IT minus PT mid+late swap,margin,2983,3.9922777381152703,3.8346112087913458,4.14964360586557
+raw_shared,dense5,IT host margin: PT mid+late swap minus PT mid swap,margin,2983,-0.7187557495403641,-0.7760297477944681,-0.6632037913123914
+native,dense5,PT host identity: mid+late minus mid,identity,3000,0.011666666666666667,0.007333333333333333,0.016
+native,dense5,PT host identity: early+mid minus mid,identity,3000,0.009666666666666667,0.005666666666666667,0.013666666666666667
+native,dense5,PT host identity interaction: [ML-M]-[L-A],identity_interaction,3000,0.0006666666666666666,-0.004333333333333333,0.005666666666666667
+native,dense5,PT host margin: mid+late minus mid,margin,3000,-0.7735889180501302,-0.8376306149164835,-0.7045243977228801
+native,dense5,PT host margin: early+mid minus mid,margin,3000,0.17663297398885092,0.12917901878356935,0.22525669972101844
+native,dense5,PT host margin interaction: [ML-M]-[L-A],margin_interaction,3000,0.07008139801025391,0.04610778719584147,0.09338532238006592
+native,dense5,IT host identity: pure IT minus PT early swap,identity,3000,0.38966666666666666,0.372,0.407
+native,dense5,IT host identity: pure IT minus PT late swap,identity,3000,0.3233333333333333,0.307,0.34
+native,dense5,IT host identity: pure IT minus PT early+mid swap,identity,3000,0.6523333333333333,0.6356666666666667,0.6690083333333333
+native,dense5,IT host identity: pure IT minus PT mid+late swap,identity,3000,0.49,0.47265833333333335,0.5073333333333333
+native,dense5,IT host margin: pure IT minus PT early swap,margin,3000,11.533542466799418,10.98971763416926,12.11286967315674
+native,dense5,IT host margin: pure IT minus PT mid swap,margin,3000,12.00868640391032,11.362005119005838,12.617805764834086
+native,dense5,IT host margin: pure IT minus PT late swap,margin,3000,13.247869201660157,12.599745503234864,13.901935356140138
+native,dense5,IT host margin: pure IT minus PT early+mid swap,margin,3000,16.000697784423828,15.378885377756754,16.681866789182028
+native,dense5,IT host margin: pure IT minus PT mid+late swap,margin,3000,17.098032188415527,16.39642660821279,17.785436414718628
+native,dense5,IT host margin: PT mid+late swap minus PT mid swap,margin,3000,-5.089345784505208,-5.23541650390625,-4.951985325113932

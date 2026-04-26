@@ -1,0 +1,131 @@
+{
+  "model": "mistral_7b",
+  "n_layers": 32,
+  "corrective_onset": 19,
+  "pt_model_id": "mistralai/Mistral-7B-v0.3",
+  "it_model_id": "mistralai/Mistral-7B-Instruct-v0.3",
+  "dataset": "data/exp3_dataset.jsonl",
+  "prompt_manifest": "/home/yifan/structral-semantic-features/tmp_exp16_reverse_prompts_600.jsonl",
+  "prompt_manifest_sha256": "ce94c770edf69a590a4913bdf39b8acd9c59725ae1ef6784307755a89aa6d4f2",
+  "n_prompts": 600,
+  "seed": 0,
+  "prompt_seed": null,
+  "onset_layer": 19,
+  "max_new_tokens": 512,
+  "categories": null,
+  "dtype": "bfloat16",
+  "batch_size_requested": 48,
+  "batch_size_pipeline_a": null,
+  "batch_size_pipeline_b": 48,
+  "scheduler_mode": "fixed_batches",
+  "continuous_admission": false,
+  "shard_index": 0,
+  "num_shards": 1,
+  "limit_prompts": null,
+  "chunk_size": 32,
+  "n_prompts_sampled_after_sharding": 600,
+  "readout_mode": "raw",
+  "js_only": true,
+  "primary_readout_name": null,
+  "secondary_readout_name": null,
+  "secondary_readout_names_by_pipeline": null,
+  "primary_readout_names_by_pipeline": {
+    "C_it_chat": "raw_logit_lens_it",
+    "A_prime_raw": "raw_logit_lens_pt",
+    "B_early_raw": "raw_logit_lens_pt",
+    "B_mid_raw": "raw_logit_lens_pt",
+    "B_late_raw": "raw_logit_lens_pt",
+    "D_early_ptswap": "raw_logit_lens_it",
+    "D_mid_ptswap": "raw_logit_lens_it",
+    "D_late_ptswap": "raw_logit_lens_it"
+  },
+  "raw_readout_names_by_pipeline": {
+    "C_it_chat": "raw_logit_lens_it",
+    "A_prime_raw": "raw_logit_lens_pt",
+    "B_early_raw": "raw_logit_lens_pt",
+    "B_mid_raw": "raw_logit_lens_pt",
+    "B_late_raw": "raw_logit_lens_pt",
+    "D_early_ptswap": "raw_logit_lens_it",
+    "D_mid_ptswap": "raw_logit_lens_it",
+    "D_late_ptswap": "raw_logit_lens_it"
+  },
+  "tuned_lens_dir": null,
+  "teacher_token_manifest": "/home/yifan/structral-semantic-features/results/exp16_matched_prefix_js_gap/exp16_js_reverse_pt_teacher_20260422_165259/teacher_manifests/mistral_7b_pt_teacher_manifest.jsonl",
+  "teacher_token_manifest_sha256": "41dd3dd6ea0e4d7efa91fc9221d1a2e7f44d0bf56756a1d85fb4a75b5019aa21",
+  "teacher_forced": true,
+  "depth_ablation": false,
+  "causal_combined": true,
+  "pipelines": [
+    "C_it_chat",
+    "A_prime_raw",
+    "B_early_raw",
+    "B_mid_raw",
+    "B_late_raw",
+    "D_early_ptswap",
+    "D_mid_ptswap",
+    "D_late_ptswap"
+  ],
+  "pipeline_prompt_modes": {
+    "C_it_chat": "it_chat_template",
+    "A_prime_raw": "raw_format_b",
+    "B_early_raw": "raw_format_b",
+    "B_mid_raw": "raw_format_b",
+    "B_late_raw": "raw_format_b",
+    "D_early_ptswap": "it_chat_template",
+    "D_mid_ptswap": "it_chat_template",
+    "D_late_ptswap": "it_chat_template"
+  },
+  "pipeline_aliases": null,
+  "graft_windows_by_pipeline": {
+    "B_early_raw": {
+      "start_layer": 0,
+      "end_layer_exclusive": 13,
+      "display_range": "0-12"
+    },
+    "B_mid_raw": {
+      "start_layer": 9,
+      "end_layer_exclusive": 22,
+      "display_range": "9-21"
+    },
+    "B_late_raw": {
+      "start_layer": 19,
+      "end_layer_exclusive": 32,
+      "display_range": "19-31"
+    },
+    "D_early_ptswap": {
+      "start_layer": 0,
+      "end_layer_exclusive": 13,
+      "display_range": "0-12"
+    },
+    "D_mid_ptswap": {
+      "start_layer": 9,
+      "end_layer_exclusive": 22,
+      "display_range": "9-21"
+    },
+    "D_late_ptswap": {
+      "start_layer": 19,
+      "end_layer_exclusive": 32,
+      "display_range": "19-31"
+    }
+  },
+  "final_region_layers": [
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31
+  ],
+  "late_mechanism_layers": null,
+  "batch_size_by_pipeline": {
+    "C_it_chat": 48,
+    "A_prime_raw": 48,
+    "B_early_raw": 48,
+    "B_mid_raw": 48,
+    "B_late_raw": 48,
+    "D_early_ptswap": 48,
+    "D_mid_ptswap": 48,
+    "D_late_ptswap": 48
+  }
+}

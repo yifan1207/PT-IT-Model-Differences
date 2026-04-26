@@ -1,0 +1,49 @@
+{
+  "augment_root": "results/exp20_divergence_token_counterfactual/factorial_validation_early_20260425_2236",
+  "base_root": "results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009",
+  "counts": {
+    "native/gemma3_4b": {
+      "count": 600,
+      "missing_aug": 0
+    },
+    "native/llama31_8b": {
+      "count": 600,
+      "missing_aug": 0
+    },
+    "native/mistral_7b": {
+      "count": 600,
+      "missing_aug": 0
+    },
+    "native/olmo2_7b": {
+      "count": 600,
+      "missing_aug": 0
+    },
+    "native/qwen3_4b": {
+      "count": 600,
+      "missing_aug": 0
+    },
+    "raw_shared/gemma3_4b": {
+      "count": 600,
+      "missing_aug": 0
+    },
+    "raw_shared/llama31_8b": {
+      "count": 600,
+      "missing_aug": 0
+    },
+    "raw_shared/mistral_7b": {
+      "count": 600,
+      "missing_aug": 0
+    },
+    "raw_shared/olmo2_7b": {
+      "count": 600,
+      "missing_aug": 0
+    },
+    "raw_shared/qwen3_4b": {
+      "count": 600,
+      "missing_aug": 0
+    }
+  },
+  "missing": [],
+  "ok": true,
+  "out_root": "results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early"
+}

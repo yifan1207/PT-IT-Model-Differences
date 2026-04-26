@@ -1,0 +1,249 @@
+{
+  "pairwise_primary": [
+    {
+      "comparison": "it_c_vs_dlate",
+      "comparison_label": "IT baseline vs late PT swap",
+      "criterion": "G2",
+      "target_condition": "C_it_chat",
+      "other_condition": "D_late_ptswap",
+      "n_items": 300,
+      "n_votes": 600,
+      "human_counts": {
+        "other": 63,
+        "target": 151,
+        "tie": 384,
+        "both_bad": 2
+      },
+      "human_resolved_n": 214,
+      "human_resolved_target_rate": 0.705607476635514,
+      "human_resolved_target_ci95": [
+        0.6395896378367826,
+        0.7688679245283019
+      ],
+      "unresolved_rate": 0.6433333333333333,
+      "llm_same_sample_counts": {
+        "target": 225,
+        "other": 69,
+        "tie": 6
+      },
+      "llm_same_sample_resolved_target_rate": 0.7653061224489796,
+      "R1_resolved_rate": 0.7570093457943925,
+      "R1_counts": {
+        "other": 26,
+        "target": 81,
+        "tie": 191,
+        "both_bad": 2
+      },
+      "R2_resolved_rate": 0.6542056074766355,
+      "R2_counts": {
+        "tie": 193,
+        "other": 37,
+        "target": 70
+      }
+    },
+    {
+      "comparison": "it_c_vs_dlate",
+      "comparison_label": "IT baseline vs late PT swap",
+      "criterion": "S2",
+      "target_condition": "C_it_chat",
+      "other_condition": "D_late_ptswap",
+      "n_items": 300,
+      "n_votes": 600,
+      "human_counts": {
+        "tie": 466,
+        "target": 79,
+        "other": 39,
+        "both_bad": 16
+      },
+      "human_resolved_n": 118,
+      "human_resolved_target_rate": 0.6694915254237288,
+      "human_resolved_target_ci95": [
+        0.5752157079646018,
+        0.7580645161290323
+      ],
+      "unresolved_rate": 0.8033333333333333,
+      "llm_same_sample_counts": {
+        "target": 224,
+        "other": 73,
+        "tie": 3
+      },
+      "llm_same_sample_resolved_target_rate": 0.7542087542087542,
+      "R1_resolved_rate": 0.7647058823529411,
+      "R1_counts": {
+        "tie": 266,
+        "target": 26,
+        "other": 8
+      },
+      "R2_resolved_rate": 0.6309523809523809,
+      "R2_counts": {
+        "tie": 200,
+        "target": 53,
+        "other": 31,
+        "both_bad": 16
+      }
+    },
+    {
+      "comparison": "pt_late_vs_a",
+      "comparison_label": "PT late graft vs PT baseline",
+      "criterion": "G2",
+      "target_condition": "B_late_raw",
+      "other_condition": "A_pt_raw",
+      "n_items": 300,
+      "n_votes": 600,
+      "human_counts": {
+        "tie": 257,
+        "other": 116,
+        "target": 178,
+        "both_bad": 49
+      },
+      "human_resolved_n": 294,
+      "human_resolved_target_rate": 0.6054421768707483,
+      "human_resolved_target_ci95": [
+        0.5370352356247299,
+        0.6732092837134854
+      ],
+      "unresolved_rate": 0.51,
+      "llm_same_sample_counts": {
+        "other": 100,
+        "target": 164,
+        "tie": 36
+      },
+      "llm_same_sample_resolved_target_rate": 0.6212121212121212,
+      "R1_resolved_rate": 0.5905511811023622,
+      "R1_counts": {
+        "tie": 124,
+        "other": 52,
+        "target": 75,
+        "both_bad": 49
+      },
+      "R2_resolved_rate": 0.6167664670658682,
+      "R2_counts": {
+        "tie": 133,
+        "target": 103,
+        "other": 64
+      }
+    },
+    {
+      "comparison": "pt_late_vs_a",
+      "comparison_label": "PT late graft vs PT baseline",
+      "criterion": "S2",
+      "target_condition": "B_late_raw",
+      "other_condition": "A_pt_raw",
+      "n_items": 300,
+      "n_votes": 600,
+      "human_counts": {
+        "both_bad": 179,
+        "other": 93,
+        "target": 179,
+        "tie": 149
+      },
+      "human_resolved_n": 272,
+      "human_resolved_target_rate": 0.6580882352941176,
+      "human_resolved_target_ci95": [
+        0.5862008469449486,
+        0.7256317689530686
+      ],
+      "unresolved_rate": 0.5466666666666666,
+      "llm_same_sample_counts": {
+        "target": 161,
+        "other": 84,
+        "tie": 55
+      },
+      "llm_same_sample_resolved_target_rate": 0.6571428571428571,
+      "R1_resolved_rate": 0.6384615384615384,
+      "R1_counts": {
+        "both_bad": 110,
+        "other": 47,
+        "target": 83,
+        "tie": 60
+      },
+      "R2_resolved_rate": 0.676056338028169,
+      "R2_counts": {
+        "other": 46,
+        "tie": 89,
+        "both_bad": 69,
+        "target": 96
+      }
+    }
+  ],
+  "pairwise_interrater": [
+    {
+      "comparison": "it_c_vs_dlate",
+      "criterion": "G2",
+      "n_items": 300,
+      "raw_agreement_4label": 0.4866666666666667,
+      "kappa_4label": 0.0065584345769269525,
+      "raw_agreement_collapsed": 0.49,
+      "kappa_collapsed": 0.004748585181812204
+    },
+    {
+      "comparison": "it_c_vs_dlate",
+      "criterion": "S2",
+      "n_items": 300,
+      "raw_agreement_4label": 0.6666666666666666,
+      "kappa_4label": 0.14709728776937503,
+      "raw_agreement_collapsed": 0.71,
+      "kappa_collapsed": 0.15583155443431018
+    },
+    {
+      "comparison": "pt_late_vs_a",
+      "criterion": "G2",
+      "n_items": 300,
+      "raw_agreement_4label": 0.49666666666666665,
+      "kappa_4label": 0.27467776799295485,
+      "raw_agreement_collapsed": 0.5766666666666667,
+      "kappa_collapsed": 0.318888769709321
+    },
+    {
+      "comparison": "pt_late_vs_a",
+      "criterion": "S2",
+      "n_items": 300,
+      "raw_agreement_4label": 0.6433333333333333,
+      "kappa_4label": 0.5204660890349567,
+      "raw_agreement_collapsed": 0.6933333333333334,
+      "kappa_collapsed": 0.4793435200905489
+    }
+  ],
+  "pointwise_interrater_and_judge": [
+    {
+      "task": "g1",
+      "n_common_r1_r2": 300,
+      "r1_r2_agreement": 0.33,
+      "r1_r2_kappa": 0.6353221781211724,
+      "n_human_llm_ratings": 900,
+      "human_llm_agreement": 0.3377777777777778,
+      "human_llm_kappa": 0.6025780875858033
+    },
+    {
+      "task": "g2",
+      "n_common_r1_r2": 300,
+      "r1_r2_agreement": 0.25,
+      "r1_r2_kappa": 0.32190403218082564,
+      "n_human_llm_ratings": 600,
+      "human_llm_agreement": 0.3516666666666667,
+      "human_llm_kappa": 0.4723074147573515
+    },
+    {
+      "task": "s1",
+      "n_common_r1_r2": 150,
+      "r1_r2_agreement": 0.7266666666666667,
+      "r1_r2_kappa": 0.45478723404255295,
+      "n_human_llm_ratings": 300,
+      "human_llm_agreement": 0.79,
+      "human_llm_kappa": 0.5807267403167843
+    },
+    {
+      "task": "s2",
+      "n_common_r1_r2": 146,
+      "r1_r2_agreement": 0.8424657534246576,
+      "r1_r2_kappa": 0.3259735046166198,
+      "n_human_llm_ratings": 296,
+      "human_llm_agreement": 0.7567567567567568,
+      "human_llm_kappa": 0.307016973401834
+    }
+  ],
+  "notes": {
+    "pairwise_rate_definition": "Resolved rate excludes TIE and BOTH_BAD votes; CIs bootstrap over pair_id and include both raters per sampled item.",
+    "pointwise_role": "Pointwise labels are used for agreement and judge-validation diagnostics; pairwise labels are the primary confirmatory human behavioral readout."
+  }
+}
