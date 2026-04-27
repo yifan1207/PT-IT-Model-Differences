@@ -73,6 +73,17 @@ def exp16_js(pair: str, region: str, agg: str = "regions_weighted") -> NumberFn:
     return _read
 
 
+def exp22_table(key: str, column: str = "estimate_it_minus_pt") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "results/paper_synthesis/exp22_endpoint_deconfounded_table.csv")
+        for row in rows:
+            if row["key"] == key:
+                return float(row[column])
+        raise KeyError(key)
+
+    return _read
+
+
 def exp11_depth(condition: str, metric: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -214,22 +225,82 @@ def exp15_human_pairwise(comparison: str, criterion: str) -> NumberFn:
 
 CHECKS: list[ClaimCheck] = [
     ClaimCheck(
-        "Six-family tuned final-half convergence gap",
+        "Dense-5 tuned final-half convergence gap",
         "exp09 convergence_gap_values.json",
-        0.3979263649605938,
-        exp9_cg("tuned"),
+        0.40973461108427894,
+        exp9_cg("tuned", exclude={"deepseek_v2_lite"}),
     ),
     ClaimCheck(
-        "Six-family raw final-half convergence gap",
+        "Dense-5 raw final-half convergence gap",
         "exp09 convergence_gap_values.json",
-        0.729235079781585,
-        exp9_cg("raw"),
+        0.7712311073328106,
+        exp9_cg("raw", exclude={"deepseek_v2_lite"}),
     ),
     ClaimCheck(
-        "Raw final-half convergence gap excluding Gemma and DeepSeek",
+        "Dense-5 raw final-half convergence gap excluding Gemma",
         "exp09 convergence_gap_values.json",
         0.7120960062343834,
         exp9_cg("raw", exclude={"gemma3_4b", "deepseek_v2_lite"}),
+    ),
+    ClaimCheck(
+        "Endpoint-matched raw late KL gap",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.42507813938209227,
+        exp22_table("endpoint_matched_raw_late_kl"),
+    ),
+    ClaimCheck(
+        "Endpoint-matched raw late KL gap CI low",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.3558056663988748,
+        exp22_table("endpoint_matched_raw_late_kl", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Endpoint-matched raw late KL gap CI high",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.49267175872107266,
+        exp22_table("endpoint_matched_raw_late_kl", "ci95_high"),
+    ),
+    ClaimCheck(
+        "Endpoint-matched tuned late KL gap",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.762124299866896,
+        exp22_table("endpoint_matched_tuned_late_kl"),
+    ),
+    ClaimCheck(
+        "Endpoint-matched tuned late KL gap CI low",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.7091858737942381,
+        exp22_table("endpoint_matched_tuned_late_kl", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Endpoint-matched tuned late KL gap CI high",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.8141641585027306,
+        exp22_table("endpoint_matched_tuned_late_kl", "ci95_high"),
+    ),
+    ClaimCheck(
+        "Endpoint-matched remaining adjacent JS gap",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.052171032353954726,
+        exp22_table("endpoint_free_remaining_adj_js"),
+    ),
+    ClaimCheck(
+        "Endpoint-matched future top-1 flips gap",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.20296685082331023,
+        exp22_table("endpoint_free_future_top1_flips"),
+    ),
+    ClaimCheck(
+        "Endpoint matching minimum retained fraction",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.7962578113120108,
+        exp22_table("quality_min_matched_retention"),
+    ),
+    ClaimCheck(
+        "Endpoint matching max post-match SMD",
+        "exp22_endpoint_deconfounded_table.csv",
+        0.056949274990143434,
+        exp22_table("quality_max_smd_after"),
     ),
     ClaimCheck(
         "Matched-prefix JS(A', C), pre-corrective",

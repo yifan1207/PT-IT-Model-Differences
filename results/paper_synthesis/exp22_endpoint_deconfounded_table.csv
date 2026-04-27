@@ -1,0 +1,8 @@
+key,metric,method,probe_family,outcome,estimate_it_minus_pt,ci95_low,ci95_high,unit,interpretation
+endpoint_matched_raw_late_kl,raw late KL-to-own-final after endpoint matching,cem,raw,late_kl_mean,0.425078139,0.355805666,0.492671759,nats,Primary endpoint-matched convergence-gap estimate under raw lens.
+endpoint_matched_tuned_late_kl,tuned late KL-to-own-final after endpoint matching,cem,tuned,late_kl_mean,0.762124300,0.709185874,0.814164159,nats,Primary endpoint-matched convergence-gap estimate under tuned lens.
+endpoint_free_remaining_adj_js,remaining adjacent JS after endpoint matching,cem,pooled_probe_fe,remaining_adj_js,0.052171032,0.047961673,0.056684189,JS,Endpoint-free path-length check; positive means IT has more remaining layer-to-layer movement.
+endpoint_free_future_top1_flips,future top-1 flips after endpoint matching,cem,pooled_probe_fe,future_top1_flips,0.202966851,0.190139093,0.214824807,flips,Endpoint-free argmax-stability check; positive means IT keeps changing top-1 later.
+quality_min_matched_retention,minimum matched-token retention across model x probe,quality,all,min_retained_fraction,0.796257811,,,fraction,Quality gate: all model/probe branches retain enough endpoint-matched token steps.
+quality_max_smd_after,maximum endpoint-covariate SMD after matching,quality,all,max_smd_after,0.056949275,,,SMD,"Quality gate: endpoint entropy, confidence, and top1-top2 margin are balanced after matching."
+quality_max_malformed_rate,maximum malformed branch rate,quality,all,max_malformed_rate,0.000000000,,,fraction,Quality gate: collection completeness check.

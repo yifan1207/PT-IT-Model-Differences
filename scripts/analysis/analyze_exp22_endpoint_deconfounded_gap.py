@@ -197,6 +197,20 @@ def compute_binned_ipw_weights(df: pd.DataFrame, *, n_bins: int = 10) -> pd.Data
     return out
 
 
+def compute_binned_overlap_weights(df: pd.DataFrame, *, n_bins: int = 10) -> pd.DataFrame:
+    out = add_endpoint_bins(df, n_bins=n_bins)
+    out["overlap_weight"] = 0.0
+    for _cell, group in out.groupby("cem_cell", sort=False):
+        p_it = float((group["variant"] == "it").mean())
+        if p_it <= 0.0 or p_it >= 1.0:
+            continue
+        it_idx = group.index[group["variant"] == "it"]
+        pt_idx = group.index[group["variant"] == "pt"]
+        out.loc[it_idx, "overlap_weight"] = 1.0 - p_it
+        out.loc[pt_idx, "overlap_weight"] = p_it
+    return out
+
+
 def _weighted_mean(values: pd.Series, weights: pd.Series) -> float:
     vals = values.astype(float).to_numpy()
     w = weights.astype(float).to_numpy()
@@ -272,16 +286,52 @@ def bootstrap_equal_model_effect(
         return float("nan"), float("nan")
     rng = np.random.default_rng(seed + abs(hash((outcome, weight_col))) % 100_000)
     boot: list[float] = []
-    grouped = [(model, group.reset_index(drop=True)) for model, group in df.groupby("model", sort=True)]
+
+    # Token steps from the same sampled completion are correlated. Bootstrap at
+    # the prompt cluster level rather than treating token rows as iid.
+    grouped: list[tuple[str, dict[str, tuple[np.ndarray, np.ndarray]]]] = []
+    for model, model_df in df.groupby("model", sort=True):
+        variants: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+        for variant in ("pt", "it"):
+            sub = model_df[model_df["variant"] == variant][["prompt_id", outcome, weight_col]].copy()
+            vals = sub[outcome].astype(float).to_numpy()
+            weights = sub[weight_col].astype(float).to_numpy()
+            mask = np.isfinite(vals) & np.isfinite(weights) & (weights > 0)
+            if not mask.any():
+                continue
+            clustered = (
+                pd.DataFrame(
+                    {
+                        "prompt_id": sub["prompt_id"].to_numpy()[mask],
+                        "wy": vals[mask] * weights[mask],
+                        "w": weights[mask],
+                    }
+                )
+                .groupby("prompt_id", sort=False)[["wy", "w"]]
+                .sum()
+            )
+            if clustered.empty:
+                continue
+            variants[variant] = (
+                clustered["wy"].to_numpy(dtype=float),
+                clustered["w"].to_numpy(dtype=float),
+            )
+        if "pt" in variants and "it" in variants:
+            grouped.append((str(model), variants))
+
     for _ in range(n_boot):
         diffs: list[float] = []
-        for _model, group in grouped:
-            if group.empty:
-                continue
-            sample = group.iloc[rng.integers(0, len(group), size=len(group))]
-            diff = weighted_variant_difference(sample, outcome, weight_col)
-            if math.isfinite(diff):
-                diffs.append(diff)
+        for _model, variants in grouped:
+            means: dict[str, float] = {}
+            for variant, (wy, weights) in variants.items():
+                idx = rng.integers(0, len(wy), size=len(wy))
+                denom = float(weights[idx].sum())
+                if denom > 0:
+                    means[variant] = float(wy[idx].sum() / denom)
+            if "pt" in means and "it" in means:
+                diff = means["it"] - means["pt"]
+                if math.isfinite(diff):
+                    diffs.append(diff)
         if diffs:
             boot.append(float(np.mean(diffs)))
     if len(boot) < 10:
@@ -372,7 +422,7 @@ def regression_variant_coefficients(df: pd.DataFrame, *, weight_col: str | None 
     return rows
 
 
-def plot_summary(effects: pd.DataFrame, balance: pd.DataFrame, out_path: Path) -> None:
+def plot_summary(effects: pd.DataFrame, balance: pd.DataFrame, regression: list[dict[str, Any]], out_path: Path) -> None:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -408,10 +458,33 @@ def plot_summary(effects: pd.DataFrame, balance: pd.DataFrame, out_path: Path) -
         axes[1, 0].set_title("Max endpoint covariate SMD")
         axes[1, 0].legend()
 
-    methods = effects[(effects["probe_family"] == "pooled_probe_fe") & (effects["outcome"] == "late_kl_mean")]
-    axes[1, 1].bar(methods["method"], methods["estimate_it_minus_pt"], color="#E45756")
+    sensitivity_rows = []
+    for method in ["cem", "binned_overlap", "binned_ipw"]:
+        rows = effects[
+            (effects["method"] == method)
+            & (effects["probe_family"] == "pooled_probe_fe")
+            & (effects["outcome"] == "late_kl_mean")
+        ]
+        if not rows.empty:
+            sensitivity_rows.append(
+                {
+                    "method": method,
+                    "estimate": float(rows.iloc[0]["estimate_it_minus_pt"]),
+                }
+            )
+    for row in regression:
+        if row.get("method") == "regression_weighted" and row.get("outcome") == "late_kl_mean":
+            sensitivity_rows.append(
+                {
+                    "method": "weighted_reg",
+                    "estimate": float(row["variant_it_coefficient"]),
+                }
+            )
+            break
+    sensitivity = pd.DataFrame(sensitivity_rows)
+    axes[1, 1].bar(sensitivity["method"], sensitivity["estimate"], color="#E45756")
     axes[1, 1].axhline(0, color="black", linewidth=0.8)
-    axes[1, 1].set_title("Estimator agreement")
+    axes[1, 1].set_title("Estimator sensitivity: late KL")
     axes[1, 1].tick_params(axis="x", rotation=20)
 
     fig.tight_layout()
@@ -428,6 +501,16 @@ def write_paper_note(summary: dict[str, Any], out_path: Path) -> None:
     raw = lookup.get(("cem", "raw", "late_kl_mean"), {})
     tuned = lookup.get(("cem", "tuned", "late_kl_mean"), {})
     rem_js = lookup.get(("cem", "pooled_probe_fe", "remaining_adj_js"), {})
+    overlap = lookup.get(("binned_overlap", "pooled_probe_fe", "late_kl_mean"), {})
+    ipw = lookup.get(("binned_ipw", "pooled_probe_fe", "late_kl_mean"), {})
+    weighted_reg = next(
+        (
+            row
+            for row in summary.get("regression", [])
+            if row.get("method") == "regression_weighted" and row.get("outcome") == "late_kl_mean"
+        ),
+        {},
+    )
     text = f"""# Exp22 Endpoint-Deconfounded Gap Summary
 
 Primary matched estimate, raw probe late KL (IT - PT): {raw.get('estimate_it_minus_pt', float('nan')):.6g}
@@ -437,6 +520,11 @@ Primary matched estimate, tuned probe late KL (IT - PT): {tuned.get('estimate_it
 95% CI: [{tuned.get('ci95_low', float('nan')):.6g}, {tuned.get('ci95_high', float('nan')):.6g}]
 
 Endpoint-free remaining adjacent JS, pooled probe fixed-effect summary (IT - PT): {rem_js.get('estimate_it_minus_pt', float('nan')):.6g}
+
+Sensitivity estimates for pooled late KL:
+- Binned overlap weighting: {overlap.get('estimate_it_minus_pt', float('nan')):.6g}
+- Weighted endpoint regression coefficient: {weighted_reg.get('variant_it_coefficient', float('nan')):.6g}
+- Untrimmed binned IPW: {ipw.get('estimate_it_minus_pt', float('nan')):.6g}
 
 Interpretation rule:
 - If raw and tuned controlled late KL remain positive with CIs above zero, call the convergence gap endpoint-deconfounded.
@@ -460,10 +548,13 @@ def analyze(args: argparse.Namespace) -> dict[str, Any]:
 
     cem_df, matching = compute_cem_weights(df, n_bins=args.n_bins)
     ipw_df = compute_binned_ipw_weights(df, n_bins=args.n_bins)
+    overlap_df = compute_binned_overlap_weights(df, n_bins=args.n_bins)
     cem_df["ipw_weight"] = ipw_df["ipw_weight"].to_numpy()
+    cem_df["overlap_weight"] = overlap_df["overlap_weight"].to_numpy()
     bal = balance_table(cem_df)
     effects_rows: list[dict[str, Any]] = []
     effects_rows.extend(dense_equal_model_effects(cem_df, method="cem", weight_col="cem_weight", n_boot=args.n_boot, seed=args.seed))
+    effects_rows.extend(dense_equal_model_effects(cem_df, method="binned_overlap", weight_col="overlap_weight", n_boot=args.n_boot, seed=args.seed + 11))
     effects_rows.extend(dense_equal_model_effects(cem_df, method="binned_ipw", weight_col="ipw_weight", n_boot=args.n_boot, seed=args.seed + 17))
     effects = pd.DataFrame(effects_rows)
     regression = regression_variant_coefficients(cem_df, weight_col=None)
@@ -518,7 +609,7 @@ def analyze(args: argparse.Namespace) -> dict[str, Any]:
     balance_path = out_dir / "balance.csv"
     effects.to_csv(effects_path, index=False)
     bal.to_csv(balance_path, index=False)
-    plot_summary(effects, bal, out_dir / "endpoint_deconfounded_gap_main.png")
+    plot_summary(effects, bal, regression, out_dir / "endpoint_deconfounded_gap_main.png")
     summary = {
         "root": str(root),
         "n_rows": int(len(df)),

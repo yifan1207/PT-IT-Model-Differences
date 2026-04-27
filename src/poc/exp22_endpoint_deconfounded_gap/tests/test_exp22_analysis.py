@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.analysis.analyze_exp22_endpoint_deconfounded_gap import (
     balance_table,
+    bootstrap_equal_model_effect,
     compute_cem_weights,
     dense_equal_model_effects,
     flatten_records,
@@ -61,6 +62,20 @@ def test_cem_weights_balance_and_effect_direction() -> None:
         if row["probe_family"] == "raw" and row["outcome"] == "late_kl_mean"
     ][0]
     assert math.isclose(late["estimate_it_minus_pt"], 1.0)
+
+
+def test_prompt_cluster_bootstrap_returns_finite_interval() -> None:
+    df, _matching = compute_cem_weights(_toy_df(), n_bins=5)
+    lo, hi = bootstrap_equal_model_effect(
+        df[df["probe_family"] == "raw"],
+        outcome="late_kl_mean",
+        weight_col="cem_weight",
+        n_boot=50,
+        seed=0,
+    )
+    assert math.isfinite(lo)
+    assert math.isfinite(hi)
+    assert lo <= 1.0 <= hi
 
 
 def _mock_probe_payload(n_steps: int = 7, n_layers: int = 10) -> dict:

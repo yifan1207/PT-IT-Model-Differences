@@ -124,17 +124,21 @@ JS_TARGET_PAIR_NAME = {
     "B_early_raw": "JS_Bearly_C",
     "B_mid_raw": "JS_Bmid_C",
     "B_late_raw": "JS_Blate_C",
+    "B_midlate_raw": "JS_Bmidlate_C",
     "D_early_ptswap": "JS_Dearly_A",
     "D_mid_ptswap": "JS_Dmid_A",
     "D_late_ptswap": "JS_Dlate_A",
+    "D_midlate_ptswap": "JS_Dmidlate_A",
 }
 JS_HOST_PAIR_NAME = {
     "B_early_raw": "JS_Bearly_A",
     "B_mid_raw": "JS_Bmid_A",
     "B_late_raw": "JS_Blate_A",
+    "B_midlate_raw": "JS_Bmidlate_A",
     "D_early_ptswap": "JS_Dearly_C",
     "D_mid_ptswap": "JS_Dmid_C",
     "D_late_ptswap": "JS_Dlate_C",
+    "D_midlate_ptswap": "JS_Dmidlate_C",
 }
 
 
@@ -480,6 +484,14 @@ def parse_args() -> argparse.Namespace:
             "Teacher-forced combined Exp13/Exp14 run: run C_it_chat, A_prime_raw, "
             "B/D early-mid-late branches, and collect late-stage output-relevant "
             "mechanism summaries for core pipelines."
+        ),
+    )
+    parser.add_argument(
+        "--include-midlate-factorial",
+        action="store_true",
+        help=(
+            "When used with --causal-combined, add Exp23 mid+late factorial "
+            "branches B_midlate_raw and D_midlate_ptswap."
         ),
     )
     parser.add_argument(
@@ -880,7 +892,11 @@ def _depth_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
     return windows
 
 
-def _causal_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
+def _union_windows(*windows: tuple[int, int]) -> tuple[int, int]:
+    return min(start for start, _ in windows), max(end for _, end in windows)
+
+
+def _causal_windows_for_model(model: str, spec, *, include_midlate: bool = False) -> dict[str, tuple[int, int]]:
     base = _depth_windows_for_model(model, spec)
     out = dict(base)
     out.update(
@@ -890,6 +906,10 @@ def _causal_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
             "D_late_ptswap": base["B_late_raw"],
         }
     )
+    if include_midlate:
+        midlate = _union_windows(base["B_mid_raw"], base["B_late_raw"])
+        out["B_midlate_raw"] = midlate
+        out["D_midlate_ptswap"] = midlate
     return out
 
 
@@ -2278,6 +2298,8 @@ def main() -> None:
         raise ValueError("--depth-ablation requires --teacher-forced")
     if args.causal_combined and not args.teacher_forced:
         raise ValueError("--causal-combined requires --teacher-forced")
+    if args.include_midlate_factorial and not args.causal_combined:
+        raise ValueError("--include-midlate-factorial requires --causal-combined")
     if args.specificity_controls and not args.teacher_forced:
         raise ValueError("--specificity-controls requires --teacher-forced")
     selected_special_modes = [
@@ -2295,10 +2317,19 @@ def main() -> None:
     onset_layer = spec.corrective_onset if args.onset_layer is None else args.onset_layer
     depth_ablation = _is_depth_ablation(args)
     causal_combined = _is_causal_combined(args)
+    include_midlate_factorial = bool(args.include_midlate_factorial)
     specificity_controls = _is_specificity_controls(args)
     js_only = bool(args.js_only)
     depth_windows = _depth_windows_for_model(args.model, spec) if depth_ablation else {}
-    causal_windows = _causal_windows_for_model(args.model, spec) if (causal_combined or specificity_controls) else {}
+    causal_windows = (
+        _causal_windows_for_model(
+            args.model,
+            spec,
+            include_midlate=include_midlate_factorial,
+        )
+        if (causal_combined or specificity_controls)
+        else {}
+    )
     specificity_seed_plan = _parse_seed_plan(args.specificity_random_seeds_by_window) if specificity_controls else None
     specificity_specs = (
         _specificity_pipeline_specs(
@@ -2347,7 +2378,7 @@ def main() -> None:
                             continue
                         row = json.loads(line)
                         js_prompt_counts[row["prompt_id"]].add(row["pair_name"])
-            expected_pairs = 13 if causal_combined else 1
+            expected_pairs = (17 if include_midlate_factorial else 13) if causal_combined else 1
             done_ids.update(
                 prompt_id
                 for prompt_id, pair_names in js_prompt_counts.items()
@@ -2552,9 +2583,19 @@ def main() -> None:
             "B_early_raw",
             "B_mid_raw",
             "B_late_raw",
+            *(
+                ["B_midlate_raw"]
+                if include_midlate_factorial
+                else []
+            ),
             "D_early_ptswap",
             "D_mid_ptswap",
             "D_late_ptswap",
+            *(
+                ["D_midlate_ptswap"]
+                if include_midlate_factorial
+                else []
+            ),
         ]
         pipeline_prompt_modes = {
             "C_it_chat": "it_chat_template",
@@ -2566,6 +2607,13 @@ def main() -> None:
             "D_mid_ptswap": "it_chat_template",
             "D_late_ptswap": "it_chat_template",
         }
+        if include_midlate_factorial:
+            pipeline_prompt_modes.update(
+                {
+                    "B_midlate_raw": "raw_format_b",
+                    "D_midlate_ptswap": "it_chat_template",
+                }
+            )
         for name in pipelines:
             if name.startswith("D_") or name == "C_it_chat":
                 pipeline_primary_readouts[name] = raw_readout_it.name if js_only else tuned_readout_it.name
@@ -2686,6 +2734,7 @@ def main() -> None:
         "teacher_forced": bool(args.teacher_forced),
         "depth_ablation": depth_ablation,
         "causal_combined": causal_combined,
+        "include_midlate_factorial": include_midlate_factorial if causal_combined else False,
         "specificity_controls": specificity_controls,
         "specificity_random_seeds": list(args.specificity_random_seeds) if specificity_controls else None,
         "specificity_random_seeds_by_window": specificity_seed_plan,
@@ -2771,11 +2820,13 @@ def main() -> None:
         runs_d_early: dict[str, PipelineRun] = {}
         runs_d_mid: dict[str, PipelineRun] = {}
         runs_d_late: dict[str, PipelineRun] = {}
+        runs_d_midlate: dict[str, PipelineRun] = {}
         requests_a: list[RequestState] = []
         requests_b: list[RequestState] = []
         requests_d_early: list[RequestState] = []
         requests_d_mid: list[RequestState] = []
         requests_d_late: list[RequestState] = []
+        requests_d_midlate: list[RequestState] = []
         if not args.teacher_forced:
             requests_a = _make_request_states(
                 chunk,
@@ -2818,6 +2869,7 @@ def main() -> None:
         runs_b_early: dict[str, PipelineRun] = {}
         runs_b_mid: dict[str, PipelineRun] = {}
         runs_b_late: dict[str, PipelineRun] = {}
+        runs_b_midlate: dict[str, PipelineRun] = {}
         runs_a_prime_tmpl: dict[str, PipelineRun] = {}
         runs_b2: dict[str, PipelineRun] = {}
         requests_c: list[RequestState] = []
@@ -2825,6 +2877,7 @@ def main() -> None:
         requests_b_early: list[RequestState] = []
         requests_b_mid: list[RequestState] = []
         requests_b_late: list[RequestState] = []
+        requests_b_midlate: list[RequestState] = []
         requests_a_prime_tmpl: list[RequestState] = []
         requests_b2: list[RequestState] = []
         c_baseline_lookup: dict[str, list[list[torch.Tensor]]] | None = None
@@ -3040,6 +3093,26 @@ def main() -> None:
                 requests_b_late = specificity_requests.get("B_late_true", [])
                 requests_d_late = specificity_requests.get("D_late_true", [])
             elif causal_combined:
+                pt_branch_names = (
+                    "B_early_raw",
+                    "B_mid_raw",
+                    "B_late_raw",
+                    *(
+                        ("B_midlate_raw",)
+                        if include_midlate_factorial
+                        else ()
+                    ),
+                )
+                it_branch_names = (
+                    "D_early_ptswap",
+                    "D_mid_ptswap",
+                    "D_late_ptswap",
+                    *(
+                        ("D_midlate_ptswap",)
+                        if include_midlate_factorial
+                        else ()
+                    ),
+                )
                 branch_requests_pt = {
                     name: _make_request_states(
                         chunk,
@@ -3048,7 +3121,7 @@ def main() -> None:
                         prompt_text_by_id=raw_prompt_text_by_id,
                         prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
                     )
-                    for name in ("B_early_raw", "B_mid_raw", "B_late_raw")
+                    for name in pt_branch_names
                 }
                 branch_requests_it = {
                     name: _make_request_states(
@@ -3058,7 +3131,7 @@ def main() -> None:
                         prompt_text_by_id=it_chat_prompt_text_by_id,
                         prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
                     )
-                    for name in ("D_early_ptswap", "D_mid_ptswap", "D_late_ptswap")
+                    for name in it_branch_names
                 }
                 branch_runs_pt: dict[str, dict[str, PipelineRun]] = {}
                 branch_runs_it: dict[str, dict[str, PipelineRun]] = {}
@@ -3173,15 +3246,19 @@ def main() -> None:
                 runs_b_early = branch_runs_pt["B_early_raw"]
                 runs_b_mid = branch_runs_pt["B_mid_raw"]
                 runs_b_late = branch_runs_pt["B_late_raw"]
+                runs_b_midlate = branch_runs_pt.get("B_midlate_raw", {})
                 requests_b_early = branch_requests_pt["B_early_raw"]
                 requests_b_mid = branch_requests_pt["B_mid_raw"]
                 requests_b_late = branch_requests_pt["B_late_raw"]
+                requests_b_midlate = branch_requests_pt.get("B_midlate_raw", [])
                 runs_d_early = branch_runs_it["D_early_ptswap"]
                 runs_d_mid = branch_runs_it["D_mid_ptswap"]
                 runs_d_late = branch_runs_it["D_late_ptswap"]
+                runs_d_midlate = branch_runs_it.get("D_midlate_ptswap", {})
                 requests_d_early = branch_requests_it["D_early_ptswap"]
                 requests_d_mid = branch_requests_it["D_mid_ptswap"]
                 requests_d_late = branch_requests_it["D_late_ptswap"]
+                requests_d_midlate = branch_requests_it.get("D_midlate_ptswap", [])
             elif depth_ablation:
                 branch_requests = {
                     name: _make_request_states(
@@ -3391,9 +3468,11 @@ def main() -> None:
             run_b_early = runs_b_early.get(record["id"])
             run_b_mid = runs_b_mid.get(record["id"])
             run_b_late = runs_b_late.get(record["id"])
+            run_b_midlate = runs_b_midlate.get(record["id"])
             run_d_early = runs_d_early.get(record["id"])
             run_d_mid = runs_d_mid.get(record["id"])
             run_d_late = runs_d_late.get(record["id"])
+            run_d_midlate = runs_d_midlate.get(record["id"])
             run_a_prime_tmpl = runs_a_prime_tmpl.get(record["id"])
             run_b2 = runs_b2.get(record["id"])
 
@@ -3437,20 +3516,32 @@ def main() -> None:
                 summary_row["pipeline_b_early_raw"] = _summarize_pipeline(run_b_early)
                 summary_row["pipeline_b_mid_raw"] = _summarize_pipeline(run_b_mid)
                 summary_row["pipeline_b_late_raw"] = _summarize_pipeline(run_b_late)
+                if include_midlate_factorial:
+                    summary_row["pipeline_b_midlate_raw"] = _summarize_pipeline(run_b_midlate)
                 summary_row["pipeline_d_early_ptswap"] = _summarize_pipeline(run_d_early)
                 summary_row["pipeline_d_mid_ptswap"] = _summarize_pipeline(run_d_mid)
                 summary_row["pipeline_d_late_ptswap"] = _summarize_pipeline(run_d_late)
+                if include_midlate_factorial:
+                    summary_row["pipeline_d_midlate_ptswap"] = _summarize_pipeline(run_d_midlate)
                 summary_row["divergence_step_a_prime_raw_vs_c"] = _first_divergence_step(
                     c_tokens, list(run_a_prime.free_argmax_token_ids)
                 )
-                for pipeline_name, run_branch in (
+                divergence_branches = [
                     ("B_early_raw", run_b_early),
                     ("B_mid_raw", run_b_mid),
                     ("B_late_raw", run_b_late),
                     ("D_early_ptswap", run_d_early),
                     ("D_mid_ptswap", run_d_mid),
                     ("D_late_ptswap", run_d_late),
-                ):
+                ]
+                if include_midlate_factorial:
+                    divergence_branches.extend(
+                        [
+                            ("B_midlate_raw", run_b_midlate),
+                            ("D_midlate_ptswap", run_d_midlate),
+                        ]
+                    )
+                for pipeline_name, run_branch in divergence_branches:
                     summary_row[f"divergence_step_{pipeline_name.lower()}_vs_c"] = _first_divergence_step(
                         c_tokens, list(run_branch.free_argmax_token_ids)
                     )
@@ -3562,7 +3653,7 @@ def main() -> None:
                     }
                     gen_rows.append(row)
             elif causal_combined and run_c is not None and run_a_prime is not None:
-                for pipeline_name, run_branch, prompt_mode in (
+                gen_branch_rows = [
                     ("C_it_chat", run_c, "it_chat_template"),
                     ("A_prime_raw", run_a_prime, "raw_format_b"),
                     ("B_early_raw", run_b_early, "raw_format_b"),
@@ -3571,7 +3662,15 @@ def main() -> None:
                     ("D_early_ptswap", run_d_early, "it_chat_template"),
                     ("D_mid_ptswap", run_d_mid, "it_chat_template"),
                     ("D_late_ptswap", run_d_late, "it_chat_template"),
-                ):
+                ]
+                if include_midlate_factorial:
+                    gen_branch_rows.extend(
+                        [
+                            ("B_midlate_raw", run_b_midlate, "raw_format_b"),
+                            ("D_midlate_ptswap", run_d_midlate, "it_chat_template"),
+                        ]
+                    )
+                for pipeline_name, run_branch, prompt_mode in gen_branch_rows:
                     row = {
                         "prompt_id": record["id"],
                         "pipeline": pipeline_name,
@@ -3668,9 +3767,19 @@ def main() -> None:
                         ("B_early_raw", run_b_early),
                         ("B_mid_raw", run_b_mid),
                         ("B_late_raw", run_b_late),
+                        *(
+                            [("B_midlate_raw", run_b_midlate)]
+                            if include_midlate_factorial
+                            else []
+                        ),
                         ("D_early_ptswap", run_d_early),
                         ("D_mid_ptswap", run_d_mid),
                         ("D_late_ptswap", run_d_late),
+                        *(
+                            [("D_midlate_ptswap", run_d_midlate)]
+                            if include_midlate_factorial
+                            else []
+                        ),
                     ]
                 )
             elif depth_ablation and run_c is not None and run_a_prime is not None:
