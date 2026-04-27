@@ -322,10 +322,35 @@ def _module_dtype(module: torch.nn.Module) -> torch.dtype:
     return torch.float32
 
 
+def _module_device(module: torch.nn.Module, fallback: torch.device | None = None) -> torch.device:
+    for param in module.parameters():
+        return param.device
+    for buffer in module.buffers():
+        return buffer.device
+    if fallback is not None:
+        return fallback
+    return torch.device("cpu")
+
+
+def _stack_residuals_for_readout(
+    residuals: list[torch.Tensor],
+    *,
+    device: torch.device,
+    dtype: torch.dtype | None = None,
+) -> torch.Tensor:
+    pieces = [
+        residual.to(device=device, dtype=dtype or residual.dtype, non_blocking=True)
+        for residual in residuals
+    ]
+    return torch.stack(pieces, dim=0)
+
+
 def logits_from_residuals(readout: ReadoutSpec, residuals: list[torch.Tensor]) -> torch.Tensor:
     """Return readout logits with shape [batch, n_layers, vocab]."""
-    stacked = torch.stack(residuals, dim=0)
     target_dtype = _module_dtype(readout.final_norm)
+    norm_device = _module_device(readout.final_norm, residuals[0].device)
+    lm_head_device = _module_device(readout.lm_head, norm_device)
+    stacked = _stack_residuals_for_readout(residuals, device=norm_device)
     if readout.probes:
         tuned_parts = []
         for layer_idx in range(stacked.shape[0]):
@@ -334,21 +359,28 @@ def logits_from_residuals(readout: ReadoutSpec, residuals: list[torch.Tensor]) -
             if probe is None:
                 tuned_parts.append(layer_hidden.to(dtype=target_dtype))
             else:
-                tuned_parts.append(probe(layer_hidden.float()).to(dtype=target_dtype))
+                probe_device = _module_device(probe, norm_device)
+                probe_hidden = layer_hidden.to(device=probe_device, non_blocking=True)
+                tuned_parts.append(probe(probe_hidden.float()).to(device=norm_device, dtype=target_dtype))
         stacked = torch.stack(tuned_parts, dim=0)
     else:
         stacked = stacked.to(dtype=target_dtype)
     normed = readout.final_norm(stacked)
+    if normed.device != lm_head_device:
+        normed = normed.to(device=lm_head_device, non_blocking=True)
     logits = readout.lm_head(normed).float()
     return logits.permute(1, 0, 2).contiguous()
 
 
 def raw_logits_from_residuals(readout: ReadoutSpec, residuals: list[torch.Tensor]) -> torch.Tensor:
     """Return raw final_norm+lm_head logits [batch, n_layers, vocab] with no probes."""
-    stacked = torch.stack(residuals, dim=0)
     target_dtype = _module_dtype(readout.final_norm)
-    stacked = stacked.to(dtype=target_dtype)
+    norm_device = _module_device(readout.final_norm, residuals[0].device)
+    lm_head_device = _module_device(readout.lm_head, norm_device)
+    stacked = _stack_residuals_for_readout(residuals, device=norm_device, dtype=target_dtype)
     normed = readout.final_norm(stacked)
+    if normed.device != lm_head_device:
+        normed = normed.to(device=lm_head_device, non_blocking=True)
     logits = readout.lm_head(normed).float()
     return logits.permute(1, 0, 2).contiguous()
 
