@@ -8,7 +8,6 @@ import csv
 import gzip
 import json
 import math
-import random
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
@@ -111,31 +110,56 @@ def _bootstrap_effect_by_model(
     seed: int,
 ) -> dict[str, Any]:
     coeffs = EFFECTS[effect_name]
+    rng = np.random.default_rng(seed)
+    model_arrays: dict[str, np.ndarray] = {}
     model_values: dict[str, float | None] = {}
+    model_cis: dict[str, dict[str, Any]] = {}
     for model, units in units_by_model.items():
-        vals = [_unit_effect(unit, coeffs) for unit in units if unit.readout == readout]
-        model_values[model] = _mean([v for v in vals if v is not None])
+        model_units = [unit for unit in units if unit.readout == readout]
+        vals = [_unit_effect(unit, coeffs) for unit in model_units]
+        kept = np.array([float(v) for v in vals if v is not None and math.isfinite(float(v))], dtype=float)
+        model_arrays[model] = kept
+        model_values[model] = float(kept.mean()) if kept.size else None
+        boot_model = np.array([], dtype=float)
+        if kept.size and n_boot > 0:
+            idx = rng.integers(0, kept.size, size=(n_boot, kept.size))
+            boot_model = kept[idx].mean(axis=1)
+        lo_model, hi_model = _percentile_ci(boot_model.tolist())
+        model_cis[model] = {
+            "estimate": model_values[model],
+            "ci95_low": lo_model,
+            "ci95_high": hi_model,
+            "n_units": int(kept.size),
+            "n_boot": int(boot_model.size),
+        }
     valid_models = [model for model, value in model_values.items() if value is not None]
     dense_mean = _mean([model_values[model] for model in valid_models if model_values[model] is not None])
 
-    rng = random.Random(seed)
-    boot: list[float] = []
+    boot_by_model: dict[str, np.ndarray] = {}
     if valid_models and n_boot > 0:
-        for _ in range(n_boot):
-            sampled_model_means = []
-            for model in valid_models:
-                model_units = [unit for unit in units_by_model[model] if unit.readout == readout]
-                if not model_units:
-                    continue
-                draws = [rng.choice(model_units) for _ in range(len(model_units))]
-                vals = [_unit_effect(unit, coeffs) for unit in draws]
-                mean_val = _mean([v for v in vals if v is not None])
-                if mean_val is not None:
-                    sampled_model_means.append(mean_val)
-            pooled = _mean(sampled_model_means)
-            if pooled is not None:
-                boot.append(pooled)
-    lo, hi = _percentile_ci(boot)
+        for model in valid_models:
+            arr = model_arrays[model]
+            idx = rng.integers(0, arr.size, size=(n_boot, arr.size))
+            boot_by_model[model] = arr[idx].mean(axis=1)
+    boot = np.stack([boot_by_model[model] for model in valid_models], axis=0).mean(axis=0) if boot_by_model else np.array([], dtype=float)
+    lo, hi = _percentile_ci(boot.tolist())
+    leave_one_out: dict[str, dict[str, Any]] = {}
+    for held_out in valid_models:
+        kept_models = [model for model in valid_models if model != held_out]
+        point = _mean([model_values[model] for model in kept_models if model_values[model] is not None])
+        boot_loo = (
+            np.stack([boot_by_model[model] for model in kept_models], axis=0).mean(axis=0)
+            if kept_models and boot_by_model
+            else np.array([], dtype=float)
+        )
+        lo_loo, hi_loo = _percentile_ci(boot_loo.tolist())
+        leave_one_out[held_out] = {
+            "estimate": point,
+            "ci95_low": lo_loo,
+            "ci95_high": hi_loo,
+            "n_models": len(kept_models),
+            "n_boot": int(boot_loo.size),
+        }
     return {
         "effect": effect_name,
         "readout": readout,
@@ -143,8 +167,10 @@ def _bootstrap_effect_by_model(
         "ci95_low": lo,
         "ci95_high": hi,
         "models": model_values,
+        "model_cis": model_cis,
+        "leave_one_out": leave_one_out,
         "n_models": len(valid_models),
-        "n_boot": len(boot),
+        "n_boot": int(boot.size),
     }
 
 
@@ -279,6 +305,8 @@ def _write_effects_csv(summary: dict[str, Any], out_path: Path) -> None:
                     "part": "residual_factorial",
                     "readout": readout,
                     "effect": effect,
+                    "scope": "dense_pooled",
+                    "held_out_model": "",
                     "estimate": payload.get("estimate"),
                     "ci95_low": payload.get("ci95_low"),
                     "ci95_high": payload.get("ci95_high"),
@@ -286,10 +314,51 @@ def _write_effects_csv(summary: dict[str, Any], out_path: Path) -> None:
                     "n_boot": payload.get("n_boot"),
                 }
             )
+            for model, model_payload in (payload.get("model_cis") or {}).items():
+                rows.append(
+                    {
+                        "part": "residual_factorial",
+                        "readout": readout,
+                        "effect": effect,
+                        "scope": f"family:{model}",
+                        "held_out_model": "",
+                        "estimate": model_payload.get("estimate"),
+                        "ci95_low": model_payload.get("ci95_low"),
+                        "ci95_high": model_payload.get("ci95_high"),
+                        "n_models": 1,
+                        "n_boot": model_payload.get("n_boot"),
+                    }
+                )
+            for held_out, loo_payload in (payload.get("leave_one_out") or {}).items():
+                rows.append(
+                    {
+                        "part": "residual_factorial",
+                        "readout": readout,
+                        "effect": effect,
+                        "scope": "leave_one_family_out",
+                        "held_out_model": held_out,
+                        "estimate": loo_payload.get("estimate"),
+                        "ci95_low": loo_payload.get("ci95_low"),
+                        "ci95_high": loo_payload.get("ci95_high"),
+                        "n_models": loo_payload.get("n_models"),
+                        "n_boot": loo_payload.get("n_boot"),
+                    }
+                )
     with out_path.open("w", newline="") as handle:
         writer = csv.DictWriter(
             handle,
-            fieldnames=["part", "readout", "effect", "estimate", "ci95_low", "ci95_high", "n_models", "n_boot"],
+            fieldnames=[
+                "part",
+                "readout",
+                "effect",
+                "scope",
+                "held_out_model",
+                "estimate",
+                "ci95_low",
+                "ci95_high",
+                "n_models",
+                "n_boot",
+            ],
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -303,7 +372,7 @@ def _plot_summary(summary: dict[str, Any], out_path: Path) -> None:
     lows = [effects.get(name, {}).get("ci95_low") for name in names]
     highs = [effects.get(name, {}).get("ci95_high") for name in names]
 
-    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.0))
+    fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.0))
     x = np.arange(len(names))
     y = np.array([float(v) if v is not None else np.nan for v in vals])
     yerr_low = np.array([float(v - lo) if v is not None and lo is not None else 0.0 for v, lo in zip(vals, lows, strict=False)])
@@ -325,6 +394,29 @@ def _plot_summary(summary: dict[str, Any], out_path: Path) -> None:
     axes[1].set_xticks(np.arange(len(cell_names)))
     axes[1].set_xticklabels(["PT/PT", "PT/IT", "IT/PT", "IT/IT"], rotation=20)
     axes[1].set_title("Token choice under common IT readout")
+
+    interaction = effects.get("interaction") or {}
+    model_cis = interaction.get("model_cis") or {}
+    model_names = [model for model in DENSE5_MODELS if model in model_cis]
+    if model_names:
+        model_est = np.array([float(model_cis[model]["estimate"]) for model in model_names])
+        model_lo = np.array([float(model_cis[model]["ci95_low"]) for model in model_names])
+        model_hi = np.array([float(model_cis[model]["ci95_high"]) for model in model_names])
+        x2 = np.arange(len(model_names))
+        axes[2].bar(x2, model_est, color="#B279A2")
+        axes[2].errorbar(
+            x2,
+            model_est,
+            yerr=[model_est - model_lo, model_hi - model_est],
+            fmt="none",
+            color="black",
+            capsize=3,
+        )
+        axes[2].axhline(0, color="black", linewidth=0.8)
+        axes[2].set_xticks(x2)
+        axes[2].set_xticklabels([model.replace("_", "\n") for model in model_names], fontsize=8)
+    axes[2].set_ylabel("Interaction, logits")
+    axes[2].set_title("Family-level interaction CIs")
     fig.tight_layout()
     fig.savefig(out_path, dpi=220)
     plt.close(fig)
@@ -371,4 +463,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

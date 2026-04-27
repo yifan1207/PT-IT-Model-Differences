@@ -7,6 +7,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 
 MODEL_ORDER = [
     "gemma3_4b",
@@ -17,6 +19,7 @@ MODEL_ORDER = [
     "deepseek_v2_lite",
 ]
 DENSE5_MODELS = [model for model in MODEL_ORDER if model != "deepseek_v2_lite"]
+DEFAULT_N_BOOT = 2000
 PT_TARGET_PAIRS = ["JS_Bearly_C", "JS_Bmid_C", "JS_Blate_C"]
 IT_TARGET_PAIRS = ["JS_Dearly_A", "JS_Dmid_A", "JS_Dlate_A"]
 PT_HOST_PAIRS = ["JS_Bearly_A", "JS_Bmid_A", "JS_Blate_A"]
@@ -86,6 +89,45 @@ def _weighted_region(pair_stats: dict[str, Any], start: int, end: int) -> dict[s
     }
 
 
+def _stable_seed(*parts: str) -> int:
+    text = "::".join(parts)
+    return sum((idx + 1) * ord(ch) for idx, ch in enumerate(text)) % (2**32)
+
+
+def _prompt_region_mean_ci(
+    prompt_rows: list[dict[str, Any]],
+    region_name: str,
+    *,
+    n_boot: int = DEFAULT_N_BOOT,
+) -> dict[str, Any]:
+    mean_key = f"{region_name}_mean"
+    means: list[float] = []
+    for row in prompt_rows:
+        mean = row.get(mean_key)
+        if mean is None:
+            continue
+        means.append(float(mean))
+    if not means:
+        return {"ci95_low": None, "ci95_high": None, "n_boot": 0, "n_prompts": 0}
+    mean_arr = np.array(means, dtype=float)
+    rng = np.random.default_rng(_stable_seed(region_name, str(len(prompt_rows)), str(round(float(mean_arr.sum()), 6))))
+    boot: list[float] = []
+    for _ in range(n_boot):
+        idx = rng.integers(0, mean_arr.size, size=mean_arr.size)
+        boot.append(float(mean_arr[idx].mean()))
+    if not boot:
+        return {"ci95_low": None, "ci95_high": None, "n_boot": 0, "n_prompts": int(mean_arr.size)}
+    lo, hi = np.percentile(np.array(boot, dtype=float), [2.5, 97.5])
+    return {"ci95_low": float(lo), "ci95_high": float(hi), "n_boot": len(boot), "n_prompts": int(mean_arr.size)}
+
+
+def _add_prompt_region_cis(regions: dict[str, dict[str, Any]], prompt_rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    out = {name: dict(payload) for name, payload in regions.items()}
+    for region_name in out:
+        out[region_name].update(_prompt_region_mean_ci(prompt_rows, region_name))
+    return out
+
+
 def _pair_payload(
     *,
     pair_stats: dict[str, Any],
@@ -106,6 +148,20 @@ def _pair_payload(
             "n_prompts": len(values),
             "support_count_sum": int(sum(counts)),
         }
+    weighted_regions = {
+        "full_stack": _weighted_region(pair_stats, 0, n_layers),
+        "pre_corrective": _weighted_region(pair_stats, 0, corrective_onset),
+        "final_20pct": _weighted_region(pair_stats, final_region_start, n_layers),
+        "graft_window": (
+            _weighted_region(
+                pair_stats,
+                int(pair_stats["graft_window"]["start_layer"]),
+                int(pair_stats["graft_window"]["end_layer_exclusive"]),
+            )
+            if pair_stats.get("graft_window") is not None
+            else {"mean": None, "count": 0}
+        ),
+    }
     return {
         "metadata": {
             "pair_name": pair_stats["pair_name"],
@@ -117,21 +173,8 @@ def _pair_payload(
             "graft_window": pair_stats.get("graft_window"),
         },
         "layer_curve": _pair_layer_curve(pair_stats),
-        "regions_weighted": {
-            "full_stack": _weighted_region(pair_stats, 0, n_layers),
-            "pre_corrective": _weighted_region(pair_stats, 0, corrective_onset),
-            "final_20pct": _weighted_region(pair_stats, final_region_start, n_layers),
-            "graft_window": (
-                _weighted_region(
-                    pair_stats,
-                    int(pair_stats["graft_window"]["start_layer"]),
-                    int(pair_stats["graft_window"]["end_layer_exclusive"]),
-                )
-                if pair_stats.get("graft_window") is not None
-                else {"mean": None, "count": 0}
-            ),
-        },
-        "regions_prompt_mean": prompt_summary,
+        "regions_weighted": weighted_regions,
+        "regions_prompt_mean": _add_prompt_region_cis(prompt_summary, prompt_rows),
     }
 
 
@@ -269,7 +312,7 @@ def _combine_pair_payloads(
             region_name: _combine_region_weighted(pair_payloads, region_name)
             for region_name in region_names
         },
-        "regions_prompt_mean": prompt_summary,
+        "regions_prompt_mean": _add_prompt_region_cis(prompt_summary, prompt_rows),
     }
 
 

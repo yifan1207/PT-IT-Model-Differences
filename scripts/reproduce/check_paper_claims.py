@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import json
 import math
 from dataclasses import dataclass
@@ -44,6 +45,32 @@ def mean(values: list[float]) -> float:
     return sum(values) / len(values)
 
 
+def percentile(values: list[float], q: float) -> float:
+    ordered = sorted(values)
+    if not ordered:
+        raise ValueError("percentile of empty list")
+    pos = (len(ordered) - 1) * q / 100.0
+    lo = math.floor(pos)
+    hi = math.ceil(pos)
+    if lo == hi:
+        return ordered[lo]
+    frac = pos - lo
+    return ordered[lo] * (1.0 - frac) + ordered[hi] * frac
+
+
+def exact_family_bootstrap_ci(values: list[float], field: str) -> float:
+    n = len(values)
+    boot_means = [
+        mean([values[idx] for idx in sample])
+        for sample in itertools.product(range(n), repeat=n)
+    ]
+    if field == "ci95_low":
+        return percentile(boot_means, 2.5)
+    if field == "ci95_high":
+        return percentile(boot_means, 97.5)
+    raise KeyError(field)
+
+
 def exp9_cg(lens: str, *, exclude: set[str] | None = None) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -61,14 +88,19 @@ def exp9_cg(lens: str, *, exclude: set[str] | None = None) -> NumberFn:
     return _read
 
 
-def exp16_js(pair: str, region: str, agg: str = "regions_weighted") -> NumberFn:
+def exp16_js(
+    pair: str,
+    region: str,
+    agg: str = "regions_weighted",
+    field: str = "mean",
+) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
             repo,
             "results/exp16_matched_prefix_js_gap/"
             "exp16_js_replay_runpod_20260422_075307/js_summary.json",
         )
-        return float(data["dense5"]["pairs"][pair][agg][region]["mean"])
+        return float(data["dense5"]["pairs"][pair][agg][region][field])
 
     return _read
 
@@ -97,6 +129,28 @@ def exp11_depth(condition: str, metric: str) -> NumberFn:
     return _read
 
 
+def exp11_depth_family_ci(condition: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp11_matched_prefix_mlp_graft/plots/"
+            "exp11_exp3_600rand_v11_depthablation_full/"
+            "depth_ablation_metrics.json",
+        )
+        values = [
+            float(
+                row["pipelines"][condition]["regions"]["final_20pct"][
+                    "kl_to_own_final"
+                ]["delta"]
+            )
+            for row in data["models"]
+            if row["model"] != "deepseek_v2_lite"
+        ]
+        return exact_family_bootstrap_ci(values, field)
+
+    return _read
+
+
 def exp14_dense(group: str, condition: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -105,6 +159,27 @@ def exp14_dense(group: str, condition: str) -> NumberFn:
             "exp13exp14_full_20260416/exp13_full_summary.json",
         )
         return float(data["dense_family_means"][group][condition])
+
+    return _read
+
+
+def exp14_dense_family_ci(group: str, condition: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp14_symmetric_matched_prefix_causality/"
+            "exp13exp14_full_20260416/exp13_full_summary.json",
+        )
+        values = [
+            float(
+                row[group][condition]["regions"]["final_20pct"]["kl_to_own_final"][
+                    "delta"
+                ]
+            )
+            for model, row in data["models"].items()
+            if model != "deepseek_v2_lite"
+        ]
+        return exact_family_bootstrap_ci(values, field)
 
     return _read
 
@@ -227,6 +302,48 @@ def exp23_effect(run_name: str, effect: str, field: str = "estimate") -> NumberF
     return _read
 
 
+def exp23_model_effect(
+    run_name: str,
+    effect: str,
+    model: str,
+    field: str = "estimate",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp23_midlate_interaction_suite/"
+            f"{run_name}/analysis/exp23_summary.json",
+        )
+        return float(
+            data["residual_factorial"]["effects"]["common_it"][effect]["model_cis"][
+                model
+            ][field]
+        )
+
+    return _read
+
+
+def exp23_leave_one_out(
+    run_name: str,
+    effect: str,
+    held_out_model: str,
+    field: str = "estimate",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp23_midlate_interaction_suite/"
+            f"{run_name}/analysis/exp23_summary.json",
+        )
+        return float(
+            data["residual_factorial"]["effects"]["common_it"][effect][
+                "leave_one_out"
+            ][held_out_model][field]
+        )
+
+    return _read
+
+
 def exp23_subgroup(
     run_name: str, group: str, value: str, field: str = "estimate"
 ) -> NumberFn:
@@ -245,6 +362,25 @@ def exp23_subgroup(
             ):
                 return float(row[field])
         raise KeyError((run_name, group, value, field))
+
+    return _read
+
+
+def exp23_compatibility(run_name: str, metric: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp23_midlate_interaction_suite/"
+            f"{run_name}/analysis/compatibility_permutation/"
+            "exp23_compatibility_permutation_summary.json",
+        )
+        if metric in data["summary"]["pooled_model_mean"]:
+            return float(data["summary"]["pooled_model_mean"][metric])
+        if metric == "p_upper":
+            return float(data["permutation"]["p_upper"])
+        if metric == "null_q99.9":
+            return float(data["permutation"]["null_quantiles"]["q99.9"])
+        raise KeyError((run_name, metric))
 
     return _read
 
@@ -370,10 +506,58 @@ CHECKS: list[ClaimCheck] = [
         exp16_js("JS_AC", "final_20pct"),
     ),
     ClaimCheck(
+        "Matched-prefix prompt-mean JS(A', C), pre-corrective",
+        "exp16 js_summary.json",
+        0.12087137830346867,
+        exp16_js("JS_AC", "pre_corrective", "regions_prompt_mean"),
+    ),
+    ClaimCheck(
+        "Matched-prefix prompt-mean JS(A', C), pre-corrective CI low",
+        "exp16 js_summary.json",
+        0.11868562148698142,
+        exp16_js("JS_AC", "pre_corrective", "regions_prompt_mean", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Matched-prefix prompt-mean JS(A', C), pre-corrective CI high",
+        "exp16 js_summary.json",
+        0.12310125203197614,
+        exp16_js("JS_AC", "pre_corrective", "regions_prompt_mean", "ci95_high"),
+    ),
+    ClaimCheck(
+        "Matched-prefix prompt-mean JS(A', C), final 20%",
+        "exp16 js_summary.json",
+        0.19558364230213074,
+        exp16_js("JS_AC", "final_20pct", "regions_prompt_mean"),
+    ),
+    ClaimCheck(
+        "Matched-prefix prompt-mean JS(A', C), final 20% CI low",
+        "exp16 js_summary.json",
+        0.19271804235830423,
+        exp16_js("JS_AC", "final_20pct", "regions_prompt_mean", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Matched-prefix prompt-mean JS(A', C), final 20% CI high",
+        "exp16 js_summary.json",
+        0.19848691088959977,
+        exp16_js("JS_AC", "final_20pct", "regions_prompt_mean", "ci95_high"),
+    ),
+    ClaimCheck(
         "Depth ablation early graft final-20% KL delta",
         "exp11 depth_ablation_metrics.json",
         -0.034725368342970596,
         exp11_depth("B_early_raw", "final_20pct_delta_kl_to_own_final"),
+    ),
+    ClaimCheck(
+        "Depth ablation early graft final-20% KL delta CI low",
+        "exp11 depth_ablation_metrics.json",
+        -0.09601013479360884,
+        exp11_depth_family_ci("B_early_raw", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Depth ablation early graft final-20% KL delta CI high",
+        "exp11 depth_ablation_metrics.json",
+        0.018944847273831518,
+        exp11_depth_family_ci("B_early_raw", "ci95_high"),
     ),
     ClaimCheck(
         "Depth ablation middle graft final-20% KL delta",
@@ -382,10 +566,34 @@ CHECKS: list[ClaimCheck] = [
         exp11_depth("B_mid_raw", "final_20pct_delta_kl_to_own_final"),
     ),
     ClaimCheck(
+        "Depth ablation middle graft final-20% KL delta CI low",
+        "exp11 depth_ablation_metrics.json",
+        -0.1138431449095277,
+        exp11_depth_family_ci("B_mid_raw", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Depth ablation middle graft final-20% KL delta CI high",
+        "exp11 depth_ablation_metrics.json",
+        0.02311977698591131,
+        exp11_depth_family_ci("B_mid_raw", "ci95_high"),
+    ),
+    ClaimCheck(
         "Depth ablation late graft final-20% KL delta",
         "exp11 depth_ablation_metrics.json",
         0.34144877467282564,
         exp11_depth("B_late_raw", "final_20pct_delta_kl_to_own_final"),
+    ),
+    ClaimCheck(
+        "Depth ablation late graft final-20% KL delta CI low",
+        "exp11 depth_ablation_metrics.json",
+        0.18081652114234793,
+        exp11_depth_family_ci("B_late_raw", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Depth ablation late graft final-20% KL delta CI high",
+        "exp11 depth_ablation_metrics.json",
+        0.5020810282033033,
+        exp11_depth_family_ci("B_late_raw", "ci95_high"),
     ),
     ClaimCheck(
         "Symmetric PT-side late graft KL delta",
@@ -394,10 +602,58 @@ CHECKS: list[ClaimCheck] = [
         exp14_dense("pt_side_final20_kl_delta", "B_late_raw"),
     ),
     ClaimCheck(
+        "Symmetric PT-side late graft KL delta CI low",
+        "exp14 exp13_full_summary.json",
+        0.18184266954259196,
+        exp14_dense_family_ci("pt_side", "B_late_raw", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Symmetric PT-side late graft KL delta CI high",
+        "exp14 exp13_full_summary.json",
+        0.5039044664954922,
+        exp14_dense_family_ci("pt_side", "B_late_raw", "ci95_high"),
+    ),
+    ClaimCheck(
+        "Symmetric IT-side early PT-swap KL delta CI low",
+        "exp14 exp13_full_summary.json",
+        -0.25641013561189754,
+        exp14_dense_family_ci("it_side", "D_early_ptswap", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Symmetric IT-side early PT-swap KL delta CI high",
+        "exp14 exp13_full_summary.json",
+        0.027417360401097366,
+        exp14_dense_family_ci("it_side", "D_early_ptswap", "ci95_high"),
+    ),
+    ClaimCheck(
+        "Symmetric IT-side middle PT-swap KL delta CI low",
+        "exp14 exp13_full_summary.json",
+        -0.3710696790816494,
+        exp14_dense_family_ci("it_side", "D_mid_ptswap", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Symmetric IT-side middle PT-swap KL delta CI high",
+        "exp14 exp13_full_summary.json",
+        -0.08628748310834142,
+        exp14_dense_family_ci("it_side", "D_mid_ptswap", "ci95_high"),
+    ),
+    ClaimCheck(
         "Symmetric IT-side late PT-swap KL delta",
         "exp14 exp13_full_summary.json",
         -0.5086195820051482,
         exp14_dense("it_side_final20_kl_delta", "D_late_ptswap"),
+    ),
+    ClaimCheck(
+        "Symmetric IT-side late PT-swap KL delta CI low",
+        "exp14 exp13_full_summary.json",
+        -0.8280586533684673,
+        exp14_dense_family_ci("it_side", "D_late_ptswap", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Symmetric IT-side late PT-swap KL delta CI high",
+        "exp14 exp13_full_summary.json",
+        -0.22406725064182915,
+        exp14_dense_family_ci("it_side", "D_late_ptswap", "ci95_high"),
     ),
     ClaimCheck(
         "Late random-control true KL effect",
@@ -541,7 +797,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 primary interaction CI low",
         "exp23 primary exp23_summary.json",
-        2.5404429873591,
+        2.5381331012542363,
         exp23_effect(
             "exp23_dense5_full_h100x8_20260426_sh4_rw4",
             "interaction",
@@ -551,12 +807,370 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 primary interaction CI high",
         "exp23 primary exp23_summary.json",
-        2.7335680538313816,
+        2.7355495852654523,
         exp23_effect(
             "exp23_dense5_full_h100x8_20260426_sh4_rw4",
             "interaction",
             "ci95_high",
         ),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma interaction",
+        "exp23 primary exp23_summary.json",
+        6.077890625,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "gemma3_4b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma interaction CI low",
+        "exp23 primary exp23_summary.json",
+        5.72,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "gemma3_4b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma interaction CI high",
+        "exp23 primary exp23_summary.json",
+        6.43855078125,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "gemma3_4b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Llama interaction",
+        "exp23 primary exp23_summary.json",
+        1.25331787109375,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "llama31_8b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Llama interaction CI low",
+        "exp23 primary exp23_summary.json",
+        1.1038143513997394,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "llama31_8b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Llama interaction CI high",
+        "exp23 primary exp23_summary.json",
+        1.4172403767903645,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "llama31_8b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Qwen interaction",
+        "exp23 primary exp23_summary.json",
+        1.4641145833333333,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "qwen3_4b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Qwen interaction CI low",
+        "exp23 primary exp23_summary.json",
+        1.3152317708333332,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "qwen3_4b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Qwen interaction CI high",
+        "exp23 primary exp23_summary.json",
+        1.6185019531249998,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "qwen3_4b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Mistral interaction",
+        "exp23 primary exp23_summary.json",
+        2.5339981155778895,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "mistral_7b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Mistral interaction CI low",
+        "exp23 primary exp23_summary.json",
+        2.3492364164572863,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "mistral_7b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Mistral interaction CI high",
+        "exp23 primary exp23_summary.json",
+        2.7178221838358456,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "mistral_7b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 OLMo interaction",
+        "exp23 primary exp23_summary.json",
+        1.846658752233095,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "olmo2_7b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 OLMo interaction CI low",
+        "exp23 primary exp23_summary.json",
+        1.6737299222588133,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "olmo2_7b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 OLMo interaction CI high",
+        "exp23 primary exp23_summary.json",
+        2.0264709759084027,
+        exp23_model_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "olmo2_7b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma-removed interaction",
+        "exp23 primary exp23_summary.json",
+        1.774522330559517,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "gemma3_4b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma-removed interaction CI low",
+        "exp23 primary exp23_summary.json",
+        1.6941470529485825,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "gemma3_4b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma-removed interaction CI high",
+        "exp23 primary exp23_summary.json",
+        1.8602784042875087,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "gemma3_4b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Llama-removed interaction",
+        "exp23 primary exp23_summary.json",
+        2.9806655190360796,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "llama31_8b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Llama-removed interaction CI low",
+        "exp23 primary exp23_summary.json",
+        2.8686141448123674,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "llama31_8b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Llama-removed interaction CI high",
+        "exp23 primary exp23_summary.json",
+        3.096613603094612,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "llama31_8b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Qwen-removed interaction",
+        "exp23 primary exp23_summary.json",
+        2.927966340976184,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "qwen3_4b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Qwen-removed interaction CI low",
+        "exp23 primary exp23_summary.json",
+        2.8134245621096934,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "qwen3_4b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Qwen-removed interaction CI high",
+        "exp23 primary exp23_summary.json",
+        3.0432283165390843,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "qwen3_4b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Mistral-removed interaction",
+        "exp23 primary exp23_summary.json",
+        2.6604954579150446,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "mistral_7b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Mistral-removed interaction CI low",
+        "exp23 primary exp23_summary.json",
+        2.544466285202148,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "mistral_7b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 Mistral-removed interaction CI high",
+        "exp23 primary exp23_summary.json",
+        2.7752855719597807,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "mistral_7b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 OLMo-removed interaction",
+        "exp23 primary exp23_summary.json",
+        2.832330298751243,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "olmo2_7b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 OLMo-removed interaction CI low",
+        "exp23 primary exp23_summary.json",
+        2.717073292717862,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "olmo2_7b",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 OLMo-removed interaction CI high",
+        "exp23 primary exp23_summary.json",
+        2.945469679175909,
+        exp23_leave_one_out(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "olmo2_7b",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 primary IT compatibility boost",
+        "exp23 compatibility permutation summary.json",
+        5.556307535299774,
+        exp23_compatibility(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "it_compatibility_boost",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 primary PT compatibility boost",
+        "exp23 compatibility permutation summary.json",
+        2.9211115458521597,
+        exp23_compatibility(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "pt_compatibility_boost",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 primary label-swap null q99.9",
+        "exp23 compatibility permutation summary.json",
+        0.23852594495783128,
+        exp23_compatibility(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "null_q99.9",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 primary label-swap p-value",
+        "exp23 compatibility permutation summary.json",
+        4.999750012499375e-05,
+        exp23_compatibility(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "p_upper",
+        ),
+        tolerance=1e-9,
+        digits=8,
     ),
     ClaimCheck(
         "Exp23 holdout GOV-CONV subgroup interaction",
@@ -652,6 +1266,44 @@ CHECKS: list[ClaimCheck] = [
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "late_weight_effect",
         ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning IT compatibility boost",
+        "exp23 content/reasoning compatibility permutation summary.json",
+        4.369619504845675,
+        exp23_compatibility(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "it_compatibility_boost",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning PT compatibility boost",
+        "exp23 content/reasoning compatibility permutation summary.json",
+        2.6892562255590695,
+        exp23_compatibility(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "pt_compatibility_boost",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning label-swap null q99.9",
+        "exp23 content/reasoning compatibility permutation summary.json",
+        0.15545490111026944,
+        exp23_compatibility(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "null_q99.9",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning label-swap p-value",
+        "exp23 content/reasoning compatibility permutation summary.json",
+        4.999750012499375e-05,
+        exp23_compatibility(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "p_upper",
+        ),
+        tolerance=1e-9,
+        digits=8,
     ),
     ClaimCheck(
         "Exp23 CONTENT-FACT subgroup interaction",

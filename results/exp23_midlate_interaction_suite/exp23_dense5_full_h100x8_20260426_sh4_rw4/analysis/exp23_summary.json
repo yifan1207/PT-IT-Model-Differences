@@ -1444,10 +1444,84 @@
     "effects": {
       "common_it": {
         "interaction": {
-          "ci95_high": 2.7335680538313816,
-          "ci95_low": 2.5404429873591,
+          "ci95_high": 2.7355495852654523,
+          "ci95_low": 2.5381331012542363,
           "effect": "interaction",
           "estimate": 2.6351959894476136,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 1.8602784042875087,
+              "ci95_low": 1.6941470529485825,
+              "estimate": 1.774522330559517,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 3.096613603094612,
+              "ci95_low": 2.8686141448123674,
+              "estimate": 2.9806655190360796,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 2.7752855719597807,
+              "ci95_low": 2.544466285202148,
+              "estimate": 2.6604954579150446,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 2.945469679175909,
+              "ci95_low": 2.717073292717862,
+              "estimate": 2.832330298751243,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 3.0432283165390843,
+              "ci95_low": 2.8134245621096934,
+              "estimate": 2.927966340976184,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 6.43855078125,
+              "ci95_low": 5.72,
+              "estimate": 6.077890625,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 1.4172403767903645,
+              "ci95_low": 1.1038143513997394,
+              "estimate": 1.25331787109375,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 2.7178221838358456,
+              "ci95_low": 2.3492364164572863,
+              "estimate": 2.5339981155778895,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 2.0264709759084027,
+              "ci95_low": 1.6737299222588133,
+              "estimate": 1.846658752233095,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 1.6185019531249998,
+              "ci95_low": 1.3152317708333332,
+              "estimate": 1.4641145833333333,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 6.077890625,
             "llama31_8b": 1.25331787109375,
@@ -1460,10 +1534,84 @@
           "readout": "common_it"
         },
         "late_it_given_it_upstream": {
-          "ci95_high": 3.325061644983698,
-          "ci95_low": 3.090799469119127,
+          "ci95_high": 3.320610671625548,
+          "ci95_low": 3.0953936242146316,
           "effect": "late_it_given_it_upstream",
           "estimate": 3.2072035352029644,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 2.5665153350864482,
+              "ci95_low": 2.354827541229046,
+              "estimate": 2.4639979085870394,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 3.635625691259734,
+              "ci95_low": 3.3641605173783433,
+              "estimate": 3.49732819016256,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 3.354898483622467,
+              "ci95_low": 3.0912999866591924,
+              "estimate": 3.2221600408630025,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 3.4969161229988237,
+              "ci95_low": 3.2262589726535924,
+              "estimate": 3.3568148778151827,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 3.621995681161751,
+              "ci95_low": 3.375297449127057,
+              "estimate": 3.495716658587039,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 6.565615885416666,
+              "ci95_low": 5.828725260416667,
+              "estimate": 6.180026041666666,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 2.2210682983398438,
+              "ci95_low": 1.874993103027344,
+              "estimate": 2.0467049153645833,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 3.3689142326214405,
+              "ci95_low": 2.9242933417085424,
+              "estimate": 3.147377512562814,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 2.7968505699886803,
+              "ci95_low": 2.4400784925389205,
+              "estimate": 2.608758164754093,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 2.310460286458333,
+              "ci95_low": 1.776166015625,
+              "estimate": 2.0531510416666667,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 6.180026041666666,
             "llama31_8b": 2.0467049153645833,
@@ -1476,10 +1624,84 @@
           "readout": "common_it"
         },
         "late_it_given_pt_upstream": {
-          "ci95_high": 0.6504952994483492,
-          "ci95_low": 0.49451828239489287,
+          "ci95_high": 0.6466460548634183,
+          "ci95_low": 0.49372932033970296,
           "effect": "late_it_given_pt_upstream",
           "estimate": 0.5720075457553511,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 0.7748112767463287,
+              "ci95_low": 0.6012898345738693,
+              "estimate": 0.6894755780275222,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 0.6080249554225644,
+              "ci95_low": 0.4226566445185794,
+              "estimate": 0.5166626711264806,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 0.6525877578266651,
+              "ci95_low": 0.46507772744691955,
+              "estimate": 0.5616645829479577,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 0.6094017148936409,
+              "ci95_low": 0.4374491954400911,
+              "estimate": 0.5244845790639394,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 0.6393415887583604,
+              "ci95_low": 0.49772708421003703,
+              "estimate": 0.5677503176108556,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 0.28945703124999983,
+              "ci95_low": -0.085728515625,
+              "estimate": 0.10213541666666667,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 0.9048175862630208,
+              "ci95_low": 0.680533203125,
+              "estimate": 0.7933870442708333,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 0.6864125314070352,
+              "ci95_low": 0.5480985657453936,
+              "estimate": 0.6133793969849246,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 0.9524943849739361,
+              "ci95_low": 0.6018204164993234,
+              "estimate": 0.7620994125209978,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 0.8750227864583331,
+              "ci95_low": 0.31168359375,
+              "estimate": 0.5890364583333333,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 0.10213541666666667,
             "llama31_8b": 0.7933870442708333,
@@ -1492,10 +1714,84 @@
           "readout": "common_it"
         },
         "late_weight_effect": {
-          "ci95_high": 1.9690681228392983,
-          "ci95_low": 1.8029415644805593,
+          "ci95_high": 1.9750399975002804,
+          "ci95_low": 1.8050379432715538,
           "effect": "late_weight_effect",
           "estimate": 1.8896055404791579,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 1.6642089311534296,
+              "ci95_low": 1.4906839231512627,
+              "estimate": 1.5767367433072808,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 2.1065298053249975,
+              "ci95_low": 1.90476241106453,
+              "estimate": 2.0069954306445204,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 1.993786589061034,
+              "ci95_low": 1.7942783971201708,
+              "estimate": 1.8919123119054801,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 2.038252404447776,
+              "ci95_low": 1.8429087485308624,
+              "estimate": 1.9406497284395612,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 2.1167026358783065,
+              "ci95_low": 1.9491745267363232,
+              "estimate": 2.0317334880989475,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 3.383433919270833,
+              "ci95_low": 2.9071715494791666,
+              "estimate": 3.1410807291666667,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 1.5447953592936199,
+              "ci95_low": 1.3006958109537758,
+              "estimate": 1.4200459798177083,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 2.009612188546901,
+              "ci95_low": 1.7546717964824121,
+              "estimate": 1.8803784547738693,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 1.8389202640325135,
+              "ci95_low": 1.5422192462882085,
+              "estimate": 1.6854287886375454,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 1.579025390625,
+              "ci95_low": 1.0697819010416667,
+              "estimate": 1.32109375,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 3.1410807291666667,
             "llama31_8b": 1.4200459798177083,
@@ -1508,10 +1804,84 @@
           "readout": "common_it"
         },
         "upstream_context_effect": {
-          "ci95_high": 4.378690941496908,
-          "ci95_low": 4.096968092711766,
+          "ci95_high": 4.375761467723938,
+          "ci95_low": 4.1048642492123175,
           "effect": "upstream_context_effect",
           "estimate": 4.238709540575966,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 3.806064389518392,
+              "ci95_low": 3.5213123238422965,
+              "estimate": 3.662993045511625,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 4.465869803040992,
+              "ci95_low": 4.171581775887912,
+              "estimate": 4.3139713373410515,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 4.315589662601246,
+              "ci95_low": 4.003008241953433,
+              "estimate": 4.159250488324648,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 4.567348745847667,
+              "ci95_low": 4.259631847528556,
+              "estimate": 4.413080020565883,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 4.812939356272264,
+              "ci95_low": 4.480993580400047,
+              "estimate": 4.644252811136625,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 6.8972080078125,
+              "ci95_low": 6.206975260416667,
+              "estimate": 6.541575520833334,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 4.298762878417969,
+              "ci95_low": 3.5905187988281253,
+              "estimate": 3.937662353515625,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 4.8298746335845895,
+              "ci95_low": 4.27831671377722,
+              "estimate": 4.55654574958124,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 3.8330542808506674,
+              "ci95_low": 3.2626746836782723,
+              "estimate": 3.541227620616301,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 2.8298789062500003,
+              "ci95_low": 2.4099202473958337,
+              "estimate": 2.6165364583333335,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 6.541575520833334,
             "llama31_8b": 3.937662353515625,
@@ -1526,10 +1896,84 @@
       },
       "common_pt": {
         "interaction": {
-          "ci95_high": 2.7121876218507484,
-          "ci95_low": 2.5137060887502036,
+          "ci95_high": 2.7102622937701653,
+          "ci95_low": 2.5128240610045784,
           "effect": "interaction",
           "estimate": 2.6097186779866712,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 1.888849444834744,
+              "ci95_low": 1.720265653726499,
+              "estimate": 1.801490795400006,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 3.0364075141421134,
+              "ci95_low": 2.8067351970504513,
+              "estimate": 2.919425365712506,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 2.7442161876561966,
+              "ci95_low": 2.513763598860327,
+              "estimate": 2.6296172021734563,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 2.9234958626956393,
+              "ci95_low": 2.6916086431404254,
+              "estimate": 2.806172095830716,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 3.0089581163553842,
+              "ci95_low": 2.7729628364722343,
+              "estimate": 2.8918879308166727,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 6.200292317708333,
+              "ci95_low": 5.481943359375,
+              "estimate": 5.8426302083333335,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 1.531685546875,
+              "ci95_low": 1.217615030924479,
+              "estimate": 1.3708919270833333,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 2.7113876675041877,
+              "ci95_low": 2.347575769472362,
+              "estimate": 2.530124581239531,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 1.999952339678494,
+              "ci95_low": 1.6536491088086023,
+              "estimate": 1.8239050066104927,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 1.6408333333333334,
+              "ci95_low": 1.3327291666666665,
+              "estimate": 1.4810416666666666,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 5.8426302083333335,
             "llama31_8b": 1.3708919270833333,
@@ -1542,10 +1986,84 @@
           "readout": "common_pt"
         },
         "late_it_given_it_upstream": {
-          "ci95_high": 3.3294036326394725,
-          "ci95_low": 3.101007843240902,
+          "ci95_high": 3.333377084098993,
+          "ci95_low": 3.1089168986533187,
           "effect": "late_it_given_it_upstream",
           "estimate": 3.2183524840168554,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 2.6193095054060285,
+              "ci95_low": 2.4226905043816744,
+              "estimate": 2.521807792521069,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 3.612519933761685,
+              "ci95_low": 3.3423930738569596,
+              "estimate": 3.4746601688231524,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 3.3737703571913595,
+              "ci95_low": 3.1109595839665336,
+              "estimate": 3.237058067332627,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 3.51448682703884,
+              "ci95_low": 3.2447607927945388,
+              "estimate": 3.377327036386359,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 3.6145642990752105,
+              "ci95_low": 3.3575437964356594,
+              "estimate": 3.480909355021069,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 6.41212109375,
+              "ci95_low": 5.630565104166667,
+              "estimate": 6.00453125,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 2.3865245768229166,
+              "ci95_low": 2.017095703125,
+              "estimate": 2.1931217447916667,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 3.364360212520938,
+              "ci95_low": 2.919558731155779,
+              "estimate": 3.1435301507537687,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 2.7648242736432334,
+              "ci95_low": 2.413195389936402,
+              "estimate": 2.582454274538841,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 2.3733541666666667,
+              "ci95_low": 1.9557291666666667,
+              "estimate": 2.168125,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 6.00453125,
             "llama31_8b": 2.1931217447916667,
@@ -1558,10 +2076,84 @@
           "readout": "common_pt"
         },
         "late_it_given_pt_upstream": {
-          "ci95_high": 0.6785280615100637,
-          "ci95_low": 0.5406774364519266,
+          "ci95_high": 0.6767293331424056,
+          "ci95_low": 0.5385742087177675,
           "effect": "late_it_given_pt_upstream",
           "estimate": 0.6086338060301839,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 0.795307974150183,
+              "ci95_low": 0.6462610000417954,
+              "estimate": 0.7203169971210632,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 0.6373784277263821,
+              "ci95_low": 0.47063381927827563,
+              "estimate": 0.5552348031106465,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 0.6927537837766271,
+              "ci95_low": 0.5203440758480147,
+              "estimate": 0.6074408651591704,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 0.6443843440019105,
+              "ci95_low": 0.4936483595447125,
+              "estimate": 0.5711549405556429,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 0.6597894206203483,
+              "ci95_low": 0.5196573453059273,
+              "estimate": 0.5890214242043965,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 0.3525559895833333,
+              "ci95_low": -0.027708984375000002,
+              "estimate": 0.16190104166666666,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 0.9301934407552083,
+              "ci95_low": 0.7098368326822917,
+              "estimate": 0.8222298177083334,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 0.6853564698492461,
+              "ci95_low": 0.548882432998325,
+              "estimate": 0.6134055695142379,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 0.9482058906514489,
+              "ci95_low": 0.598021117005332,
+              "estimate": 0.7585492679283481,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 0.9000182291666666,
+              "ci95_low": 0.47749739583333334,
+              "estimate": 0.6870833333333334,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 0.16190104166666666,
             "llama31_8b": 0.8222298177083334,
@@ -1574,10 +2166,84 @@
           "readout": "common_pt"
         },
         "late_weight_effect": {
-          "ci95_high": 1.9887852285037997,
-          "ci95_low": 1.8344805054451465,
+          "ci95_high": 1.9943658962561894,
+          "ci95_low": 1.8364540300257821,
           "effect": "late_weight_effect",
           "estimate": 1.9134931450235193,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 1.6976413876068692,
+              "ci95_low": 1.542104776618237,
+              "estimate": 1.621062394821066,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 2.1101966735341606,
+              "ci95_low": 1.9230060569285798,
+              "estimate": 2.0149474859668994,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 2.017983455856641,
+              "ci95_low": 1.8340384603765232,
+              "estimate": 1.9222494662458987,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 2.067384977688941,
+              "ci95_low": 1.8852262968130447,
+              "estimate": 1.9742409884710006,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 2.125125699597124,
+              "ci95_low": 1.9510830672319819,
+              "estimate": 2.034965389612733,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 3.3436891276041667,
+              "ci95_low": 2.830842447916667,
+              "estimate": 3.083216145833333,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 1.6391745198567707,
+              "ci95_low": 1.3816290486653646,
+              "estimate": 1.50767578125,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 2.007236050041876,
+              "ci95_low": 1.7514643530150753,
+              "estimate": 1.8784678601340032,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 1.826565082132206,
+              "ci95_low": 1.5266235032382678,
+              "estimate": 1.6705017712335946,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 1.6214453124999997,
+              "ci95_low": 1.244375,
+              "estimate": 1.4276041666666666,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 3.083216145833333,
             "llama31_8b": 1.50767578125,
@@ -1590,10 +2256,84 @@
           "readout": "common_pt"
         },
         "upstream_context_effect": {
-          "ci95_high": 4.347083563142393,
-          "ci95_low": 4.06499287126246,
+          "ci95_high": 4.347980490783478,
+          "ci95_low": 4.071114126995346,
           "effect": "upstream_context_effect",
           "estimate": 4.206025389136492,
+          "leave_one_out": {
+            "gemma3_4b": {
+              "ci95_high": 3.8347199709406357,
+              "ci95_low": 3.545865491049762,
+              "estimate": 3.688999835378949,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "llama31_8b": {
+              "ci95_high": 4.3807441430482035,
+              "ci95_low": 4.087939317928665,
+              "estimate": 4.229754636811241,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "mistral_7b": {
+              "ci95_high": 4.285217435088818,
+              "ci95_low": 3.9710839094730503,
+              "estimate": 4.127823952710398,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "olmo2_7b": {
+              "ci95_high": 4.5504103034704775,
+              "ci95_low": 4.230412538640264,
+              "estimate": 4.387917826027926,
+              "n_boot": 2000,
+              "n_models": 4
+            },
+            "qwen3_4b": {
+              "ci95_high": 4.759301939514791,
+              "ci95_low": 4.43481450406377,
+              "estimate": 4.595630694753949,
+              "n_boot": 2000,
+              "n_models": 4
+            }
+          },
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": 6.636115559895833,
+              "ci95_low": 5.938383138020834,
+              "estimate": 6.274127604166667,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "llama31_8b": {
+              "ci95_high": 4.478605590820313,
+              "ci95_low": 3.757983174641927,
+              "estimate": 4.1111083984375,
+              "n_boot": 2000,
+              "n_units": 600
+            },
+            "mistral_7b": {
+              "ci95_high": 4.789735788316583,
+              "ci95_low": 4.2415874947654935,
+              "estimate": 4.518831134840871,
+              "n_boot": 2000,
+              "n_units": 597
+            },
+            "olmo2_7b": {
+              "ci95_high": 3.761850750812491,
+              "ci95_low": 3.2043697945392173,
+              "estimate": 3.4784556415707586,
+              "n_boot": 2000,
+              "n_units": 586
+            },
+            "qwen3_4b": {
+              "ci95_high": 2.8671289062499996,
+              "ci95_low": 2.4352526041666667,
+              "estimate": 2.6476041666666665,
+              "n_boot": 2000,
+              "n_units": 600
+            }
+          },
           "models": {
             "gemma3_4b": 6.274127604166667,
             "llama31_8b": 4.1111083984375,
@@ -1612,6 +2352,44 @@
           "ci95_low": null,
           "effect": "interaction",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
@@ -1628,6 +2406,44 @@
           "ci95_low": null,
           "effect": "late_it_given_it_upstream",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
@@ -1644,6 +2460,44 @@
           "ci95_low": null,
           "effect": "late_it_given_pt_upstream",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
@@ -1660,6 +2514,44 @@
           "ci95_low": null,
           "effect": "late_weight_effect",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
@@ -1676,6 +2568,44 @@
           "ci95_low": null,
           "effect": "upstream_context_effect",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
@@ -1694,6 +2624,44 @@
           "ci95_low": null,
           "effect": "interaction",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
@@ -1710,6 +2678,44 @@
           "ci95_low": null,
           "effect": "late_it_given_it_upstream",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
@@ -1726,6 +2732,44 @@
           "ci95_low": null,
           "effect": "late_it_given_pt_upstream",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
@@ -1742,6 +2786,44 @@
           "ci95_low": null,
           "effect": "late_weight_effect",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
@@ -1758,6 +2840,44 @@
           "ci95_low": null,
           "effect": "upstream_context_effect",
           "estimate": null,
+          "leave_one_out": {},
+          "model_cis": {
+            "gemma3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "llama31_8b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "mistral_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "olmo2_7b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            },
+            "qwen3_4b": {
+              "ci95_high": null,
+              "ci95_low": null,
+              "estimate": null,
+              "n_boot": 0,
+              "n_units": 0
+            }
+          },
           "models": {
             "gemma3_4b": null,
             "llama31_8b": null,
