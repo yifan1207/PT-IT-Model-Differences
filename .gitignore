@@ -416,6 +416,8 @@ paper_draft/*
 !paper_draft/PAPER_DRAFT_v18.md
 !paper_draft/PAPER_DRAFT_v19.md
 !paper_draft/PAPER_DRAFT_v20.md
+!paper_draft/PAPER_DRAFT_v21.md
+!paper_draft/EXP24_32B_EXTERNAL_VALIDITY_PLAN.md
 
 .DS_Store
 cache/

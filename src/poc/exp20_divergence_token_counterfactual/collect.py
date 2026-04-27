@@ -41,8 +41,10 @@ DEPTH_ABLATION_WINDOWS = {
     "gemma3_4b": {"early": (0, 14), "mid": (10, 24), "late": (20, 34)},
     "llama31_8b": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
     "qwen3_4b": {"early": (0, 14), "mid": (11, 25), "late": (22, 36)},
+    "qwen25_32b": {"early": (0, 26), "mid": (19, 45), "late": (38, 64)},
     "mistral_7b": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
     "olmo2_7b": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
+    "olmo2_32b": {"early": (0, 26), "mid": (19, 45), "late": (38, 64)},
     "deepseek_v2_lite": {"early": (0, 11), "mid": (8, 19), "late": (16, 27)},
 }
 

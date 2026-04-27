@@ -20,8 +20,17 @@ from typing import Any
 import numpy as np
 
 
-MODEL_ORDER = ["gemma3_4b", "qwen3_4b", "llama31_8b", "mistral_7b", "olmo2_7b", "deepseek_v2_lite"]
-DENSE5_MODELS = [model for model in MODEL_ORDER if model != "deepseek_v2_lite"]
+MODEL_ORDER = [
+    "gemma3_4b",
+    "qwen3_4b",
+    "qwen25_32b",
+    "llama31_8b",
+    "mistral_7b",
+    "olmo2_7b",
+    "olmo2_32b",
+    "deepseek_v2_lite",
+]
+DENSE5_MODELS = ["gemma3_4b", "qwen3_4b", "llama31_8b", "mistral_7b", "olmo2_7b"]
 
 PT_CONDITIONS = ["A_prime_raw", "B_mid_raw", "B_late_raw", "B_midlate_raw"]
 IT_CONDITIONS = ["C_it_chat", "D_mid_ptswap", "D_late_ptswap", "D_midlate_ptswap"]

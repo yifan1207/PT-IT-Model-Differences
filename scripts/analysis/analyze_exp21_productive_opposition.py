@@ -377,6 +377,15 @@ def _effect_lookup(summary: dict, *, mode: str, model: str, event_kind: str, eff
     return None
 
 
+def _primary_mode(summary: dict) -> str:
+    """Prefer native runs, but make raw-shared-only extension analyses valid."""
+    pooled = summary.get("pooled", {})
+    for mode in ["native", "raw_shared"]:
+        if (pooled.get(mode) or {}).get("n_records", 0):
+            return mode
+    return "native"
+
+
 def _condition_window_value(summary: dict, mode: str, event_kind: str, condition: str, window: str, metric: str):
     condition_payload = (
         (summary["pooled"].get(mode, {}).get("conditions", {}).get(event_kind, {}) or {}).get(condition, {}) or {}
@@ -386,8 +395,8 @@ def _condition_window_value(summary: dict, mode: str, event_kind: str, condition
 
 def _plot_main(summary: dict, path: Path) -> None:
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    fig.suptitle("Exp21 Productive Opposition: Dense5 Pooled")
-    mode = "native"
+    mode = _primary_mode(summary)
+    fig.suptitle(f"Exp21 Productive Opposition: Dense5 Pooled ({mode})")
     event = "first_diff"
     conds = ["A_pt_raw", "B_late_raw", "D_late_ptswap", "C_it_chat"]
     labels = ["PT/PT", "PT/IT late", "IT/PT late", "IT/IT"]
@@ -448,7 +457,7 @@ def _plot_main(summary: dict, path: Path) -> None:
 
 
 def _plot_categories(summary: dict, path: Path) -> None:
-    mode = "native"
+    mode = _primary_mode(summary)
     event = "first_diff"
     conds = ["A_pt_raw", "C_it_chat", "B_late_raw", "D_late_ptswap"]
     categories = ["FORMAT", "CONTENT", "FUNCTION_OTHER"]
@@ -484,59 +493,60 @@ def _fmt(value) -> str:
 
 
 def _write_paper_claims(summary: dict, path: Path) -> None:
+    mode = _primary_mode(summary)
     native_event = "first_diff"
     late_weight = _effect_lookup(
         summary,
-        mode="native",
+        mode=mode,
         model="dense5",
         event_kind=native_event,
         effect="late_weight_effect:margin_writein_it_vs_pt",
     )
     upstream = _effect_lookup(
         summary,
-        mode="native",
+        mode=mode,
         model="dense5",
         event_kind=native_event,
         effect="upstream_context_effect:margin_writein_it_vs_pt",
     )
     interaction = _effect_lookup(
         summary,
-        mode="native",
+        mode=mode,
         model="dense5",
         event_kind=native_event,
         effect="late_interaction:margin_writein_it_vs_pt",
     )
     b_late_minus_a = _effect_lookup(
         summary,
-        mode="native",
+        mode=mode,
         model="dense5",
         event_kind=native_event,
         effect="B_late_minus_A:margin_writein_it_vs_pt",
     )
     c_minus_d_late = _effect_lookup(
         summary,
-        mode="native",
+        mode=mode,
         model="dense5",
         event_kind=native_event,
         effect="C_minus_D_late:margin_writein_it_vs_pt",
     )
     b_midlate_minus_b_mid = _effect_lookup(
         summary,
-        mode="native",
+        mode=mode,
         model="dense5",
         event_kind=native_event,
         effect="B_midlate_minus_B_mid:margin_writein_it_vs_pt",
     )
     d_midlate_minus_d_mid = _effect_lookup(
         summary,
-        mode="native",
+        mode=mode,
         model="dense5",
         event_kind=native_event,
         effect="D_midlate_minus_D_mid:margin_writein_it_vs_pt",
     )
     c_late_opp = _condition_window_value(
         summary,
-        "native",
+        mode,
         native_event,
         "C_it_chat",
         PRIMARY_WINDOW,
@@ -544,7 +554,7 @@ def _write_paper_claims(summary: dict, path: Path) -> None:
     )
     c_delta = _condition_window_value(
         summary,
-        "native",
+        mode,
         native_event,
         "C_it_chat",
         PRIMARY_WINDOW,
@@ -552,7 +562,7 @@ def _write_paper_claims(summary: dict, path: Path) -> None:
     )
     c_late_margin = _condition_window_value(
         summary,
-        "native",
+        mode,
         native_event,
         "C_it_chat",
         PRIMARY_WINDOW,
@@ -560,15 +570,20 @@ def _write_paper_claims(summary: dict, path: Path) -> None:
     )
     c_late_target_alt = _condition_window_value(
         summary,
-        "native",
+        mode,
         native_event,
         "C_it_chat",
         PRIMARY_WINDOW,
         "target_vs_alt_margin",
     )
-    if c_late_opp is not None and c_late_opp > 0:
+    if c_late_opp is not None and c_late_opp > 1e-3:
         opposition_sentence = (
             "The negative-parallel component is productive on the IT-vs-PT token margin proxy in pure IT."
+        )
+    elif c_late_opp is not None and abs(float(c_late_opp)) <= 1e-3:
+        opposition_sentence = (
+            "The negative-parallel component is approximately zero on the pure-IT IT-vs-PT margin proxy, "
+            "so the paper should not treat raw negative opposition itself as the main mechanism."
         )
     else:
         opposition_sentence = (
@@ -577,9 +592,9 @@ def _write_paper_claims(summary: dict, path: Path) -> None:
         )
     text = f"""# Exp21 Productive Opposition: Paper-Safe Claims
 
-Primary scope: dense5 pooled native `first_diff`; DeepSeek is reported separately as MoE.
+Primary scope: dense5 pooled `{mode}` `first_diff`; DeepSeek is excluded from this dense-family extension.
 
-Key dense5 native values:
+Key dense5 `{mode}` values:
 
 - Pure IT late `delta_cosine_mlp`: `{_fmt(c_delta)}`.
 - Pure IT late IT-minus-PT margin write-in: `{_fmt(c_late_margin)}`.
@@ -602,7 +617,7 @@ Interpretation rule:
 
 Safe wording:
 
-> Exp21 measures MLP-only finite-difference logit effects at the first PT/IT divergent prefix. In native dense-family runs, late residual opposition is evaluated by whether its negative-parallel component increases IT-vs-PT token margin. This supports a productive-opposition readout only when the negative component helps the IT token relative to the PT token; otherwise, negative delta-cosine remains only a geometric signature.
+> Exp21 measures MLP-only finite-difference logit effects at the first PT/IT divergent prefix. In `{mode}` dense-family runs, late residual opposition is evaluated by whether its negative-parallel component increases IT-vs-PT token margin. This supports a productive-opposition readout only when the negative component helps the IT token relative to the PT token; otherwise, negative delta-cosine remains only a geometric signature.
 
 Do not claim:
 

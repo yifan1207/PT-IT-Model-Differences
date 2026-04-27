@@ -56,7 +56,7 @@ def load_model_and_tokenizer(
                      output_attentions=True in L9 and for DeepSeek V2 MLA).
         dtype:       Weight dtype (default: bfloat16 — matches exp2/exp6 setup).
         multi_gpu:   If True, spread the model across all visible GPUs using
-                     device_map="sequential" (for models too large for one GPU).
+                     device_map="balanced" (for models too large for one GPU).
                      Each GPU gets at most 72 GB to leave room for KV cache.
 
     Returns:
@@ -69,10 +69,11 @@ def load_model_and_tokenizer(
 
     if multi_gpu:
         n_gpus = torch.cuda.device_count()
-        kwargs["device_map"] = "sequential"
+        if n_gpus < 2:
+            log.warning("multi_gpu=True but only %d visible GPU(s); loading may OOM", n_gpus)
+        kwargs["device_map"] = "balanced"
         kwargs["max_memory"] = {i: "72GB" for i in range(n_gpus)}
-        kwargs["attn_implementation"] = "eager"  # required for DeepSeek MLA
-        log.info("Loading model %s across %d GPUs (sequential device_map)", model_id, n_gpus)
+        log.info("Loading model %s across %d visible GPUs (balanced device_map)", model_id, n_gpus)
     else:
         kwargs["device_map"] = str(device)
         if eager_attn:

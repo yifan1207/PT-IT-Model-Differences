@@ -194,6 +194,61 @@ def exp21_effect(effect: str) -> NumberFn:
     return _read
 
 
+def exp21_content_effect(effect: str, field: str = "mean") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp21_productive_opposition/"
+            "exp21_content_reasoning_20260427_0943_h100x8/"
+            "analysis/effects.csv",
+        )
+        for row in rows:
+            if (
+                row["mode"] == "raw_shared"
+                and row["model"] == "dense5"
+                and row["event_kind"] == "first_diff"
+                and row["effect"] == effect
+            ):
+                return float(row[field])
+        raise KeyError((effect, field))
+
+    return _read
+
+
+def exp23_effect(run_name: str, effect: str, field: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp23_midlate_interaction_suite/"
+            f"{run_name}/analysis/exp23_summary.json",
+        )
+        return float(data["residual_factorial"]["effects"]["common_it"][effect][field])
+
+    return _read
+
+
+def exp23_subgroup(
+    run_name: str, group: str, value: str, field: str = "estimate"
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp23_midlate_interaction_suite/"
+            f"{run_name}/analysis/subgroups/exp23_subgroup_summary.json",
+        )
+        for row in data["rows"]:
+            if (
+                row["readout"] == "common_it"
+                and row["effect"] == "interaction"
+                and row["group"] == group
+                and row["value"] == value
+            ):
+                return float(row[field])
+        raise KeyError((run_name, group, value, field))
+
+    return _read
+
+
 def exp15_llm_pairwise(comparison: str, criterion: str) -> NumberFn:
     key = f"pairwise_{criterion.lower()}"
 
@@ -440,6 +495,213 @@ CHECKS: list[ClaimCheck] = [
         "exp21 effects.csv",
         0.2884991907770899,
         exp21_effect("late_interaction:margin_writein_it_vs_pt"),
+    ),
+    ClaimCheck(
+        "Exp23 primary late given PT upstream",
+        "exp23 primary exp23_summary.json",
+        0.5720075457553511,
+        exp23_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "late_it_given_pt_upstream",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 primary late given IT upstream",
+        "exp23 primary exp23_summary.json",
+        3.2072035352029644,
+        exp23_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "late_it_given_it_upstream",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 primary upstream-context effect",
+        "exp23 primary exp23_summary.json",
+        4.238709540575966,
+        exp23_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "upstream_context_effect",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 primary late-stack main effect",
+        "exp23 primary exp23_summary.json",
+        1.8896055404791579,
+        exp23_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "late_weight_effect",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 primary upstream x late interaction",
+        "exp23 primary exp23_summary.json",
+        2.6351959894476136,
+        exp23_effect("exp23_dense5_full_h100x8_20260426_sh4_rw4", "interaction"),
+    ),
+    ClaimCheck(
+        "Exp23 primary interaction CI low",
+        "exp23 primary exp23_summary.json",
+        2.5404429873591,
+        exp23_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 primary interaction CI high",
+        "exp23 primary exp23_summary.json",
+        2.7335680538313816,
+        exp23_effect(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 holdout GOV-CONV subgroup interaction",
+        "exp23 primary subgroup summary.json",
+        2.0509100734312526,
+        exp23_subgroup(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "prompt_category",
+            "GOV-CONV",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 holdout GOV-FORMAT subgroup interaction",
+        "exp23 primary subgroup summary.json",
+        3.61092726012482,
+        exp23_subgroup(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "prompt_category",
+            "GOV-FORMAT",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 holdout SAFETY subgroup interaction",
+        "exp23 primary subgroup summary.json",
+        2.8332766414218478,
+        exp23_subgroup(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "prompt_category",
+            "SAFETY",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning interaction",
+        "exp23 content/reasoning exp23_summary.json",
+        1.6803632792866057,
+        exp23_effect(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "interaction",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning interaction CI low",
+        "exp23 content/reasoning exp23_summary.json",
+        1.5929663162872967,
+        exp23_effect(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "interaction",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning interaction CI high",
+        "exp23 content/reasoning exp23_summary.json",
+        1.7752462505766033,
+        exp23_effect(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "interaction",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning upstream-context effect",
+        "exp23 content/reasoning exp23_summary.json",
+        3.529437865202374,
+        exp23_effect(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "upstream_context_effect",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning late given PT upstream",
+        "exp23 content/reasoning exp23_summary.json",
+        -1.4062707862194421,
+        exp23_effect(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "late_it_given_pt_upstream",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning late given IT upstream",
+        "exp23 content/reasoning exp23_summary.json",
+        0.27409249306716343,
+        exp23_effect(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "late_it_given_it_upstream",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning late-stack main effect",
+        "exp23 content/reasoning exp23_summary.json",
+        -0.5660891465761394,
+        exp23_effect(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "late_weight_effect",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 CONTENT-FACT subgroup interaction",
+        "exp23 content/reasoning subgroup summary.json",
+        1.8421921828806194,
+        exp23_subgroup(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "prompt_category",
+            "CONTENT-FACT",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 CONTENT-REASON subgroup interaction",
+        "exp23 content/reasoning subgroup summary.json",
+        1.336117588486396,
+        exp23_subgroup(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "prompt_category",
+            "CONTENT-REASON",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning GOV-FORMAT subgroup interaction",
+        "exp23 content/reasoning subgroup summary.json",
+        1.9727237747609636,
+        exp23_subgroup(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "prompt_category",
+            "GOV-FORMAT",
+        ),
+    ),
+    ClaimCheck(
+        "Exp21 content/reasoning late-weight MLP margin",
+        "exp21 content/reasoning effects.csv",
+        0.041969978748188225,
+        exp21_content_effect("late_weight_effect:margin_writein_it_vs_pt"),
+    ),
+    ClaimCheck(
+        "Exp21 content/reasoning residual-opposing component",
+        "exp21 content/reasoning effects.csv",
+        -5.502802526305325e-06,
+        exp21_content_effect("late_weight_effect:opposition_margin_it_vs_pt"),
+        tolerance=5e-7,
+        digits=8,
+    ),
+    ClaimCheck(
+        "Exp21 content/reasoning remaining/token-specific component",
+        "exp21 content/reasoning effects.csv",
+        0.04881583150857773,
+        exp21_content_effect("late_weight_effect:remainder_margin_it_vs_pt"),
     ),
     ClaimCheck(
         "LLM judge resolved G2: PT late graft over PT baseline",

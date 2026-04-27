@@ -10,6 +10,7 @@ PROMPT_MODES="${PROMPT_MODES:-native raw_shared}"
 MODELS="${MODELS:-gemma3_4b qwen3_4b llama31_8b mistral_7b olmo2_7b deepseek_v2_lite}"
 WORKERS_PER_MODEL="${WORKERS_PER_MODEL:-1}"
 DEVICE_PREFIX="${DEVICE_PREFIX:-cuda}"
+GPU_LIST="${GPU_LIST:-}"
 TOP_K="${TOP_K:-10}"
 N_BOOT="${N_BOOT:-2000}"
 CONDITIONS="${CONDITIONS:-}"
@@ -28,6 +29,7 @@ echo "[exp21-runpod] root ${ROOT}"
 echo "[exp21-runpod] modes ${PROMPT_MODES}"
 echo "[exp21-runpod] models ${MODELS}"
 echo "[exp21-runpod] workers_per_model ${WORKERS_PER_MODEL}"
+echo "[exp21-runpod] gpu_list ${GPU_LIST:-<all detected>}"
 echo "[exp21-runpod] dataset ${DATASET}"
 echo "[exp21-runpod] exp20_root ${EXP20_ROOT}"
 echo "[exp21-runpod] exp20_fallback_root ${EXP20_FALLBACK_ROOT}"
@@ -107,9 +109,20 @@ for mode in ${PROMPT_MODES}; do
 done
 
 declare -a free_gpus=()
-for gpu in $(seq 0 $((gpu_count - 1))); do
-  free_gpus+=("${gpu}")
-done
+if [ -n "${GPU_LIST}" ]; then
+  # shellcheck disable=SC2206
+  free_gpus=(${GPU_LIST})
+  for gpu in "${free_gpus[@]}"; do
+    if [ "${gpu}" -lt 0 ] || [ "${gpu}" -ge "${gpu_count}" ]; then
+      echo "[exp21-runpod] requested GPU ${gpu}, but detected GPUs are 0..$((gpu_count - 1))" >&2
+      exit 2
+    fi
+  done
+else
+  for gpu in $(seq 0 $((gpu_count - 1))); do
+    free_gpus+=("${gpu}")
+  done
+fi
 
 declare -a active_pids=()
 declare -A pid_to_gpu=()
@@ -191,6 +204,7 @@ PY
 uv run python scripts/analysis/analyze_exp21_productive_opposition.py \
   --root "${ROOT}" \
   --out-dir "${ROOT}/analysis" \
+  --models ${MODELS} \
   --n-boot "${N_BOOT}"
 
 echo "[exp21-runpod] complete ${ROOT}"

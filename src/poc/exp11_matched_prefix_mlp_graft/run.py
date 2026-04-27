@@ -50,14 +50,25 @@ from src.poc.exp19_late_mlp_specificity_controls.controls import (
 )
 
 
-VALID_MODELS = ["gemma3_4b", "llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b", "deepseek_v2_lite"]
+VALID_MODELS = [
+    "gemma3_4b",
+    "llama31_8b",
+    "qwen3_4b",
+    "qwen25_32b",
+    "mistral_7b",
+    "olmo2_7b",
+    "olmo2_32b",
+    "deepseek_v2_lite",
+]
 KL_THRESHOLDS = [0.05, 0.1, 0.2, 0.5, 1.0]
 DEFAULT_BATCH_SIZE = {
     "gemma3_4b": 64,
     "qwen3_4b": 64,
+    "qwen25_32b": 1,
     "llama31_8b": 32,
     "mistral_7b": 32,
     "olmo2_7b": 32,
+    "olmo2_32b": 1,
     "deepseek_v2_lite": 48,
 }
 GOVERNANCE_PATTERNS = {
@@ -99,6 +110,11 @@ DEPTH_ABLATION_WINDOWS = {
         "B_mid_raw": (11, 25),
         "B_late_raw": (22, 36),
     },
+    "qwen25_32b": {
+        "B_early_raw": (0, 26),
+        "B_mid_raw": (19, 45),
+        "B_late_raw": (38, 64),
+    },
     "mistral_7b": {
         "B_early_raw": (0, 13),
         "B_mid_raw": (9, 22),
@@ -108,6 +124,11 @@ DEPTH_ABLATION_WINDOWS = {
         "B_early_raw": (0, 13),
         "B_mid_raw": (9, 22),
         "B_late_raw": (19, 32),
+    },
+    "olmo2_32b": {
+        "B_early_raw": (0, 26),
+        "B_mid_raw": (19, 45),
+        "B_late_raw": (38, 64),
     },
     "deepseek_v2_lite": {
         "B_early_raw": (0, 11),

@@ -74,6 +74,17 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         n_kv_heads=8,
         global_attn_layers=frozenset(range(36)),
     ),
+    "qwen25_32b": ModelSpec(
+        name="qwen25_32b",
+        pt_id="Qwen/Qwen2.5-32B",
+        it_id="Qwen/Qwen2.5-32B-Instruct",
+        n_layers=64,
+        d_model=5120,
+        n_heads=40,
+        n_kv_heads=8,
+        global_attn_layers=frozenset(range(64)),
+        multi_gpu=True,
+    ),
     "mistral_7b": ModelSpec(
         name="mistral_7b",
         pt_id="mistralai/Mistral-7B-v0.3",
@@ -114,6 +125,17 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         # OLMo 2 7B uses standard MHA (n_kv_heads == n_heads), not GQA.
         n_kv_heads=32,
         global_attn_layers=frozenset(range(32)),
+    ),
+    "olmo2_32b": ModelSpec(
+        name="olmo2_32b",
+        pt_id="allenai/OLMo-2-0325-32B",
+        it_id="allenai/OLMo-2-0325-32B-Instruct",
+        n_layers=64,
+        d_model=5120,
+        n_heads=40,
+        n_kv_heads=8,
+        global_attn_layers=frozenset(range(64)),
+        multi_gpu=True,
     ),
 }
 

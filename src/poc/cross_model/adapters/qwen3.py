@@ -8,10 +8,14 @@ class Qwen3Adapter(ModelAdapter):
         if not is_it:
             return prompt
         messages = [{"role": "user", "content": prompt}]
-        return tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-            # Qwen 3 supports thinking mode; disable for comparability with other models
-            enable_thinking=False,
-        )
+        kwargs = {"tokenize": False, "add_generation_prompt": True}
+        try:
+            return tokenizer.apply_chat_template(
+                messages,
+                # Qwen 3 supports thinking mode; disable for comparability with other models.
+                # Qwen 2.5 ignores this template kwarg on current Transformers.
+                enable_thinking=False,
+                **kwargs,
+            )
+        except TypeError:
+            return tokenizer.apply_chat_template(messages, **kwargs)

@@ -11,9 +11,11 @@ _ADAPTER_MAP: dict[str, type[ModelAdapter]] = {
     "gemma3_4b":        Gemma3Adapter,
     "llama31_8b":       Llama31Adapter,
     "qwen3_4b":         Qwen3Adapter,
+    "qwen25_32b":       Qwen3Adapter,
     "mistral_7b":       MistralAdapter,
     "deepseek_v2_lite": DeepseekV2Adapter,
     "olmo2_7b":         OLMo2Adapter,
+    "olmo2_32b":        OLMo2Adapter,
 }
 
 
