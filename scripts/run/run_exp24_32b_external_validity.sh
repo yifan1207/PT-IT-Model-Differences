@@ -180,7 +180,7 @@ wait_for_jobs() {
 
 count_jsonl() {
   local path="$1"
-  python - "$path" <<'PY'
+  "${PYTHON_BIN:-python3}" - "$path" <<'PY'
 import gzip
 import sys
 from pathlib import Path
@@ -342,7 +342,7 @@ run_bridge_shard() {
 
 merge_bridge_model() {
   local model="$1"
-  python - "$EXP23_ROOT" "$model" "$PART_A_SHARDS" <<'PY'
+  "${PYTHON_BIN:-python3}" - "$EXP23_ROOT" "$model" "$PART_A_SHARDS" <<'PY'
 import json
 import shutil
 import sys
