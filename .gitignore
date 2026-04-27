@@ -401,6 +401,12 @@ results/exp21_productive_opposition/**
 !results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/**/*.csv
 !results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/**/*.md
 !results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/**/*.png
+!results/exp23_midlate_interaction_suite/
+results/exp23_midlate_interaction_suite/**
+!results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/
+!results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/**/
+!results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/**
+!results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/part_a_mlp_kl/*/config.json
 !results/paper_synthesis/
 !results/paper_synthesis/**
 
@@ -409,6 +415,7 @@ paper_draft/*
 !paper_draft/PAPER_DRAFT_v15.md
 !paper_draft/PAPER_DRAFT_v18.md
 !paper_draft/PAPER_DRAFT_v19.md
+!paper_draft/PAPER_DRAFT_v20.md
 
 .DS_Store
 cache/

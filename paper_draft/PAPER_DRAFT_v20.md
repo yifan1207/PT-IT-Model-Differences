@@ -1,0 +1,620 @@
+# How Post-Training Changes Next-Token Formation: A Paired-Checkpoint Depth Decomposition
+
+**Anonymous authors** | NeurIPS 2026 Submission
+
+---
+
+## Abstract
+
+Post-training changes what language models say, but less is known about how it changes the forward-pass process by which a pretrained checkpoint and its instruction-following descendant first choose different next tokens. We study this with a paired-checkpoint protocol across five dense model families: endpoint-matched convergence trajectories, endpoint-free same-history JS replay, symmetric MLP grafts and swaps with matched random controls, and first-divergence-token counterfactuals at the exact shared prefix where PT and IT next-token choices split. The central finding is not that late layers are an autonomous instruction-following module. Instead, late computation behaves as **context-gated readout and amplification machinery**. MLP-only token projections show that native IT late MLPs provide the strongest direct support for the IT divergent token (`+0.789` logits), while a full residual-state x late-stack factorial shows that the IT late stack shifts the IT-vs-PT margin far more when entered from an IT-shaped upstream state (`+3.21` logits) than from a PT upstream state (`+0.57` logits). In that factorial, upstream context (`+4.24`) and positive upstream-by-late interaction (`+2.64`) exceed the late-stack main effect (`+1.89`). This context-gating result sits on a broader depth decomposition. IT models stabilize later to their own final next-token distributions even after matching token steps on final entropy, confidence, and top-1/top-2 margin (`+0.425` raw, `+0.762` tuned nats); late MLP grafts and swaps have the largest tested leverage on that delayed-stabilization signature, while matched random late perturbations are near zero (`+0.003` versus `+0.327` nats for the true late graft); and first-divergence counterfactuals show that middle-window substitutions transfer PT/IT token identity more than late substitutions (`26.0%` versus `17.6%` IT-token transfer in a PT host). The result is a window-level causal decomposition of post-training effects on next-token formation: candidate identity is more middle-sensitive, while late windows help selected IT-like candidates win most strongly when the upstream state is already IT-shaped.
+
+---
+
+## 1. Introduction
+
+We study a narrow moment in the forward pass: the first prefix where a pretrained checkpoint and its post-trained descendant choose different next tokens. At that point the histories are still shared, so we can ask a sharper question than whether instruction-tuned models behave differently: which depth windows change the candidate token, and which windows make an already exposed candidate win the final next-token competition?
+
+To answer this, we combine four controls that are usually separate. First, because `KL(layer || own final)` is endpoint-relative, we use coarsened exact matching on final entropy, top-1 confidence, and top-1/top-2 margin to ask whether the late KL gap remains after balancing the most direct endpoint covariates. Second, we replay identical teacher-forced histories through paired checkpoints and compare same-layer JS without using either model's own final endpoint. Third, we run symmetric MLP grafts and swaps under matched histories, with matched random residual-projection controls as a falsifier for generic late-window sensitivity. Fourth, we intervene at first-divergence prefixes and measure both token identity and IT-vs-PT margin.
+
+This protocol supports three claims:
+
+1. **Post-trained descendants stabilize later to their own final next-token distributions.** The late KL gap remains after endpoint matching, and same-history JS replay shows PT/IT output distributions still differ when token histories are held fixed.
+2. **Late MLP substitutions have specific leverage on delayed stabilization.** Under identical histories, late IT-to-PT grafts recreate the delay, late PT-to-IT swaps collapse it, and matched random late perturbations are near zero.
+3. **Late computation is context-gated readout, not a standalone instruction module.** Middle-window substitutions transfer PT/IT token identity more than late substitutions, native IT late MLPs provide the strongest direct IT-token support, and a residual-state x late-stack factorial shows that late IT readout is much larger when the upstream state is already IT-shaped.
+
+What we claim is a window-level causal decomposition of PT/post-trained next-token formation: middle windows are more tied to candidate identity, while late MLP and late-stack computation supply readout margin for selected IT-like candidates conditional on upstream context. What we do not claim is a complete instruction-following circuit, a named middle-layer feature feeding a named late write-in component, or evidence that late layers autonomously implement assistant behavior.
+
+We use `instruction-tuned` and `IT` as readable shorthand for instruction-following post-trained descendants of pretrained checkpoints released by the same model families. The recipes are heterogeneous, including supervised tuning and preference optimization, so our claim is about the PT-versus-post-trained contrast rather than isolation of a single training algorithm. The main paper reports pooled results for five dense PT/IT families: Gemma 3 4B, Llama 3.1 8B, Qwen 3 4B, Mistral 7B, and OLMo 2 7B. We also ran DeepSeek-V2-Lite as a MoE/SFT-only side case, but do not pool it with dense models because MLP grafts in MoEs also perturb routing and expert selection.
+
+Prior work gives nearby pieces: late prediction sharpening and confidence calibration, base-versus-post-training comparisons, instruction vectors, task-layer localization, behavioral steering directions, and mid-layer safety or preference localization. We do not treat any one of those ingredients as new. The contribution is their combination around paired PT/IT first divergence: matched histories, endpoint-balanced trajectory controls, bidirectional depth-localized interventions, matched random falsifiers, and token-identity versus margin-amplification outcomes at the exact prefix where paired checkpoints disagree.
+
+---
+
+## 2. Setup
+
+### 2.1 Models
+
+The main experiments use five dense PT/IT model families. We use `instruction-tuned` and `IT` as readable shorthand for instruction-following post-trained descendants of PT checkpoints; the recipes are heterogeneous, so the comparison is PT-versus-post-training model diffing rather than isolation of one training algorithm.
+
+| Model | Layers | d_model | Attention | Pre-training data | Post-training |
+|---|---|---|---|---|---|
+| Gemma 3 4B | 34 | 2560 | GQA, hybrid local/global (5:1) | Undisclosed | Multi-stage post-training |
+| Llama 3.1 8B | 32 | 4096 | GQA, all global | 15T tokens | Iterative supervised + preference optimization |
+| Qwen 3 4B | 36 | 2560 | GQA, all global | 36T tokens, 119 languages | Multi-stage post-training |
+| Mistral 7B v0.3 | 32 | 4096 | GQA, sliding window | Undisclosed | Instruct checkpoint |
+| OLMo 2 7B | 32 | 4096 | MHA, all global | OLMo-mix-1124 | SFT + DPO + RLVR |
+
+OLMo 2's base recipe is centered on `OLMo-mix-1124` with a late `Dolmino-mix-1124` curriculum, so the earlier single-dataset shorthand was too coarse. The discovery curves use each model in its native prompting regime; matched-history replay, template controls, and graft/swap experiments then test the internal signature under controlled histories. For OLMo we use the retrained non-preview PT/IT checkpoints with shared tokenization.
+
+All main-text claims below therefore refer to the five dense families.
+
+### 2.2 Readouts and interventions
+
+All core interventions are architecture-agnostic at the implementation level. Matched-prefix graft/swap and first-divergence tests operate on raw MLP activations and residual-stream states through a model-agnostic adapter system. No core claim depends on transcoders, SAEs, or model-specific decomposition dictionaries.
+
+The main target is the layerwise convergence trajectory `KL(p_l || p_L)`, where `p_l` is the decoded distribution at layer `l` and `p_L` is the same model's final-layer distribution. This is a within-model stabilization metric: it asks how far the current layer is from the model's eventual next-token prediction. It is symmetric across PT and IT because each model is evaluated against its own endpoint, but it is deliberately endpoint-relative.
+
+Four companion readouts prevent that metric from carrying too much alone. **Coarsened exact matching** (Iacus, King, and Porro, 2012) tests whether the late KL gap remains after balancing token steps on final entropy, top-1 confidence, and top-1/top-2 margin within each `model x probe_family` branch. This is a design-level endpoint sensitivity check, not a claim that every possible final-distribution property has been controlled. Matched-prefix same-layer JS then compares PT and IT output distributions under identical teacher tokens without using either model's final endpoint.
+
+Equal-width early/middle/late MLP grafts and swaps test which depth window has the largest causal leverage on delayed stabilization under identical histories. Following the caution recommended for activation patching by Heimersheim and Nanda (2024), we pair the learned late substitution with matched random residual-projection controls: if late layers merely amplify arbitrary perturbations, the random control should move the same metric. First-divergence token tests then separate token identity from final margin amplification at prefixes where PT and IT would choose different next tokens. In the residual-state x late-stack factorial, "late stack" means the downstream transformer blocks from the pre-specified late-window boundary through the final normalization/readout; MLP-only finite-difference write-out is analyzed separately.
+
+Secondary diagnostics are demoted to appendices. Commitment summaries and raw-lens variants address metric/probe robustness; `δ`-cosine is a geometric marker of late revision rather than a mechanism by itself; Gemma feature-level analyses are supplementary.
+
+### 2.3 Data regimes
+
+We use four data regimes, each tied to one role in the argument.
+
+**Native discovery.** The cross-family free-running convergence analyses use 2,936 prompts spanning factual QA, reasoning, code, safety, format compliance, and custom assistant-style prompts. Each prompt is decoded greedily up to 512 tokens. This establishes the model-in-use signature.
+
+**Endpoint-matched discovery.** A dense-family 600-prompt run stores raw- and tuned-probe layerwise trajectories for PT raw-prompt and IT native-chat continuations. The analysis matches token steps within `model x probe_family` on final-layer entropy, final top-1 confidence, and final top-1/top-2 margin, then re-estimates late KL-to-own-final and endpoint-free path metrics on the matched token steps.
+
+**Controlled-history localization.** Matched-prefix runs use 400- and 600-prompt subsets derived from the same broader pool. These runs freeze teacher tokens, compare pure and intervened PT/IT branches under the same histories, and supply the matched-prefix JS, graft/swap, random-control, and first-divergence analyses. A reverse JS replay with PT-generated continuations is reported as an appendix check.
+
+**Behavioral bridge.** The free-running behavioral follow-up uses a frozen 600-prompt subset of `eval_dataset_v2.jsonl`, emphasizing conversational prompts, assistant-register prompts, benign and harmful safety prompts, and format-sensitive items. The main behavioral estimates are LLM-judge results, with a completed two-rater blind human audit of the primary pairwise contrasts and pointwise judge-calibration labels.
+
+### 2.4 Code and artifact availability
+
+For double-blind review, code and paper-facing artifacts are released through an anonymized artifact archive. The archive contains the model adapters, experiment packages, launch scripts, analysis scripts, prompt datasets, summary tables, bootstrap intervals, human-audit summaries, and final plots needed to audit the claims in this paper.
+
+The release separates reviewer-facing evidence from regenerated bulk traces. We commit the summaries and plots from which manuscript numbers are read, and include a mechanical audit entrypoint, `bash scripts/reproduce/reproduce_claims_from_summaries.sh`, that checks the headline numbers against those artifacts. Raw activation arrays, model/probe tensors, tuned-lens checkpoints, and multi-gigabyte per-token JSONL/GZ traces are omitted from git for size; where needed, large artifacts are mirrored under anonymized artifact prefixes and the supplementary audit shard contains a small raw subset. Appendix G maps each main claim to commands, expected artifacts, expected numbers, and rerun costs.
+
+Internal run identifiers and file-level provenance are kept in Appendix G and the anonymized artifact archive rather than in the main narrative.
+
+---
+
+## 3. Results
+
+The results build the context-gated readout account in four steps: post-trained descendants stabilize later; late MLP substitutions most strongly control that delayed-stabilization signature; first-divergence tests show middle-sensitive token identity but upstream-conditioned late margin amplification; and free-running behavior changes in the predicted direction.
+
+### 3.1 The puzzle: IT stabilizes later
+
+Under native free-running decoding, IT models remain farther from their own final next-token distribution than PT models do through much of the forward pass. We call this the **convergence gap**. Under the tuned lens, the dense-family IT-minus-PT `KL(layer || own final)` gap is positive in the early, middle, and late thirds of the network (`+0.62`, `+0.54`, and `+0.33` nats), and raw-lens variants preserve the qualitative ordering.
+
+![Figure 1: The convergence gap. IT models stay farther from their own final-layer prediction than PT models do across much of the forward pass. Mean `KL(layer || final-layer distribution)` per layer, tuned-lens decoded. This delayed-stabilization signature is the puzzle that the matched-prefix interventions localize.](../results/exp09_cross_model_observational_replication/plots/L2_mean_kl_per_layer_tuned.png)
+
+The measured late gap persists after balancing the most direct endpoint covariates. In the endpoint-control run, the primary estimator uses coarsened exact matching within `model x probe_family` on final-layer entropy, final top-1 confidence, and final top-1/top-2 margin. Matching retains at least `79.6%` of token steps per model/probe branch, with maximum post-match endpoint-covariate SMD `0.057` and no malformed branches. On matched token steps, dense-family late `KL(layer || own final)` remains higher for IT than PT under both raw (`+0.425` nats, 95% CI `[+0.356, +0.493]`) and tuned (`+0.762` nats, 95% CI `[+0.709, +0.814]`) probes. Endpoint-free path checks under the same matching also remain positive: remaining adjacent JS is `+0.052` and future top-1 flips are `+0.203` for IT minus PT. Thus the convergence-gap result remains endpoint-relative by definition, and this control does not exhaust all possible endpoint properties. What it does show is that, under direct matching on final entropy, confidence, and top-1/top-2 margin, the dense-family late IT>PT KL gap remains large and positive.
+
+A separate PT/IT separation appears when token histories are held fixed. This test removes the own-final endpoint from the readout: if the convergence-gap result were only an artifact of comparing each model to its own final distribution, PT and IT same-layer distributions need not separate under identical histories. Instead, replaying identical teacher continuations through the PT control and intact IT model gives dense-family same-layer JS divergence of `0.106` through the pre-late stack and `0.169` in the final 20%, with `final20 > pre` in all five dense families. Thus the convergence gap is not only a free-running history artifact or an own-final endpoint artifact, although JS remains a companion readout rather than a replacement for the convergence metric.
+
+![Figure 2: Same-history JS check. Under identical teacher-forced token histories, PT and IT same-layer output distributions still differ without using either model's own final endpoint. This makes the delayed-stabilization result less likely to be only a free-running-history or endpoint-comparison artifact, while leaving the stronger convergence interpretation to the intervention and first-divergence tests.](../results/exp16_matched_prefix_js_gap/exp16_js_replay_runpod_20260422_075307/exp16_js_main.png)
+
+Appendix A gives endpoint-matching, probe, commitment, per-family, and reverse-teacher robustness views.
+
+### 3.2 Late MLPs control the delayed-stabilization signature
+
+Which depth window most controls delayed stabilization under identical token histories? We graft IT MLPs into one equal-width early, middle, or late window of a PT host while forcing the same IT-generated continuation, then measure the convergence gap of each intervened branch against its own endpoint.
+
+The late graft is the only window that consistently recreates the delayed-stabilization signature. On the dense-family mean, the final-20% KL effect is `+0.34` nats for PT with late IT MLPs grafted in, versus `-0.03` early and `-0.05` middle. The raw late-graft effect is positive in all five dense families (`+0.115` to `+0.609` nats), and leave-one-family-out dense means remain positive (`+0.274` to `+0.398`), so the result is not driven by a single family (Appendix A, Table S18b). The raw-versus-template control gives nearly identical late effects, arguing that this is not only a chat-template surface artifact.
+
+The mirrored swap test asks whether removing late IT MLPs from an IT host also removes the delay. It does: replacing late IT MLPs with PT MLPs produces the largest collapse of IT delayed stabilization, with a dense-family mean effect of `-0.51` nats versus `-0.10` early and `-0.23` middle.
+
+![Figure 3: Symmetric graft/swap localization. Left and center: late MLP substitutions have the largest convergence-gap effect in both directions, recreating the delay in a PT host and collapsing it in an IT host. Right: output-relevant late-stage summaries predict the late KL shift better than residual-opposition alone. The matched random-control number in the text checks that this is not a generic late-window perturbation effect.](../results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_causal_main.png)
+
+A matched random-control follow-up rules out the simplest "late layers are fragile" explanation. Replacing the learned late IT-minus-PT MLP effect with matched random residual-projection controls gives a dense-family final-20% KL effect of `+0.003` nats, compared with `+0.327` for the true late graft. Thus late MLP substitutions specifically carry the delayed-stabilization effect, rather than merely perturbing a sensitive late window. Appendix A gives per-family, weight-change, geometry, and random-control details.
+
+### 3.3 Candidate identity is middle-sensitive; late amplification is context-gated
+
+At prefixes where PT and IT first choose different next tokens, which depth window changes the token identity and which changes the final margin? The first-divergence test evaluates intervened models at the shared prefix, and the companion MLP write-out test measures each window's finite-difference logit support for the PT token, the IT token, top alternatives, and residual-opposing components. All intervals in this subsection are 95% percentile bootstrap intervals over dense-family prompt-level first-divergence records.
+
+The token-choice test gives the identity side. Under raw-shared prompting, PT with middle IT MLPs grafted in matches the IT divergent token more often than PT with late IT MLPs grafted in (`26.0%`, 95% CI `[24.5%, 27.7%]`, versus `17.6%`, 95% CI `[16.2%, 18.9%]`). The mirror comparison points the same way: IT with middle PT MLPs swapped in transfers the PT token more often than IT with late PT MLPs swapped in (`31.2%`, 95% CI `[29.6%, 32.9%]`, versus `20.8%`, 95% CI `[19.4%, 22.3%]`).
+
+The margin tests show why the late window still matters. In native IT-host swaps, replacing late IT MLPs with PT MLPs produces the largest single-window IT-vs-PT margin drop (`13.25` logits, 95% CI `[12.91, 13.61]`) relative to early (`11.53`, 95% CI `[11.20, 11.88]`) and middle (`12.01`, 95% CI `[11.66, 12.35]`) swaps. In pure IT runs, MLP support for the IT divergent token is overwhelmingly late: early `-0.041` logits (95% CI `[-0.049, -0.032]`), middle `+0.021` logits (95% CI `[+0.011, +0.032]`), late `+0.789` logits (95% CI `[+0.754, +0.825]`). The PT-to-IT change in that support is also concentrated late: early `+0.034` logits (95% CI `[+0.027, +0.042]`), middle `+0.070` logits (95% CI `[+0.059, +0.080]`), late `+0.715` logits (95% CI `[+0.683, +0.747]`).
+
+The local MLP-only proxy also shows what late MLPs are not. Adding late IT MLP updates to a PT host changes the same fixed-prefix IT-vs-PT margin by only `+0.0035` logits (95% CI `[-0.001, +0.009]`). Thus the native IT late write-out is not a portable plug-in module that works independently of the residual stream entering it.
+
+![Figure 4: Candidate transfer and context-gated late amplification. First-divergence tests show that middle substitutions transfer PT-vs-IT token identity more, while late IT MLP windows provide the strongest native IT-token support and margin contribution only when the upstream state is IT-shaped. The full MLP update carries the IT-vs-PT margin write-in; the negative-parallel residual component is only a geometric marker.](../results/paper_synthesis/exp20_exp21_handoff_synthesis.png)
+
+The stronger cooperation test patches the full residual state at the late-window boundary and runs the downstream late stack/readout under a common PT or IT readout. Under the common IT readout, swapping in the IT late stack shifts the IT-vs-PT margin by `+0.572` logits (95% CI `[+0.495, +0.650]`) from a PT upstream state, but by `+3.207` logits (95% CI `[+3.091, +3.325]`) from an IT upstream state. The matched 2x2 decomposition gives a late-stack main effect of `+1.890` logits (95% CI `[+1.803, +1.969]`), a larger upstream-context effect of `+4.239` logits (95% CI `[+4.097, +4.379]`), and a positive interaction of `+2.635` logits (95% CI `[+2.540, +2.734]`). The common PT readout agrees (`+0.609`, 95% CI `[+0.541, +0.679]`, versus `+3.218`, 95% CI `[+3.101, +3.329]`, for IT-late given PT versus IT upstream). This is the most direct test of the handoff claim: late IT computation is important, but its effect is much larger when the state entering it is already IT-shaped.
+
+![Figure 5: Residual-state x late-stack factorial. At first-divergence prefixes, the full IT late stack/readout has a positive effect from PT upstream state, but a much larger effect from IT upstream state. Positive interaction under common PT and common IT readouts supports context-gated readout rather than a standalone late assistant module.](../results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/exp23_midlate_interaction.png)
+
+The synthesis is the paper's headline. At the granularity tested here, middle windows are more diagnostic of which PT- or IT-like token candidate is exposed. Late MLP and late-stack windows then help selected IT-like candidates dominate the final distribution, but not in isolation: the same late computation is positive yet much smaller from a PT upstream state, and strongest when the residual stream is already IT-shaped. The convergence gap is therefore not the birthplace of instruction-tuned behavior; it is a signature of the late-window cost of turning selected instruction-tuned candidates into final next-token predictions. Appendices A and F give the token-flow chronology, residual-opposition decomposition, and mid+late interaction details.
+
+### 3.4 Behavioral consistency check
+
+The internal localization claim does not require behavioral support, but the same intervention family changes natural-decoding outputs in the predicted direction. Under LLM judging on the dense-family 600-prompt behavioral subset, replacing late IT MLPs with PT MLPs produces the strongest IT-side degradation on assistant register (`G2`, `+0.42` worsening, 95% CI `[+0.27, +0.62]`) and benign false-refusal control (`S2`, `+0.05`, 95% CI `[+0.02, +0.10]`). Grafting late IT MLPs into PT produces smaller but measurable movement: blind pairwise judging prefers PT with late IT MLPs grafted in over the PT baseline on `56.3%` of resolved assistant-register items and `63.8%` of resolved benign-safety items. A completed two-rater blind human audit agrees directionally on the four primary pairwise contrasts, while high tie/both-bad rates and heterogeneous agreement keep the claim bounded. Appendix B gives the judge design, Figure B1, human-audit tables, and κ caveats.
+
+## 4. Related Work and Discussion
+
+Late sharpening is not new by itself. The logit-lens and tuned-lens line of work makes late-layer prediction dynamics visible (nostalgebraist, 2020; Belrose et al., 2023), Lad et al. (2024) frames late computation as residual sharpening after earlier candidate construction, and Joshi et al. (2025) studies late confidence calibration after decision certainty has emerged. We use the convergence gap as an aggregate signature of delayed stabilization, not as the novelty claim in isolation. The contribution is the PT/IT first-divergence decomposition: at the exact prefix where paired checkpoints choose different next tokens, depth interventions separate candidate transfer from context-gated late readout.
+
+Post-training model-diffing and activation-patching papers ask nearby questions. Wu et al. (2024) studies instruction-conditioned behavioral shift, Du et al. (2025) compares base and post-trained models across knowledge, truthfulness, refusal, and confidence, and Prakash et al. (2024) uses cross-model activation patching to study entity tracking. We use related intervention logic, but the target is different: natural PT/IT next-token disagreement under matched-prefix control. This lets us ask whether post-training changes which token candidate is exposed, whether it changes the final margin, or whether the two effects interact.
+
+Instruction-vector and layer-localization work is especially close to our interpretation. Bigoulaeva et al. (2026) identify instruction vectors and argue that later information pathways are selected conditional on earlier task representations. Zhao, Ziser, and Cohen (2024) study where multi-task information appears across layers in instruction-tuned models, while Nepal et al. (2025) show that layer importance for mathematical reasoning can remain stable across post-training methods. These results make it unsurprising that post-training effects are not confined to a single late module. Our contribution is narrower and more controlled: we condition on the first natural PT/IT next-token disagreement, hold histories fixed, and ask which depth interventions move token identity versus IT-vs-PT margin.
+
+Behavioral-direction papers explain why the late amplification effect should not be confused with a complete assistant module. Arditi et al. (2024), Lu et al. (2026), Stolfo et al. (2024), Turner et al. (2023), Zou et al. (2023), and Panickssery et al. (2024) show that activation-space directions can control refusal, assistant persona, instruction following, or high-level behavior. Li et al. (2025) and Chaudhury (2025) also find safety or preference effects in middle bands. Our first-divergence result is compatible with that picture rather than a foil to it: middle windows are more tied to which behaviorally relevant token candidate is selected, while late MLP and late-stack windows are where our readouts find the clearest context-gated final-token amplification.
+
+Taken together, the evidence supports a coarse-window account: IT models stabilize later to their own final predictions, late MLP substitutions most strongly control that delayed-stabilization signature, and first-divergence tests show middle-sensitive candidate transfer plus context-gated late readout. The paper does not claim to recover a named middle-layer feature feeding a named late write-in circuit. It identifies a cross-family route decomposition that future circuit work can make more surgical.
+
+## 5. Limitations and Next Tests
+
+The causal claim is window-level, not circuit-level. MLP grafts and swaps localize causal leverage on specified readouts, and the residual-state x late-stack factorial tests cooperation between an upstream state and downstream late computation, but neither identifies a complete feature circuit. The early/middle/late windows are coarse stage probes and can overlap; Appendix F reports the exact boundaries and explains why the result should not be read as a sharp layer-index boundary. The directly supported claim is candidate-transfer plus context-gated late readout under these windows.
+
+The convergence gap is endpoint-relative by design: it asks how far each layer is from the same model's eventual next-token prediction. Endpoint-matched controls show that the measured late KL gap remains after balancing final entropy, confidence, and top-1/top-2 margin, while same-history JS replay removes the own-final endpoint from a companion readout. These controls do not exhaust all final-distribution properties; the main claims rest on the conjunction of endpoint matching, same-history replay, graft/swap localization, matched random controls, and first-divergence token tests.
+
+The empirical scope is five dense 4B-8B families. This breadth is unusual for mechanistic model diffing, but it is not frontier-scale validation and it excludes MoE claims from the main pool. The DeepSeek-V2-Lite run is retained only as an appendix side case because MoE MLP grafts also perturb routing and expert selection. Larger dense models and a second MoE family are natural external-validity tests.
+
+The behavioral evidence is a consistency check, not a standalone benchmark. LLM judging and the completed human audit agree directionally on the primary pairwise contrasts, but high tie/both-bad rates and heterogeneous κ keep the behavioral result from carrying the mechanistic claim. The internal localization result does not depend on those labels.
+
+The residual-state x late-stack factorial closes the biggest internal gap in the previous version, but leaves a sharper follow-up: feature-level mediation inside the upstream state. The present experiment shows that IT-shaped upstream residual state and IT late computation interact strongly on the first-divergence margin; it does not identify which upstream features, attention heads, or MLP directions carry that state. The next circuit-level test is therefore not another coarse window swap, but a feature- or subspace-level mediation test inside the middle-to-late handoff.
+
+---
+
+## References
+
+Aghajanyan, A., et al. (2021). Intrinsic Dimensionality Explains the Effectiveness of Language Model Fine-Tuning. *ACL 2021*. arXiv:2012.13255.
+
+Ansuini, A., et al. (2019). Intrinsic Dimension of Data Representations in Deep Neural Networks. *NeurIPS 2019*. arXiv:1905.12784.
+
+Arditi, A., et al. (2024). Refusal in Language Models Is Mediated by a Single Direction. *arXiv:2406.11717*.
+
+Belrose, N., et al. (2023). Eliciting Latent Predictions from Transformers with the Tuned Lens. *COLM 2024*. arXiv:2303.08112.
+
+Bigoulaeva, I., Rohweder, J., Dutta, S., & Gurevych, I. (2026). Patches of Nonlinearity: Instruction Vectors in Large Language Models. *arXiv:2602.07930*.
+
+Bricken, T., et al. (2023). Towards Monosemanticity: Decomposing Language Models with Dictionary Learning. *Anthropic*.
+
+Chaudhury, A. (2025). Alignment is Localized: A Causal Probe into Preference Layers. *arXiv:2510.16167*.
+
+Cheng, E., Doimo, D., Kervadec, C., Macocco, I., Yu, J., Laio, A., & Baroni, M. (2024). Emergence of a High-Dimensional Abstraction Phase in Language Transformers. *ICLR 2025*. arXiv:2405.15471.
+
+Chuang, Y., et al. (2024). DoLA: Decoding by Contrasting Layers Improves Factuality. *ICLR 2024*. arXiv:2309.03883.
+
+Conmy, A., Mavor-Parker, A. N., Lynch, A., Heimersheim, S., & Garriga-Alonso, A. (2023). Towards Automated Circuit Discovery for Mechanistic Interpretability. *NeurIPS 2023*. arXiv:2304.14997.
+
+Cui, G., et al. (2025). The Entropy Mechanism of Reinforcement Learning for Reasoning Language Models. *arXiv:2505.22617*.
+
+Du, H., Li, W., Cai, M., Saraipour, K., Zhang, Z., Lakkaraju, H., Sun, Y., & Zhang, S. (2025). How Post-Training Reshapes LLMs: A Mechanistic View on Knowledge, Truthfulness, Refusal, and Confidence. *COLM 2025*. arXiv:2504.02904.
+
+Dubois, Y., Galambosi, B., Liang, P., & Hashimoto, T. B. (2024). Length-Controlled AlpacaEval: A Simple Way to Debias Automatic Evaluators. *COLM 2024*. arXiv:2404.04475.
+
+Dunefsky, J., et al. (2024). Transcoders Find Interpretable LLM Feature Circuits. *arXiv:2406.11944*.
+
+Elhage, N., et al. (2021). A Mathematical Framework for Transformer Circuits. *Anthropic*.
+
+Elhage, N., et al. (2022). Toy Models of Superposition. *Anthropic Transformer Circuits Thread*. arXiv:2209.10652.
+
+Facco, E., et al. (2017). Estimating the Intrinsic Dimension of Datasets by a Minimal Neighborhood Information. *Scientific Reports*.
+
+Friston, K. (2005). A Theory of Cortical Responses. *Philosophical Transactions of the Royal Society B*, 360(1456), 815–836.
+
+Geva, M., Schuster, R., Berant, J., & Levy, O. (2022). Transformer Feed-Forward Layers Are Key-Value Memories. *EMNLP 2022*. arXiv:2012.14913.
+
+Gold, J. I., & Shadlen, M. N. (2007). The Neural Basis of Decision Making. *Annual Review of Neuroscience*, 30, 535–574.
+
+Guerdan, L., Barocas, S., Holstein, K., Wallach, H., Wu, S., & Chouldechova, A. (2025). Validating LLM-as-a-Judge Systems under Rating Indeterminacy. *NeurIPS 2025*. OpenReview.
+
+Hyland, K. (2005). *Metadiscourse: Exploring Interaction in Writing*. Continuum.
+
+Iacus, S. M., King, G., & Porro, G. (2012). Causal Inference Without Balance Checking: Coarsened Exact Matching. *Political Analysis*, 20(1), 1-24.
+
+Heimersheim, S., & Nanda, N. (2024). How to Use and Interpret Activation Patching. *arXiv:2404.15255*.
+
+Hewitt, J., Liu, N. F., Liang, P., & Manning, C. D. (2024). Instruction Following without Instruction Tuning. *arXiv:2409.14254*.
+
+Jain, S., Lubana, E. S., Oksuz, K., Joy, T., Torr, P. H. S., Sanyal, A., & Dokania, P. K. (2024). What Makes and Breaks Safety Fine-tuning? A Mechanistic Study. *NeurIPS 2024*. arXiv:2407.10264.
+
+Joad, F., et al. (2026). There Is More to Refusal in Large Language Models than a Single Direction. *arXiv:2602.02132*.
+
+Joshi, A., Ahmad, A., & Modi, A. (2025). Calibration Across Layers: Understanding Calibration Evolution in LLMs. *EMNLP 2025*. arXiv:2511.00280.
+
+Lad, F., et al. (2024). The Remarkable Robustness of LLMs: Stages of Inference? *arXiv:2406.19384*.
+
+Levelt, W. J. M. (1989). *Speaking: From Intention to Articulation*. MIT Press.
+
+Li, S., Yao, L., Zhang, L., & Li, Y. (2025). Safety Layers in Aligned Large Language Models: The Key to LLM Security. *ICLR 2025*. arXiv:2408.17003.
+
+Lin, B. Y., et al. (2024). The Unlocking Spell on Base LLMs: Rethinking Alignment via In-Context Learning. *ICLR 2024*. arXiv:2312.01552.
+
+Lindsey, J., Templeton, A., Marcus, J., Conerly, T., Batson, J., & Olah, C. (2024). Sparse Crosscoders for Cross-Layer Features and Model Diffing. *Transformer Circuits Thread*.
+
+Liu, Y., Iter, D., Xu, Y., Wang, S., Xu, R., & Zhu, C. (2023). G-Eval: NLG Evaluation Using GPT-4 with Better Human Alignment. *EMNLP 2023*. arXiv:2303.16634.
+
+Lu, C., Gallagher, J., Michala, J., Fish, K., & Lindsey, J. (2026). The Assistant Axis: Situating and Stabilizing the Default Persona of Language Models. *arXiv:2601.10387*.
+
+Meng, K., Bau, D., Andonian, A., & Belinkov, Y. (2022). Locating and Editing Factual Associations in GPT. *NeurIPS 2022*. arXiv:2202.05262.
+
+Nanda, N., & Lieberum, T. (2022). A Mechanistic Interpretability Analysis of Grokking. *ICLR MATH-AI Workshop 2023*.
+
+Nepal, A., Shrestha, S., Shrestha, A., Kim, M., Naghiyev, J., Shwartz-Ziv, R., & Ross, K. (2025). Layer Importance for Mathematical Reasoning is Forged in Pre-Training and Invariant after Post-Training. *arXiv:2506.22638*.
+
+nostalgebraist. (2020). interpreting GPT: the logit lens. *LessWrong*.
+
+Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C. L., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al. (2022). Training Language Models to Follow Instructions with Human Feedback. *NeurIPS 2022*. arXiv:2203.02155.
+
+Panickssery, N., Gabrieli, N., Schulz, J., Tong, M., Hubinger, E., & Turner, A. M. (2024). Steering Llama 2 via Contrastive Activation Addition. *ACL 2024*. arXiv:2312.06681.
+
+Panigrahi, A., Saunshi, N., Zhao, H., & Arora, S. (2023). Task-Specific Skill Localization in Fine-tuned Language Models. *ICML 2023*. arXiv:2302.06600.
+
+Park, K., Choe, Y. J., & Veitch, V. (2023). The Linear Representation Hypothesis and the Geometry of Large Language Models. *arXiv:2311.03658*.
+
+Prakash, N., Shaham, T. R., Haklay, T., Belinkov, Y., & Bau, D. (2024). Fine-Tuning Enhances Existing Mechanisms: A Case Study on Entity Tracking. *ICLR 2024*. arXiv:2402.14811.
+
+Rafailov, R., et al. (2023). Direct Preference Optimization: Your Language Model Is Secretly a Reward Model. *NeurIPS 2023*. arXiv:2305.18290.
+
+Rocchetti, E., & Ferrara, A. (2026). How LLMs Follow Instructions: Skillful Coordination, Not a Universal Mechanism. *arXiv:2604.06015*.
+
+Saxe, A. M., et al. (2018). On the Information Bottleneck Theory of Deep Learning. *ICLR 2018*.
+
+Shwartz-Ziv, R., & Tishby, N. (2017). Opening the Black Box of Deep Neural Networks via Information. *arXiv:1703.00810*.
+
+Singh, A., et al. (2024). Representation Surgery: Theory and Practice of Affine Steering in Language Models. *arXiv:2402.09631*.
+
+Song, Y., et al. (2025). Bridging the Dimensional Chasm: Uncover Layer-wise Dimensional Reduction in Transformers through Token Correlation. *arXiv:2503.22547*.
+
+Stolfo, A., et al. (2024). Improving Instruction-Following in Language Models through Activation Steering. *arXiv:2410.12877*.
+
+Templeton, A., et al. (2024). Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet. *Anthropic*.
+
+Turner, A. M., et al. (2023). Steering Language Models With Activation Engineering. *arXiv:2308.10248*.
+
+van der Lee, C., Gatt, A., van Miltenburg, E., Wubben, S., & Krahmer, E. (2019). Best Practices for the Human Evaluation of Automatically Generated Text. *INLG 2019*.
+
+Wang, P., Li, L., Chen, L., Cai, Z., Zhu, D., Lin, B., Cao, Y., Liu, Q., Liu, T., & Sui, Z. (2023). Large Language Models Are Not Fair Evaluators. *ACL 2024*. arXiv:2305.17926.
+
+Wang, K., Variengien, A., Conmy, A., Shlegeris, B., & Steinhardt, J. (2022). Interpretability in the Wild: A Circuit for Indirect Object Identification in GPT-2 Small. *ICLR 2023*. arXiv:2211.00593.
+
+Wei, R., Du, R., Yu, H., Tiwari, D., Li, J., Xu, Z., & Wang, H. (2026). The Diminishing Returns of Early-Exit Decoding in Modern LLMs. *arXiv:2603.23701*.
+
+Wu, X., Yao, W., Chen, J., Pan, X., Wang, X., Liu, N., & Yu, D. (2024). From Language Modeling to Instruction Following: Understanding the Behavior Shift in LLMs after Instruction Tuning. *NAACL 2024*. arXiv:2310.00492.
+
+Xu, Z., et al. (2025). Rethinking Fine-Tuning when Scaling Test-Time Compute: Limiting Confidence Improves Mathematical Reasoning. *NeurIPS 2025*. arXiv:2502.07154.
+
+Zheng, L., Chiang, W.-L., Sheng, Y., Zhuang, S., Wu, Z., Zhuang, Y., Li, D., Gonzalez, J. E., Xing, E. P., Zhang, H., & Stoica, I. (2023). Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. *NeurIPS 2023 Datasets and Benchmarks*. arXiv:2306.05685.
+
+Zhao, Z., Ziser, Y., & Cohen, S. B. (2024). Layer by Layer: Uncovering Where Multi-Task Learning Happens in Instruction-Tuned Large Language Models. *EMNLP 2024*. arXiv:2410.20008.
+
+Zou, A., et al. (2023). Representation Engineering: A Top-Down Approach to AI Transparency. *arXiv:2310.01405*.
+
+---
+
+## Appendix A: Supplementary Evidence Map
+
+This appendix keeps the full diagnostic surface, grouped by the role each artifact plays in the argument.
+
+### A1: Geometry and weight-change controls
+
+[Figure S17: Generation-step × layer heatmap for Gemma 3 4B. Four panels showing δ-cosine stability across generation steps.](figures/it_plot10_generation_heatmap.png)
+[Figure S18: Per-layer weight change localization (PT -> IT) across the five dense families plus a separate DeepSeek MoE side case. Gemma shows late-layer concentration; the other dense families show more diffuse changes.](../results/exp09_cross_model_observational_replication/plots/L3_weight_diff_6panel.png)
+
+[Figure S20: δ-cosine profiles across the five dense families plus a separate DeepSeek MoE side case. IT (solid) vs PT (dashed). Gemma shows the largest late IT-vs-PT shift; Llama shows the weakest sustained shift because its PT variant already exhibits substantial late opposition.](../results/exp09_cross_model_observational_replication/plots/L1_delta_cosine_6panel.png)
+
+**Table S18a: depth-ablation effect normalized by window weight-change proxy.** `Δ KL` is the matched-prefix PT-side final-20% `B_window - A'` effect. `Mean ΔW` is the mean per-layer MLP weight-change proxy from Figure S18 over the same graft window. `Δ KL / Mean ΔW` is a descriptive scale-normalized diagnostic, not a formal parameter-efficiency estimand. Late is the largest raw effect and the largest normalized effect in every family, while the largest weight-change window is not consistently late.
+
+| Family | Early ΔKL / Mean ΔW | Mid ΔKL / Mean ΔW | Late ΔKL / Mean ΔW | Largest ΔW window |
+|---|---:|---:|---:|---|
+| Gemma 3 4B | `-5.5` | `-14.0` | `146.6` | Mid |
+| Llama 3.1 8B | `-236.7` | `-148.9` | `453.2` | Late |
+| Qwen 3 4B | `-38.8` | `-60.1` | `184.4` | Late |
+| Mistral 7B | `878.2` | `736.2` | `1754.4` | Mid |
+| OLMo 2 7B | `0.6` | `27.1` | `130.3` | Mid |
+| DeepSeek-V2-Lite | `-11.4` | `-55.1` | `234.7` | Late |
+
+The dense-family mean raw effect is `+0.341` nats late versus `-0.035` early and `-0.045` mid, while mean window weight-change is nearly identical for middle and late (`0.00180` vs `0.00179`). Thus the late causal effect is not explained by a systematically larger late MLP weight delta in the dense-family pool.
+
+**Table S18b: per-family raw late effect and leave-one-family-out sensitivity.** Mistral is extreme only on the weight-normalized ratio because its `Mean ΔW` denominator is unusually small; it is not an outlier in raw late effect and does not drive the dense-family mean.
+
+| Family | Raw late ΔKL | Late Mean ΔW | Late ΔKL / Mean ΔW | Dense-4 mean if removed |
+|---|---:|---:|---:|---:|
+| Gemma 3 4B | `+0.609` | `0.004156` | `146.6` | `+0.274` |
+| Llama 3.1 8B | `+0.310` | `0.000685` | `453.2` | `+0.349` |
+| Qwen 3 4B | `+0.491` | `0.002661` | `184.4` | `+0.304` |
+| Mistral 7B | `+0.115` | `0.000066` | `1754.4` | `+0.398` |
+| OLMo 2 7B | `+0.181` | `0.001392` | `130.3` | `+0.381` |
+| Dense-5 mean | `+0.341` | — | — | — |
+
+The leave-one-family-out means remain positive in every case. Removing Mistral increases the dense-family mean, so the pooled raw late-graft effect is not Mistral-driven. The large Mistral normalized value instead reflects a small absolute PT→IT MLP RMS weight-change denominator (`6.6e-5`) paired with a modest positive raw effect.
+
+[Figure S21: Cross-model δ-cosine heatmaps. Full layer x generation-step heatmaps for the five dense families plus the DeepSeek side case (PT and IT side by side), showing the distribution of MLP opposition across the full forward pass.](../results/exp09_cross_model_observational_replication/plots/L1_heatmaps_6x2.png)
+
+### A2: Feature-level supplements
+
+[Figure S23: Feature importance analysis. Per-feature contribution to late post-training computation at layers 20–33, showing the distribution of importance across transcoder features.](../results/exp03_corrective_stage_characterization/plots/plot_e3_11_feature_importance.png)
+
+[Figure S24: Feature population dynamics. Gini coefficient and N50 distributions for IT vs PT at late layers, quantifying the broadening of the active feature repertoire.](../results/exp03_corrective_stage_characterization/plots/plot_feature_populations.png)
+
+### A3: Probe and commitment robustness
+
+[Figure S25: Tuned-lens validation. KL(layer ell || final) for the five dense PT variants plus the DeepSeek side case. Red = tuned logit lens, blue = raw logit lens. The tuned lens substantially reduces KL at intermediate layers for Llama, Qwen, Mistral, and OLMo, with the DeepSeek side case behaving similarly. Gemma improves only modestly at comparable depth, indicating weaker probe quality for its hybrid local/global attention architecture rather than total probe failure. We therefore report both tuned and raw results throughout, and interpret Gemma's tuned-lens thresholded metrics with extra caution.](../results/exp09_cross_model_observational_replication/plots/tuned_lens_validation_kl_to_final.png)
+
+**Table S25a: raw-vs-tuned sensitivity for the convergence-gap discovery metric.** Values are mean IT-minus-PT `KL(layer || own final)` differences from the existing cross-family discovery summaries. The raw lens does not remove the dense-family headline effect: the dense-5 final-half convergence gap is larger under raw lens (`0.771`) than tuned lens (`0.410`), and Gemma's own raw final-half gap (`1.008`) is larger than its tuned value (`0.351`). Excluding Gemma leaves the dense-family late-half raw gap positive (`0.712`), so the dense-family late stabilization result is not driven by Gemma's weak tuned-lens probe. The all-run row with DeepSeek is reported only as an appendix side case. This table is a sensitivity check for the discovery readout, not a raw-only rerun of every matched-prefix KL intervention; the matched-prefix JS replay and first-divergence token projections are the non-tuned companion evidence for those later claims.
+
+| Scope | Lens | Early third | Middle third | Late third | Final-half CG | Full-stack mean |
+|---|---:|---:|---:|---:|---:|---:|
+| Dense-5 + MoE side case | Tuned | `0.617` | `0.558` | `0.303` | `0.398` | `0.492` |
+| Dense-5 + MoE side case | Raw | `0.330` | `0.598` | `0.638` | `0.729` | `0.526` |
+| Dense-5 | Tuned | `0.616` | `0.536` | `0.329` | `0.410` | `0.493` |
+| Dense-5 | Raw | `0.177` | `0.420` | `0.771` | `0.771` | `0.461` |
+| Dense-5 excluding Gemma | Tuned | `0.487` | `0.545` | `0.324` | `0.425` | `0.453` |
+| Dense-5 excluding Gemma | Raw | `-0.228` | `0.217` | `0.734` | `0.712` | `0.251` |
+| Gemma only | Tuned | `1.133` | `0.500` | `0.350` | `0.351` | `0.652` |
+| Gemma only | Raw | `1.797` | `1.231` | `0.922` | `1.008` | `1.305` |
+
+[Figure S26: KL-to-final trajectories in Gemma 3 4B. IT (solid) shows elevated KL-to-final at late layers (20–33), converging to the 0.1 nat threshold later than PT (dashed).](../results/exp03_corrective_stage_characterization/plots/plot6_kl_trajectory.png)
+
+[Figure S27: Mind-change analysis in Gemma 3 4B. Per-layer mind-change rates by token category. IT's late layers (20–33) show a sharp spike in mind-changes, with many targeting structural and discourse tokens.](../results/exp03_corrective_stage_characterization/plots/plot_e3_10_mind_change.png)
+
+[Figure S28: Adjacent-layer KL divergence in Gemma 3 4B. IT (solid red) shows three discrete revision phases: early (layers 5–6), mid (15–17), and late (27–28), while PT (dashed blue) shows lower and more uniform prediction revision across layers.](../results/exp03_corrective_stage_characterization/plots/plot_e3_12_adjacent_layer_kl.png)
+
+[Figure S29: Candidate reshuffling in Gemma 3 4B. Number of unique top-1 candidates encountered up to each layer. IT (red) shows rapid expansion in late layers; PT (blue) stabilizes earlier.](../results/exp03_corrective_stage_characterization/plots/plot_e3_13_candidate_reshuffling.png)
+
+[Figure S33: Alignment tax localization in Gemma 3 4B. Fraction of total activation mass allocated to IT-amplified features by layer depth. Late layers (20–33) show 14–16% of activation mass at layers 28–33.](../results/exp03_corrective_stage_characterization/plots/plot5_alignment_tax.png)
+
+[Figure S33b: Raw vs tuned logit lens commitment scatter. Per-step top-1 commitment layer under raw (x-axis) vs tuned (y-axis) logit lens. Points below the diagonal indicate tuned lens commits earlier (i.e., the tuned lens reveals earlier convergence that the raw lens misses). For most models, the tuned lens detects commitment at earlier absolute layers — consistent with its more faithful intermediate predictions — while preserving the IT > PT ordering.](../results/exp09_cross_model_observational_replication/plots/L2_raw_vs_tuned_scatter.png)
+
+[Figure S34: Alternative commitment definitions. Commitment delay under majority-vote (≥90% subsequent layers KL < 0.1) for tuned and raw logit lens. The delay pattern replicates under this more conservative definition.](../results/exp09_cross_model_observational_replication/plots/L2_commitment_tuned_majority_0.1.png)
+
+[Figure S35: KL threshold sensitivity (full). Mean commitment vs KL threshold τ for both tuned (red) and raw (blue) lenses. The IT–PT gap is consistent across thresholds from 0.05 to 1.0 nats.](../results/exp09_cross_model_observational_replication/plots/L2_pure_kl_threshold_sensitivity.png)
+
+[Figure S36: Cosine and entropy commitment. Commitment defined via cosine similarity (cos(h_ℓ, h_final) > 0.95) and entropy convergence (|H_ℓ − H_final| < 0.2). These representation-space metrics show minimal IT–PT difference, establishing that the convergence gap is a logit-space phenomenon.](../results/exp09_cross_model_observational_replication/plots/L2_commitment_cosine_0.95.png)
+
+[Figure S37: Commitment CDF by normalized depth. Cumulative distribution of commitment layers for PT (dashed) and IT (solid), four methods. The rightward shift of IT CDFs is visible under KL-based metrics but absent under top-1 for some models — confirming the delay is distributional, not merely an argmax effect.](../results/exp09_cross_model_observational_replication/plots/L2_commitment_cdf_4methods.png)
+
+[Figure S38: Endpoint-matched convergence-gap check. Token steps are matched within `model x probe_family` on final-layer entropy, final top-1 confidence, and final top-1/top-2 margin. IT retains a higher late `KL(layer || own final)` under raw and tuned probes, and endpoint-free path metrics also remain positive.](../results/paper_synthesis/exp22_endpoint_deconfounded_summary.png)
+
+**Table S38: endpoint-matched convergence-gap control.** Dense-family endpoint-control run over 600 prompts per PT/IT branch. Matching is coarsened exact matching within `model x probe_family` on final entropy, final confidence, and final top-1/top-2 margin.
+
+| Quantity | Estimate |
+|---|---:|
+| Raw-probe late `KL(layer || own final)`, IT - PT | `+0.425` nats, 95% CI `[+0.356, +0.493]` |
+| Tuned-probe late `KL(layer || own final)`, IT - PT | `+0.762` nats, 95% CI `[+0.709, +0.814]` |
+| Remaining adjacent JS after endpoint matching, IT - PT | `+0.052`, 95% CI `[+0.048, +0.057]` |
+| Future top-1 flips after endpoint matching, IT - PT | `+0.203`, 95% CI `[+0.190, +0.215]` |
+| Minimum matched-token retention across model/probe branches | `0.796` |
+| Maximum post-match endpoint-covariate SMD | `0.057` |
+| Maximum malformed branch rate | `0.000` |
+
+### A4: Matched-prefix localization and behavioral consequence figures
+
+[Figure S41: Matched-prefix MLP graft trajectories across the five dense families plus a separate DeepSeek-V2-Lite MoE case. The intact IT model generates freely; the PT teacher-forced control and grafted PT branches are then forced to follow the same continuation. Solid lines show the raw-prompt branch and dashed lines the chat-template branch. The graft consistently reduces cross-KL to the IT teacher while reproducing the negative δ-cosine signature only partially in the dense-model pool.](../results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_400rand_v11_teacherforced/overview_trajectories.png)
+
+[Figure S42: PT-side graft depth ablation. Equal-width early, middle, and late IT-MLP grafts are compared under identical teacher-forced token histories in a PT host. The late graft is the only window that consistently recreates the final-window convergence-gap increase across the five dense families.](../results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_paper_main.png)
+
+[Figure S43: Free-running A/B/C output evaluation overview across all four judged metrics. A = PT raw, B = PT + late IT MLP graft under the same raw prompt, C = full IT model with its native chat template. B moves consistently toward C on benign false-refusal reduction, more selectively on assistant register, and only weakly on broad structure and harmful-prompt refusal.](../results/exp12_free_running_abc_graft/plots/exp12_eval_v1_20260413_v3/exp12_scores_overview.png)
+
+[Figure S44: Improvement relative to the PT baseline in the free-running A/B/C evaluation. Red = B − A, green = C − A. Positive bars indicate improvement for G1, G2, and S1; for S2, positive bars indicate a reduction in false refusal. The graft consistently captures part of the A→C gap, but remains well short of the full IT endpoint on most metrics.](../results/exp12_free_running_abc_graft/plots/exp12_eval_v1_20260413_v3/exp12_delta_vs_a.png)
+
+[Figure S45: Cross-family descriptive token-type analysis of the matched-prefix late stage. Left: displaced vs supported token classes under `A' -> B_late`. Center: teacher-token rank gain by collapsed token type. Right: token-type rank gain under early, middle, and late graft windows on the subset with recoverable raw depth traces. The late stage broadly supports the eventual teacher token and suppresses `FUNCTION/OTHER` raw-continuation-style alternatives, with a secondary formatting/discourse component.](../results/exp13_late_stage_token_support_analysis/exp13A_lite_20260415_live/exp13a_lite_paper_main.png)
+
+[Figure S46: Descriptive token-support appendix view. Per-model panels, candidate entry/exit distributions, and mind-change summaries for the matched-prefix token-type analysis.](../results/exp13_late_stage_token_support_analysis/exp13A_lite_20260415_live/exp13a_lite_appendix.png)
+
+[Figure S47: Symmetric matched-prefix graft/swap summary. Left: PT-side late-region KL deltas for early, middle, and late IT-MLP grafts relative to `A'`. Center: IT-side late-region KL deltas for early, middle, and late PT-MLP swaps relative to `C`. Right: dense-family predictive correlations for output-relevant late-stage summaries (`support_teacher`, `anti_top1`, `anti_kl_final`) and `δ`-cosine.](../results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_causal_main.png)
+
+[Figure S48: Symmetric graft/swap appendix view. Per-model bidirectional window-effect panels and late-stage mechanism summaries for the matched-prefix graft/swap analysis.](../results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_causal_appendix.png)
+
+[Figure S48b: Matched random-control specificity check. Actual IT graft deltas are compared with matched random residual-projection controls on final-20% KL-to-own-final. The dense-family late true effect is large while the matched random late effect is near zero, ruling out a generic same-window perturbation account for the main late KL result.](../results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/exp19B_final20_kl_true_vs_random.png)
+
+[Figure S49: Assistant-facing bucket deltas in the free-running LLM-judge behavioral follow-up. Dense-family pooled `G2` deltas by prompt bucket for PT-side grafts and IT-side swaps, highlighting that the largest late judge-rated degradation on the IT side concentrates on conversational and register-sensitive prompts.](../results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/exp15_paper_it_targeting.png)
+
+### A5: Same-history JS and candidate/amplification details
+
+[Figure S50: Matched-prefix native same-layer JS divergence under identical teacher tokens. Per-model `JS(A', C)` curves and dense-family pooled summaries show that broad PT↔IT output divergence is already present through much of the stack and amplifies late even when teacher histories are frozen.](../results/exp16_matched_prefix_js_gap/exp16_js_replay_runpod_20260422_075307/exp16_js_appendix_models.png)
+
+[Figure S51: Matched-prefix JS control view. PT-side and IT-side target-gap closure bars and host-local perturbation controls under matched prefix show that direct same-layer gap closure is more mid-to-late distributed than purely late, motivating the paper's “broad circuit, late delayed-stabilization window” synthesis rather than a strictly late-confined story.](../results/exp16_matched_prefix_js_gap/exp16_js_replay_runpod_20260422_075307/exp16_js_appendix_controls.png)
+
+[Figure S52: Reverse teacher-stream JS check. Replaying the same matched-prefix native-JS analysis with PT-generated continuations as teacher tokens again shows a broad dense-family PT↔IT same-layer JS gap. Late amplification is teacher-stream-dependent under token-step weighting, while prompt-mean aggregation still rises late; this supports the broad identical-history divergence claim while arguing against a strict teacher-stream-invariant late-confined interpretation. The Llama reverse replay excludes 11 empty PT-teacher continuations.](../results/exp16_matched_prefix_js_gap/exp16_js_reverse_pt_teacher_20260422_165259/plots/exp16_teacher_direction_comparison.png)
+
+[Figure S53: Token identity at the first PT/IT divergent token. Under the raw-shared prompt, middle swaps transfer opposite-model token identity more than late swaps, while native prompting shows the deployment-format counterpart.](../results/exp20_divergence_token_counterfactual/full_runpod_20260423_2148_combined_final/deep_dive/exp20_token_identity_dense5_ci.png)
+
+[Figure S54: Mid-vs-late IT-token margin effects. Late windows dominate IT-vs-PT token-margin changes, especially under the native IT chat template.](../results/exp20_divergence_token_counterfactual/full_runpod_20260423_2148_combined_final/deep_dive/exp20_mid_late_margin_dense5_ci.png)
+
+[Figure S55: Raw-shared per-model token-transfer heatmap. Across dense families, middle swaps generally transfer token identity more than late swaps, with DeepSeek reported separately as the MoE case in all-model outputs.](../results/exp20_divergence_token_counterfactual/full_runpod_20260423_2148_combined_final/deep_dive/exp20_raw_shared_model_transfer_heatmap.png)
+
+[Figure S56: Native PT/IT final-token margin flow. Dense-5 pooled mid and late window margin deltas for the finally emitted token, plus dense-family mid-selected/late-helped rates and per-model IT `FORMAT` late-minus-mid margin. Late IT windows produce the strongest margin gains, especially for `FORMAT` and `CONTENT`, while PT is flatter.](figures/exp18_pure_flow_overview.png)
+
+[Figure S57: Matched-prefix candidate/amplification chronology. Left: teacher-token rank gain by disjoint window under identical histories. Middle: strict rate at which a token is first selected in the middle window and then further helped late. Right: continuity view of `A' -> B_window` top-1 displacement. Format-like tokens become teacher-rank-positive only late, while content shows larger middle-window gains.](figures/exp18_handoff_summary.png)
+
+### A6: DeepSeek/MoE side case
+
+DeepSeek-V2-Lite is retained only as a descriptive side case wherever the experiments were run. It is not pooled into the main dense-family intervention, behavioral, endpoint-control, or first-divergence claims. We did not add a second MoE model or analyze router/expert-selection mechanisms, so the paper makes no claim about MoE generalization. The reason is methodological rather than cosmetic: in a MoE checkpoint, an MLP graft can change both expert computation and routing/expert selection, which is not directly comparable to dense MLP substitutions without additional controls.
+
+## Appendix B: Evaluation Methodology
+
+![Figure B1: Free-running behavioral consequence check. The same late intervention family produces measurable LLM-judge behavioral movement under natural decoding, but the figure is appendix material because behavior is a consistency check rather than the core internal localization evidence.](../results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/exp15_paper_behavior_main.png)
+
+### B1: LLM judge design and rubric definitions
+
+The behavioral run uses four pointwise judge tasks and two blind pairwise judge tasks. `G1` is a 1-5 score for response structure and formatting, independent of factual correctness. `G2` is a 1-5 score for assistant-like conversational register versus raw web-text continuation, applied to assistant-facing prompts. `S1` classifies harmful-request responses as `REFUSE`, `COMPLY`, or `INCOHERENT`; incoherence is not counted as refusal. `S2` is a binary benign false-refusal metric, where 1 means the model refused, over-hedged, or failed to engage with a safe request. Pairwise `G2` and `S2` ask which of two anonymized responses better satisfies the same criterion, with randomized A/B ordering and a `TIE` option.
+
+Pointwise judging uses a bulk model (`google/gemini-2.5-flash`) and a second model (`openai/gpt-4o-mini`) through the OpenRouter-compatible interface. The manifest also records an escalation model (`openai/gpt-4o`), parser versions, rubric hashes, dataset hash, pipeline hash, and output hash. Judge calls use temperature 0, are parsed into fixed schemas, and are retried on parser failure. Pointwise items are escalated if the two judge models differ by at least 2 points on `G1/G2`, disagree on `S1`, or disagree on `S2`. Pairwise judging uses the bulk model, is blind to model family and condition names, and uses randomized A/B presentation for `B_late` versus `A`, `C` versus `D_late`, and `C` versus `A`.
+
+The rubrics intentionally separate surface structure from assistant register and safety behavior. `G1` asks only about structure/formatting; `G2` asks whether the response behaves like a helpful assistant addressing the user; `S1` asks whether harmful prompts are refused; and `S2` asks whether benign safety prompts are incorrectly refused or over-hedged. Pairwise `G2` and `S2` are the primary behavioral readouts because they are condition-blind, randomized, and closer to the human-preference setup used in LLM-as-judge work. We do not use the judge to score factual correctness or content quality in these claims.
+
+Known LLM-judge failure modes motivate this design. Prior work finds that strong LLM judges can approximate human preferences but are sensitive to position, verbosity, self-enhancement, rating indeterminacy, and rubric design (Liu et al., 2023; Zheng et al., 2023; Wang et al., 2023; Dubois et al., 2024; Guerdan et al., 2025). We therefore use condition blinding, randomized order, a `TIE` option, fixed rubrics, schema-validated outputs, model-disagreement escalation, bootstrap uncertainty, and a completed blind human audit rather than treating the automated judge as ground truth.
+
+### B2: Human audit results
+
+The current behavioral run materialized blind human-audit packs for all five dense families: 120 pointwise audit items per model, 600 total. The primary pairwise human packet contains 1,200 blinded comparisons per rater: 60 items per dense model for each of four primary contrasts, `C` versus `D_late` on `G2`, `C` versus `D_late` on `S2`, `B_late` versus `A` on `G2`, and `B_late` versus `A` on `S2`. Two independent raters completed the returned CSVs in `paper_draft/human_eval_survey/pointwise/` and `paper_draft/human_eval_survey/pairwise/`; the hidden keys are kept separately under `paper_draft/human_eval_survey/keys/`.
+
+The human protocol follows standard NLG human-evaluation practice: independent blinded raters, unchanged row IDs, no access to condition or model labels, confidence ratings, optional notes for ambiguity, and frozen labels before unblinding (van der Lee et al., 2019). We do not adjudicate disagreements into a forced single label, because rating indeterminacy is itself informative for these outputs. Pairwise resolved rates therefore exclude `TIE` and `BOTH_BAD`, but those unresolved votes are reported explicitly. Confidence intervals bootstrap over `pair_id` clusters, with both rater votes included for each sampled item.
+
+| Contrast | Criterion | Human resolved target win (95% CI) | Resolved votes | Unresolved vote rate | LLM same-sample resolved target win |
+|---|---:|---:|---:|---:|---:|
+| `C` over `D_late` | `G2` | `70.6%` `[64.0, 76.9]` | `214/600` | `64.3%` | `76.5%` |
+| `C` over `D_late` | `S2` | `66.9%` `[57.5, 75.8]` | `118/600` | `80.3%` | `75.4%` |
+| `B_late` over `A` | `G2` | `60.5%` `[53.7, 67.3]` | `294/600` | `51.0%` | `62.1%` |
+| `B_late` over `A` | `S2` | `65.8%` `[58.6, 72.6]` | `272/600` | `54.7%` | `65.7%` |
+
+The audit agrees directionally with the LLM judge on all four primary pairwise contrasts, and all four pooled human confidence intervals are above chance on resolved votes. The result should still be read conservatively. Ties and both-bad labels are common, especially for IT-vs-`D_late` benign-safety comparisons, and some per-family cells have small resolved counts or flip direction. The human audit supports the pooled behavioral bridge; it is not a per-family behavioral localization claim.
+
+| Contrast | Criterion | Raw agreement | Cohen's κ, four labels | Collapsed κ |
+|---|---:|---:|---:|---:|
+| `C` vs `D_late` | `G2` | `48.7%` | `0.01` | `0.00` |
+| `C` vs `D_late` | `S2` | `66.7%` | `0.15` | `0.16` |
+| `B_late` vs `A` | `G2` | `49.7%` | `0.27` | `0.32` |
+| `B_late` vs `A` | `S2` | `64.3%` | `0.52` | `0.48` |
+
+Collapsed κ merges `TIE` and `BOTH_BAD` into a single unresolved label. The agreement pattern is heterogeneous: the strongest reliability is the PT-side benign-safety comparison, while the IT-side assistant-register comparison has low κ because both raters often use `TIE` but disagree on the relatively small set of resolved items. This motivates using the human audit as directional confirmation of the pairwise bridge, not as a high-precision substitute for the automated judge.
+
+Pointwise audit labels, on common/applicable filled fields, are used only as judge-calibration diagnostics. Weighted R1/R2 κ is `0.64` for `G1` and `0.32` for `G2`; categorical κ is `0.45` for `S1` and `0.33` for `S2`. Human-vs-judge κ is `0.60` for `G1`, `0.47` for `G2`, `0.58` for `S1`, and `0.31` for `S2`. These values are moderate rather than decisive, especially for `G2/S2`, which is why the paper's behavioral claim remains the blind pairwise direction result plus LLM-judge effect sizes rather than a claim of high-agreement pointwise human scoring.
+
+### B3: Statistical testing approach
+
+Pointwise behavioral summaries are prompt-bootstrap estimates over dense-family records. Pairwise summaries report target win rate, other win rate, tie rate, and resolved win rate, with bootstrap 95% confidence intervals. Dense-family claims pool Gemma, Llama, Qwen, Mistral, and OLMo; DeepSeek is excluded from the canonical behavioral pool because its MoE routing makes dense-family MLP graft/swap interpretation non-comparable. The main LLM-judge behavioral claim is deliberately asymmetric: IT-side late-window degradation is strong, while PT-side late grafting produces partial movement mainly supported by blind pairwise preferences.
+
+For the completed human audit, the primary confirmatory quantities are pairwise resolved win rates and bootstrap confidence intervals for the same four primary contrasts shown in Figure B1. The rater packets randomize A/B order, expose no model or condition labels, and include `TIE`/`BOTH_BAD` to avoid forcing noisy preferences. The human audit was analyzed after the automated judge setup, endpoint definitions, and primary contrasts were fixed, so it functions as an external validation check rather than as a source of endpoint selection. We report same-sample LLM rates beside the human rates to show direction agreement directly.
+
+### B4: Prompt dataset construction
+
+The behavioral run uses a frozen 600-prompt core subset of `eval_dataset_v2.jsonl`. The subset emphasizes conversational and register-sensitive prompts, benign safety prompts, harmful safety prompts, and format-sensitive items. Pointwise `G1` applies broadly; `G2` applies only to assistant-facing records; `S1` applies to harmful safety records; and `S2` applies to benign safety records. The judge manifest stores hashes for the dataset manifest, pipeline manifest, human-audit manifest, and sample outputs so reruns can detect accidental dataset or pipeline drift.
+
+## Appendix C: Token Classifier Specification and Robustness
+
+### C1: Classifier specification
+
+Five categories with priority order (first match wins): STRUCTURAL (regex-matched, 2.8% baseline), PUNCTUATION (1.2%), DISCOURSE (Hyland 2005 taxonomy, 0.5%), FUNCTION (closed-class, 34.9%), CONTENT (default, 59.9%).
+
+### C2: Perturbation robustness analysis
+
+Four perturbation scenarios tested. Only the STRUCTURAL/DISCOURSE boundary produces measurable sensitivity (Δ = 0.145 when merged — expected, as both capture formatting). Content-side perturbations produce Δ < 0.00001. No core finding depends on precise boundary choices.
+
+## Appendix D: Commitment Threshold Sensitivity
+
+The convergence-gap claim does not depend on a single commitment threshold. The main text summarizes the threshold-free top-1 commitment view; Appendix Figures S34-S37 show majority-vote, KL-threshold, cosine, entropy, and normalized-depth CDF variants. Across KL thresholds from 0.05 to 1.0 nats, the IT-minus-PT delay remains qualitatively stable. Representation-space commitment summaries are weaker, which is consistent with the paper's narrower claim that the robust PT↔IT separation is in decoded next-token distributions rather than arbitrary residual-stream distances.
+
+## Appendix E: Broader Literature Positioning
+
+Table E1 broadens the main-text comparison to methodological precedents, behavioral-direction papers, and conceptual work on instruction following. The coarse labels are conservative: `Yes` means the element is directly part of the paper's design, `Partial` means a narrower task-specific version, and `No` means it is not part of the main design.
+
+| Paper | PT↔post-trained descendants? | Cross-family paired checkpoints? | Identical-history internal comparison? | Symmetric depth-localized intervention? | First-divergence candidate/margin? | Natural-decoding consequence test? |
+|---|---|---|---|---|---|---|
+| Lad et al. (2024) | No | No | No | No | No | No |
+| Joshi et al. (2025) | No | No | No | No | No | No |
+| Wu et al. (2024) | Yes | No | No | No | No | No |
+| Du et al. (2025) | Yes | Yes | No | No | No | No |
+| Li et al. (2025) | No | No | No | No | No | No |
+| Chaudhury (2025) | Yes | No | No | No | No | No |
+| Prakash et al. (2024) | Yes | No | No | Partial | No | No |
+| Bigoulaeva et al. (2026) | Partial | No | No | Partial | No | No |
+| Zhao, Ziser, and Cohen (2024) | Yes | No | No | No | No | No |
+| Nepal et al. (2025) | Yes | Partial | No | Partial | No | No |
+| Arditi et al. (2024) | No | No | No | No | No | Yes |
+| Lu et al. (2026) | No | No | No | No | No | Yes |
+| Stolfo et al. (2024) | Partial | Partial | No | No | No | Yes |
+| Turner et al. (2023); Zou et al. (2023); Panickssery et al. (2024) | No | No | No | No | No | Yes |
+| Hewitt et al. (2024) | No | No | No | No | No | No |
+| Rocchetti & Ferrara (2026) | No | No | No | No | No | No |
+| Ours | Yes | Yes | Yes | Yes | Yes | Yes |
+
+Lad et al. (2024) and Joshi et al. (2025) are the closest phenomenon-level comparisons. Lad gives a generic vocabulary for mid-to-late inference stages: prediction ensembling followed by residual sharpening. Joshi studies late confidence calibration after decision certainty has emerged. We do not treat late sharpening or late calibration as new phenomena. The convergence gap is the aggregate signature; the contribution is the paired PT/IT first-divergence analysis that asks which depth windows change the divergent token identity and which conditionally amplify the final IT-vs-PT margin.
+
+Prakash et al. (2024) is the closest methodological precedent in this broader set: CMAP patches activations across related base/fine-tuned models to reveal improved mechanisms. Our use is different in scope and target: we apply a symmetric equal-width early/mid/late MLP graft/swap design across model families, and the localized target is not entity tracking but natural PT/IT next-token disagreement under matched-prefix control. Following the caution urged by activation-patching work such as Heimersheim and Nanda (2024), we describe these interventions as causal leverage on measured readouts, not as complete mechanism recovery.
+
+Bigoulaeva et al. (2026), Zhao, Ziser, and Cohen (2024), and Nepal et al. (2025) are important layer-localization precedents. Bigoulaeva et al. argue that instruction vectors can act as circuit selectors, with later pathways conditioned on earlier task representations. Zhao, Ziser, and Cohen study where task-oriented representations appear in instruction-tuned models, while Nepal et al. find math-critical layers that remain important across post-training. These papers make our context-gating result plausible rather than surprising; the distinction is that we localize causal effects at the first natural PT/IT token disagreement, with matched histories and separate candidate-identity and margin outcomes.
+
+Stolfo et al. (2024), Turner et al. (2023), Zou et al. (2023), and Panickssery et al. (2024) are the main reason we do not frame the contribution as finding an instruction-following activation vector. That claim is not new. Those papers show that activation-space directions can control behavior, including instruction-following constraints and high-level traits. The paper-level novelty here is that paired PT/IT next-token disagreement is decomposed with graft/swap interventions under identical histories and first-divergence counterfactuals, rather than by extracting a behavioral vector.
+
+The appendix table makes the novelty claim deliberately concrete. Prior rows contain individual ingredients: PT↔post-training comparison, behavioral localization, cross-model substitution, layer importance, or natural-decoding intervention. The paper's row is distinct because those ingredients are combined around the first point where paired PT/IT checkpoints disagree about the next token, with the convergence gap serving as the aggregate signature and candidate-transfer versus context-gated margin amplification as the tested decomposition. Hewitt et al. (2024) and Rocchetti and Ferrara (2026) are useful conceptual boundary papers rather than direct method-level foils. They ask what instruction following is, or whether it reflects a universal mechanism at all. Our paper asks a narrower and more operational question: what paired PT↔post-training forward-pass signature appears across dense families, how middle and late windows divide candidate selection from final-token amplification, and whether that same intervention family matters under natural decoding.
+
+## Appendix F: Scope Boundaries and Counter-Interpretations
+
+**Free-running histories.** The dense-family native-decoding curves establish the convergence gap as a model-in-use signature. They are not used as the sole causal evidence because PT and IT continuations can diverge. The matched-prefix native-JS replay and MLP graft/swap experiments are the controlled-history evidence. DeepSeek-V2-Lite is shown only as a MoE side case.
+
+**Endpoint metric and probe dependence.** `KL(layer || own final)` is intentionally a stabilization-to-own-decision metric, not a direct cross-model distance. It asks how far a layer is from the same model's eventual next-token distribution. Endpoint relativity is part of the metric, so we test the most obvious endpoint covariates directly: Exp22's primary coarsened-exact matching estimator balances token steps on final entropy, final top-1 confidence, and final top-1/top-2 margin, and the late IT-minus-PT KL gap remains positive under both raw and tuned probes. This is not a claim that every possible endpoint property has been controlled. Matched-prefix native JS is a separate endpoint-free companion control, not an interchangeable version of the KL trajectory. Tuned-lens quality can still change absolute KL magnitudes, so we do not treat the tuned-lens discovery figure as standalone identification. Raw-logit-lens variants, endpoint-matched KL, and native same-layer JS under identical histories preserve the same qualitative PT↔IT separation.
+
+**Gemma tuned-lens quality.** Gemma is the family where the tuned lens improves least over the raw lens at intermediate depth, and it is also the family with the largest late `δ`-cosine shift. We flag this coincidence rather than using Gemma tuned-lens metrics as a standalone pillar. The relevant separation is that `δ`-cosine is lens-free, while the convergence-gap discovery metric is lens-dependent. For the lens-dependent convergence-gap discovery metric, the raw lens strengthens rather than erases Gemma's final-half gap (`1.008` raw versus `0.351` tuned), and the dense-family raw final-half gap remains positive even with Gemma removed (`0.712`; Table S25a).
+
+**Weight-difference magnitude.** A possible confound is that late grafts matter most simply because post-training changed late MLP parameters most. Figure S18 already makes this unlikely outside Gemma: Llama, Qwen, Mistral, and OLMo do not show a uniformly late-concentrated MLP weight-change profile. Table S18a makes the cross-reference explicit by dividing the matched-prefix final-20% KL effect by a same-window mean MLP weight-change proxy. Late remains the largest normalized effect in every dense family, and in the dense-family pool the middle and late weight-change proxies are nearly equal while only late has a large positive effect. Table S18b adds the complementary raw-effect and leave-one-family-out view: all dense families have positive raw late effects, and removing Mistral increases rather than decreases the pooled mean. Mistral's large normalized ratio is therefore a denominator artifact of its unusually small PT-to-IT MLP RMS change, not evidence that Mistral dominates the causal result. The matched random-control analysis adds a residual-projection control and shows that the dense-family late KL effect is specific to the learned IT substitution rather than any matched same-window perturbation (`+0.327` true versus `+0.003` random), but it still does not convert the result into a per-unit-weight efficiency claim. We therefore treat weight-difference magnitude as a family-specific diagnostic, not the paper-level explanation for late causal leverage. The table is still a descriptive normalization, not a claim that we have estimated a true per-parameter causal efficiency.
+
+**Metric surface area.** We report several convergence summaries because the phenomenon is trajectory-shaped, but the main claims are intentionally pinned to a small ladder: native KL-to-own-final discovery, endpoint-free same-history JS, symmetric final-20% graft/swap effects, first-divergent-token identity/margin, and judged behavior. Per-family or auxiliary-metric deviations are treated as diagnostics unless they agree with that ladder.
+
+**Window definitions and boundary sensitivity.** The early/middle/late labels are coarse intervention windows, not discovered sharp phase boundaries. We use three windows because the interpretation needs a direct comparison between early generic perturbation, middle candidate-selection effects, and late context-gated amplification. This choice is also aligned with prior layer-stage language: early layers build local/lexical state, middle layers often carry task or behavioral selection signals, and late layers are where sharpening, calibration, and final-token reconciliation are most visible. To avoid cherry-picking an exact cutoff, the cross-family graft/swap and first-divergence experiments use pre-specified overlapping windows at comparable normalized depths rather than model-specific hand-tuned boundaries:
+
+| Family | Early window | Middle window | Late window |
+|---|---:|---:|---:|
+| Gemma 3 4B | `0-13` | `10-23` | `20-33` |
+| Llama 3.1 8B | `0-12` | `9-21` | `19-31` |
+| Qwen 3 4B | `0-13` | `11-24` | `22-35` |
+| Mistral 7B | `0-12` | `9-21` | `19-31` |
+| OLMo 2 7B | `0-12` | `9-21` | `19-31` |
+
+These are "thirds" in the coarse sense of early-, middle-, and late-positioned windows, but they overlap so the result is not forced by a brittle single boundary and should not be read as a disjoint-subnetwork comparison. Earlier boundary checks support the same conservative reading. The layer-range sensitivity run varied the original Gemma late intervention range across `18-33`, `20-31`, `20-33`, and `22-33`; the broad late-range behavior survived, while magnitudes changed. The onset-threshold sensitivity run found that estimated onset layers move with the threshold and family, sometimes substantially. We therefore use those runs to justify a broad mid/late window design, not to claim that a particular layer index is the true start of the mechanism. The main evidence is correspondingly phrased as coarse-window causal leverage: early windows have weaker or less consistent delayed-stabilization effects, middle windows transfer divergent-token identity more, and late windows have the largest tested convergence-gap and context-gated margin effects.
+
+**Prompt formatting.** The primary discovery condition uses each model in its native regime: IT models receive native chat templates and PT models receive raw prompts. This is the relevant model-in-use comparison. Raw-vs-templated matched-prefix controls support that the delayed-stabilization signal is not only a prompt-format artifact. In the first-divergence token tests, raw-shared controls preserve the qualitative mid-identity/late-margin split, while native chat templates amplify the deployed IT margin. We therefore read templates as part of the native IT operating distribution, not as the sole source of the effect.
+
+**Teacher direction.** The primary matched-prefix replay uses IT-generated teacher continuations because the paper studies how PT differs from its instruction-following descendant. A reverse PT-teacher replay again shows a broad dense-family same-layer JS gap. Late amplification is teacher-stream-dependent under token-step weighting, so we use the reverse run as a robustness check for broad same-history divergence rather than as a separate late-localization claim.
+
+**Middle versus late.** Direct same-layer target-gap closure and behavioral token identity are more mid-to-late distributed than purely late. Native final-token flow sharpens this rather than erasing it: the pure-flow analysis shows larger late IT margin gains for format and content, while the matched-prefix chronology shows that content-like candidate promotion can already be strong in middle windows. First-divergence token-choice tests sharpen the boundary further: middle swaps transfer first-divergent token identity more than late swaps, while late windows more strongly affect IT-vs-PT margin under IT-shaped upstream context. MLP write-out tests add direct evidence: pure IT late MLPs provide much larger support for the IT divergent token than early or middle MLPs. The residual-state x late-stack factorial adds the missing cooperation test: the same IT late stack has a positive but much smaller margin effect from a PT upstream state than from an IT-shaped upstream state. That does not contradict the main result because delayed stabilization, token identity, token write-out, and late-stack readout are different targets. The directly tested causal claim is late-window leverage on delayed stabilization and context-gated native IT-token readout; the broader middle-to-late interpretation should be read as window-level causal leverage rather than complete named-circuit recovery.
+
+**Relation to mid-layer alignment localization.** Li et al. (2025) and Chaudhury (2025) are not treated as foils to be overturned. They study safety/preference behavior directly and find middle-layer localization under their readouts. Our own first-divergence identity tests agree with that direction: middle swaps transfer PT-vs-IT token identity more than late swaps. The new late claim is about a different target: delayed stabilization, direct MLP write-out, and late-stack readout into the final next-token margin under IT-shaped upstream context. A stricter head-to-head would rerun Chaudhury-style HHH preference patching and Li-style safety-layer tests on the same model pairs and compare those layers directly to the convergence-gap layers. We have not run that replication, so the paper claims compatibility and context-gated late readout, not that prior mid-layer alignment results are wrong.
+
+**Behavioral asymmetry.** The current LLM-judge behavioral bridge is clearest on IT-side degradation under late PT swaps. Late IT grafting into PT is measurable but smaller than the full PT-to-IT behavioral gap. This is expected if late MLPs are context-gated final-token amplifiers embedded in a broader post-training circuit, not a complete assistantness module. The completed blind human audit agrees with the pooled direction of the four primary pairwise contrasts, but high unresolved rates and heterogeneous κ mean it should be treated as confirmatory evidence for the behavioral bridge, not as part of the core internal localization claim.
+
+**Candidate-transfer and amplification status.** We include direct analyses for both sides of the decomposition. The first-divergence token-choice test is the cleanest token-identity test because it conditions on the first PT/IT divergent token and evaluates grafted branches at the shared prefix. The MLP write-out test is the cleanest amplification test because it stores finite-difference token projections for the same first-divergence setup. Native final-token flow remains useful for chronology, but the older matched-prefix traces store ranks/top-k sets rather than per-layer logits. A complete named-circuit chronology still requires matched-prefix reruns with per-layer logit capture and feature-level mediation tests.
+
+**Mid+late interaction status.** The current evidence no longer leaves the basic `PT + IT mid+late` branch missing. In the MLP-only first-divergence/write-out tests, adding IT late MLP updates to a PT host is weak by itself, and adding IT late on top of IT middle gives only a small additional fixed-prefix MLP margin gain (`+0.0119` logits; 95% CI `[+0.007, +0.016]`). The matched-prefix KL factorial gives a complementary stabilization view: on the PT side, late IT MLP grafting changes final-20% KL by `+0.217` nats (95% CI `[+0.209, +0.226]`), mid by `-0.031` (95% CI `[-0.036, -0.026]`), and mid+late by `+0.198` (95% CI `[+0.188, +0.208]`); on the IT side, removing mid, late, and mid+late MLPs collapses the delayed-stabilization signal by `0.486` (95% CI `[0.473, 0.499]`), `0.822` (95% CI `[0.805, 0.840]`), and `0.987` nats (95% CI `[0.965, 1.009]`) respectively. Thus mid+late effects are real but not simply additive; the windows overlap in what they explain. The residual-state x late-stack factorial then shows strong positive cooperation for the first-divergence margin: IT late stack given PT upstream is `+0.572` logits (95% CI `[+0.495, +0.650]`), IT late stack given IT upstream is `+3.207` (95% CI `[+3.091, +3.325]`), upstream context is `+4.239` (95% CI `[+4.097, +4.379]`), late-stack main effect is `+1.890` (95% CI `[+1.803, +1.969]`), and their interaction is `+2.635` (95% CI `[+2.540, +2.734]`) under common IT readout. This is why we phrase the result as context-gated readout rather than a standalone late module or a fully independent mid+late sum.
+
+**Geometry and mediation.** Negative late `δ`-cosine is not new by itself and is present in pretrained models. The geometric claim is the additional IT-minus-PT late shift. The MLP decomposition further shows that the residual-opposing component itself does not directly increase IT-vs-PT margin in pure IT late layers (`-0.0046` logits; 95% CI `[-0.009, -0.001]`), while the full late MLP update strongly does (`+0.768` logits; 95% CI `[+0.729, +0.805]`). The residual-state factorial is therefore not evidence that negative residuals themselves are the mechanism; it is evidence that the late margin/readout effect depends strongly on the state being reconciled. We therefore treat negative residual opposition as a geometric marker of late reconciliation, not as the causal write-in vector.
+
+## Appendix G: Reproducibility and Artifact Map
+
+**Public release.** During double-blind review, the project repository is provided through an anonymized artifact archive. It includes the current manuscript draft, all source experiment packages under `src/poc/`, shared cross-model infrastructure under `src/poc/cross_model/`, grouped script entrypoints under `scripts/`, and committed paper-facing artifacts under `results/`. The canonical prompt and evaluation datasets are committed under `data/`, including `eval_dataset_v2.jsonl`, `eval_dataset_v2_holdout_0600_1199.jsonl`, `exp3_dataset.jsonl`, `exp6_dataset.jsonl`, and `gold_standard_v1.csv`.
+
+**Audit levels.** We expose the results at three levels, so a reviewer can check the main numbers without trusting prose summaries.
+
+| Level | Command | What it verifies | Expected cost |
+|---|---|---|---|
+| Summary audit | `bash scripts/reproduce/reproduce_claims_from_summaries.sh` | Recomputes the headline paper numbers from committed JSON/CSV summaries. | CPU only; under 1 minute. |
+| Minimal raw shard | `bash scripts/reproduce/reproduce_minimal.sh` after fetching the shard | Validates a 20-prompt, one-family raw shard containing cached per-layer logits, intervention outputs, first-divergence records, and expected summary JSONs. | CPU-only if cached logits are used; about 1-3 GPU-hours on one 80GB A100/H100 if regenerated. |
+| Full rerun | Experiment launchers under `scripts/run/` and source packages under `src/poc/` | Regenerates full traces, summaries, and plots. | Multi-GPU; see estimates below. |
+
+**Claim to command to expected number.** The first command below is the most important reviewer audit path: it checks the manuscript numbers directly against committed artifacts.
+
+| Claim or number | Command | Expected artifact | Expected number |
+|---|---|---|---|
+| Dense-5 final-half convergence gap | `bash scripts/reproduce/reproduce_claims_from_summaries.sh` | `results/exp09_cross_model_observational_replication/data/convergence_gap_values.json` | tuned `0.410`; raw `0.771`; raw excluding Gemma `0.712` |
+| Endpoint-matched late convergence gap | same | `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv` | raw `+0.425` `[+0.356, +0.493]`; tuned `+0.762` `[+0.709, +0.814]`; remaining adjacent JS `+0.052` |
+| Endpoint-free matched-prefix JS | same | `results/exp16_matched_prefix_js_gap/exp16_js_replay_runpod_20260422_075307/js_summary.json` | `JS(A', C)=0.106` pre-corrective and `0.169` in the final 20% |
+| Matched-prefix depth ablation | same | `results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json` | early `-0.035`, middle `-0.045`, late `+0.341` nats |
+| Symmetric late graft/swap | same | `results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json` | late IT-to-PT graft `+0.338`; late PT-to-IT swap `-0.509` nats |
+| Late random-control specificity | same | `results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/exp19B_summary_light.json` | true `+0.327`; matched random residual-projection `+0.003`; margin `+0.324` nats |
+| First-divergence identity split | same | `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/summary.json` | raw-shared `PT+IT mid` vs `PT+IT late`: `26.0%` vs `17.6%`; mirror `IT+PT mid` vs `IT+PT late`: `31.2%` vs `20.8%` |
+| Native late readout loss | same | same | pure IT minus late PT-swap margin drop `13.25` logits |
+| MLP write-out proxy | same | `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/summary.json`; `analysis/effects.csv` | late IT-token support `+0.789`; MLP-only PT-host late graft `+0.0035`; negative-parallel margin `-0.0046` |
+| Residual-state x late-stack context gating | same | `results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/exp23_summary.json`; `analysis/exp23_effects.csv` | common-IT late given PT upstream `+0.572`; late given IT upstream `+3.207`; upstream `+4.239`; late-stack `+1.890`; interaction `+2.635` |
+| Behavioral bridge and human audit | same | `results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/exp15_behavior_summary.json`; `results/exp15_symmetric_behavioral_causality/human_eval/human_eval_summary.json` | LLM resolved G2: `56.3%` and `77.1%`; human resolved G2: `60.5%` and `70.6%` |
+
+**Committed versus regenerated artifacts.** The repository commits paper-facing summaries and plots used for manuscript numbers: JSON/CSV/MD summaries, bootstrap confidence intervals, human-evaluation summaries, and final PNG figures. It does not commit large regenerated intermediates such as raw activation arrays (`*.npy`, `*.npz`), model/probe tensors (`*.pt`, `*.safetensors`), tuned-lens checkpoints, or multi-gigabyte raw per-token trace JSONL/GZ files. These are size exclusions, not confidentiality exclusions. The corresponding collection scripts, analysis scripts, prompt manifests, and anonymized archive pointers are public within the review artifact.
+
+**Large-artifact locations.** During review, raw traces, tuned-lens probes, endpoint-control records, late random-control traces, first-divergence archives, and the minimal audit shard are mirrored under the anonymized artifact archive. The public camera-ready release will replace these placeholders with stable permanent storage locations after the double-blind period.
+
+**Hardware and runtime.** All full reruns use bf16 inference and deterministic greedy decoding unless a script states otherwise. The 4B-8B dense-family experiments fit on one 80GB A100/H100 per model job; DeepSeek-V2-Lite is reported separately because it is MoE/SFT-only. The full dense-5 causal and endpoint-control suite (Exp11/14/16/20/21/22/23, including trace collection and analysis) should be budgeted as hundreds of H100 GPU-hours and roughly 0.5-1.5 TB of transient disk if raw traces and per-token records are retained. The minimal 20-prompt shard needs one 80GB A100/H100, about 1-3 GPU-hours if regenerated from checkpoints, and about 20-80 GB local disk depending on whether all per-layer logits are kept. The summary audit is CPU-only and reads only committed JSON/CSV files.
+
+**Tuned-lens reproducibility.** The main causal claims do not require tuned-lens checkpoints. The matched-prefix JS replay, graft/swap KL summaries, first-divergence identity/margin results, and finite-difference MLP write-out analyses are auditable from committed summaries and do not depend on trained probes. The tuned lens is used for the discovery visualization and commitment diagnostics, and the paper reports raw-lens sensitivity alongside it. Probe checkpoints are included in the anonymized artifact archive; retraining uses `uv run python -m src.poc.cross_model.tuned_lens --model MODEL --variant {pt,it} --device cuda:N`. A complete dense-5 retrain is 10 PT/IT runs; including the DeepSeek side case is 12 runs. The full set takes about 4-6 wall-clock hours on 8x80GB A100/H100 GPUs with joint all-layer training.
+
+**Main claim-to-artifact map.**
+
+| Claim or analysis | Code entrypoints | Committed artifacts |
+|---|---|---|
+| Dense-5 convergence gap and commitment delay, with DeepSeek side case in appendix artifacts | `src/poc/exp09_cross_model_observational_replication/`; shared adapters in `src/poc/cross_model/` | `results/exp09_cross_model_observational_replication/data/`, `results/exp09_cross_model_observational_replication/plots/` |
+| Endpoint-matched convergence gap | `src/poc/exp22_endpoint_deconfounded_gap/`; `scripts/run/run_exp22_endpoint_deconfounded_gap_runpod.sh`; `scripts/analysis/analyze_exp22_endpoint_deconfounded_gap.py`; `scripts/analysis/build_exp22_endpoint_deconfounded_synthesis.py` | `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv`, `results/paper_synthesis/exp22_endpoint_deconfounded_summary.png`, raw mirror listed above |
+| Gemma feature and Tier-0 validation controls | `src/poc/exp06_corrective_direction_steering/`; `src/poc/exp07_methodology_validation_tier0/`; `scripts/run/run_exp7_0*.sh`; `scripts/plot/plot_validation_tier0.py` | `results/exp06_corrective_direction_steering/plots/`, `results/exp07_methodology_validation_tier0/data/`, `results/exp07_methodology_validation_tier0/plots/` |
+| Layer-range and onset sensitivity | `scripts/plot/plot_validation_tier0.py`; Tier-0 0F/0J runs | `results/exp07_methodology_validation_tier0/0F/layer_range_sensitivity_table.csv`, `results/exp07_methodology_validation_tier0/0J/onset_table.csv`, `results/exp07_methodology_validation_tier0/plots/0F_layer_range_sensitivity.png`, `results/exp07_methodology_validation_tier0/plots/0J_onset_sensitivity.png` |
+| Matched-prefix graft depth ablation | `src/poc/exp11_matched_prefix_mlp_graft/` | `results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/` and selected summaries under `results/exp11_matched_prefix_mlp_graft/data/` |
+| Symmetric graft/swap and late random-control specificity | `src/poc/exp14_symmetric_matched_prefix_causality/`; `src/poc/exp19_late_mlp_specificity_controls/` | `results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/`, `results/exp19_late_mlp_specificity_controls/` |
+| Behavioral bridge and human audit | `src/poc/exp15_symmetric_behavioral_causality/`; `scripts/eval/llm_judge.py`; human-audit materials under `paper_draft/human_eval_survey/` | `results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/`, `results/exp15_symmetric_behavioral_causality/human_eval/` |
+| Endpoint-free matched-prefix JS replay | `src/poc/exp16_matched_prefix_js_gap/`; `scripts/analysis/analyze_exp16.py`; `scripts/plot/plot_exp16.py` | `results/exp16_matched_prefix_js_gap/exp16_js_replay_runpod_20260422_075307/`, `results/exp16_matched_prefix_js_gap/exp16_js_reverse_pt_teacher_20260422_165259/` |
+| Native final-token flow and matched-prefix chronology | `src/poc/exp18_midlate_token_handoff/`; `scripts/run/run_exp18_yanda_full.sh` | `results/exp18_midlate_token_handoff/full_runpod_20260423_095122/`, `results/exp18_midlate_token_handoff/matched_prefix_latest/` |
+| First-divergence token identity and margin amplification | `src/poc/exp20_divergence_token_counterfactual/`; Exp20 analysis scripts under `scripts/analysis/` | `results/exp20_divergence_token_counterfactual/full_runpod_20260423_2148_combined_final/deep_dive/`, `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/` |
+| MLP write-out, local context-gating proxy, and synthesis figure | `src/poc/exp21_productive_opposition/`; `scripts/analysis/analyze_exp21_productive_opposition.py`; `scripts/analysis/build_exp20_exp21_handoff_synthesis.py` | `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/`, `results/paper_synthesis/` |
+| Mid+late KL factorial and residual-state x late-stack interaction | `src/poc/exp23_midlate_interaction_suite/`; `src/poc/exp23_midlate_kl_factorial/`; `scripts/run/run_exp23_midlate_interaction_suite.sh`; `scripts/analysis/analyze_exp23_midlate_interaction_suite.py` | `results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/` |
