@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Analyze blinded human survey returns for the Exp15 behavioral bridge.
+"""Analyze blinded human survey returns for the Exp15 behavioral sanity check.
 
 Outputs are intentionally compact and paper-facing:
   - pairwise human resolved win rates with prompt-cluster bootstrap CIs;
@@ -66,7 +66,12 @@ def read_csv(path: Path) -> list[dict[str, str]]:
 def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=fieldnames,
+            extrasaction="ignore",
+            lineterminator="\n",
+        )
         writer.writeheader()
         writer.writerows(rows)
 
@@ -422,7 +427,7 @@ def main() -> None:
         "pointwise_interrater_and_judge": pointwise_summary,
         "notes": {
             "pairwise_rate_definition": "Resolved rate excludes TIE and BOTH_BAD votes; CIs bootstrap over pair_id and include both raters per sampled item.",
-            "pointwise_role": "Pointwise labels are used for agreement and judge-validation diagnostics; pairwise labels are the primary confirmatory human behavioral readout.",
+            "pointwise_role": "Pointwise labels are used for agreement and judge-validation diagnostics; pairwise labels are the primary diagnostic human behavioral readout.",
         },
     }
 

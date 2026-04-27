@@ -9,30 +9,30 @@
       "n_items": 300,
       "n_votes": 600,
       "human_counts": {
-        "other": 63,
-        "target": 151,
-        "tie": 384,
-        "both_bad": 2
+        "other": 77,
+        "target": 167,
+        "tie": 355,
+        "both_bad": 1
       },
-      "human_resolved_n": 214,
-      "human_resolved_target_rate": 0.705607476635514,
+      "human_resolved_n": 244,
+      "human_resolved_target_rate": 0.6844262295081968,
       "human_resolved_target_ci95": [
-        0.6395896378367826,
-        0.7688679245283019
+        0.625,
+        0.7454604231974922
       ],
-      "unresolved_rate": 0.6433333333333333,
+      "unresolved_rate": 0.5933333333333334,
       "llm_same_sample_counts": {
         "target": 225,
         "other": 69,
         "tie": 6
       },
       "llm_same_sample_resolved_target_rate": 0.7653061224489796,
-      "R1_resolved_rate": 0.7570093457943925,
+      "R1_resolved_rate": 0.708029197080292,
       "R1_counts": {
-        "other": 26,
-        "target": 81,
-        "tie": 191,
-        "both_bad": 2
+        "other": 40,
+        "target": 97,
+        "tie": 162,
+        "both_bad": 1
       },
       "R2_resolved_rate": 0.6542056074766355,
       "R2_counts": {
@@ -50,29 +50,29 @@
       "n_items": 300,
       "n_votes": 600,
       "human_counts": {
-        "tie": 466,
-        "target": 79,
-        "other": 39,
+        "tie": 446,
+        "other": 52,
+        "target": 86,
         "both_bad": 16
       },
-      "human_resolved_n": 118,
-      "human_resolved_target_rate": 0.6694915254237288,
+      "human_resolved_n": 138,
+      "human_resolved_target_rate": 0.6231884057971014,
       "human_resolved_target_ci95": [
-        0.5752157079646018,
-        0.7580645161290323
+        0.5405405405405406,
+        0.7040056338028169
       ],
-      "unresolved_rate": 0.8033333333333333,
+      "unresolved_rate": 0.77,
       "llm_same_sample_counts": {
         "target": 224,
         "other": 73,
         "tie": 3
       },
       "llm_same_sample_resolved_target_rate": 0.7542087542087542,
-      "R1_resolved_rate": 0.7647058823529411,
+      "R1_resolved_rate": 0.6111111111111112,
       "R1_counts": {
-        "tie": 266,
-        "target": 26,
-        "other": 8
+        "tie": 246,
+        "other": 21,
+        "target": 33
       },
       "R2_resolved_rate": 0.6309523809523809,
       "R2_counts": {
@@ -91,30 +91,30 @@
       "n_items": 300,
       "n_votes": 600,
       "human_counts": {
-        "tie": 257,
-        "other": 116,
-        "target": 178,
-        "both_bad": 49
+        "tie": 231,
+        "other": 133,
+        "target": 201,
+        "both_bad": 35
       },
-      "human_resolved_n": 294,
-      "human_resolved_target_rate": 0.6054421768707483,
+      "human_resolved_n": 334,
+      "human_resolved_target_rate": 0.6017964071856288,
       "human_resolved_target_ci95": [
-        0.5370352356247299,
-        0.6732092837134854
+        0.5394303372543249,
+        0.6647079536039768
       ],
-      "unresolved_rate": 0.51,
+      "unresolved_rate": 0.44333333333333336,
       "llm_same_sample_counts": {
         "other": 100,
         "target": 164,
         "tie": 36
       },
       "llm_same_sample_resolved_target_rate": 0.6212121212121212,
-      "R1_resolved_rate": 0.5905511811023622,
+      "R1_resolved_rate": 0.5868263473053892,
       "R1_counts": {
-        "tie": 124,
-        "other": 52,
-        "target": 75,
-        "both_bad": 49
+        "tie": 98,
+        "other": 69,
+        "target": 98,
+        "both_bad": 35
       },
       "R2_resolved_rate": 0.6167664670658682,
       "R2_counts": {
@@ -132,29 +132,29 @@
       "n_items": 300,
       "n_votes": 600,
       "human_counts": {
-        "both_bad": 179,
-        "other": 93,
-        "target": 179,
+        "both_bad": 164,
+        "other": 100,
+        "target": 187,
         "tie": 149
       },
-      "human_resolved_n": 272,
-      "human_resolved_target_rate": 0.6580882352941176,
+      "human_resolved_n": 287,
+      "human_resolved_target_rate": 0.6515679442508711,
       "human_resolved_target_ci95": [
-        0.5862008469449486,
-        0.7256317689530686
+        0.5824119373776908,
+        0.7153146656677281
       ],
-      "unresolved_rate": 0.5466666666666666,
+      "unresolved_rate": 0.5216666666666666,
       "llm_same_sample_counts": {
         "target": 161,
         "other": 84,
         "tie": 55
       },
       "llm_same_sample_resolved_target_rate": 0.6571428571428571,
-      "R1_resolved_rate": 0.6384615384615384,
+      "R1_resolved_rate": 0.6275862068965518,
       "R1_counts": {
-        "both_bad": 110,
-        "other": 47,
-        "target": 83,
+        "both_bad": 95,
+        "other": 54,
+        "target": 91,
         "tie": 60
       },
       "R2_resolved_rate": 0.676056338028169,
@@ -171,37 +171,37 @@
       "comparison": "it_c_vs_dlate",
       "criterion": "G2",
       "n_items": 300,
-      "raw_agreement_4label": 0.4866666666666667,
-      "kappa_4label": 0.0065584345769269525,
-      "raw_agreement_collapsed": 0.49,
-      "kappa_collapsed": 0.004748585181812204
+      "raw_agreement_4label": 0.5333333333333333,
+      "kappa_4label": 0.16772352568167415,
+      "raw_agreement_collapsed": 0.5366666666666666,
+      "kappa_collapsed": 0.17049591215611393
     },
     {
       "comparison": "it_c_vs_dlate",
       "criterion": "S2",
       "n_items": 300,
-      "raw_agreement_4label": 0.6666666666666666,
-      "kappa_4label": 0.14709728776937503,
-      "raw_agreement_collapsed": 0.71,
-      "kappa_collapsed": 0.15583155443431018
+      "raw_agreement_4label": 0.6866666666666666,
+      "kappa_4label": 0.2656249999999999,
+      "raw_agreement_collapsed": 0.73,
+      "kappa_collapsed": 0.29491643454038996
     },
     {
       "comparison": "pt_late_vs_a",
       "criterion": "G2",
       "n_items": 300,
-      "raw_agreement_4label": 0.49666666666666665,
-      "kappa_4label": 0.27467776799295485,
-      "raw_agreement_collapsed": 0.5766666666666667,
-      "kappa_collapsed": 0.318888769709321
+      "raw_agreement_4label": 0.5666666666666667,
+      "kappa_4label": 0.3755603945177406,
+      "raw_agreement_collapsed": 0.6466666666666666,
+      "kappa_collapsed": 0.4498365080188924
     },
     {
       "comparison": "pt_late_vs_a",
       "criterion": "S2",
       "n_items": 300,
-      "raw_agreement_4label": 0.6433333333333333,
-      "kappa_4label": 0.5204660890349567,
-      "raw_agreement_collapsed": 0.6933333333333334,
-      "kappa_collapsed": 0.4793435200905489
+      "raw_agreement_4label": 0.6733333333333333,
+      "kappa_4label": 0.5604395604395604,
+      "raw_agreement_collapsed": 0.7233333333333334,
+      "kappa_collapsed": 0.5413519985264321
     }
   ],
   "pointwise_interrater_and_judge": [
@@ -244,6 +244,6 @@
   ],
   "notes": {
     "pairwise_rate_definition": "Resolved rate excludes TIE and BOTH_BAD votes; CIs bootstrap over pair_id and include both raters per sampled item.",
-    "pointwise_role": "Pointwise labels are used for agreement and judge-validation diagnostics; pairwise labels are the primary confirmatory human behavioral readout."
+    "pointwise_role": "Pointwise labels are used for agreement and judge-validation diagnostics; pairwise labels are the primary diagnostic human behavioral readout."
   }
 }

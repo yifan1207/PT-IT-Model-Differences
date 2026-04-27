@@ -1370,13 +1370,13 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Human resolved G2: IT baseline over late PT swap",
         "exp15 human_eval_summary.json",
-        0.705607476635514,
+        0.6844262295081968,
         exp15_human_pairwise("it_c_vs_dlate", "G2"),
     ),
     ClaimCheck(
         "Human resolved G2: PT late graft over PT baseline",
         "exp15 human_eval_summary.json",
-        0.6054421768707483,
+        0.6017964071856288,
         exp15_human_pairwise("pt_late_vs_a", "G2"),
     ),
 ]
