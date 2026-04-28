@@ -391,6 +391,7 @@ def _safe_token_category(token_str: str) -> str:
 
 
 def _gather_rank(logits: torch.Tensor, token_ids: torch.Tensor) -> torch.Tensor:
+    token_ids = token_ids.to(device=logits.device, non_blocking=True)
     target = logits.gather(-1, token_ids.unsqueeze(-1))
     return (logits > target).sum(dim=-1) + 1
 
@@ -485,20 +486,20 @@ def compute_batched_mechanism_metrics(
         return []
 
     chosen_token_ids = chosen_token_ids.reshape(-1)
-    device = chosen_token_ids.device
     residuals = [step_tensors.residual_output[idx].detach() for idx in layer_indices]
     updates = [step_tensors.mlp_output[idx].detach().float() for idx in layer_indices]
     batch_size = chosen_token_ids.shape[0]
 
     raw_logits = raw_logits_from_residuals(raw_readout, residuals)  # [batch, n_late, vocab]
     final_log_p = F.log_softmax(raw_logits[:, -1, :], dim=-1).detach()
-    teacher_token_grid = chosen_token_ids[:, None].expand(batch_size, len(layer_indices))
+    rank_token_ids = chosen_token_ids.to(device=raw_logits.device, non_blocking=True)
+    teacher_token_grid = rank_token_ids[:, None].expand(batch_size, len(layer_indices))
     teacher_rank = _gather_rank(raw_logits, teacher_token_grid)
     if baseline_raw_logits is not None:
         baseline_rank = _gather_rank(
             baseline_raw_logits,
             teacher_token_grid,
-        )
+        ).to(device=teacher_rank.device, non_blocking=True)
         teacher_rank_gain = baseline_rank.float() - teacher_rank.float()
     else:
         teacher_rank_gain = torch.zeros_like(teacher_rank, dtype=torch.float32)
@@ -515,21 +516,27 @@ def compute_batched_mechanism_metrics(
 
     axis_names = ["anti_top1", "support_teacher", "anti_kl_final"]
     for late_idx, layer_idx in enumerate(layer_indices):
-        h_li = residuals[late_idx].detach().float().requires_grad_(True)
+        norm_device = _module_device(raw_readout.final_norm, residuals[late_idx].device)
+        lm_head_device = _module_device(raw_readout.lm_head, norm_device)
+        h_li = residuals[late_idx].detach().to(device=norm_device, non_blocking=True).float().requires_grad_(True)
         normed = raw_readout.final_norm(h_li.to(dtype=_module_dtype(raw_readout.final_norm)))
+        if normed.device != lm_head_device:
+            normed = normed.to(device=lm_head_device, non_blocking=True)
         logits = raw_readout.lm_head(normed).float()
         top1_ids = logits.detach().argmax(dim=-1)
 
-        teacher_obj = logits[torch.arange(batch_size, device=device), chosen_token_ids].sum()
-        top1_obj = logits[torch.arange(batch_size, device=device), top1_ids].sum()
+        row_index = torch.arange(batch_size, device=logits.device)
+        chosen_on_logit_device = chosen_token_ids.to(device=logits.device, non_blocking=True)
+        teacher_obj = logits[row_index, chosen_on_logit_device].sum()
+        top1_obj = logits[row_index, top1_ids].sum()
         log_q = F.log_softmax(logits, dim=-1)
-        kl_obj = F.kl_div(log_q, final_log_p, reduction="sum", log_target=True)
+        kl_obj = F.kl_div(log_q, final_log_p.to(device=logits.device, non_blocking=True), reduction="sum", log_target=True)
 
         teacher_grad = torch.autograd.grad(teacher_obj, h_li, retain_graph=True)[0].detach()
         top1_grad = torch.autograd.grad(top1_obj, h_li, retain_graph=True)[0].detach()
         kl_grad = torch.autograd.grad(kl_obj, h_li)[0].detach()
 
-        update_vec = updates[late_idx]
+        update_vec = updates[late_idx].to(device=top1_grad.device, non_blocking=True)
         anti_top1_proj, anti_top1_cos, _ = _project_against_direction(update_vec, -top1_grad)
         support_teacher_proj, support_teacher_cos, _ = _project_against_direction(update_vec, teacher_grad)
         anti_kl_proj, anti_kl_cos, orth_norm = _project_against_direction(update_vec, kl_grad)
