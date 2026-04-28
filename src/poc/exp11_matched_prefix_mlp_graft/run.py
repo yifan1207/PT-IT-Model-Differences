@@ -2434,8 +2434,18 @@ def main() -> None:
 
     pt_id = model_id_for_variant(spec, "pt")
     it_id = model_id_for_variant(spec, "it")
-    pt_model, tokenizer_pt = load_model_and_tokenizer(pt_id, args.device, dtype=dtype)
-    it_model, tokenizer_it = load_model_and_tokenizer(it_id, args.device, dtype=dtype)
+    pt_model, tokenizer_pt = load_model_and_tokenizer(
+        pt_id,
+        args.device,
+        dtype=dtype,
+        multi_gpu=spec.multi_gpu,
+    )
+    it_model, tokenizer_it = load_model_and_tokenizer(
+        it_id,
+        args.device,
+        dtype=dtype,
+        multi_gpu=spec.multi_gpu,
+    )
     _ensure_pad_token(tokenizer_pt)
     _ensure_pad_token(tokenizer_it)
 
