@@ -251,6 +251,34 @@ def _plot(rows: list[dict[str, Any]], path: Path) -> None:
     plt.close(fig)
 
 
+def _paper_sentence_if_success(models: list[str]) -> str:
+    model_set = set(models)
+    if model_set == {"qwen25_32b", "olmo2_32b"}:
+        return (
+            "A two-family 32B replication on Qwen2.5-32B and OLMo-2-32B preserves "
+            "the positive upstream-state x late-stack interaction, extending the "
+            "context-gated late-readout result beyond the original 4B-8B dense-family pool."
+        )
+    if model_set == {"qwen25_32b"}:
+        return (
+            "A Qwen2.5-32B external-validity run preserves the positive upstream-state "
+            "x late-stack interaction, providing a 32B-scale check of the "
+            "context-gated late-readout result."
+        )
+    if model_set == {"olmo2_32b"}:
+        return (
+            "An OLMo-2-32B external-validity run preserves the positive upstream-state "
+            "x late-stack interaction, providing a 32B-scale check of the "
+            "context-gated late-readout result."
+        )
+    model_list = ", ".join(models) if models else "the requested models"
+    return (
+        f"The 32B external-validity run over {model_list} preserves the positive "
+        "upstream-state x late-stack interaction, providing a scale check of the "
+        "context-gated late-readout result."
+    )
+
+
 def build(run_root: Path, out_dir: Path, models: list[str]) -> dict[str, Any]:
     analysis_root = run_root / "analysis"
     exp23 = _load(analysis_root / "exp23_midlate_interaction_suite" / "exp23_summary.json")
@@ -292,11 +320,7 @@ def build(run_root: Path, out_dir: Path, models: list[str]) -> dict[str, Any]:
         "pooled_interaction_ci_low": pooled.get("interaction_ci_low"),
         "pooled_interaction_ci_high": pooled.get("interaction_ci_high"),
         "warnings": warnings,
-        "paper_sentence_if_success": (
-            "A two-family 32B replication on Qwen2.5-32B and OLMo-2-32B preserves "
-            "the positive upstream-state x late-stack interaction, extending the "
-            "context-gated late-readout result beyond the original 4B-8B dense-family pool."
-        ),
+        "paper_sentence_if_success": _paper_sentence_if_success(models),
     }
     (out_dir / "exp24_32b_claims.json").write_text(json.dumps(claims, indent=2, sort_keys=True))
     return {"rows": rows, "claims": claims, "out_dir": str(out_dir)}

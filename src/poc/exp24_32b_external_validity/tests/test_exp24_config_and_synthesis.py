@@ -129,3 +129,8 @@ def test_exp24_synthesis_writes_expected_artifacts(tmp_path: Path) -> None:
     assert (out_dir / "exp24_32b_claims.json").exists()
     assert payload["claims"]["all_model_interactions_positive"] is True
     assert payload["claims"]["pooled_interaction_ci_excludes_zero"] is True
+    assert "two-family 32B replication" in payload["claims"]["paper_sentence_if_success"]
+
+    qwen_only = build(run_root, tmp_path / "synthesis_qwen_only", ["qwen25_32b"])
+    assert "Qwen2.5-32B external-validity run" in qwen_only["claims"]["paper_sentence_if_success"]
+    assert "two-family" not in qwen_only["claims"]["paper_sentence_if_success"]
