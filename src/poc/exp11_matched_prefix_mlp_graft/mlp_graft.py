@@ -639,6 +639,7 @@ def compute_layer_metrics(
     baseline_logits: torch.Tensor | None = None,
     baseline_residuals: list[torch.Tensor] | None = None,
 ) -> LayerStepMetrics:
+    tier1_mask = tier1_mask.to(device=pipeline_logits.device, non_blocking=True)
     probs = torch.softmax(pipeline_logits, dim=-1)
     log_probs = torch.log_softmax(pipeline_logits, dim=-1)
     kl_to_own_final = _kl_to_final(log_probs)
@@ -673,6 +674,7 @@ def compute_layer_metrics(
     )
 
     if baseline_logits is not None and baseline_residuals is not None:
+        baseline_logits = baseline_logits.to(device=pipeline_logits.device, non_blocking=True)
         base_log_probs = torch.log_softmax(baseline_logits, dim=-1)
         cross_kl = _kl_between(log_probs, base_log_probs)
         base_final_log_probs = base_log_probs[-1].unsqueeze(0).expand_as(log_probs)
@@ -681,7 +683,7 @@ def compute_layer_metrics(
         residual_div = []
         for grafted, base in zip(step_tensors.residual_output, baseline_residuals, strict=False):
             g = grafted.float()
-            b = base.float()
+            b = base.to(device=g.device, non_blocking=True).float()
             residual_cos.append(float(F.cosine_similarity(g, b, dim=-1).mean().item()))
             residual_div.append(float(((g - b).norm(dim=-1) / b.norm(dim=-1).clamp_min(1e-12)).mean().item()))
         metrics.cross_kl = [float(x) for x in cross_kl.tolist()]
