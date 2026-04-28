@@ -413,6 +413,24 @@ def exp23_position_family(stratum: str, model: str, column: str) -> NumberFn:
     return _read
 
 
+def exp23_position_category_mix(position_filter: str, axis: str, category: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_position_category_mix.csv",
+        )
+        for row in rows:
+            if (
+                row["position_filter"] == position_filter
+                and row["axis"] == axis
+                and row["category"] == category
+            ):
+                return float(row[column])
+        raise KeyError((position_filter, axis, category, column))
+
+    return _read
+
+
 def exp15_llm_pairwise(comparison: str, criterion: str) -> NumberFn:
     key = f"pairwise_{criterion.lower()}"
 
@@ -1269,6 +1287,48 @@ CHECKS: list[ClaimCheck] = [
         "exp23_position_sensitivity_table.csv",
         0.8259142148839407,
         exp23_position_sensitivity("position >=5", "gemma_removed_interaction"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 category-mix total records",
+        "exp23_position_category_mix.csv",
+        800.0,
+        exp23_position_category_mix("step_ge3", "prompt_category", "GOV-CONV", "total"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 GOV-CONV count",
+        "exp23_position_category_mix.csv",
+        700.0,
+        exp23_position_category_mix("step_ge3", "prompt_category", "GOV-CONV", "count"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 GOV-FORMAT count",
+        "exp23_position_category_mix.csv",
+        61.0,
+        exp23_position_category_mix("step_ge3", "prompt_category", "GOV-FORMAT", "count"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 SAFETY count",
+        "exp23_position_category_mix.csv",
+        39.0,
+        exp23_position_category_mix("step_ge3", "prompt_category", "SAFETY", "count"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 IT CONTENT-token count",
+        "exp23_position_category_mix.csv",
+        476.0,
+        exp23_position_category_mix("step_ge3", "it_token_category", "CONTENT", "count"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 IT FUNCTION_OTHER-token count",
+        "exp23_position_category_mix.csv",
+        199.0,
+        exp23_position_category_mix("step_ge3", "it_token_category", "FUNCTION_OTHER", "count"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 IT FORMAT-token count",
+        "exp23_position_category_mix.csv",
+        125.0,
+        exp23_position_category_mix("step_ge3", "it_token_category", "FORMAT", "count"),
     ),
     ClaimCheck(
         "Exp23 Gemma-removed position >=5 interaction CI low",
