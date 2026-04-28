@@ -428,7 +428,7 @@ def _plot_main(summary: dict, path: Path) -> None:
         hi = (row or {}).get("ci_high")
         vals.append(mean if mean is not None else 0.0)
         errs.append((0.0 if mean is None or lo is None else mean - lo, 0.0 if mean is None or hi is None else hi - mean))
-    ax.bar(["late weights", "upstream", "interaction"], vals, color="#768f5f")
+    ax.bar(["late MLP update", "upstream", "interaction"], vals, color="#768f5f")
     ax.errorbar(range(len(vals)), vals, yerr=np.array(errs).T, fmt="none", color="black", capsize=3)
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set_title("B. 2x2 source decomposition")
@@ -578,16 +578,16 @@ def _write_paper_claims(summary: dict, path: Path) -> None:
     )
     if c_late_opp is not None and c_late_opp > 1e-3:
         opposition_sentence = (
-            "The negative-parallel component is productive on the IT-vs-PT token margin proxy in pure IT."
+            "The residual-opposing component is productive on the IT-vs-PT token margin proxy in pure IT."
         )
     elif c_late_opp is not None and abs(float(c_late_opp)) <= 1e-3:
         opposition_sentence = (
-            "The negative-parallel component is approximately zero on the pure-IT IT-vs-PT margin proxy, "
+            "The residual-opposing component is approximately zero on the pure-IT IT-vs-PT margin proxy, "
             "so the paper should not treat raw negative opposition itself as the main mechanism."
         )
     else:
         opposition_sentence = (
-            "The negative-parallel component is not positive on the pure-IT IT-vs-PT margin proxy, "
+            "The residual-opposing component is not positive on the pure-IT IT-vs-PT margin proxy, "
             "so the paper should not claim that raw negative opposition itself is the main mechanism."
         )
     text = f"""# Exp21 Productive Opposition: Paper-Safe Claims
@@ -599,7 +599,7 @@ Key dense5 `{mode}` values:
 - Pure IT late `delta_cosine_mlp`: `{_fmt(c_delta)}`.
 - Pure IT late IT-minus-PT margin write-in: `{_fmt(c_late_margin)}`.
 - Pure IT late pipeline-token-vs-alt margin write-in: `{_fmt(c_late_target_alt)}`.
-- Pure IT late negative-parallel contribution to IT-minus-PT margin: `{_fmt(c_late_opp)}`.
+- Pure IT late residual-opposing contribution to IT-minus-PT margin: `{_fmt(c_late_opp)}`.
 - 2x2 late-weight effect on IT-minus-PT margin write-in: `{_fmt((late_weight or {}).get('mean'))}`.
 - 2x2 upstream-context effect on IT-minus-PT margin write-in: `{_fmt((upstream or {}).get('mean'))}`.
 - 2x2 late interaction on IT-minus-PT margin write-in: `{_fmt((interaction or {}).get('mean'))}`.
@@ -617,7 +617,7 @@ Interpretation rule:
 
 Safe wording:
 
-> Exp21 measures MLP-only finite-difference logit effects at the first PT/IT divergent prefix. In `{mode}` dense-family runs, late residual opposition is evaluated by whether its negative-parallel component increases IT-vs-PT token margin. This supports a productive-opposition readout only when the negative component helps the IT token relative to the PT token; otherwise, negative delta-cosine remains only a geometric signature.
+> Exp21 measures MLP-only finite-difference logit effects at the first PT/IT divergent prefix. In `{mode}` dense-family runs, late residual opposition is evaluated by whether its residual-opposing component increases IT-vs-PT token margin. This supports a productive-opposition readout only when the opposing component helps the IT token relative to the PT token; otherwise, residual-opposing geometry remains only a geometric signature.
 
 Do not claim:
 

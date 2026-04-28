@@ -381,6 +381,7 @@ def _write_effects_csv(summary: dict[str, Any], out_path: Path) -> None:
                 "bootstrap_unit",
                 "n_boot",
             ],
+            lineterminator="\n",
         )
         writer.writeheader()
         writer.writerows(rows)
@@ -403,7 +404,7 @@ def _plot_summary(summary: dict[str, Any], out_path: Path) -> None:
     axes[0].errorbar(x, y, yerr=[yerr_low, yerr_high], fmt="none", color="black", capsize=3)
     axes[0].axhline(0, color="black", linewidth=0.8)
     axes[0].set_xticks(x)
-    axes[0].set_xticklabels(["late\nweights", "upstream\nstate", "interaction"])
+    axes[0].set_xticklabels(["late-stack\nmain", "upstream\nstate", "interaction"])
     axes[0].set_ylabel("IT-vs-PT margin, common IT readout")
     axes[0].set_title("Residual-state x late-stack factorial")
 

@@ -433,34 +433,34 @@ def _rows(exp20: dict, exp21: dict, stats: dict[str, dict]) -> list[dict[str, st
             "source_value_numeric": _fmt(b_late_minus_a["mean"]),
             "source_ci_low": _fmt(stats["exp21_b_late_minus_a_margin"]["ci_low"]),
             "source_ci_high": _fmt(stats["exp21_b_late_minus_a_margin"]["ci_high"]),
-            "interpretation": "IT late weights alone are weak in a PT upstream state.",
+            "interpretation": "IT late MLP updates alone are weak in a PT upstream state.",
             "caveat": "Late readout appears context-gated by earlier IT computation.",
         },
         {
             "evidence": "Exp21 source decomposition",
             "metric": "2x2 late-window MLP margin effects",
-            "primary_comparison": "late weights vs upstream context vs interaction",
-            "dense5_value": f"late weights {_ci(stats['exp21_late_weight_margin'], signed=True)}, "
+            "primary_comparison": "late MLP update vs upstream context vs interaction",
+            "dense5_value": f"late MLP update {_ci(stats['exp21_late_weight_margin'], signed=True)}, "
             f"upstream {_ci(stats['exp21_upstream_margin'], signed=True)}, "
             f"interaction {_ci(stats['exp21_interaction_margin'], signed=True)}",
             "source_value_numeric": _fmt(upstream["mean"]),
             "source_ci_low": _fmt(stats["exp21_upstream_margin"]["ci_low"]),
             "source_ci_high": _fmt(stats["exp21_upstream_margin"]["ci_high"]),
-            "interpretation": "Upstream IT context is larger than the late-weight main effect, with positive interaction.",
+            "interpretation": "Upstream IT context is larger than the late-MLP main effect, with positive interaction.",
             "caveat": "Late layers are important but not standalone sufficient.",
         },
         {
             "evidence": "Exp21 residual-opposition caveat",
-            "metric": "negative-parallel vs full-update IT-vs-PT margin",
+            "metric": "residual-opposing component vs full-update IT-vs-PT margin",
             "primary_comparison": "pure IT late MLP update",
             "dense5_value": f"full update {_ci(stats['exp21_full_margin_late'], signed=True)}; "
-            f"negative-parallel {_ci(stats['exp21_negative_parallel_late'], signed=True)}; "
+            f"residual-opposing component {_ci(stats['exp21_negative_parallel_late'], signed=True)}; "
             f"delta-cosine IT-PT {_ci(stats['exp21_delta_cos_shift_late'], signed=True)}",
             "source_value_numeric": _fmt(negative_parallel),
             "source_ci_low": _fmt(stats["exp21_negative_parallel_late"]["ci_low"]),
             "source_ci_high": _fmt(stats["exp21_negative_parallel_late"]["ci_high"]),
             "interpretation": "Token-specific full-update write-in is the mechanism evidence.",
-            "caveat": "Negative residual opposition is a geometric marker, not direct IT-token write-in.",
+            "caveat": "Residual-opposing geometry is a marker, not direct IT-token write-in.",
         },
     ]
 
@@ -478,7 +478,7 @@ def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
         "caveat",
     ]
     with path.open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer = csv.DictWriter(handle, fieldnames=fields, lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -556,13 +556,13 @@ def _plot(path: Path, exp20: dict, exp21: dict, stats: dict[str, dict]) -> None:
 
     plt.rcParams.update({"font.size": 10})
     fig, axes = plt.subplots(2, 2, figsize=(11, 8))
-    fig.suptitle("Exp20/Exp21: Mid Identity, Late Readout, Opposition Caveat (95% CIs)", fontsize=14)
+    fig.suptitle("First-Divergence Identity/Margin Decomposition (95% CIs)", fontsize=14)
 
     ax = axes[0, 0]
     labels = ["early", "mid", "late", "early+mid", "mid+late"]
     ax.bar(labels, margin_drops, color=["#8fa7c5", "#d99b6c", "#b95656", "#a9a27a", "#8a6ea8"])
     ax.errorbar(np.arange(len(labels)), margin_drops, yerr=_yerr(margin_stats), fmt="none", color="black", capsize=3)
-    ax.set_title("A. Exp20 native IT-host margin drop")
+    ax.set_title("A. Native IT-host margin drop")
     ax.set_ylabel("logits")
     ax.tick_params(axis="x", rotation=25)
 
@@ -570,21 +570,21 @@ def _plot(path: Path, exp20: dict, exp21: dict, stats: dict[str, dict]) -> None:
     ax.bar(["early", "mid", "late"], support_it, color=["#8fa7c5", "#d99b6c", "#b95656"])
     ax.errorbar(np.arange(3), support_it, yerr=_yerr(support_stats), fmt="none", color="black", capsize=3)
     ax.axhline(0, color="black", linewidth=0.8)
-    ax.set_title("B. Exp21 pure IT support for IT token")
+    ax.set_title("B. Pure IT support for IT token")
     ax.set_ylabel("MLP logit delta")
 
     ax = axes[1, 0]
-    ax.bar(["late weights", "upstream", "interaction"], effects, color=["#b95656", "#6f9771", "#7d6fa7"])
+    ax.bar(["late MLP", "upstream", "interaction"], effects, color=["#b95656", "#6f9771", "#7d6fa7"])
     ax.errorbar(np.arange(3), effects, yerr=_yerr(effect_stats), fmt="none", color="black", capsize=3)
     ax.axhline(0, color="black", linewidth=0.8)
-    ax.set_title("C. Exp21 2x2 source decomposition")
+    ax.set_title("C. MLP 2x2 source decomposition")
     ax.set_ylabel("MLP margin delta")
     ax.tick_params(axis="x", rotation=18)
 
     ax = axes[1, 1]
     x = np.arange(3)
     ax.bar(x - 0.18, full_margin, width=0.36, label="full MLP update", color="#b95656")
-    ax.bar(x + 0.18, neg_margin, width=0.36, label="negative-parallel component", color="#6f7f95")
+    ax.bar(x + 0.18, neg_margin, width=0.36, label="residual-opposing component", color="#6f7f95")
     ax.errorbar(x - 0.18, full_margin, yerr=_yerr(full_stats), fmt="none", color="black", capsize=3)
     ax.errorbar(x + 0.18, neg_margin, yerr=_yerr(neg_stats), fmt="none", color="black", capsize=3)
     ax.axhline(0, color="black", linewidth=0.8)

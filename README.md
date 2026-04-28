@@ -36,7 +36,7 @@ A few flat script aliases are still kept where practical, but results now live o
 
 ### Reproducibility artifacts
 
-The public code release is this repository: `https://github.com/yifan1207/structral-semantic-features`. Paper-facing summaries and plots are committed under `results/`, including JSON/CSV/MD tables, bootstrap intervals, human-evaluation summaries, and final figures for the main claims. Reviewers can mechanically check the headline numbers with `bash scripts/reproduce/reproduce_claims_from_summaries.sh`; raw or cached shard validation is routed through `bash scripts/reproduce/reproduce_minimal.sh`. Large regenerated intermediates such as raw activation arrays, model/probe tensors, tuned-lens checkpoints, and multi-gigabyte raw per-token traces stay out of git, with scripts, prompt datasets, GCS pointers, and the reproducibility guide in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
+For double-blind review, the manuscript should point to the anonymized artifact archive rather than this development checkout. Paper-facing summaries and plots are committed under `results/`, including JSON/CSV/MD tables, bootstrap intervals, human-evaluation summaries, and final figures for the main claims. Reviewers can mechanically check the headline numbers with `bash scripts/reproduce/reproduce_claims_from_summaries.sh`; raw or cached shard validation is routed through `bash scripts/reproduce/reproduce_minimal.sh`. Large regenerated intermediates such as raw activation arrays, model/probe tensors, tuned-lens checkpoints, and multi-gigabyte raw per-token traces stay out of git, with scripts, prompt datasets, archive pointers, and the reproducibility guide in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 ---
 
@@ -114,11 +114,11 @@ bash scripts/run/run_exp13_exp14_local.sh --mode smoke --model gemma3_4b --smoke
 # Current cross-model observational figures
 uv run python -m src.poc.exp09_cross_model_observational_replication.plot_replication
 
-# Exp13A-lite analysis + plots
+# Late-stage support diagnostics
 uv run python scripts/analysis/analyze_exp13a_lite.py --help
 uv run python scripts/plot/plot_exp13a_lite.py --help
 
-# Exp13 full + Exp14 causal summary plots
+# Matched-prefix late-window localization plots
 uv run python scripts/analysis/analyze_exp13_full.py --help
 uv run python scripts/plot/plot_exp13_full.py --help
 
@@ -134,7 +134,7 @@ uv run python scripts/plot/plot_exp16.py --help
 bash scripts/run/run_phase0_multimodel.sh --step precompute
 bash scripts/run/run_phase0_multimodel.sh --step steer
 
-# Exp13 + Exp14 local causal campaign
+# Matched-prefix local causal campaign
 bash scripts/run/run_exp13_exp14_local.sh --mode full
 
 # Exp16 local JS replay over the frozen exp14 teacher stream
@@ -154,7 +154,7 @@ bash scripts/run/run_exp16_js_replay_local.sh --mode smoke
 | **DeepSeek-V2-Lite** | 27 | 2048 | MLA, MoE (2 shared + 64 routed, top-6) | 5.7T-token pretraining / **SFT-only** chat checkpoint |
 | **OLMo 2 7B** | 32 | 4096 | MHA, all global | `OLMo-mix-1124` pretraining / T&uuml;lu 3-style SFT + DPO + RLVR |
 
-OLMo 2 uses a staged base-model recipe with a late `Dolmino-mix-1124` curriculum, so the earlier single-dataset shorthand is inaccurate for this checkpoint. DeepSeek-V2-Lite-Chat is both the only MoE family here and an SFT-only chat checkpoint, so we treat it as a post-training outlier rather than as evidence for a uniform six-family IT recipe.
+OLMo 2 uses a staged base-model recipe with a late `Dolmino-mix-1124` curriculum, so the earlier single-dataset shorthand is inaccurate for this checkpoint. DeepSeek-V2-Lite-Chat is both the only MoE family here and an SFT-only chat checkpoint, so we treat it as a post-training outlier rather than as evidence for the dense-family main claim.
 
 All main observational analyses use each IT model's native chat template and raw prompting for PT. Template-free conditions are treated as ablations rather than replacement primaries.
 
@@ -246,7 +246,7 @@ This index includes historical and supporting experiments. The current paper's m
 
 | ID | Experiment | Key result |
 |----|-----------|------------|
-| **exp12** | A/B/C free-running graft comparison | Late graft reduces benign false refusals in 6/6 families and improves assistant register in 4/6, but remains far from the full IT endpoint on polished structure |
+| **exp12** | A/B/C free-running graft comparison | Legacy behavior run: late graft reduces benign false refusals broadly and improves assistant register in several families, but remains far from the full IT endpoint on polished structure |
 | **exp15** | Symmetric behavioral causality | Current canonical behavioral estimate of the same late intervention family, with the clearest effects on the IT-side necessity test and weaker but real PT-side recovery |
 
 ### Methodology validation (Tier 0)
@@ -288,7 +288,7 @@ PT model --+            per corrective layer    IFEval compliance
                                                 MMLU / GSM8K / reasoning
 ```
 
-The adapter system provides a uniform interface across all six architectures, including DeepSeek's MoE routing and Gemma's hybrid attention. Extending to a new model requires only registering its architecture in the adapter config.
+The adapter system provides a uniform interface across the dense architectures plus the DeepSeek MoE side case and Gemma's hybrid attention. Extending to a new model requires only registering its architecture in the adapter config.
 
 ---
 

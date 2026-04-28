@@ -63,7 +63,7 @@ def _plot_main(summary: dict, out_path: Path) -> None:
     import matplotlib.pyplot as plt
     import numpy as np
 
-    models = [m for m in MODEL_ORDER if m in summary["models"]]
+    models = [m for m in MODEL_ORDER if m in summary["models"] and m != "deepseek_v2_lite"]
     x = np.arange(len(models))
     width = 0.22
 
@@ -112,8 +112,8 @@ def _plot_main(summary: dict, out_path: Path) -> None:
     if handles:
         fig.legend(handles, labels, loc="lower center", ncol=3, frameon=False)
     fig.suptitle(
-        "Exp13 full + Exp14 combined causal run\n"
-        "Symmetric late-window sufficiency/necessity with output-relevant late-stage mechanism summaries",
+        "Symmetric late-window sufficiency/necessity\n"
+        "Dense-family delayed-stabilization localization with late-stage mechanism summaries",
         fontsize=12,
     )
     fig.tight_layout(rect=[0, 0.06, 1, 0.93])

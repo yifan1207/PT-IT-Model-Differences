@@ -12,16 +12,16 @@ This repository exposes the paper claims at three audit levels.
 
 | Claim / number | Command | Expected artifact | Expected number |
 |---|---|---|---|
-| Six-family tuned final-half convergence gap | `bash scripts/reproduce/reproduce_claims_from_summaries.sh` | `results/exp09_cross_model_observational_replication/data/convergence_gap_values.json` | `0.398` |
-| Six-family raw final-half convergence gap | same | same | `0.729` |
-| Matched-prefix `JS(A', C)` before late window and final 20% | same | `results/exp16_matched_prefix_js_gap/exp16_js_replay_runpod_20260422_075307/js_summary.json` | `0.106`, `0.169` |
-| Depth-ablation late graft final-20% KL delta | same | `results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json` | `+0.341` nats |
-| Symmetric late graft and late swap KL effects | same | `results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json` | `+0.338`, `-0.509` nats |
-| Late random-control specificity | same | `results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/exp19B_summary_light.json` | true `+0.327`, random `+0.003`, margin `+0.324` |
-| First-divergence mid vs late identity transfer | same | `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/summary.json` | `26.0%` vs `17.6%`; mirror `31.2%` vs `20.8%` |
-| Native late readout loss | same | same | `13.25` logits |
-| Late MLP write-out and context gating | same | `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/summary.json`, `analysis/effects.csv` | late support `+0.789`; PT-host late `+0.0035`; upstream `+0.403`, late-weight `+0.148`, interaction `+0.288` |
-| Behavioral bridge with human audit | same | `results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/exp15_behavior_summary.json`, `results/exp15_symmetric_behavioral_causality/human_eval/human_eval_summary.json` | LLM resolved G2: `56.3%`, `77.1%`; human resolved G2: `60.5%`, `70.6%` |
+| Residual-state x late-stack factorial, common-IT readout | `bash scripts/reproduce/reproduce_claims_from_summaries.sh` | `results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/exp23_summary.json`; `analysis/exp23_effects.csv` | late from PT upstream `+0.572`; late from IT upstream `+3.207`; interaction `+2.635` logits over `2,983` prompt clusters |
+| Gemma-removed and family checks | same | same | Gemma-removed interaction `+1.77`; family interactions all positive; median family `+1.85` |
+| Label-swap null for the factorial | same | `results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/compatibility_permutation/` | observed interaction `+2.64`; null 99.9th percentile `+0.239`; `p=5.0e-5` |
+| First-divergence position sensitivity | same | `results/paper_synthesis/exp23_position_sensitivity_table.csv`; `results/paper_synthesis/exp23_position_sensitivity_per_family.csv` | drop position 0 `+2.25`; position `>=3` `+1.52`; Gemma-removed position `>=3` `+0.79`; position `>=5` `+1.64` |
+| Content/reasoning stress test | same | `results/exp23_midlate_interaction_suite/exp23_content_reasoning_residual_20260427_0930_h100x8/analysis/exp23_summary.json` | interaction `+1.81`; late from PT upstream `-1.18` |
+| First-divergence identity split | same | `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/summary.json` | raw-shared middle vs late IT-token transfer `26.0%` vs `17.6%`; mirror `31.2%` vs `20.8%` |
+| MLP write-out proxy | same | `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/summary.json`; `analysis/effects.csv` | late IT-token support `+0.789`; PT-host late `+0.0035`; residual-opposing component `-0.0046` |
+| Dense-5 delayed-stabilization context | same | `results/exp09_cross_model_observational_replication/data/convergence_gap_values.json`; `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv` | tuned final-half gap `0.410`; raw final-half gap `0.771`; endpoint-matched raw late gap `+0.425`; endpoint-matched tuned late gap `+0.762` |
+| Matched-prefix late-window localization and random control | same | `results/exp11_matched_prefix_mlp_graft/.../depth_ablation_metrics.json`; `results/exp14_symmetric_matched_prefix_causality/.../exp13_full_summary.json`; `results/exp19_late_mlp_specificity_controls/.../exp19B_summary_light.json` | late graft `+0.341`; late swap `-0.509`; true late random-control contrast `+0.327` vs random `+0.003` |
+| Behavioral sanity check and human audit | same | `results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/exp15_behavior_summary.json`; `results/exp15_symmetric_behavioral_causality/human_eval/human_eval_summary.json` | LLM resolved G2 `56.3%`, `77.1%`; human resolved G2 `60.2%`, `68.4%` |
 
 ## Raw Data And Large Artifacts
 
@@ -31,6 +31,9 @@ Git contains paper-facing summaries and plots, not multi-GB raw traces or probe 
 - `gs://pt-vs-it-results/results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421/`
 - `gs://pt-vs-it-results/results/exp20_divergence_token_counterfactual/midlate_factorial_20260424_1116/`
 - `gs://pt-vs-it-results/results/exp20_divergence_token_counterfactual/full_runpod_20260423_2148_dense5_midlate_factorial_20260424/`
+- `gs://pt-vs-it-results/results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/`
+- `gs://pt-vs-it-results/results/exp23_midlate_interaction_suite/exp23_content_reasoning_residual_20260427_0930_h100x8/`
+- `gs://pt-vs-it-results/results/exp21_productive_opposition/exp21_content_reasoning_20260427_0943_h100x8/`
 
 The minimal audit shard is expected at:
 
@@ -60,4 +63,4 @@ uv run python -m src.poc.cross_model.tuned_lens --model MODEL --variant pt --dev
 uv run python -m src.poc.cross_model.tuned_lens --model MODEL --variant it --device cuda:0
 ```
 
-The full six-family tuned-lens retrain is 12 runs. On 8x80GB H100/A100 GPUs, the expected wall time is roughly 4-6 hours using joint all-layer training.
+The dense-5 tuned-lens retrain is 10 runs; including the DeepSeek side case is 12 runs. On 8x80GB H100/A100 GPUs, the expected wall time is roughly 4-6 hours using joint all-layer training.
