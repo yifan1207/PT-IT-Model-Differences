@@ -466,6 +466,24 @@ def exp23_position_category_mix(position_filter: str, axis: str, category: str, 
     return _read
 
 
+def exp23_position_prompt_category(position_filter: str, prompt_category: str, metric: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_position_prompt_category_effects.csv",
+        )
+        for row in rows:
+            if (
+                row["position_filter"] == position_filter
+                and row["prompt_category"] == prompt_category
+                and row["metric"] == metric
+            ):
+                return float(row[column])
+        raise KeyError((position_filter, prompt_category, metric, column))
+
+    return _read
+
+
 def exp15_llm_pairwise(comparison: str, criterion: str) -> NumberFn:
     key = f"pairwise_{criterion.lower()}"
 
@@ -1397,6 +1415,42 @@ CHECKS: list[ClaimCheck] = [
         exp23_position_category_mix("step_ge3", "it_token_category", "FORMAT", "count"),
     ),
     ClaimCheck(
+        "Exp23 GOV-CONV all-position interaction",
+        "exp23_position_prompt_category_effects.csv",
+        2.0509100734312526,
+        exp23_position_prompt_category("all", "GOV-CONV", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 GOV-CONV position >=3 interaction",
+        "exp23_position_prompt_category_effects.csv",
+        1.512368607090077,
+        exp23_position_prompt_category("step_ge3", "GOV-CONV", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 GOV-FORMAT position >=3 interaction",
+        "exp23_position_prompt_category_effects.csv",
+        2.277389090401786,
+        exp23_position_prompt_category("step_ge3", "GOV-FORMAT", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 GOV-FORMAT position >=3 clusters",
+        "exp23_position_prompt_category_effects.csv",
+        61.0,
+        exp23_position_prompt_category("step_ge3", "GOV-FORMAT", "interaction", "n_prompt_clusters"),
+    ),
+    ClaimCheck(
+        "Exp23 SAFETY position >=3 interaction",
+        "exp23_position_prompt_category_effects.csv",
+        0.6419631231398809,
+        exp23_position_prompt_category("step_ge3", "SAFETY", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 SAFETY position >=3 clusters",
+        "exp23_position_prompt_category_effects.csv",
+        39.0,
+        exp23_position_prompt_category("step_ge3", "SAFETY", "interaction", "n_prompt_clusters"),
+    ),
+    ClaimCheck(
         "Exp23 Gemma-removed position >=5 interaction CI low",
         "exp23_position_sensitivity_table.csv",
         0.7123552879374079,
@@ -1492,6 +1546,48 @@ CHECKS: list[ClaimCheck] = [
             "exp23_dense5_full_h100x8_20260426_sh4_rw4",
             "prompt_category",
             "SAFETY",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 assistant-marker subgroup clusters",
+        "exp23 primary subgroup summary.json",
+        551.0,
+        exp23_subgroup(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "assistant_marker_event",
+            "assistant_marker",
+            "n_prompt_clusters",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 assistant-marker subgroup interaction",
+        "exp23 primary subgroup summary.json",
+        3.3040487511538137,
+        exp23_subgroup(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "assistant_marker_event",
+            "assistant_marker",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 non-assistant-marker subgroup clusters",
+        "exp23 primary subgroup summary.json",
+        2432.0,
+        exp23_subgroup(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "assistant_marker_event",
+            "non_assistant_marker",
+            "n_prompt_clusters",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 non-assistant-marker subgroup interaction",
+        "exp23 primary subgroup summary.json",
+        2.4822755059501542,
+        exp23_subgroup(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "assistant_marker_event",
+            "non_assistant_marker",
         ),
     ),
     ClaimCheck(

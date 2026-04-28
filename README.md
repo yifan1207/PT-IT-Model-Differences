@@ -1,19 +1,19 @@
-# Instruction Tuning Creates a Broad Convergence-Gap Signature: Strongest Tested Leverage Lies in Late MLPs
+# First-Divergence Factorial Diffing for Post-Trained Language Models
 
-### Cross-Family Localization and Behavioral Consequences Across Transformer Families
+### Measuring upstream-late interaction at the first PT/IT next-token disagreement
 
 <p align="center">
   <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white">
   <img alt="PyTorch" src="https://img.shields.io/badge/pytorch-2.5+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white">
-  <img alt="6 Model Families" src="https://img.shields.io/badge/models-6%20families-green?style=flat-square">
+  <img alt="5 Dense Model Families" src="https://img.shields.io/badge/models-5%20dense%20families-green?style=flat-square">
 
 </p>
 
-> **TL;DR** &mdash; The current paper story is paired: instruction tuning creates a **broad convergence-gap signature** under native decoding across six model families, and the strongest tested internal leverage on that signature lies in a **late MLP window** under matched-prefix control. The matched-prefix graft/swap experiments are the cross-model internal backbone, the free-running behavioral experiments show that the same late intervention family moves a real but partial slice of assistant behavior, and Gemma steering serves as a concrete single-model bridge rather than the main cross-family evidence base.
+> **TL;DR** &mdash; The current paper centers on **first-divergence factorial diffing**. At the first shared-history token where a pretrained checkpoint and its post-trained descendant prefer different next tokens, we cross upstream residual state with downstream late stack and measure the divergent-token margin. Across five dense PT/IT families, the same IT late stack has a much larger effect from IT-shaped upstream state than from PT-shaped upstream state. Convergence-gap curves, matched-prefix graft/swap, MLP write-out, and behavior are supporting context rather than the headline.
 
-![Broad convergence gap across six model families](docs/assets/readme_broad_convergence_gap.png)
+![First-divergence residual-state x late-stack factorial](results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/exp23_midlate_interaction.png)
 
-*Figure 1. Tuned-lens KL-to-own-final curves from the main cross-family observational suite. Across all six families, IT stays farther from its own final distribution than PT through much of the stack, making the broad convergence gap the primary cross-model signature.*
+*Figure 1. Current paper headline: residual-state x late-stack factorial at first-divergence prefixes. The inference target is the upstream-late interaction on the IT-vs-PT divergent-token margin, conditional on the five released dense PT/IT checkpoint pairs.*
 
 ---
 
@@ -24,7 +24,7 @@ If you are new to the repo, these are the most useful entrypoints:
 - [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md): canonical experiment map and path conventions
 - [scripts/README.md](scripts/README.md): grouped script layout and common commands
 - `uv run python scripts/infra/repo_doctor.py`: lightweight repo health check
-- [paper_draft/PAPER_DRAFT_v19.md](paper_draft/PAPER_DRAFT_v19.md): current paper framing, including the reproducibility and artifact map
+- [paper_draft/PAPER_DRAFT_v22.md](paper_draft/PAPER_DRAFT_v22.md): current paper framing, including the reproducibility and artifact map
 
 The repo has been reorganized into descriptive canonical paths:
 
@@ -46,29 +46,28 @@ The current paper-facing story is best understood in three layers:
 
 | Layer | Best current claim | Main evidence |
 |---|---|---|
-| Observational | Instruction tuning creates a broad convergence-gap signature under native decoding | `exp09` cross-model PT/IT analyses |
-| Internal causal | The strongest tested leverage on the convergence gap is late-centered and MLP-heavy | `exp11` matched-prefix grafts + `exp14` symmetric sufficiency/necessity |
-| Behavioral | The same late intervention family moves a real but partial slice of assistant behavior, strongest on the IT-side necessity test | `exp12` free-running A/B/C + `exp15` symmetric behavioral analysis |
+| Primary estimand | Late-stack effects are non-additive with upstream residual state at first PT/IT disagreement | `exp23` residual-state x late-stack factorial + label-swap null |
+| Supporting decomposition | Middle-positioned substitutions transfer token identity more often; late-positioned substitutions affect margin/readout more | `exp20` first-divergence identity/margin + `exp21` MLP write-out |
+| Layerwise context | IT checkpoints show delayed stabilization, motivating late-window interventions | `exp09`, `exp11`, `exp14`, `exp16`, `exp19`, `exp22` |
 
 What is strongest right now:
 
-- broad IT-vs-PT convergence gap and delayed commitment across 6 families under both tuned and raw logit lenses
-- a late-concentrated IT-vs-PT increase in residual opposition as a geometric companion, with architecture-dependent magnitude and spatial extent
-- matched-prefix late graft/swap as the main cross-model internal backbone for late-window MLP localization of the convergence gap
-- Gemma steering as the clearest single-direction causal bridge between convergence speed and governance behavior, consistent with that cross-family backbone
-- `exp13A-lite` plus the exp13/14 mechanism summaries as evidence that the late stage is broader than a narrow formatting-token injector
-- free-running A/B/C as a behavioral precision finding: late MLPs move anti-raw-continuation / anti-false-refusal more than polished structure
+- first-divergence 2x2 interaction: common-IT interaction `+2.64` logits over five dense families, positive in every family and `+1.77` without Gemma
+- label-swap null and prompt/position/domain stratifications showing that the interaction is PT/IT-label aligned and not only an immediate-token artifact
+- content/reasoning extension where the interaction remains positive while the PT-upstream late-only term flips negative, strengthening the "conditional, not portable" interpretation
+- identity/margin decomposition: middle-positioned windows transfer token identity more often, while late-positioned windows supply stronger margin/readout pressure
+- delayed-stabilization and matched random late-MLP controls as supporting layerwise context
 
 What remains intentionally careful:
 
-- the free-running six-family observational curves are descriptive, not matched-history estimates
-- `KL(layer || own final)` is useful but endpoint-sensitive
-- dimensionality diagnostics are exploratory / mixed and are not part of the main claim
-- late IT MLPs are the **strongest tested leverage window inside a broader middle-to-late circuit**, not a full assistantness module
+- the main paper pools five dense 4B-8B families; DeepSeek-V2-Lite is an MoE side case only
+- first-divergence prefixes are selected natural disagreement events, strongest in early response formation, not random token positions
+- causal language refers to measured effects in constructed hybrid forward passes, not complete natural-model circuit recovery
+- `KL(layer || own final)` is useful layerwise context but endpoint-relative and no longer the headline causal claim
 
 ![Late-window sufficiency and necessity under matched-prefix control](docs/assets/readme_exp14_causal_main.png)
 
-*Figure 2. Symmetric matched-prefix exp13/14 summary. The late IT→PT graft is the strongest sufficiency window and the mirrored late PT→IT swap is the strongest necessity window on the primary late-region KL metric, supporting late-window localization with the strongest tested leverage at the end of the stack rather than a diffuse endpoint-only story.*
+*Figure 2. Supporting matched-prefix graft/swap context. These older paper-facing plots localize late-window leverage on delayed stabilization; the current headline result is the first-divergence factorial above.*
 
 ---
 
@@ -207,14 +206,16 @@ For a full index, see [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md)
 
 ---
 
-## Experiment index
+## Broader Experiment Index
 
-### Observational (cross-model, 6/6)
+This index includes historical and supporting experiments. The current paper's main pooled claims use the five dense families; DeepSeek-V2-Lite remains a MoE side case where artifacts exist.
+
+### Observational / Layerwise Context
 
 | ID | Analysis | Key result |
 |----|----------|------------|
-| **L1** | &delta;-cosine profiles | IT adds more late residual opposition than PT in all 6 families, but with heterogeneous magnitude (&minus;0.021 to &minus;0.269 in the final 20%) |
-| **L2** | Broad convergence gap + delayed commitment (5 metrics &times; 2 lenses) | IT stays farther from its own final distribution through much of the stack and commits later in all 6 families |
+| **L1** | &delta;-cosine profiles | IT adds more late residual opposition than PT in the dense-family pool, with heterogeneous magnitude and a separate MoE side case |
+| **L2** | Convergence gap + delayed commitment (5 metrics &times; 2 lenses) | IT stays farther from its own final distribution through much of the stack; used as layerwise context |
 | **L3** | Weight change localization | Gemma: concentrated at corrective layers; others: uniform |
 | **L8** | Geometry follow-up | Exploratory dimensionality / covariance diagnostics are mixed and not part of the core evidence chain |
 | **L9** | Attention entropy divergence | Architecture-dependent |
@@ -236,7 +237,10 @@ For a full index, see [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md)
 | **exp11** | Matched-prefix late IT MLP graft | Late IT MLPs increase late KL-to-own-final and move PT internal predictions toward the IT teacher under shared token history |
 | **exp13A-lite** | Descriptive token-support analysis | Late grafts broadly suppress raw-continuation-like `FUNCTION/OTHER` candidates and increase support for the eventual teacher token |
 | **exp16** | Matched-prefix native-JS replay | Direct same-layer JS under frozen exp14 teacher histories removes unmatched-history and own-final-endpoint dependence from the main internal divergence readout |
-| **exp14** | Symmetric sufficiency / necessity | Late IT→PT graft is the strongest sufficiency window and late PT→IT swap is the strongest necessity window across all 6 models on the primary late-region KL metric |
+| **exp14** | Symmetric sufficiency / necessity | Late IT→PT graft is the strongest sufficiency window and late PT→IT swap is the strongest necessity window in the dense-family pool on the primary late-region KL metric |
+| **exp20** | First-divergence identity/margin decomposition | Middle-positioned substitutions transfer token identity more often; late-positioned substitutions affect margin more |
+| **exp21** | MLP write-out at first divergence | Late IT MLPs provide strong native IT-token support, but the MLP-only late effect is weak from PT upstream state |
+| **exp23** | Residual-state x late-stack factorial | Current headline: upstream-late interaction on the divergent-token margin, with label-swap, position, subgroup, and content/reasoning checks |
 
 ### Free-running Behavioral Causality
 
@@ -292,7 +296,7 @@ The adapter system provides a uniform interface across all six architectures, in
 
 ```bibtex
 @article{anonymous2026corrective,
-  title={Instruction Tuning Creates a Broad Convergence Gap: A Late-Centered Corrective Computation Across Transformer Families},
+  title={First-Divergence Factorial Diffing for Post-Trained Language Models},
   author={Anonymous},
   year={2026}
 }
