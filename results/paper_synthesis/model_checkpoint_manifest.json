@@ -1,5 +1,5 @@
 {
-  "created_utc": "2026-04-28T00:40:00.961722+00:00",
+  "created_utc": "2026-04-28T01:19:08.927608+00:00",
   "important_scope_note": "The project registry now pins immutable Hugging Face revisions for reproducible reruns. Historical result configs may only store repo IDs, so `resolved_main_sha` remains an audit field rather than proof of historical run-time pinning.",
   "models": {
     "deepseek_v2_lite": {
@@ -79,7 +79,7 @@
         "repo_id": "google/gemma-3-4b-it",
         "resolved_main_sha": "093f9f388b31de276ce2de164bdc2081324b9767",
         "tokenizer_class": null,
-        "tokenizer_error": "OSError: You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/google/gemma-3-4b-it.\n401 Client Error. (Request ID: Root=1-69f001e2-210e007844938e1f67d64cac;66fbf0a5-e70e-4401-a88b-49cd8d5471a8)\n\nCannot access gated repo for url https://huggingface.co/google/gemma-3-4b-it/resolve/093f9f388b31de276ce2de164bdc2081324b9767/config.json.\nAccess to model google/gemma-3-4b-it is restricted. You must have access to it and be authenticated to access it. Please log in.",
+        "tokenizer_error": "OSError: You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/google/gemma-3-4b-it.\n401 Client Error. (Request ID: Root=1-69f00b0f-07bc80742c66b4927fbfd8f0;e48e01d7-a97b-47c7-b516-e609dd63586c)\n\nCannot access gated repo for url https://huggingface.co/google/gemma-3-4b-it/resolve/093f9f388b31de276ce2de164bdc2081324b9767/config.json.\nAccess to model google/gemma-3-4b-it is restricted. You must have access to it and be authenticated to access it. Please log in.",
         "vocab_size": null
       },
       "n_heads": 8,
@@ -104,7 +104,7 @@
         "repo_id": "google/gemma-3-4b-pt",
         "resolved_main_sha": "cc012e0a6d0787b4adcc0fa2c4da74402494554d",
         "tokenizer_class": null,
-        "tokenizer_error": "OSError: You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/google/gemma-3-4b-pt.\n401 Client Error. (Request ID: Root=1-69f001e2-273a99741f15c42a21242fb7;045a15eb-0f8e-49c2-a509-3b69d00bdcc1)\n\nCannot access gated repo for url https://huggingface.co/google/gemma-3-4b-pt/resolve/cc012e0a6d0787b4adcc0fa2c4da74402494554d/config.json.\nAccess to model google/gemma-3-4b-pt is restricted. You must have access to it and be authenticated to access it. Please log in.",
+        "tokenizer_error": "OSError: You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/google/gemma-3-4b-pt.\n401 Client Error. (Request ID: Root=1-69f00b0e-20a20d9739958ec140e08a66;adce1aaa-a37f-463c-a133-1441adb8c20c)\n\nCannot access gated repo for url https://huggingface.co/google/gemma-3-4b-pt/resolve/cc012e0a6d0787b4adcc0fa2c4da74402494554d/config.json.\nAccess to model google/gemma-3-4b-pt is restricted. You must have access to it and be authenticated to access it. Please log in.",
         "vocab_size": null
       },
       "same_eos_token_id": null,
@@ -133,7 +133,7 @@
         "repo_id": "meta-llama/Llama-3.1-8B-Instruct",
         "resolved_main_sha": "0e9e39f249a16976918f6564b8830bc894c89659",
         "tokenizer_class": null,
-        "tokenizer_error": "OSError: You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct.\n401 Client Error. (Request ID: Root=1-69f001e3-6c873b57191d71ef09f4daa1;246a4372-ce49-49c7-b19f-9315cd9fe965)\n\nCannot access gated repo for url https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/resolve/0e9e39f249a16976918f6564b8830bc894c89659/config.json.\nAccess to model meta-llama/Llama-3.1-8B-Instruct is restricted. You must have access to it and be authenticated to access it. Please log in.",
+        "tokenizer_error": "OSError: You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct.\n401 Client Error. (Request ID: Root=1-69f00b10-1e3eb03f547e678e59b81e60;07e60995-4d67-44ab-b4ec-97391ad43745)\n\nCannot access gated repo for url https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/resolve/0e9e39f249a16976918f6564b8830bc894c89659/config.json.\nAccess to model meta-llama/Llama-3.1-8B-Instruct is restricted. You must have access to it and be authenticated to access it. Please log in.",
         "vocab_size": null
       },
       "n_heads": 32,
@@ -158,7 +158,7 @@
         "repo_id": "meta-llama/Llama-3.1-8B",
         "resolved_main_sha": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
         "tokenizer_class": null,
-        "tokenizer_error": "OSError: You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/meta-llama/Llama-3.1-8B.\n401 Client Error. (Request ID: Root=1-69f001e3-5103a75a1ec13a722ae0a813;1566cd00-45a6-446d-abe7-fccd5b746329)\n\nCannot access gated repo for url https://huggingface.co/meta-llama/Llama-3.1-8B/resolve/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b/config.json.\nAccess to model meta-llama/Llama-3.1-8B is restricted. You must have access to it and be authenticated to access it. Please log in.",
+        "tokenizer_error": "OSError: You are trying to access a gated repo.\nMake sure to have access to it at https://huggingface.co/meta-llama/Llama-3.1-8B.\n401 Client Error. (Request ID: Root=1-69f00b0f-11cb584b07fd33eb344c1d0e;e735f975-ca13-4dc0-b341-f5b0d3565819)\n\nCannot access gated repo for url https://huggingface.co/meta-llama/Llama-3.1-8B/resolve/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b/config.json.\nAccess to model meta-llama/Llama-3.1-8B is restricted. You must have access to it and be authenticated to access it. Please log in.",
         "vocab_size": null
       },
       "same_eos_token_id": null,
@@ -167,7 +167,7 @@
     "mistral_7b": {
       "d_model": 4096,
       "is_moe": false,
-      "is_sliding_window": true,
+      "is_sliding_window": false,
       "it": {
         "bos_token": "<s>",
         "bos_token_id": 1,

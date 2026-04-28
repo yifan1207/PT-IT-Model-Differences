@@ -103,10 +103,10 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         d_model=4096,
         n_heads=32,
         n_kv_heads=8,
-        # All layers use sliding window attention
+        # v0.3 configs set sliding_window=None; unlike v0.1, SWA is disabled.
         global_attn_layers=frozenset(range(32)),
-        is_sliding_window=True,
-        sliding_window_size=4096,
+        is_sliding_window=False,
+        sliding_window_size=None,
         pt_revision="caa1feb0e54d415e2df31207e5f4e273e33509b1",
         it_revision="c170c708c41dac9275d15a8fff4eca08d52bab71",
     ),

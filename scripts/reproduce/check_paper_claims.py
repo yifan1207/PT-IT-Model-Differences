@@ -323,6 +323,41 @@ def exp23_model_effect(
     return _read
 
 
+def exp23_model_summary(
+    run_name: str,
+    effect: str,
+    summary: str,
+    *,
+    exclude: set[str] | None = None,
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp23_midlate_interaction_suite/"
+            f"{run_name}/analysis/exp23_summary.json",
+        )
+        model_cis = data["residual_factorial"]["effects"]["common_it"][effect][
+            "model_cis"
+        ]
+        values = [
+            float(row["estimate"])
+            for model, row in model_cis.items()
+            if not exclude or model not in exclude
+        ]
+        if summary == "median":
+            return percentile(values, 50)
+        if summary == "trimmed_minmax_mean":
+            ordered = sorted(values)
+            if len(ordered) < 3:
+                raise ValueError("trimmed_minmax_mean requires at least 3 values")
+            return mean(ordered[1:-1])
+        if summary == "mean":
+            return mean(values)
+        raise KeyError(summary)
+
+    return _read
+
+
 def exp23_leave_one_out(
     run_name: str,
     effect: str,
@@ -1018,6 +1053,37 @@ CHECKS: list[ClaimCheck] = [
             "interaction",
             "olmo2_7b",
             "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 family interaction median",
+        "exp23 primary exp23_summary.json",
+        1.846658752233095,
+        exp23_model_summary(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "median",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 family interaction trimmed mean",
+        "exp23 primary exp23_summary.json",
+        1.9482571503814394,
+        exp23_model_summary(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "trimmed_minmax_mean",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 family interaction excluding Gemma and Mistral",
+        "exp23 primary exp23_summary.json",
+        1.5213637355533927,
+        exp23_model_summary(
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4",
+            "interaction",
+            "mean",
+            exclude={"gemma3_4b", "mistral_7b"},
         ),
     ),
     ClaimCheck(

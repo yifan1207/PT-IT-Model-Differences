@@ -6,7 +6,7 @@
 
 ## Abstract
 
-We introduce first-divergence factorial diffing to estimate whether late-stack effects in paired pretrained and post-trained language models depend on upstream residual state. The protocol conditions on the first shared-history prefix where the two checkpoints prefer different next tokens, then crosses upstream residual states with downstream late stacks and measures the IT-vs-PT divergent-token margin. Across five dense PT/IT families, the same IT late stack shifts the margin by `+3.21` logits from an IT-shaped upstream state but only `+0.57` logits from a PT-shaped state, giving an upstream-state x late-stack interaction of `+2.64` logits (95% CI `[+2.54, +2.74]`). Gemma has the largest magnitude, but the interaction remains `+1.77` logits (95% CI `[+1.69, +1.86]`) when Gemma is excluded; it is positive in all five families, survives a label-swap permutation null, and remains positive after removing immediate divergences and when restricted to first divergences at generated position `>=3`. A factual/reasoning stress test preserves the interaction (`+1.81`) while the PT-upstream late-only term flips negative (`-1.18`), consistent with the simple late-only effect being strongest on post-training-specific behavior rather than portable across prompt regimes. Supporting first-divergence tests show that middle-positioned window substitutions transfer token identity more often, while late-positioned window substitutions more strongly affect margin/readout. A delayed-stabilization analysis provides layerwise context and late-window localization support. The contribution is an empirical methodology and measurement battery for paired dense PT/IT model diffing, not circuit recovery or a general mechanism for instruction following.
+Layer-stage accounts suggest late refinement, but they do not by themselves define a causal estimand for post-training changes under identical histories. We introduce first-divergence factorial diffing: at the first shared-history prefix where paired pretrained and post-trained checkpoints prefer different next tokens, we cross upstream residual states with downstream late stacks and measure the IT-vs-PT divergent-token margin. Across five dense PT/IT families, the same IT late stack shifts the margin by `+3.21` logits from an IT-shaped upstream state but only `+0.57` logits from a PT-shaped state, giving a family-balanced upstream-state x late-stack interaction of `+2.64` logits (95% CI `[+2.54, +2.74]`). Family magnitudes are heterogeneous but sign-consistent (range `+1.25` to `+6.08`; median family `+1.85`), and the interaction remains `+1.77` logits (95% CI `[+1.69, +1.86]`) when Gemma is excluded; it survives a label-swap permutation null and remains positive after removing immediate divergences and when restricted to first divergences at generated position `>=3`. A factual/reasoning stress test preserves the interaction (`+1.81`) while the PT-upstream late-only term flips negative (`-1.18`), showing a fact not captured by generic late-refinement heuristics: late IT computation is not a portable positive module, and its margin effect depends on the upstream state and prompt regime. Supporting first-divergence tests show that middle-positioned window substitutions transfer token identity more often, while late-positioned window substitutions more strongly affect margin/readout. The contribution is an empirical methodology and measurement battery for paired dense PT/IT model diffing, not circuit recovery or a general mechanism for instruction following.
 
 ---
 
@@ -43,11 +43,13 @@ For intuition, suppose PT and IT agree on every previous token, but PT next pref
 | **Late MLP window** | Only the MLP sublayers inside the pre-specified late window. | Graft/swap, identity/margin, and write-out tests. |
 | **Final-20% KL region** | The final normalized-depth segment used to summarize `KL(layer || own final)`. | Delayed-stabilization context in Section 3.2. |
 
-The central measurement is simple. Across five dense PT/IT families, the same IT late stack shifts the IT-vs-PT margin by `+3.21` logits from an IT-shaped upstream state but only `+0.57` logits from a PT-shaped upstream state, giving an interaction of `+2.64` logits (95% CI `[+2.54, +2.74]`). The interaction is positive in every family, survives a label-swap null, and persists on a factual/reasoning stress test where the simple late-only term changes sign. Because Gemma is the largest-magnitude family, Section 3.1 centralizes the Gemma-specific diagnostics and reports the conservative Gemma-removed estimate.
+The central measurement is simple. Across five dense PT/IT families, the same IT late stack shifts the IT-vs-PT margin by `+3.21` logits from an IT-shaped upstream state but only `+0.57` logits from a PT-shaped upstream state, giving a family-balanced interaction of `+2.64` logits (95% CI `[+2.54, +2.74]`). The interaction is positive in every family, with heterogeneous magnitudes (median family `+1.85`; Gemma-removed mean `+1.77`), survives a label-swap null, and persists on a factual/reasoning stress test where the simple late-only term changes sign. Section 3.1 treats Gemma as the largest-magnitude family, not as the representative effect size.
 
 A companion first-divergence decomposition explains why the interaction matters. Middle-positioned window substitutions transfer token identity more often, while late-positioned window substitutions more strongly affect margin/readout.
 
-Late-stage dependence is not a new intuition. Transformer-circuits work treats the residual stream as the shared channel that later layers read from and write to (Elhage et al., 2021), and work on FFN readouts, tuned lenses, DoLA, stages of inference, calibration, and layer localization uses a vocabulary of updating, refinement, sharpening, or correction that presupposes upstream-shaped state (Geva et al., 2022a,b; Belrose et al., 2023; Chuang et al., 2024; Lad et al., 2024; Joshi et al., 2025; Zhao, Ziser, and Cohen, 2024). First-divergent-token metrics also appear in model-compression work as a way to detect when a compressed model first departs from a reference model (Deiseroth et al., 2024). Our use is different: we condition on the first natural PT/IT disagreement to run paired interventions, not to score compression degradation. The ingredients are established; the contribution here is to turn them into a measured estimand at that disagreement: an upstream-state x late-stack interaction on the actual divergent-token margin, with separate token-identity and margin readouts, a label-swap falsifier for the factorial, and a matched random falsifier for the late-MLP KL control. Because the protocol only requires paired checkpoints and a shared-history next-token disagreement, it can be reused for other model-pair contrasts, including base-to-SFT, SFT-to-preference-tuned, reasoning-tuned, safety-tuned, or constitution-modified checkpoints.
+The novelty is methodological, not the slogan that late layers refine. Layer-localization work can say where task information or output sharpening tends to appear; it does not test the counterfactual "run the same IT late stack from the PT upstream state at the exact token where PT and IT first disagree." The 2x2 factorial makes that counterfactual explicit and gives falsifiable alternatives: a state-independent late-refinement account predicts a small interaction; an arbitrary sign convention would not put the observed interaction far outside a label-swap null; generic late fragility should resemble matched random late controls. The observed pattern rejects those simpler readings and exposes a sharper conclusion: late IT computation is conditionally effective rather than portable.
+
+Late-stage dependence is not a new intuition. Transformer-circuits work treats the residual stream as the shared channel that later layers read from and write to (Elhage et al., 2021), and work on FFN readouts, tuned lenses, DoLA, stages of inference, calibration, and layer localization uses a vocabulary of updating, refinement, sharpening, or correction that presupposes upstream-shaped state (Geva et al., 2022a,b; Belrose et al., 2023; Chuang et al., 2024; Lad et al., 2025; Joshi et al., 2025; Zhao, Ziser, and Cohen, 2024). First-divergent-token metrics also appear in model-compression work as a way to detect when a compressed model first departs from a reference model (Deiseroth et al., 2024). Our use is different: we condition on the first natural PT/IT disagreement to run paired interventions, not to score compression degradation. The ingredients are established; the contribution here is to turn them into a measured estimand at that disagreement: an upstream-state x late-stack interaction on the actual divergent-token margin, with separate token-identity and margin readouts, a label-swap falsifier for the factorial, and a matched random falsifier for the late-MLP KL control. Because the protocol only requires paired checkpoints and a shared-history next-token disagreement, it can be reused for other model-pair contrasts, including base-to-SFT, SFT-to-preference-tuned, reasoning-tuned, safety-tuned, or constitution-modified checkpoints.
 
 The project began from a simpler delayed-stabilization observation: IT models remain farther from their own final next-token distribution until later layers. We use that observation to motivate looking at late windows and to check that the factorial result fits a broader layerwise pattern. We state the claim at the granularity directly supported by the interventions: a paired-checkpoint decomposition in which middle substitutions are more diagnostic of candidate identity, while late MLP and late-stack computation interact with upstream state to shape the measured final PT/IT margin.
 
@@ -66,7 +68,7 @@ The main experiments use five dense PT/IT model families:
 | Gemma 3 4B | 34 | 2560 | GQA, hybrid local/global (5:1) | Undisclosed | Multi-stage post-training |
 | Llama 3.1 8B | 32 | 4096 | GQA, all global | 15T tokens | Iterative supervised + preference optimization |
 | Qwen 3 4B | 36 | 2560 | GQA, all global | 36T tokens, 119 languages | Multi-stage post-training |
-| Mistral 7B v0.3 | 32 | 4096 | GQA, sliding window | Undisclosed | Instruct checkpoint |
+| Mistral 7B v0.3 | 32 | 4096 | GQA, full attention (`sliding_window=null`) | Undisclosed | Instruct checkpoint |
 | OLMo 2 7B | 32 | 4096 | MHA, all global | OLMo-mix-1124 | SFT + DPO + RLVR |
 
 The exact Hugging Face checkpoint IDs used by the dense-family runs are:
@@ -150,7 +152,9 @@ This is the core non-additivity estimate. If a state-independent late-effect acc
 | OLMo 2 7B | `586` | `+0.76` | `+2.61` | `3.4x` | `+1.85` `[+1.67, +2.03]` |
 | Dense-5 | `2,983` | `+0.57` | `+3.21` | `5.6x` | `+2.64` `[+2.54, +2.74]` |
 
-**Gemma as the largest-magnitude family.** The interaction is positive in all five dense families, and each per-family interaction interval excludes zero. Gemma has the largest interaction (`+6.08`), the largest descriptive ratio (`60.5x`, mostly because the PT-upstream denominator is only `+0.10` logits), the smallest tuned-vs-raw lens improvement in the convergence-gap layerwise plots, and the most late-concentrated MLP weight-change profile (Tables A1-A3). The first-divergence factorial itself is a raw-logit margin measurement, so Gemma's large interaction is not a tuned-lens artifact; nevertheless, these diagnostics make the Gemma magnitude family-specific rather than the right summary of the dense-family effect. Excluding Gemma leaves a four-family mean interaction of `+1.77` logits (95% CI `[+1.69, +1.86]`) and a `3.57x` IT-upstream/PT-upstream ratio; all leave-one-family-out interaction estimates remain positive, ranging from `+1.77` to `+2.98` logits with intervals above zero. The structural direction is cross-family, while magnitude is family-dependent.
+**Family heterogeneity.** The interaction is positive in all five dense families, and each per-family interaction interval excludes zero. The `+2.64` headline is a family-balanced mean, not a claim that families share one scalar effect size. Magnitudes vary from Llama (`+1.25`) to Gemma (`+6.08`); the median family is OLMo at `+1.85`, and the trimmed family mean after dropping the smallest and largest values is `+1.95`. Excluding Gemma leaves a four-family mean interaction of `+1.77` logits (95% CI `[+1.69, +1.86]`) and a `3.57x` IT-upstream/PT-upstream ratio; all leave-one-family-out interaction estimates remain positive, ranging from `+1.77` to `+2.98` logits with intervals above zero. Even excluding both Gemma and Mistral leaves Llama/Qwen/OLMo with a descriptive mean of `+1.52` logits. The paper-level claim is therefore sign-consistent upstream-late non-additivity across released dense PT/IT descendants, with family-specific magnitude.
+
+Gemma is not used as the representative magnitude. It has the largest descriptive ratio (`60.5x`, mostly because the PT-upstream denominator is only `+0.10` logits), the smallest tuned-vs-raw lens improvement in the convergence-gap layerwise plots, and the most late-concentrated MLP weight-change profile (Tables A1-A3). These are diagnostics for why we report Gemma separately, not a causal explanation for Gemma's larger interaction. The first-divergence factorial itself is a raw-logit margin measurement, so Gemma's large interaction is not a tuned-lens artifact; establishing that the late-concentrated weight-change profile causes the larger Gemma effect would require a within-family mediation test or more families, not a correlation across five checkpoints. Ratios are kept descriptive because small PT-upstream denominators inflate them; the logit interaction is the inferential quantity.
 
 The interaction is not only an immediate-disagreement effect. The primary factorial uses raw-shared prompts for both PT and IT branches, so position-0 records are valid shared-input PT/IT disagreements rather than chat-template artifacts. Still, first-divergence position selects different disagreement populations. Recomputing the same family-balanced prompt-cluster estimator after dropping all position-0 records gives `+2.25` logits (95% CI `[+2.11, +2.38]`; Gemma removed `+1.14` `[+1.05, +1.23]`). Restricting to first divergences at generated position `>=3` gives `+1.52` logits (95% CI `[+1.36, +1.68]`; Gemma removed `+0.79` `[+0.70, +0.88]`), with all five family-specific intervals above zero. A CPU-only mix audit shows that this `>=3` subset is shifted toward conversational/governance prompts but is not a single-category residue: it retains all three primary prompt categories and all three collapsed IT-token categories (Appendix F). At generated position `>=5`, the pooled estimate remains positive (`+1.64`, 95% CI `[+1.39, +1.88]`; Gemma removed `+0.83` `[+0.71, +0.94]`), but the cell is thinner (`495` records) and Llama's family-specific interval is compatible with zero. Thus position affects composition, magnitude, and family-level power; it does not make the pooled interaction a first-token-only result.
 
@@ -165,6 +169,8 @@ The primary scope checks stay on this estimand:
 | Check | Readout | Result | Interpretation |
 |---|---|---:|---|
 | Dense-5 primary | Common-IT 2x2 interaction | `+2.64` logits `[+2.54, +2.74]` | Family-balanced prompt-cluster estimate. |
+| Family median | Common-IT 2x2 interaction | `+1.85` logits | Typical-family magnitude summary; no family is used as representative. |
+| Trimmed family mean | Common-IT 2x2 interaction | `+1.95` logits | Drops the smallest and largest family interactions. |
 | Gemma removed | Common-IT 2x2 interaction | `+1.77` logits `[+1.69, +1.86]` | Not only a Gemma effect. |
 | Drop generated position 0 | Common-IT 2x2 interaction | `+2.25` logits `[+2.11, +2.38]` | Not only an immediate-disagreement effect. |
 | Generated position `>=3` | Common-IT 2x2 interaction | `+1.52` logits `[+1.36, +1.68]` | Later-position threshold with all five family intervals above zero. |
@@ -228,19 +234,19 @@ The delayed-stabilization pattern is therefore best read as the layerwise trace 
 
 As a behavioral sanity check, the same late-window intervention family also moves natural-decoding outputs in the expected direction under LLM judging and a completed two-rater human audit. Because behavior is not used to identify the internal mechanism, Appendix B contains the full judge setup, resolved-vote rates, unresolved-label rates, and kappa caveats.
 
-## 4. Related Work and Discussion
+## 4. Related Work: From Stage Heuristics to Estimands
 
-Prior work gives the vocabulary for late-stage dependence. Transformer-circuits work treats the residual stream as a communication channel through which later layers read information written earlier (Elhage et al., 2021). FFN analyses view layer outputs as memory- or vocabulary-space updates later refined through the residual stream (Geva et al., 2022a,b). Logit-lens and tuned-lens work make layerwise prediction refinement visible (nostalgebraist, 2020; Belrose et al., 2023); DoLA exploits differences between earlier and later layer logits (Chuang et al., 2024); Lad et al. (2024) frames late computation as residual sharpening after earlier candidate construction; Joshi et al. (2025) studies late confidence correction after decision certainty has emerged; and Zhao, Ziser, and Cohen (2024) locate transitions from general to task-oriented representations. These accounts make upstream dependence plausible and often implicit. We read our result as operationalizing that assumption, not replacing it with a different conceptual story.
+Prior work gives the vocabulary for late-stage dependence. Transformer-circuits work treats the residual stream as a communication channel through which later layers read information written earlier (Elhage et al., 2021). FFN analyses view layer outputs as memory- or vocabulary-space updates later refined through the residual stream (Geva et al., 2022a,b). Logit-lens and tuned-lens work make layerwise prediction refinement visible (nostalgebraist, 2020; Belrose et al., 2023); DoLA exploits differences between earlier and later layer logits (Chuang et al., 2024); Lad et al. (2025) frames late computation as residual sharpening after earlier candidate construction; Joshi et al. (2025) studies late confidence correction after decision certainty has emerged; and Zhao, Ziser, and Cohen (2024) locate transitions from general to task-oriented representations. These accepted or field-standard accounts make upstream dependence plausible and often implicit. We read our result as operationalizing that assumption, not replacing it with a different conceptual story.
 
-The missing piece is the estimand and control stack. Existing work does not estimate a paired PT/IT upstream-state x late-computation interaction at the token where the checkpoints first disagree. Under first-divergence factorial diffing, the same IT late stack produces a `+3.21` logit shift from IT upstream state versus `+0.57` from PT upstream state in the primary holdout, while a factual/reasoning stress test preserves the interaction but flips the late-only PT-upstream term negative. The contribution is therefore not the discovery that late layers can use upstream state, nor an invariant positive late-only effect. It is the measurement battery: an explicit upstream-late interaction in hybrid passes, per-family intervals, a label-swap factorial falsifier, a matched random late-MLP KL falsifier, and supporting identity/margin readouts.
+The missing piece is the estimand and control stack. Existing work does not estimate a paired PT/IT upstream-state x late-computation interaction at the token where the checkpoints first disagree. This is a different object from a layerwise map. Zhao, Ziser, and Cohen can locate where task-oriented information appears across layers; it does not answer whether the same post-trained late stack has the same causal margin effect when driven by a PT-shaped versus IT-shaped upstream state for the same prompt prefix and token pair. Under first-divergence factorial diffing, the same IT late stack produces a `+3.21` logit shift from IT upstream state versus `+0.57` from PT upstream state in the primary holdout, while a factual/reasoning stress test preserves the interaction but flips the late-only PT-upstream term negative. The contribution is therefore not the discovery that late layers can use upstream state, nor an invariant positive late-only effect. It is the measurement battery: an explicit upstream-late interaction in hybrid passes, per-family intervals, a label-swap factorial falsifier, a matched random late-MLP KL falsifier, and supporting identity/margin readouts.
 
 The residual-opposing geometry supports this interpretation, but only as interpretation. Late IT MLP updates have a substantial component opposing the residual stream entering them, a geometry consistent with revision or reconciliation rather than simple additive accumulation. However, the residual-opposing component is not itself the margin write-in under our proxy: it contributes `-0.0046` logits to the IT-vs-PT margin (95% CI `[-0.009, -0.001]`), while the full late MLP update contributes `+0.768` logits (95% CI `[+0.729, +0.805]`). We therefore do not claim that residual opposition is the mechanistic source of late sharpening. The geometry is consistent with revision, but does not by itself write the IT-vs-PT margin.
 
 Post-training model-diffing and activation-patching papers ask nearby questions. Wu et al. (2024) studies instruction-conditioned behavioral shift, Du et al. (2025) compares base and post-trained models across knowledge, truthfulness, refusal, and confidence, and Prakash et al. (2024) uses cross-model activation patching to study entity tracking. We use related intervention logic, but the target is different: natural PT/IT next-token disagreement under matched-prefix control. This lets us ask whether post-training changes which token candidate is exposed, whether it changes the final margin, or whether the two effects interact.
 
-Layer-localization work is especially close to our interpretation. Zhao, Ziser, and Cohen (2024) study where multi-task information appears across layers in instruction-tuned models, while Nepal et al. (2025) show that layer importance for mathematical reasoning can remain stable across post-training methods. These results make it unsurprising that post-training effects are not confined to a single late component. Our contribution is narrower and more controlled: we condition on the first natural PT/IT next-token disagreement, hold histories fixed, and ask which depth interventions move token identity versus IT-vs-PT margin. The identity effect is deliberately phrased as relative localization (`26.0%` versus `17.6%`), not as a claim that middle MLP windows alone determine the divergent token.
+Layer-localization work is especially close to our interpretation. Zhao, Ziser, and Cohen (2024) study where multi-task information appears across layers in instruction-tuned models, and Panigrahi et al. (2023) study task-specific skill localization in fine-tuned language models. These results make it unsurprising that post-training effects are not confined to a single late component. The distinction is not that we found "middle then late" after others missed it; it is that we convert that qualitative picture into a local paired-counterfactual test. By conditioning on the first natural PT/IT next-token disagreement, holding histories fixed, and crossing upstream state with late stack, the experiment separates three quantities that layer maps conflate: which divergent token candidate is exposed, how much final margin pressure is applied, and whether late margin pressure is portable across upstream states. The identity effect is deliberately phrased as relative localization (`26.0%` versus `17.6%`), not as a claim that middle MLP windows alone determine the divergent token.
 
-Behavioral-direction papers explain why our interaction estimate should not be read as a behavior vector. Arditi et al. (2024), Lu et al. (2026), Stolfo et al. (2024), Turner et al. (2023), Zou et al. (2023), and Panickssery et al. (2024) show that activation-space directions can control refusal, assistant persona, instruction following, or high-level behavior. Li et al. (2025) and Chaudhury (2025) also find safety or preference effects in middle bands. Our first-divergence result is compatible with that picture rather than a foil to it: middle windows are more tied to which behaviorally relevant token candidate is selected, while the first-divergence factorial estimates how late-stack margin effects depend on upstream state.
+Accepted activation-intervention and safety-localization papers explain why our interaction estimate should not be read as a behavior vector. Panickssery et al. (2024) steer behavior with contrastive activation additions, Li et al. (2025) localize safety-relevant layers, and Jain et al. (2024) study what makes and breaks safety fine-tuning. Our first-divergence result is compatible with that picture rather than a foil to it: middle windows are more tied to which behaviorally relevant token candidate is selected, while the first-divergence factorial estimates how late-stack margin effects depend on upstream state.
 
 Taken together, the measurement battery supports a depth-window account: the first-divergence factorial shows a positive upstream-late interaction, the identity/margin decomposition makes middle windows more tied to candidate transfer than late windows, and the delayed-stabilization analysis explains why late windows were a natural place to intervene. The paper does not claim to recover a named middle-layer feature feeding a named late write-in circuit. It contributes a reusable paired-checkpoint protocol and a cross-family route decomposition that future circuit work can make more surgical.
 
@@ -266,13 +272,9 @@ Aghajanyan, A., et al. (2021). Intrinsic Dimensionality Explains the Effectivene
 
 Ansuini, A., et al. (2019). Intrinsic Dimension of Data Representations in Deep Neural Networks. *NeurIPS 2019*. arXiv:1905.12784.
 
-Arditi, A., et al. (2024). Refusal in Language Models Is Mediated by a Single Direction. *arXiv:2406.11717*.
-
 Belrose, N., et al. (2023). Eliciting Latent Predictions from Transformers with the Tuned Lens. *COLM 2024*. arXiv:2303.08112.
 
 Bricken, T., et al. (2023). Towards Monosemanticity: Decomposing Language Models with Dictionary Learning. *Anthropic*.
-
-Chaudhury, A. (2025). Alignment is Localized: A Causal Probe into Preference Layers. *arXiv:2510.16167*.
 
 Cheng, E., Doimo, D., Kervadec, C., Macocco, I., Yu, J., Laio, A., & Baroni, M. (2024). Emergence of a High-Dimensional Abstraction Phase in Language Transformers. *ICLR 2025*. arXiv:2405.15471.
 
@@ -280,15 +282,11 @@ Chuang, Y., et al. (2024). DoLA: Decoding by Contrasting Layers Improves Factual
 
 Conmy, A., Mavor-Parker, A. N., Lynch, A., Heimersheim, S., & Garriga-Alonso, A. (2023). Towards Automated Circuit Discovery for Mechanistic Interpretability. *NeurIPS 2023*. arXiv:2304.14997.
 
-Cui, G., et al. (2025). The Entropy Mechanism of Reinforcement Learning for Reasoning Language Models. *arXiv:2505.22617*.
-
 Deiseroth, B., Meuer, M., Gritsch, N., Eichenberg, C., Schramowski, P., Assenmacher, M., & Kersting, K. (2024). Divergent Token Metrics: Measuring Degradation to Prune Away LLM Components -- and Optimize Quantization. *NAACL 2024*. arXiv:2311.01544.
 
 Du, H., Li, W., Cai, M., Saraipour, K., Zhang, Z., Lakkaraju, H., Sun, Y., & Zhang, S. (2025). How Post-Training Reshapes LLMs: A Mechanistic View on Knowledge, Truthfulness, Refusal, and Confidence. *COLM 2025*. arXiv:2504.02904.
 
 Dubois, Y., Galambosi, B., Liang, P., & Hashimoto, T. B. (2024). Length-Controlled AlpacaEval: A Simple Way to Debias Automatic Evaluators. *COLM 2024*. arXiv:2404.04475.
-
-Dunefsky, J., et al. (2024). Transcoders Find Interpretable LLM Feature Circuits. *arXiv:2406.11944*.
 
 Elhage, N., et al. (2021). A Mathematical Framework for Transformer Circuits. *Anthropic*.
 
@@ -312,15 +310,11 @@ Iacus, S. M., King, G., & Porro, G. (2012). Causal Inference Without Balance Che
 
 Heimersheim, S., & Nanda, N. (2024). How to Use and Interpret Activation Patching. *arXiv:2404.15255*.
 
-Hewitt, J., Liu, N. F., Liang, P., & Manning, C. D. (2024). Instruction Following without Instruction Tuning. *arXiv:2409.14254*.
-
 Jain, S., Lubana, E. S., Oksuz, K., Joy, T., Torr, P. H. S., Sanyal, A., & Dokania, P. K. (2024). What Makes and Breaks Safety Fine-tuning? A Mechanistic Study. *NeurIPS 2024*. arXiv:2407.10264.
-
-Joad, F., et al. (2026). There Is More to Refusal in Large Language Models than a Single Direction. *arXiv:2602.02132*.
 
 Joshi, A., Ahmad, A., & Modi, A. (2025). Calibration Across Layers: Understanding Calibration Evolution in LLMs. *EMNLP 2025*. arXiv:2511.00280.
 
-Lad, F., et al. (2024). The Remarkable Robustness of LLMs: Stages of Inference? *arXiv:2406.19384*.
+Lad, V., Lee, J. H., Gurnee, W., & Tegmark, M. (2025). The Remarkable Robustness of LLMs: Stages of Inference? *NeurIPS 2025*. arXiv:2406.19384.
 
 Levelt, W. J. M. (1989). *Speaking: From Intention to Articulation*. MIT Press.
 
@@ -332,15 +326,11 @@ Lindsey, J., Templeton, A., Marcus, J., Conerly, T., Batson, J., & Olah, C. (202
 
 Liu, Y., Iter, D., Xu, Y., Wang, S., Xu, R., & Zhu, C. (2023). G-Eval: NLG Evaluation Using GPT-4 with Better Human Alignment. *EMNLP 2023*. arXiv:2303.16634.
 
-Lu, C., Gallagher, J., Michala, J., Fish, K., & Lindsey, J. (2026). The Assistant Axis: Situating and Stabilizing the Default Persona of Language Models. *arXiv:2601.10387*.
-
 Meng, K., Bau, D., Andonian, A., & Belinkov, Y. (2022). Locating and Editing Factual Associations in GPT. *NeurIPS 2022*. arXiv:2202.05262.
 
 Minder, J., Dumas, C., Juang, C., Chughtai, B., & Nanda, N. (2025). Overcoming Sparsity Artifacts in Crosscoders to Interpret Chat-Tuning. *NeurIPS 2025*. arXiv:2504.02922.
 
 Nanda, N., & Lieberum, T. (2022). A Mechanistic Interpretability Analysis of Grokking. *ICLR MATH-AI Workshop 2023*.
-
-Nepal, A., Shrestha, S., Shrestha, A., Kim, M., Naghiyev, J., Shwartz-Ziv, R., & Ross, K. (2025). Layer Importance for Mathematical Reasoning is Forged in Pre-Training and Invariant after Post-Training. *arXiv:2506.22638*.
 
 nostalgebraist. (2020). interpreting GPT: the logit lens. *LessWrong*.
 
@@ -350,35 +340,19 @@ Panickssery, N., Gabrieli, N., Schulz, J., Tong, M., Hubinger, E., & Turner, A. 
 
 Panigrahi, A., Saunshi, N., Zhao, H., & Arora, S. (2023). Task-Specific Skill Localization in Fine-tuned Language Models. *ICML 2023*. arXiv:2302.06600.
 
-Park, K., Choe, Y. J., & Veitch, V. (2023). The Linear Representation Hypothesis and the Geometry of Large Language Models. *arXiv:2311.03658*.
-
 Prakash, N., Shaham, T. R., Haklay, T., Belinkov, Y., & Bau, D. (2024). Fine-Tuning Enhances Existing Mechanisms: A Case Study on Entity Tracking. *ICLR 2024*. arXiv:2402.14811.
 
 Rafailov, R., et al. (2023). Direct Preference Optimization: Your Language Model Is Secretly a Reward Model. *NeurIPS 2023*. arXiv:2305.18290.
 
-Rocchetti, E., & Ferrara, A. (2026). How LLMs Follow Instructions: Skillful Coordination, Not a Universal Mechanism. *arXiv:2604.06015*.
-
 Saxe, A. M., et al. (2018). On the Information Bottleneck Theory of Deep Learning. *ICLR 2018*.
 
-Shwartz-Ziv, R., & Tishby, N. (2017). Opening the Black Box of Deep Neural Networks via Information. *arXiv:1703.00810*.
-
-Singh, A., et al. (2024). Representation Surgery: Theory and Practice of Affine Steering in Language Models. *arXiv:2402.09631*.
-
-Song, Y., et al. (2025). Bridging the Dimensional Chasm: Uncover Layer-wise Dimensional Reduction in Transformers through Token Correlation. *arXiv:2503.22547*.
-
-Stolfo, A., et al. (2024). Improving Instruction-Following in Language Models through Activation Steering. *arXiv:2410.12877*.
-
 Templeton, A., et al. (2024). Scaling Monosemanticity: Extracting Interpretable Features from Claude 3 Sonnet. *Anthropic*.
-
-Turner, A. M., et al. (2023). Steering Language Models With Activation Engineering. *arXiv:2308.10248*.
 
 van der Lee, C., Gatt, A., van Miltenburg, E., Wubben, S., & Krahmer, E. (2019). Best Practices for the Human Evaluation of Automatically Generated Text. *INLG 2019*.
 
 Wang, P., Li, L., Chen, L., Cai, Z., Zhu, D., Lin, B., Cao, Y., Liu, Q., Liu, T., & Sui, Z. (2023). Large Language Models Are Not Fair Evaluators. *ACL 2024*. arXiv:2305.17926.
 
 Wang, K., Variengien, A., Conmy, A., Shlegeris, B., & Steinhardt, J. (2022). Interpretability in the Wild: A Circuit for Indirect Object Identification in GPT-2 Small. *ICLR 2023*. arXiv:2211.00593.
-
-Wei, R., Du, R., Yu, H., Tiwari, D., Li, J., Xu, Z., & Wang, H. (2026). The Diminishing Returns of Early-Exit Decoding in Modern LLMs. *arXiv:2603.23701*.
 
 Wu, X., Yao, W., Chen, J., Pan, X., Wang, X., Liu, N., & Yu, D. (2024). From Language Modeling to Instruction Following: Understanding the Behavior Shift in LLMs after Instruction Tuning. *NAACL 2024*. arXiv:2310.00492.
 
@@ -387,8 +361,6 @@ Xu, Z., et al. (2025). Rethinking Fine-Tuning when Scaling Test-Time Compute: Li
 Zheng, L., Chiang, W.-L., Sheng, Y., Zhuang, S., Wu, Z., Zhuang, Y., Li, D., Gonzalez, J. E., Xing, E. P., Zhang, H., & Stoica, I. (2023). Judging LLM-as-a-Judge with MT-Bench and Chatbot Arena. *NeurIPS 2023 Datasets and Benchmarks*. arXiv:2306.05685.
 
 Zhao, Z., Ziser, Y., & Cohen, S. B. (2024). Layer by Layer: Uncovering Where Multi-Task Learning Happens in Instruction-Tuned Large Language Models. *EMNLP 2024*. arXiv:2410.20008.
-
-Zou, A., et al. (2023). Representation Engineering: A Top-Down Approach to AI Transparency. *arXiv:2310.01405*.
 
 ---
 
@@ -620,39 +592,34 @@ The convergence-gap claim does not depend on a single commitment threshold. The 
 
 ## Appendix E: Broader Literature Positioning
 
-Table E1 is an orientation map, not a proof of priority. Each ingredient in the table already appears somewhere in the literature: PT/post-training comparison, cross-model or cross-checkpoint patching, layer localization, behavioral intervention, first-divergent-token metrics, and conceptual accounts of late computation reading upstream state. The novelty claim is narrower: in this paper those ingredients are assembled into a measurable upstream-state x late-stack interaction at the first natural PT/IT next-token disagreement, with matched-history controls, separate identity/margin readouts, a label-swap permutation null for the factorial, and a matched random residual-projection control for the late-MLP KL analysis. The coarse labels below only indicate which ingredients are directly part of each paper's design (`Yes`), present in a narrower task-specific form (`Partial`), or outside that paper's main design (`No`).
+Table E1 is an orientation map, not a proof of priority. To keep the comparison disciplined, it includes accepted conference papers or field-standard sources that are directly used by the argument, rather than every adjacent arXiv preprint. Each ingredient in the table already appears somewhere in the literature: PT/post-training comparison, cross-model or cross-checkpoint patching, layer localization, behavioral intervention, first-divergent-token metrics, and conceptual accounts of late computation reading upstream state. The novelty claim is narrower: in this paper those ingredients are assembled into a measurable upstream-state x late-stack interaction at the first natural PT/IT next-token disagreement, with matched-history controls, separate identity/margin readouts, a label-swap permutation null for the factorial, and a matched random residual-projection control for the late-MLP KL analysis. The coarse labels below only indicate which ingredients are directly part of each paper's design (`Yes`), present in a narrower task-specific form (`Partial`), or outside that paper's main design (`No`).
 
 | Paper | PT↔post-trained descendants? | Cross-family paired checkpoints? | Identical-history internal comparison? | Symmetric depth-localized intervention? | First-divergence candidate/margin? | State x late-stack factorial? | Natural-decoding consequence test? |
 |---|---|---|---|---|---|---|---|
-| Lad et al. (2024) | No | No | No | No | No | No | No |
+| Lad et al. (2025) | No | No | No | No | No | No | No |
 | Joshi et al. (2025) | No | No | No | No | No | No | No |
 | Wu et al. (2024) | Yes | No | No | No | No | No | No |
 | Du et al. (2025) | Yes | Yes | No | No | No | No | No |
 | Li et al. (2025) | No | No | No | No | No | No | No |
-| Chaudhury (2025) | Yes | No | No | No | No | No | No |
+| Jain et al. (2024) | Yes | Partial | No | Partial | No | No | Yes |
 | Prakash et al. (2024) | Yes | No | No | Partial | No | No | No |
 | Deiseroth et al. (2024) | Partial | No | Yes | No | No | No | No |
 | Zhao, Ziser, and Cohen (2024) | Yes | No | No | No | No | No | No |
-| Nepal et al. (2025) | Yes | Partial | No | Partial | No | No | No |
-| Arditi et al. (2024) | No | No | No | No | No | No | Yes |
-| Lu et al. (2026) | No | No | No | No | No | No | Yes |
-| Stolfo et al. (2024) | Partial | Partial | No | No | No | No | Yes |
-| Turner et al. (2023); Zou et al. (2023); Panickssery et al. (2024) | No | No | No | No | No | No | Yes |
-| Hewitt et al. (2024) | No | No | No | No | No | No | No |
-| Rocchetti & Ferrara (2026) | No | No | No | No | No | No | No |
+| Panigrahi et al. (2023) | No | No | No | Partial | No | No | No |
+| Panickssery et al. (2024) | No | No | No | No | No | No | Yes |
 | Ours | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 
-Lad et al. (2024) and Joshi et al. (2025) are the closest phenomenon-level comparisons. Lad gives a generic vocabulary for mid-to-late inference stages: prediction ensembling followed by residual sharpening. Joshi studies late confidence calibration after decision certainty has emerged. We do not treat late sharpening, late calibration, or late-stage confidence correction as new phenomena. The delayed-stabilization analysis is the aggregate background signature; the contribution is the paired PT/IT first-divergence analysis that asks which depth windows change the divergent token identity and how the final IT-vs-PT margin depends jointly on upstream state and late computation.
+Lad et al. (2025) and Joshi et al. (2025) are the closest phenomenon-level comparisons. Lad gives a generic vocabulary for mid-to-late inference stages: prediction ensembling followed by residual sharpening. Joshi studies late confidence calibration after decision certainty has emerged. We do not treat late sharpening, late calibration, or late-stage confidence correction as new phenomena. The delayed-stabilization analysis is the aggregate background signature; the contribution is the paired PT/IT first-divergence analysis that asks which depth windows change the divergent token identity and how the final IT-vs-PT margin depends jointly on upstream state and late computation.
 
 Du et al. (2025) overlaps with the paper's basic model-diffing premise: compare base and post-trained descendants and ask how knowledge, truthfulness, refusal, and confidence change internally. That overlap is real and useful. Our narrower addition is to condition on the first natural PT/IT next-token disagreement and run matched-history interventions at that exact prefix, so the readout is not only "post-training changes confidence/refusal" but "this upstream state and this late stack interact on this divergent-token margin."
 
 Prakash et al. (2024) is the closest methodological precedent in this broader set: CMAP patches activations across related base/fine-tuned models to reveal improved mechanisms. Our use is different in scope and target: we apply a symmetric equal-width early/mid/late MLP graft/swap design across model families, and the localized target is not entity tracking but natural PT/IT next-token disagreement under matched-prefix control. Following the caution urged by activation-patching work such as Heimersheim and Nanda (2024), we describe these interventions as causal leverage on measured readouts, not as complete mechanism recovery.
 
-Zhao, Ziser, and Cohen (2024) and Nepal et al. (2025) are important layer-localization precedents. Zhao, Ziser, and Cohen study where task-oriented representations appear in instruction-tuned models, and Nepal et al. find math-critical layers that remain important across post-training. These papers make upstream dependence plausible rather than surprising. The distinction is not that we are the first to see layer structure after instruction tuning; it is that we estimate a window-level upstream-state x late-stack interaction at the first natural PT/IT token disagreement, with matched histories and separate candidate-identity and margin outcomes.
+Zhao, Ziser, and Cohen (2024) and Panigrahi et al. (2023) are important layer-localization precedents. Zhao, Ziser, and Cohen study where task-oriented representations appear in instruction-tuned models, and Panigrahi et al. study task-specific skill localization in fine-tuned language models. These papers make upstream dependence plausible rather than surprising. The distinction is not that we are the first to see layer structure after instruction tuning, and the paper should not be read as another qualitative layer-stage taxonomy. The distinction is the estimand: we estimate a window-level upstream-state x late-stack interaction at the first natural PT/IT token disagreement, with matched histories, separate candidate-identity and margin outcomes, and a PT/IT label-swap null. That design directly tests whether the late-stage effect is portable across upstream states; the factual/reasoning sign flip shows why this is not a cosmetic strengthening of the older heuristic.
 
-Stolfo et al. (2024), Turner et al. (2023), Zou et al. (2023), and Panickssery et al. (2024) are the main reason we do not frame the contribution as finding an instruction-following activation vector. That claim is not new. Those papers show that activation-space directions can control behavior, including instruction-following constraints and high-level traits. The paper-level contribution here is that paired PT/IT next-token disagreement is decomposed with graft/swap interventions under identical histories and first-divergence counterfactuals, rather than by extracting a behavioral vector.
+Panickssery et al. (2024), Li et al. (2025), and Jain et al. (2024) are the main reason we do not frame the contribution as finding an instruction-following activation vector or safety layer. Those papers show that activation-space interventions or layer-localized analyses can affect behavior, including safety-relevant behavior. The paper-level contribution here is that paired PT/IT next-token disagreement is decomposed with graft/swap interventions under identical histories and first-divergence counterfactuals, rather than by extracting a behavioral vector.
 
-The table should therefore be read as a map of overlap, not as a claim that novelty follows from a unique combination of checkmarks. The stronger claim is the estimand: prior ingredient-papers motivate pieces of the design, but they do not report an upstream-state x late-stack interaction on the actual first-divergent PT/IT token margin with the label-swap factorial control and matched random late-MLP KL control used here. Hewitt et al. (2024) and Rocchetti and Ferrara (2026) are useful conceptual boundary papers rather than direct method-level foils. They ask what instruction following is, or whether it reflects a universal mechanism at all. Our paper asks a narrower and more operational question: what paired PT↔post-training forward-pass signature appears across dense families, how middle and late windows divide candidate selection from margin effects, and whether that same intervention family matters under natural decoding.
+The table should therefore be read as a map of overlap, not as a claim that novelty follows from a unique combination of checkmarks. The stronger claim is the estimand: prior ingredient-papers motivate pieces of the design, but they do not report an upstream-state x late-stack interaction on the actual first-divergent PT/IT token margin with the label-swap factorial control and matched random late-MLP KL control used here. Our paper asks a narrower and more operational question: what paired PT↔post-training forward-pass signature appears across dense families, how middle and late windows divide candidate selection from margin effects, and whether that same intervention family matters under natural decoding.
 
 ## Appendix F: Additional Scope Notes
 
