@@ -328,6 +328,7 @@ run_bridge_shard() {
     --causal-combined \
     --include-midlate-factorial \
     --readout-mode raw \
+    --disable-mechanism-capture \
     --tuned-lens-dir "$TUNED_LENS_DIR" \
     --max-new-tokens "$MAX_NEW_TOKENS" \
     --chunk-size "$PART_A_CHUNK_SIZE" \
