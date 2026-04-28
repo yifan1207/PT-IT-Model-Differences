@@ -13,6 +13,8 @@ from typing import Any
 
 from transformers import AutoTokenizer
 
+from src.poc.cross_model.config import revision_for_model_id
+
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -119,10 +121,13 @@ class DecodeCache:
             if model_id not in self._tokenizer_failures:
                 if model_id not in self._tokenizers:
                     try:
+                        revision = revision_for_model_id(model_id)
+                        kwargs = {"revision": revision} if revision else {}
                         self._tokenizers[model_id] = AutoTokenizer.from_pretrained(
                             model_id,
                             trust_remote_code=True,
                             local_files_only=True,
+                            **kwargs,
                         )
                     except Exception:
                         self._tokenizer_failures.add(model_id)

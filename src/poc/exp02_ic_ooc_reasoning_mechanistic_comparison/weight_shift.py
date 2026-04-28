@@ -30,6 +30,7 @@ import torch
 
 from src.poc.shared.constants import PT_MODEL_ID, IT_MODEL_ID
 from src.poc.shared.metrics import frob_shift, cosine_distance
+from src.poc.cross_model.config import revision_for_model_id
 
 
 # ── GPU chunk worker (runs in a thread) ───────────────────────────────────────
@@ -89,15 +90,19 @@ def compute_weight_shift(
     print(f"  Using {n_gpus} / {available} GPU(s)")
 
     print(f"[1/4] Loading PT model ({PT_MODEL_ID}) to CPU ...")
+    pt_revision = revision_for_model_id(PT_MODEL_ID)
     pt_model = AutoModelForCausalLM.from_pretrained(
         PT_MODEL_ID, device_map="cpu", torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
+        revision=pt_revision,
     )
 
     print(f"[2/4] Loading IT model ({IT_MODEL_ID}) to CPU ...")
+    it_revision = revision_for_model_id(IT_MODEL_ID)
     it_model = AutoModelForCausalLM.from_pretrained(
         IT_MODEL_ID, device_map="cpu", torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
+        revision=it_revision,
     )
 
     pt_params = dict(pt_model.named_parameters())

@@ -746,7 +746,9 @@ def smoke_test() -> str:
     # 8. Quick model load test (small model check)
     try:
         from transformers import AutoTokenizer
-        tok = AutoTokenizer.from_pretrained("deepseek-ai/DeepSeek-V2-Lite")
+        from src.poc.cross_model.config import revision_for_model_id
+        model_id = "deepseek-ai/DeepSeek-V2-Lite"
+        tok = AutoTokenizer.from_pretrained(model_id, revision=revision_for_model_id(model_id))
         checks.append(f"Tokenizer load (deepseek): vocab_size={tok.vocab_size}")
     except Exception as e:
         checks.append(f"Tokenizer load: {e}")

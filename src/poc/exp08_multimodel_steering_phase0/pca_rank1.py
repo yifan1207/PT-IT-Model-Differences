@@ -31,17 +31,19 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.poc.cross_model.config import MODEL_REGISTRY, get_spec, model_id_for_variant
+from src.poc.cross_model.config import MODEL_REGISTRY, get_spec, model_id_for_variant, revision_for_model_id
 from src.poc.exp06_corrective_direction_steering.model_adapter import get_steering_adapter
 
 
 def _load_model(model_id: str, device: str):
     from transformers import AutoModelForCausalLM, AutoTokenizer
+    revision = revision_for_model_id(model_id)
+    kwargs = {"revision": revision} if revision else {}
     model = AutoModelForCausalLM.from_pretrained(
-        model_id, dtype=torch.bfloat16, device_map=device
+        model_id, dtype=torch.bfloat16, device_map=device, **kwargs
     )
     model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, **kwargs)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
     return model, tokenizer

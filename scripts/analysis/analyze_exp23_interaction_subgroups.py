@@ -295,27 +295,32 @@ def _subgroup_value(unit: Unit, group: str, margin_terciles: dict[tuple[str, str
 
 
 def _bootstrap_effect(units: list[Unit], effect_name: str, n_boot: int, seed: int) -> dict[str, Any]:
-    by_model: dict[str, list[float]] = defaultdict(list)
+    by_model_prompt: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     for unit in units:
         value = _unit_effect(unit, effect_name)
         if value is not None and math.isfinite(value):
-            by_model[unit.model].append(float(value))
+            by_model_prompt[unit.model][unit.prompt_id].append(float(value))
     model_values: dict[str, float | None] = {}
     model_counts: dict[str, int] = {}
-    for model, vals in by_model.items():
-        model_values[model] = _mean(vals)
-        model_counts[model] = len(vals)
+    model_cluster_counts: dict[str, int] = {}
+    model_arrays: dict[str, np.ndarray] = {}
+    for model, prompt_values in by_model_prompt.items():
+        prompt_means = np.array([float(np.mean(vals)) for vals in prompt_values.values() if vals], dtype=float)
+        model_arrays[model] = prompt_means
+        model_values[model] = float(prompt_means.mean()) if prompt_means.size else None
+        model_counts[model] = sum(len(vals) for vals in prompt_values.values())
+        model_cluster_counts[model] = int(prompt_means.size)
     valid_models = [model for model, value in model_values.items() if value is not None]
     estimate = _mean([model_values[model] for model in valid_models])
 
     boot: list[float] = []
     if valid_models and n_boot > 0:
         rng = np.random.default_rng(seed)
-        model_arrays = [np.asarray(by_model[model], dtype=float) for model in valid_models if by_model[model]]
+        arrays = [model_arrays[model] for model in valid_models if model_arrays[model].size]
         for start in range(0, n_boot, 512):
             size = min(512, n_boot - start)
             sampled_means = []
-            for arr in model_arrays:
+            for arr in arrays:
                 idx = rng.integers(0, len(arr), size=(size, len(arr)))
                 sampled_means.append(arr[idx].mean(axis=1))
             if sampled_means:
@@ -327,9 +332,12 @@ def _bootstrap_effect(units: list[Unit], effect_name: str, n_boot: int, seed: in
         "ci95_high": hi,
         "n_models": len(valid_models),
         "n_units": len(units),
+        "n_prompt_clusters": int(sum(model_cluster_counts.get(model, 0) for model in valid_models)),
+        "bootstrap_unit": "prompt_cluster_within_family",
         "n_boot": len(boot),
         "model_values": model_values,
         "model_counts": model_counts,
+        "model_cluster_counts": model_cluster_counts,
     }
 
 
@@ -367,9 +375,12 @@ def _summarize_subgroups(units: list[Unit], groups: list[str], readouts: list[st
                             "ci95_high": payload["ci95_high"],
                             "n_models": payload["n_models"],
                             "n_units": payload["n_units"],
+                            "n_prompt_clusters": payload["n_prompt_clusters"],
+                            "bootstrap_unit": payload["bootstrap_unit"],
                             "n_boot": payload["n_boot"],
                             "reportable": reportable,
                             "model_counts": payload["model_counts"],
+                            "model_cluster_counts": payload["model_cluster_counts"],
                             "model_values": payload["model_values"],
                             "p_top1_it_U_PT__L_IT": _choice_rate(bucket_units, "U_PT__L_IT", "it"),
                             "p_top1_it_U_IT__L_IT": _choice_rate(bucket_units, "U_IT__L_IT", "it"),
@@ -389,11 +400,14 @@ def _write_csv(rows: list[dict[str, Any]], out_path: Path) -> None:
         "ci95_high",
         "n_models",
         "n_units",
+        "n_prompt_clusters",
+        "bootstrap_unit",
         "n_boot",
         "reportable",
         "p_top1_it_U_PT__L_IT",
         "p_top1_it_U_IT__L_IT",
         "model_counts",
+        "model_cluster_counts",
         "model_values",
     ]
     with out_path.open("w", newline="") as handle:
@@ -402,6 +416,7 @@ def _write_csv(rows: list[dict[str, Any]], out_path: Path) -> None:
         for row in rows:
             out = dict(row)
             out["model_counts"] = json.dumps(out["model_counts"], sort_keys=True)
+            out["model_cluster_counts"] = json.dumps(out["model_cluster_counts"], sort_keys=True)
             out["model_values"] = json.dumps(out["model_values"], sort_keys=True)
             writer.writerow(out)
 
@@ -529,16 +544,17 @@ def _write_report(rows: list[dict[str, Any]], profile: dict[str, Any], out_path:
         if not kept:
             continue
         lines.append(f"\n### {group}\n")
-        lines.append("| value | n | models | interaction | 95% CI |")
-        lines.append("|---|---:|---:|---:|---:|")
+        lines.append("| value | records | prompt clusters | models | interaction | 95% CI |")
+        lines.append("|---|---:|---:|---:|---:|---:|")
         for row in sorted(kept, key=lambda r: str(r["value"])):
             lines.append(
-                f"| {row['value']} | {row['n_units']} | {row['n_models']} | "
+                f"| {row['value']} | {row['n_units']} | {row['n_prompt_clusters']} | {row['n_models']} | "
                 f"{_fmt(row['estimate'])} | [{_fmt(row['ci95_low'])}, {_fmt(row['ci95_high'])}] |"
             )
     lines.append("\n## Interpretation Guardrails\n")
     lines.append("- These are descriptive subgroup checks, not new headline claims.")
     lines.append("- Bins are model-balanced where possible, but small strata are marked non-reportable in the CSV.")
+    lines.append("- Confidence intervals resample prompt clusters within each model family, then average family estimates.")
     lines.append("- Confidence bins use within-model terciles of the native IT baseline IT-vs-PT margin, not calibrated probabilities.")
     categories = sorted((profile.get("by_prompt_category") or {}).keys())
     lines.append(f"- Prompt-category coverage is exactly the categories observed in this run: `{', '.join(categories)}`.")

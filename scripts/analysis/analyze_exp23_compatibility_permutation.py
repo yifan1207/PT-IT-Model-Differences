@@ -11,9 +11,10 @@ compatibility amplification:
 
 where Y is the IT-token-vs-PT-token margin. The amplification is algebraically
 the Exp23 interaction term. The label-swap control preserves each prompt's four
-cell values and randomly swaps PT/IT orientation within each model/prompt event,
-which flips the sign of that unit's amplification under the null that the
-PT/IT label orientation is arbitrary.
+cell values and randomly swaps PT/IT orientation within each model/prompt
+cluster, after averaging any repeated event kinds inside prompt. This flips the
+sign of that cluster's amplification under the null that the PT/IT label
+orientation is arbitrary.
 """
 
 from __future__ import annotations
@@ -85,12 +86,13 @@ def _load_units(run_root: Path, models: list[str], prompt_mode: str, readout: st
         if not path.exists():
             raise FileNotFoundError(path)
         for row in _json_rows(path):
+            prompt_id = str(row.get("prompt_id", ""))
             for _event_kind, payload in (row.get("events") or {}).items():
                 if not payload or payload.get("duplicate_of") or not payload.get("valid"):
                     continue
                 margins = _extract_unit(payload, readout)
                 if margins is not None:
-                    out[model].append(_unit_stats(margins))
+                    out[model].append({"prompt_id": prompt_id, **_unit_stats(margins)})
     return dict(out)
 
 
@@ -118,12 +120,21 @@ def _summarize(units_by_model: dict[str, list[dict[str, float]]]) -> dict[str, A
     ]
     by_model: dict[str, Any] = {}
     for model, units in units_by_model.items():
+        prompt_units: dict[str, list[dict[str, float]]] = defaultdict(list)
+        for unit in units:
+            prompt_units[str(unit.get("prompt_id", ""))].append(unit)
+        prompt_means = {
+            prompt_id: {key: _mean([unit[key] for unit in prompt_group]) for key in keys}
+            for prompt_id, prompt_group in prompt_units.items()
+        }
         by_model[model] = {
             "n_units": len(units),
-            **{key: _mean([unit[key] for unit in units]) for key in keys},
+            "n_prompt_clusters": len(prompt_means),
+            **{key: _mean([row[key] for row in prompt_means.values()]) for key in keys},
         }
     pooled = {
         "n_units": sum(row["n_units"] for row in by_model.values()),
+        "n_prompt_clusters": sum(row["n_prompt_clusters"] for row in by_model.values()),
         **{key: _mean([row[key] for row in by_model.values()]) for key in keys},
     }
     return {"by_model": by_model, "pooled_model_mean": pooled}
@@ -136,10 +147,12 @@ def _label_swap_null(
     seed: int,
 ) -> dict[str, Any]:
     rng = np.random.default_rng(seed)
-    model_arrays = {
-        model: np.asarray([unit["compatibility_amplification"] for unit in units], dtype=np.float64)
-        for model, units in units_by_model.items()
-    }
+    model_arrays = {}
+    for model, units in units_by_model.items():
+        by_prompt: dict[str, list[float]] = defaultdict(list)
+        for unit in units:
+            by_prompt[str(unit.get("prompt_id", ""))].append(float(unit["compatibility_amplification"]))
+        model_arrays[model] = np.asarray([np.mean(vals) for vals in by_prompt.values() if vals], dtype=np.float64)
     observed_by_model = {model: float(np.mean(values)) for model, values in model_arrays.items()}
     observed = float(np.mean(list(observed_by_model.values())))
 
@@ -186,23 +199,23 @@ def _write_report(payload: dict[str, Any], path: Path) -> None:
         "",
         "The compatibility amplification is algebraically the Exp23 interaction, but is read as an own-token compatibility test: IT late stack gains more from IT upstream than PT late stack gains from PT upstream.",
         "",
-        "| Model | N | IT compatibility boost | PT compatibility boost | IT-over-PT amplification |",
-        "|---|---:|---:|---:|---:|",
+        "| Model | Records | Prompt clusters | IT compatibility boost | PT compatibility boost | IT-over-PT amplification |",
+        "|---|---:|---:|---:|---:|---:|",
     ]
     for model, row in payload["summary"]["by_model"].items():
         lines.append(
-            f"| `{model}` | `{row['n_units']}` | `{row['it_compatibility_boost']:+.3f}` | "
+            f"| `{model}` | `{row['n_units']}` | `{row['n_prompt_clusters']}` | `{row['it_compatibility_boost']:+.3f}` | "
             f"`{row['pt_compatibility_boost']:+.3f}` | `{row['compatibility_amplification']:+.3f}` |"
         )
     pooled = payload["summary"]["pooled_model_mean"]
     lines.extend(
         [
-            f"| **Dense mean** | `{pooled['n_units']}` | `{pooled['it_compatibility_boost']:+.3f}` | "
+            f"| **Dense mean** | `{pooled['n_units']}` | `{pooled['n_prompt_clusters']}` | `{pooled['it_compatibility_boost']:+.3f}` | "
             f"`{pooled['pt_compatibility_boost']:+.3f}` | `{pooled['compatibility_amplification']:+.3f}` |",
             "",
             "## Label-Swap Null",
             "",
-            "The null randomly swaps PT/IT label orientation within each model/prompt event. This preserves each event's four cell values and flips the sign of its compatibility amplification.",
+            "The null randomly swaps PT/IT label orientation within each model/prompt cluster. For prompts with multiple divergence-event records, the event-level amplification is averaged within prompt before the sign flip.",
             "",
             f"- Observed amplification: `{payload['permutation']['observed']:+.3f}` logits",
             f"- Null mean: `{payload['permutation']['null_mean']:+.4f}` logits",

@@ -26,6 +26,8 @@ from typing import Any
 import numpy as np
 import torch
 
+from src.poc.cross_model.config import revision_for_model_id
+
 
 # ── Model loading (mirrors load_model but without nnsight / transcoder) ───────
 
@@ -34,9 +36,11 @@ def _load_hf_model(model_id: str, device: str, dtype_str: str = "bfloat16"):
     from transformers import AutoModelForCausalLM, AutoTokenizer  # type: ignore
 
     dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[dtype_str]
-    print(f"  loading {model_id} on {device} as {dtype_str} ...", flush=True)
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=dtype, device_map=device)
+    revision = revision_for_model_id(model_id)
+    kwargs = {"revision": revision} if revision else {}
+    print(f"  loading {model_id} revision={revision or 'default'} on {device} as {dtype_str} ...", flush=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, **kwargs)
+    model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype=dtype, device_map=device, **kwargs)
     model.eval()
     print(f"  loaded {model_id}", flush=True)
     return model, tokenizer

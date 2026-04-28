@@ -13,6 +13,8 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from src.poc.cross_model.config import revision_for_model_id
+
 log = logging.getLogger(__name__)
 
 
@@ -45,6 +47,7 @@ def load_model_and_tokenizer(
     eager_attn: bool = False,
     dtype: torch.dtype = torch.bfloat16,
     multi_gpu: bool = False,
+    revision: str | None = None,
 ) -> tuple:
     """Load a HuggingFace CausalLM and its tokenizer.
 
@@ -58,14 +61,19 @@ def load_model_and_tokenizer(
         multi_gpu:   If True, spread the model across all visible GPUs using
                      device_map="balanced" (for models too large for one GPU).
                      Each GPU gets at most 72 GB to leave room for KV cache.
+        revision:    Immutable Hugging Face revision. If omitted for a
+                     registered project model, the audited registry SHA is used.
 
     Returns:
         (model, tokenizer) both ready for inference.
     """
+    resolved_revision = revision or revision_for_model_id(model_id)
     kwargs: dict = {
         "torch_dtype": dtype,
         "trust_remote_code": True,
     }
+    if resolved_revision:
+        kwargs["revision"] = resolved_revision
 
     if multi_gpu:
         n_gpus = torch.cuda.device_count()
@@ -73,14 +81,28 @@ def load_model_and_tokenizer(
             log.warning("multi_gpu=True but only %d visible GPU(s); loading may OOM", n_gpus)
         kwargs["device_map"] = "balanced"
         kwargs["max_memory"] = {i: "72GB" for i in range(n_gpus)}
-        log.info("Loading model %s across %d visible GPUs (balanced device_map)", model_id, n_gpus)
+        log.info(
+            "Loading model %s revision=%s across %d visible GPUs (balanced device_map)",
+            model_id,
+            resolved_revision or "default",
+            n_gpus,
+        )
     else:
         kwargs["device_map"] = str(device)
         if eager_attn:
             kwargs["attn_implementation"] = "eager"
-        log.info("Loading model %s on %s (eager_attn=%s)", model_id, device, eager_attn)
+        log.info(
+            "Loading model %s revision=%s on %s (eager_attn=%s)",
+            model_id,
+            resolved_revision or "default",
+            device,
+            eager_attn,
+        )
 
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    tokenizer_kwargs = {"trust_remote_code": True}
+    if resolved_revision:
+        tokenizer_kwargs["revision"] = resolved_revision
+    tokenizer = AutoTokenizer.from_pretrained(model_id, **tokenizer_kwargs)
     model = AutoModelForCausalLM.from_pretrained(model_id, **kwargs)
     model.eval()
     return model, tokenizer

@@ -385,6 +385,34 @@ def exp23_compatibility(run_name: str, metric: str) -> NumberFn:
     return _read
 
 
+def exp23_position_sensitivity(stratum: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_position_sensitivity_table.csv",
+        )
+        for row in rows:
+            if row["position_stratum"] == stratum:
+                return float(row[column])
+        raise KeyError((stratum, column))
+
+    return _read
+
+
+def exp23_position_family(stratum: str, model: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_position_sensitivity_per_family.csv",
+        )
+        for row in rows:
+            if row["position_stratum"] == stratum and row["model"] == model:
+                return float(row[column])
+        raise KeyError((stratum, model, column))
+
+    return _read
+
+
 def exp15_llm_pairwise(comparison: str, criterion: str) -> NumberFn:
     key = f"pairwise_{criterion.lower()}"
 
@@ -1135,6 +1163,144 @@ CHECKS: list[ClaimCheck] = [
         ),
     ),
     ClaimCheck(
+        "Exp23 position >=1 interaction",
+        "exp23_position_sensitivity_table.csv",
+        2.248233419644727,
+        exp23_position_sensitivity("positions >=1", "dense5_interaction"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=1 interaction CI low",
+        "exp23_position_sensitivity_table.csv",
+        2.111713621144889,
+        exp23_position_sensitivity("positions >=1", "dense5_ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=1 interaction CI high",
+        "exp23_position_sensitivity_table.csv",
+        2.381941370294744,
+        exp23_position_sensitivity("positions >=1", "dense5_ci_high"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 interaction",
+        "exp23_position_sensitivity_table.csv",
+        1.5171470715271445,
+        exp23_position_sensitivity("positions >=3", "dense5_interaction"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 interaction CI low",
+        "exp23_position_sensitivity_table.csv",
+        1.3609315405695073,
+        exp23_position_sensitivity("positions >=3", "dense5_ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=3 interaction CI high",
+        "exp23_position_sensitivity_table.csv",
+        1.6777874011648348,
+        exp23_position_sensitivity("positions >=3", "dense5_ci_high"),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma-removed position >=3 interaction",
+        "exp23_position_sensitivity_table.csv",
+        0.788100506075597,
+        exp23_position_sensitivity("positions >=3", "gemma_removed_interaction"),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma-removed position >=3 interaction CI low",
+        "exp23_position_sensitivity_table.csv",
+        0.6999715202300372,
+        exp23_position_sensitivity("positions >=3", "gemma_removed_ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma-removed position >=3 interaction CI high",
+        "exp23_position_sensitivity_table.csv",
+        0.8797333487976914,
+        exp23_position_sensitivity("positions >=3", "gemma_removed_ci_high"),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma position >=3 interaction CI low",
+        "exp23_position_sensitivity_per_family.csv",
+        3.7064583333333334,
+        exp23_position_family("positions >=3", "gemma3_4b", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 Qwen position >=3 interaction CI low",
+        "exp23_position_sensitivity_per_family.csv",
+        0.9480061463270142,
+        exp23_position_family("positions >=3", "qwen3_4b", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 Llama position >=3 interaction CI low",
+        "exp23_position_sensitivity_per_family.csv",
+        0.0118896484375,
+        exp23_position_family("positions >=3", "llama31_8b", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 Mistral position >=3 interaction CI low",
+        "exp23_position_sensitivity_per_family.csv",
+        1.0083347259358288,
+        exp23_position_family("positions >=3", "mistral_7b", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 OLMo position >=3 interaction CI low",
+        "exp23_position_sensitivity_per_family.csv",
+        0.4928541087504453,
+        exp23_position_family("positions >=3", "olmo2_7b", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=5 interaction",
+        "exp23_position_sensitivity_table.csv",
+        1.6388563719071523,
+        exp23_position_sensitivity("position >=5", "dense5_interaction"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=5 interaction CI low",
+        "exp23_position_sensitivity_table.csv",
+        1.3924069821936453,
+        exp23_position_sensitivity("position >=5", "dense5_ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 position >=5 interaction CI high",
+        "exp23_position_sensitivity_table.csv",
+        1.8802611244216922,
+        exp23_position_sensitivity("position >=5", "dense5_ci_high"),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma-removed position >=5 interaction",
+        "exp23_position_sensitivity_table.csv",
+        0.8259142148839407,
+        exp23_position_sensitivity("position >=5", "gemma_removed_interaction"),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma-removed position >=5 interaction CI low",
+        "exp23_position_sensitivity_table.csv",
+        0.7123552879374079,
+        exp23_position_sensitivity("position >=5", "gemma_removed_ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 Gemma-removed position >=5 interaction CI high",
+        "exp23_position_sensitivity_table.csv",
+        0.9388008422222021,
+        exp23_position_sensitivity("position >=5", "gemma_removed_ci_high"),
+    ),
+    ClaimCheck(
+        "Exp23 Llama position >=5 interaction",
+        "exp23_position_sensitivity_per_family.csv",
+        0.11598557692307693,
+        exp23_position_family("position >=5", "llama31_8b", "interaction"),
+    ),
+    ClaimCheck(
+        "Exp23 Llama position >=5 interaction CI low",
+        "exp23_position_sensitivity_per_family.csv",
+        -0.046980168269230765,
+        exp23_position_family("position >=5", "llama31_8b", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp23 Llama position >=5 interaction CI high",
+        "exp23_position_sensitivity_per_family.csv",
+        0.2692307692307692,
+        exp23_position_family("position >=5", "llama31_8b", "ci_high"),
+    ),
+    ClaimCheck(
         "Exp23 primary IT compatibility boost",
         "exp23 compatibility permutation summary.json",
         5.556307535299774,
@@ -1205,7 +1371,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning interaction",
         "exp23 content/reasoning exp23_summary.json",
-        1.6803632792866057,
+        1.8121837830772685,
         exp23_effect(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "interaction",
@@ -1214,7 +1380,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning interaction CI low",
         "exp23 content/reasoning exp23_summary.json",
-        1.5929663162872967,
+        1.7211691821951594,
         exp23_effect(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "interaction",
@@ -1224,7 +1390,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning interaction CI high",
         "exp23 content/reasoning exp23_summary.json",
-        1.7752462505766033,
+        1.9014917989489144,
         exp23_effect(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "interaction",
@@ -1232,9 +1398,29 @@ CHECKS: list[ClaimCheck] = [
         ),
     ),
     ClaimCheck(
+        "Exp23 content/reasoning interaction event records",
+        "exp23 content/reasoning exp23_summary.json",
+        5889.0,
+        exp23_effect(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "interaction",
+            "n_units",
+        ),
+    ),
+    ClaimCheck(
+        "Exp23 content/reasoning interaction prompt clusters",
+        "exp23 content/reasoning exp23_summary.json",
+        2983.0,
+        exp23_effect(
+            "exp23_content_reasoning_residual_20260427_0930_h100x8",
+            "interaction",
+            "n_prompt_clusters",
+        ),
+    ),
+    ClaimCheck(
         "Exp23 content/reasoning upstream-context effect",
         "exp23 content/reasoning exp23_summary.json",
-        3.529437865202374,
+        3.7124395930343383,
         exp23_effect(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "upstream_context_effect",
@@ -1243,7 +1429,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning late given PT upstream",
         "exp23 content/reasoning exp23_summary.json",
-        -1.4062707862194421,
+        -1.175818325521803,
         exp23_effect(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "late_it_given_pt_upstream",
@@ -1252,7 +1438,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning late given IT upstream",
         "exp23 content/reasoning exp23_summary.json",
-        0.27409249306716343,
+        0.636365457555465,
         exp23_effect(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "late_it_given_it_upstream",
@@ -1261,7 +1447,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning late-stack main effect",
         "exp23 content/reasoning exp23_summary.json",
-        -0.5660891465761394,
+        -0.269726433983169,
         exp23_effect(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "late_weight_effect",
@@ -1270,7 +1456,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning IT compatibility boost",
         "exp23 content/reasoning compatibility permutation summary.json",
-        4.369619504845675,
+        4.618531484572973,
         exp23_compatibility(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "it_compatibility_boost",
@@ -1279,7 +1465,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning PT compatibility boost",
         "exp23 content/reasoning compatibility permutation summary.json",
-        2.6892562255590695,
+        2.8063477014957043,
         exp23_compatibility(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "pt_compatibility_boost",
@@ -1288,7 +1474,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning label-swap null q99.9",
         "exp23 content/reasoning compatibility permutation summary.json",
-        0.15545490111026944,
+        0.17777057094258042,
         exp23_compatibility(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "null_q99.9",
@@ -1308,7 +1494,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 CONTENT-FACT subgroup interaction",
         "exp23 content/reasoning subgroup summary.json",
-        1.8421921828806194,
+        1.9563506699546729,
         exp23_subgroup(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "prompt_category",
@@ -1318,7 +1504,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 CONTENT-REASON subgroup interaction",
         "exp23 content/reasoning subgroup summary.json",
-        1.336117588486396,
+        1.3526539918509761,
         exp23_subgroup(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "prompt_category",
@@ -1328,7 +1514,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 content/reasoning GOV-FORMAT subgroup interaction",
         "exp23 content/reasoning subgroup summary.json",
-        1.9727237747609636,
+        2.2838367915811766,
         exp23_subgroup(
             "exp23_content_reasoning_residual_20260427_0930_h100x8",
             "prompt_category",

@@ -885,7 +885,7 @@ def smoke_test_gpu(model_name: str) -> str:
     print("\n[Step 2] Chat template")
     from transformers import AutoTokenizer
     adapter = get_adapter(model_name)
-    tok = AutoTokenizer.from_pretrained(spec.it_id)
+    tok = AutoTokenizer.from_pretrained(spec.it_id, revision=spec.it_revision)
     raw = "Write a haiku about neural networks."
     templated = adapter.apply_template(tok, raw, is_it=True)
     check("chat template applied", len(templated) > len(raw),

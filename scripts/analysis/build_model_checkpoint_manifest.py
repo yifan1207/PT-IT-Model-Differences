@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Build a checkpoint/tokenizer manifest for paper reproducibility.
 
-The historical experiment configs record Hugging Face repo IDs but did not pass
-or store explicit `revision=` hashes. This audit records the registry IDs,
-current `main` commit SHA returned by the Hub, and tokenizer/template metadata
-where the tokenizer is accessible from the current environment.
+The registry records Hugging Face repo IDs plus immutable snapshot revisions
+for reruns. Older experiment traces may only have stored repo IDs, so the
+manifest also audits what the Hub currently resolves for `main`.
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.poc.cross_model.config import MODEL_REGISTRY
+from src.poc.cross_model.config import MODEL_REGISTRY, model_revision_for_variant
 
 
 DEFAULT_MODELS = [
@@ -51,9 +50,12 @@ def _model_info(api: HfApi, repo_id: str) -> dict[str, Any]:
         return {"resolved_main_sha": None, "hub_error": f"{type(exc).__name__}: {exc}"}
 
 
-def _tokenizer_info(repo_id: str) -> dict[str, Any]:
+def _tokenizer_info(repo_id: str, revision: str | None) -> dict[str, Any]:
     try:
-        tok = AutoTokenizer.from_pretrained(repo_id, trust_remote_code=True)
+        kwargs = {"trust_remote_code": True}
+        if revision:
+            kwargs["revision"] = revision
+        tok = AutoTokenizer.from_pretrained(repo_id, **kwargs)
         chat_template = getattr(tok, "chat_template", None)
         return {
             "tokenizer_class": tok.__class__.__name__,
@@ -93,10 +95,10 @@ def build_manifest(models: list[str]) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "important_scope_note": (
-            "Historical result configs record Hugging Face repo IDs but not "
-            "resolved snapshot hashes. The SHA fields below are an audit of "
-            "the current Hub `main` revision, not proof that the original runs "
-            "stored or pinned those revisions."
+            "The project registry now pins immutable Hugging Face revisions "
+            "for reproducible reruns. Historical result configs may only store "
+            "repo IDs, so `resolved_main_sha` remains an audit field rather "
+            "than proof of historical run-time pinning."
         ),
         "prompting_policy": {
             "pt": "raw prompt text from eval_dataset_v2 format B/A; no chat template",
@@ -120,13 +122,20 @@ def build_manifest(models: list[str]) -> dict[str, Any]:
         spec = MODEL_REGISTRY[name]
         rows = {}
         for variant, repo_id in (("pt", spec.pt_id), ("it", spec.it_id)):
+            configured_revision = model_revision_for_variant(spec, variant)
             rows[variant] = {
                 "repo_id": repo_id,
-                "configured_revision": "main",
+                "configured_revision": configured_revision,
+                "explicit_revision_pinned_in_current_registry": configured_revision is not None,
                 "explicit_revision_pinned_in_historical_runs": False,
                 **_model_info(api, repo_id),
-                **_tokenizer_info(repo_id),
+                **_tokenizer_info(repo_id, configured_revision),
             }
+            rows[variant]["configured_revision_equals_resolved_main"] = (
+                configured_revision == rows[variant].get("resolved_main_sha")
+                if configured_revision is not None and rows[variant].get("resolved_main_sha") is not None
+                else None
+            )
         manifest["models"][name] = {
             "n_layers": spec.n_layers,
             "d_model": spec.d_model,

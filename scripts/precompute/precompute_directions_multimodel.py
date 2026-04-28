@@ -48,7 +48,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.poc.collect import load_dataset_records
-from src.poc.cross_model.config import MODEL_REGISTRY, get_spec, model_id_for_variant
+from src.poc.cross_model.config import MODEL_REGISTRY, get_spec, model_id_for_variant, revision_for_model_id
 from src.poc.exp06_corrective_direction_steering.model_adapter import get_steering_adapter
 
 # ── Config (model-independent defaults) ──────────────────────────────────────
@@ -102,12 +102,14 @@ def _load_model_raw(model_id: str, device: str):
     """Load raw HF model + tokenizer (no nnsight, no transcoders)."""
     from transformers import AutoModelForCausalLM, AutoTokenizer
     dtype = torch.bfloat16
-    print(f"  Loading {model_id} on {device} ...", flush=True)
+    revision = revision_for_model_id(model_id)
+    print(f"  Loading {model_id} revision={revision or 'default'} on {device} ...", flush=True)
+    kwargs = {"revision": revision} if revision else {}
     model = AutoModelForCausalLM.from_pretrained(
-        model_id, torch_dtype=dtype, device_map=device
+        model_id, torch_dtype=dtype, device_map=device, **kwargs
     )
     model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, **kwargs)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
     return model, tokenizer

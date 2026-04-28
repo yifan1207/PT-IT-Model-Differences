@@ -24,6 +24,7 @@ import argparse
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
+from src.poc.cross_model.config import revision_for_model_id
 from src.poc.exp01_hierarchical_distributional_narrowing.config import PocConfig
 
 
@@ -36,12 +37,14 @@ def run_test(device: str, topk: int = 5) -> None:
 
     print("Loading tokenizer ...")
     # Use AutoTokenizer — adds BOS automatically, no chat template
-    tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
+    revision = revision_for_model_id(cfg.model_name)
+    kwargs = {"revision": revision} if revision else {}
+    tokenizer = AutoTokenizer.from_pretrained(cfg.model_name, **kwargs)
 
     print("Loading model (this downloads ~8 GB on first run) ...")
     dtype = torch.bfloat16 if device != "cpu" else torch.float32
     model = AutoModelForCausalLM.from_pretrained(
-        cfg.model_name, torch_dtype=dtype, device_map=device,
+        cfg.model_name, torch_dtype=dtype, device_map=device, **kwargs,
     )
     model.eval()
     print()

@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from src.poc.cross_model.config import revision_for_model_id
+
 
 # ── Task 1: Aggregate content-layer directions ────────────────────────────────
 
@@ -92,9 +94,11 @@ def compute_mean_feature_acts(
     out_path.mkdir(parents=True, exist_ok=True)
 
     print(f"Loading model {model_id} on {device}...", flush=True)
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    revision = revision_for_model_id(model_id)
+    kwargs = {"revision": revision} if revision else {}
+    tokenizer = AutoTokenizer.from_pretrained(model_id, **kwargs)
     model = AutoModelForCausalLM.from_pretrained(
-        model_id, torch_dtype=torch.bfloat16, device_map=device
+        model_id, torch_dtype=torch.bfloat16, device_map=device, **kwargs
     )
     model.eval()
     print("Model loaded.", flush=True)

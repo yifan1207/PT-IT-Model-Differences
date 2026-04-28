@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
-from src.poc.cross_model.config import MODEL_REGISTRY, get_spec
+from src.poc.cross_model.config import MODEL_REGISTRY, get_spec, revision_for_model_id
 from src.poc.exp03_corrective_stage_characterization.analysis.word_categories import (
     classify_generated_tokens_by_word,
 )
@@ -98,10 +98,13 @@ class DecodeCache:
         if AutoTokenizer is not None and model_id not in self._failed_model_ids:
             try:
                 if model_id not in self._tokenizers:
+                    revision = revision_for_model_id(model_id)
+                    kwargs = {"revision": revision} if revision else {}
                     self._tokenizers[model_id] = AutoTokenizer.from_pretrained(
                         model_id,
                         trust_remote_code=True,
                         local_files_only=True,
+                        **kwargs,
                     )
                 token_str = self._tokenizers[model_id].decode(
                     [int(token_id)],

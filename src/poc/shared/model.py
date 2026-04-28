@@ -26,6 +26,8 @@ import nnsight
 from huggingface_hub import snapshot_download
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from src.poc.cross_model.config import revision_for_model_id
+
 # circuit_tracer is only needed for transcoder experiments (B experiments).
 # Lazy-imported to avoid hard dependency in environments without it (e.g. Modal).
 ReplacementModel = None  # populated by _import_circuit_tracer()
@@ -112,10 +114,12 @@ def load_model(cfg) -> "LoadedModel":
         # to nnsight.LanguageModel.  Passing an nn.Module triggers the MetaMixin dispatch path
         # (isinstance(args[0], nn.Module) == True) so nnsight wraps real weights, not meta tensors.
         print(f"  Loading {cfg.model_name} (no transcoders) ...")
+        revision = revision_for_model_id(cfg.model_name)
+        kwargs = {"revision": revision} if revision else {}
         hf_model = AutoModelForCausalLM.from_pretrained(
-            cfg.model_name, torch_dtype=dtype, device_map=str(device)
+            cfg.model_name, torch_dtype=dtype, device_map=str(device), **kwargs
         )
-        hf_tokenizer = AutoTokenizer.from_pretrained(cfg.model_name)
+        hf_tokenizer = AutoTokenizer.from_pretrained(cfg.model_name, **kwargs)
         if hf_tokenizer.pad_token is None:
             hf_tokenizer.pad_token = hf_tokenizer.eos_token
         # get_output_embeddings() is the HF-standard accessor for the output projection

@@ -665,7 +665,7 @@ def smoke_test() -> str:
     from transformers import AutoTokenizer
     spec = get_spec("olmo2_7b")
     adapter = get_adapter("olmo2_7b")
-    tok = AutoTokenizer.from_pretrained(spec.it_id)
+    tok = AutoTokenizer.from_pretrained(spec.it_id, revision=spec.it_revision)
     raw = "Hello world"
     templated = adapter.apply_template(tok, raw, is_it=True)
     raw_len = len(tok.encode(raw))

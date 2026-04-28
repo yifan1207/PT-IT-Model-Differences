@@ -55,7 +55,7 @@ from pathlib import Path
 import torch
 from transformers import AutoModelForCausalLM
 
-from src.poc.cross_model.config import get_spec, MODEL_REGISTRY, ModelSpec
+from src.poc.cross_model.config import get_spec, MODEL_REGISTRY, ModelSpec, model_revision_for_variant
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -118,15 +118,17 @@ def _filter_keys(keys: list[str], *substrings: str) -> list[str]:
 def compute_weight_diff(spec: ModelSpec, dtype: torch.dtype = torch.float32) -> dict:
     """Load PT and IT state dicts on CPU; return per-layer RMS diff dict."""
     log.info("Loading PT state dict: %s", spec.pt_id)
+    pt_revision = model_revision_for_variant(spec, "pt")
     pt_model = AutoModelForCausalLM.from_pretrained(
-        spec.pt_id, dtype=dtype, device_map="cpu", trust_remote_code=True,
+        spec.pt_id, dtype=dtype, device_map="cpu", trust_remote_code=True, revision=pt_revision,
     )
     pt_sd = pt_model.state_dict()
     del pt_model
 
     log.info("Loading IT state dict: %s", spec.it_id)
+    it_revision = model_revision_for_variant(spec, "it")
     it_model = AutoModelForCausalLM.from_pretrained(
-        spec.it_id, dtype=dtype, device_map="cpu", trust_remote_code=True,
+        spec.it_id, dtype=dtype, device_map="cpu", trust_remote_code=True, revision=it_revision,
     )
     it_sd = it_model.state_dict()
     del it_model

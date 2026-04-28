@@ -112,24 +112,31 @@ def _bootstrap_effect_by_model(
     coeffs = EFFECTS[effect_name]
     rng = np.random.default_rng(seed)
     model_arrays: dict[str, np.ndarray] = {}
+    model_unit_counts: dict[str, int] = {}
     model_values: dict[str, float | None] = {}
     model_cis: dict[str, dict[str, Any]] = {}
     for model, units in units_by_model.items():
         model_units = [unit for unit in units if unit.readout == readout]
-        vals = [_unit_effect(unit, coeffs) for unit in model_units]
-        kept = np.array([float(v) for v in vals if v is not None and math.isfinite(float(v))], dtype=float)
-        model_arrays[model] = kept
-        model_values[model] = float(kept.mean()) if kept.size else None
+        prompt_values: dict[str, list[float]] = defaultdict(list)
+        for unit in model_units:
+            value = _unit_effect(unit, coeffs)
+            if value is not None and math.isfinite(float(value)):
+                prompt_values[unit.prompt_id].append(float(value))
+        prompt_means = np.array([float(np.mean(vals)) for vals in prompt_values.values() if vals], dtype=float)
+        model_unit_counts[model] = sum(len(vals) for vals in prompt_values.values())
+        model_arrays[model] = prompt_means
+        model_values[model] = float(prompt_means.mean()) if prompt_means.size else None
         boot_model = np.array([], dtype=float)
-        if kept.size and n_boot > 0:
-            idx = rng.integers(0, kept.size, size=(n_boot, kept.size))
-            boot_model = kept[idx].mean(axis=1)
+        if prompt_means.size and n_boot > 0:
+            idx = rng.integers(0, prompt_means.size, size=(n_boot, prompt_means.size))
+            boot_model = prompt_means[idx].mean(axis=1)
         lo_model, hi_model = _percentile_ci(boot_model.tolist())
         model_cis[model] = {
             "estimate": model_values[model],
             "ci95_low": lo_model,
             "ci95_high": hi_model,
-            "n_units": int(kept.size),
+            "n_units": int(model_unit_counts[model]),
+            "n_prompt_clusters": int(prompt_means.size),
             "n_boot": int(boot_model.size),
         }
     valid_models = [model for model, value in model_values.items() if value is not None]
@@ -170,6 +177,9 @@ def _bootstrap_effect_by_model(
         "model_cis": model_cis,
         "leave_one_out": leave_one_out,
         "n_models": len(valid_models),
+        "n_units": int(sum(model_unit_counts.get(model, 0) for model in valid_models)),
+        "n_prompt_clusters": int(sum(model_arrays[model].size for model in valid_models)),
+        "bootstrap_unit": "prompt_cluster_within_family",
         "n_boot": int(boot.size),
     }
 
@@ -311,6 +321,9 @@ def _write_effects_csv(summary: dict[str, Any], out_path: Path) -> None:
                     "ci95_low": payload.get("ci95_low"),
                     "ci95_high": payload.get("ci95_high"),
                     "n_models": payload.get("n_models"),
+                    "n_units": payload.get("n_units"),
+                    "n_prompt_clusters": payload.get("n_prompt_clusters"),
+                    "bootstrap_unit": payload.get("bootstrap_unit"),
                     "n_boot": payload.get("n_boot"),
                 }
             )
@@ -326,6 +339,9 @@ def _write_effects_csv(summary: dict[str, Any], out_path: Path) -> None:
                         "ci95_low": model_payload.get("ci95_low"),
                         "ci95_high": model_payload.get("ci95_high"),
                         "n_models": 1,
+                        "n_units": model_payload.get("n_units"),
+                        "n_prompt_clusters": model_payload.get("n_prompt_clusters"),
+                        "bootstrap_unit": payload.get("bootstrap_unit"),
                         "n_boot": model_payload.get("n_boot"),
                     }
                 )
@@ -341,6 +357,9 @@ def _write_effects_csv(summary: dict[str, Any], out_path: Path) -> None:
                         "ci95_low": loo_payload.get("ci95_low"),
                         "ci95_high": loo_payload.get("ci95_high"),
                         "n_models": loo_payload.get("n_models"),
+                        "n_units": "",
+                        "n_prompt_clusters": "",
+                        "bootstrap_unit": payload.get("bootstrap_unit"),
                         "n_boot": loo_payload.get("n_boot"),
                     }
                 )
@@ -357,6 +376,9 @@ def _write_effects_csv(summary: dict[str, Any], out_path: Path) -> None:
                 "ci95_low",
                 "ci95_high",
                 "n_models",
+                "n_units",
+                "n_prompt_clusters",
+                "bootstrap_unit",
                 "n_boot",
             ],
         )

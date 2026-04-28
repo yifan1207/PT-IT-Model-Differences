@@ -24,6 +24,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.poc.collect import load_dataset_records
+from src.poc.cross_model.config import revision_for_model_id
 
 
 def _get_mlp(model, layer_idx: int):
@@ -33,10 +34,12 @@ def _get_mlp(model, layer_idx: int):
 def _load_hf_model(model_id: str, device: str, dtype: str):
     from transformers import AutoModelForCausalLM, AutoTokenizer
     dt = torch.bfloat16 if dtype == "bfloat16" else torch.float32
+    revision = revision_for_model_id(model_id)
+    kwargs = {"revision": revision} if revision else {}
     model = AutoModelForCausalLM.from_pretrained(
-        model_id, torch_dtype=dt, device_map=device, trust_remote_code=True
+        model_id, torch_dtype=dt, device_map=device, trust_remote_code=True, **kwargs
     )
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True, **kwargs)
     return model, tokenizer
 
 

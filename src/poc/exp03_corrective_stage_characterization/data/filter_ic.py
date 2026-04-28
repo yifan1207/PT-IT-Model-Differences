@@ -79,13 +79,18 @@ def _run_model_on_ic(
     import torch
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
+    from src.poc.cross_model.config import revision_for_model_id
+
     device = f"cuda:{gpu}"
     print(f"Loading {model_name} on {device} …", flush=True)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    revision = revision_for_model_id(model_name)
+    kwargs = {"revision": revision} if revision else {}
+    tokenizer = AutoTokenizer.from_pretrained(model_name, **kwargs)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
         device_map=device,
+        **kwargs,
     )
     model.eval()
 
