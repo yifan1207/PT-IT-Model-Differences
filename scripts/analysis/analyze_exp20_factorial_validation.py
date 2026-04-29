@@ -253,7 +253,12 @@ def _plot(summary: dict, out_path: Path) -> None:
     rows = [
         row for row in summary["effects"]
         if row["model"] == "dense5" and row["effect"] in wanted
+        and row.get("mean") is not None
+        and row.get("ci_low") is not None
+        and row.get("ci_high") is not None
     ]
+    if not rows:
+        return
     labels = [f"{row['mode']}\n{row['effect'].replace(': ', ': ')}" for row in rows]
     means = np.array([float(row["mean"]) for row in rows])
     lo = np.array([float(row["ci_low"]) for row in rows])

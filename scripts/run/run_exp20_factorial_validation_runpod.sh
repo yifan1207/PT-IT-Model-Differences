@@ -9,6 +9,9 @@ PROMPT_MODES="${PROMPT_MODES:-raw_shared native}"
 MODELS="${MODELS:-gemma3_4b qwen3_4b llama31_8b mistral_7b olmo2_7b}"
 WORKERS_PER_MODEL="${WORKERS_PER_MODEL:-1}"
 DEVICE_PREFIX="${DEVICE_PREFIX:-cuda}"
+GPU_LIST="${GPU_LIST:-}"
+SLOTS_PER_GPU="${SLOTS_PER_GPU:-1}"
+GCS_SYNC_DEST="${GCS_SYNC_DEST:-}"
 
 ROOT="results/exp20_divergence_token_counterfactual/${RUN_NAME}"
 mkdir -p "${ROOT}" logs
@@ -18,6 +21,8 @@ echo "[exp20-validation-runpod] run_name ${RUN_NAME}"
 echo "[exp20-validation-runpod] modes ${PROMPT_MODES}"
 echo "[exp20-validation-runpod] models ${MODELS}"
 echo "[exp20-validation-runpod] workers_per_model ${WORKERS_PER_MODEL}"
+echo "[exp20-validation-runpod] gpu_list ${GPU_LIST:-<all detected>}"
+echo "[exp20-validation-runpod] slots_per_gpu ${SLOTS_PER_GPU}"
 echo "[exp20-validation-runpod] dataset ${DATASET}"
 echo "[exp20-validation-runpod] n_examples ${N_EXAMPLES} max_new_tokens ${MAX_NEW_TOKENS}"
 
@@ -77,9 +82,29 @@ for mode in ${PROMPT_MODES}; do
   done
 done
 
+if [[ -n "${GPU_LIST}" ]]; then
+  read -r -a requested_gpus <<< "${GPU_LIST}"
+  for gpu in "${requested_gpus[@]}"; do
+    if [[ "${gpu}" -lt 0 || "${gpu}" -ge "${gpu_count}" ]]; then
+      echo "[exp20-validation-runpod] requested GPU ${gpu}, but detected GPUs are 0..$((gpu_count - 1))" >&2
+      exit 3
+    fi
+  done
+else
+  declare -a requested_gpus=()
+  for gpu in $(seq 0 $((gpu_count - 1))); do
+    requested_gpus+=("${gpu}")
+  done
+fi
+if [[ "${SLOTS_PER_GPU}" -lt 1 ]]; then
+  echo "[exp20-validation-runpod] SLOTS_PER_GPU must be >= 1" >&2
+  exit 3
+fi
 declare -a free_gpus=()
-for gpu in $(seq 0 $((gpu_count - 1))); do
-  free_gpus+=("${gpu}")
+for gpu in "${requested_gpus[@]}"; do
+  for _slot in $(seq 1 "${SLOTS_PER_GPU}"); do
+    free_gpus+=("${gpu}")
+  done
 done
 
 declare -a active_pids=()
@@ -159,3 +184,11 @@ if not summary["ok"]:
 PY
 
 echo "[exp20-validation-runpod] complete ${ROOT}"
+if [[ -n "${GCS_SYNC_DEST}" ]]; then
+  if command -v gsutil >/dev/null 2>&1; then
+    echo "[exp20-validation-runpod] syncing ${ROOT} to ${GCS_SYNC_DEST%/}/${RUN_NAME}"
+    gsutil -m rsync -r "${ROOT}" "${GCS_SYNC_DEST%/}/${RUN_NAME}"
+  else
+    echo "[exp20-validation-runpod] GCS_SYNC_DEST set but gsutil not found; skipping sync" >&2
+  fi
+fi

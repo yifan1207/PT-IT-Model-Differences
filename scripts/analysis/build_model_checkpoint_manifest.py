@@ -32,6 +32,9 @@ DEFAULT_MODELS = [
     "qwen3_4b",
     "mistral_7b",
     "olmo2_7b",
+    "olmo2_7b_pt_sft",
+    "olmo2_7b_sft_dpo",
+    "olmo2_7b_dpo_rlvr",
     "deepseek_v2_lite",
 ]
 

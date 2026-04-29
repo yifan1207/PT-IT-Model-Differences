@@ -513,6 +513,69 @@ def exp15_human_pairwise(comparison: str, criterion: str) -> NumberFn:
     return _read
 
 
+def exp24_residual_effect(readout: str, effect: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp24_32b_external_validity/"
+            "exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/"
+            "exp23_midlate_interaction_suite/exp23_summary.json",
+        )
+        return float(data["residual_factorial"]["effects"][readout][effect][column])
+
+    return _read
+
+
+def exp24_kl_effect(side: str, effect: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp24_32b_external_validity/"
+            "exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/"
+            "part_a_mlp_kl/exp23_midlate_kl_factorial_effects.csv",
+        )
+        for row in rows:
+            if row["model"] == "qwen25_32b" and row["side"] == side and row["effect"] == effect:
+                return float(row[column])
+        raise KeyError((side, effect, column))
+
+    return _read
+
+
+def exp24_position(position_filter: str, metric: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp24_32b_external_validity/"
+            "exp24_32b_position_sensitivity.csv",
+        )
+        for row in rows:
+            if row["position_filter"] == position_filter and row["metric"] == metric:
+                return float(row[column])
+        raise KeyError((position_filter, metric, column))
+
+    return _read
+
+
+def exp24_position_prompt_category(position_filter: str, prompt_category: str, metric: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp24_32b_external_validity/"
+            "exp24_32b_position_prompt_category_effects.csv",
+        )
+        for row in rows:
+            if (
+                row["position_filter"] == position_filter
+                and row["prompt_category"] == prompt_category
+                and row["metric"] == metric
+            ):
+                return float(row[column])
+        raise KeyError((position_filter, prompt_category, metric, column))
+
+    return _read
+
+
 CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Dense-5 tuned final-half convergence gap",
@@ -1764,6 +1827,84 @@ CHECKS: list[ClaimCheck] = [
         exp21_content_effect("late_weight_effect:remainder_margin_it_vs_pt"),
     ),
     ClaimCheck(
+        "Qwen2.5-32B residual-state interaction",
+        "exp24 exp23_summary.json",
+        1.4462016821760917,
+        exp24_residual_effect("common_it", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B residual-state interaction CI low",
+        "exp24 exp23_summary.json",
+        1.321259842519685,
+        exp24_residual_effect("common_it", "interaction", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B late IT given PT upstream",
+        "exp24 exp23_summary.json",
+        0.9766240157480315,
+        exp24_residual_effect("common_it", "late_it_given_pt_upstream", "estimate"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B late IT given IT upstream",
+        "exp24 exp23_summary.json",
+        2.422825697924123,
+        exp24_residual_effect("common_it", "late_it_given_it_upstream", "estimate"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B common-PT residual-state interaction",
+        "exp24 exp23_summary.json",
+        1.478458303507516,
+        exp24_residual_effect("common_pt", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B position >=3 interaction",
+        "exp24_32b_position_sensitivity.csv",
+        1.0200537420382165,
+        exp24_position("step_ge3", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B position >=3 interaction CI low",
+        "exp24_32b_position_sensitivity.csv",
+        0.8526062400477707,
+        exp24_position("step_ge3", "interaction", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B position >=5 interaction",
+        "exp24_32b_position_sensitivity.csv",
+        0.68567037470726,
+        exp24_position("step_ge5", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B position >=10 interaction",
+        "exp24_32b_position_sensitivity.csv",
+        0.8860554245283019,
+        exp24_position("step_ge10", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B position >=3 content-fact interaction",
+        "exp24_32b_position_prompt_category_effects.csv",
+        1.4680316091954022,
+        exp24_position_prompt_category("step_ge3", "CONTENT-FACT", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B position >=3 content-reason interaction",
+        "exp24_32b_position_prompt_category_effects.csv",
+        1.580105633802817,
+        exp24_position_prompt_category("step_ge3", "CONTENT-REASON", "interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B raw-KL IT-side interaction",
+        "exp24 raw-KL effects.csv",
+        0.46455907661454976,
+        exp24_kl_effect("it", "I_it", "mean"),
+    ),
+    ClaimCheck(
+        "Qwen2.5-32B raw-KL PT-side interaction",
+        "exp24 raw-KL effects.csv",
+        -0.12499038208182434,
+        exp24_kl_effect("pt", "I_pt", "mean"),
+    ),
+    ClaimCheck(
         "LLM judge resolved G2: PT late graft over PT baseline",
         "exp15 behavior summary.json",
         0.5631364562118126,
@@ -1778,13 +1919,13 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Human resolved G2: IT baseline over late PT swap",
         "exp15 human_eval_summary.json",
-        0.6844262295081968,
+        0.7311557788944724,
         exp15_human_pairwise("it_c_vs_dlate", "G2"),
     ),
     ClaimCheck(
         "Human resolved G2: PT late graft over PT baseline",
         "exp15 human_eval_summary.json",
-        0.6017964071856288,
+        0.6018518518518519,
         exp15_human_pairwise("pt_late_vs_a", "G2"),
     ),
 ]

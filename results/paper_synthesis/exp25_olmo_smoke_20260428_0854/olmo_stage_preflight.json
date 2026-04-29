@@ -1,0 +1,42 @@
+{
+  "dataset": "data/eval_dataset_v2_holdout_0600_1199.jsonl",
+  "errors": [],
+  "models": [
+    "olmo2_7b_dpo_rlvr"
+  ],
+  "n_examples_checked": 50,
+  "ok": true,
+  "stage_pairs": {
+    "olmo2_7b_dpo_rlvr": {
+      "raw_prompt_token_id_mismatches": [],
+      "variants": {
+        "it": {
+          "chat_template_length": 508,
+          "chat_template_present": true,
+          "chat_template_sha256": "fe689ffbd6a4e2d0532d7480696b065b10e0e1eff3f9b9fc4bea415761e4bf4a",
+          "configured_revision": "470b1fba1ae01581f270116362ee4aa1b97f4c84",
+          "configured_revision_equals_resolved_main": true,
+          "eos_token_id": 100257,
+          "pad_token_id": 100277,
+          "repo_id": "allenai/OLMo-2-1124-7B-Instruct",
+          "resolved_main_sha": "470b1fba1ae01581f270116362ee4aa1b97f4c84",
+          "tokenizer_class": "GPT2TokenizerFast",
+          "vocab_size": 100278
+        },
+        "pt": {
+          "chat_template_length": 508,
+          "chat_template_present": true,
+          "chat_template_sha256": "fe689ffbd6a4e2d0532d7480696b065b10e0e1eff3f9b9fc4bea415761e4bf4a",
+          "configured_revision": "e34ea60adff2e575f4fe7569eaffd1b28509b6fd",
+          "configured_revision_equals_resolved_main": true,
+          "eos_token_id": 100257,
+          "pad_token_id": 100277,
+          "repo_id": "allenai/OLMo-2-1124-7B-DPO",
+          "resolved_main_sha": "e34ea60adff2e575f4fe7569eaffd1b28509b6fd",
+          "tokenizer_class": "GPT2TokenizerFast",
+          "vocab_size": 100278
+        }
+      }
+    }
+  }
+}

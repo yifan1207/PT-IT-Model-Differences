@@ -52,6 +52,38 @@ def test_boundary_capture_and_full_prefix_patch() -> None:
     assert patch.last_max_abs_input_delta == float(x.abs().max().item())
 
 
+def test_boundary_patch_noop_identity() -> None:
+    """When donor == host the patch must be a numerical no-op."""
+    layer = AddLayer(1.0)
+    capture = BoundaryStateCapture(layer)
+    x = torch.arange(18, dtype=torch.float32).view(2, 3, 3)
+    _ = layer(x)
+    captured = capture.snapshot()
+    capture.close()
+
+    # donor = the captured host hidden state, so the patch is an identity op.
+    patch = BoundaryStatePatch(layer, captured, noop_tol=1e-6)
+    patched_out = layer(x)
+    patch.close()
+    # Output must equal the unpatched output to bitwise tolerance.
+    assert torch.equal(patched_out, x + 1.0)
+    assert patch.last_max_abs_input_delta is not None
+    assert patch.last_max_abs_input_delta <= 1e-6
+
+
+def test_boundary_patch_noop_tol_violation_raises() -> None:
+    """A donor that differs from host by more than ``noop_tol`` must error."""
+    import pytest
+
+    layer = AddLayer(1.0)
+    x = torch.arange(18, dtype=torch.float32).view(2, 3, 3)
+    donor = x + 0.01  # differs by 0.01 per coordinate
+    patch = BoundaryStatePatch(layer, donor, noop_tol=1e-6)
+    with pytest.raises(RuntimeError, match="no-op identity check failed"):
+        _ = layer(x)
+    patch.close()
+
+
 def _write_record(path: Path, model: str, prompt_id: str, base: float) -> None:
     cells = {
         "U_PT__L_PT": base,

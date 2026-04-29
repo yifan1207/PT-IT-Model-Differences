@@ -15,6 +15,9 @@ _ADAPTER_MAP: dict[str, type[ModelAdapter]] = {
     "mistral_7b":       MistralAdapter,
     "deepseek_v2_lite": DeepseekV2Adapter,
     "olmo2_7b":         OLMo2Adapter,
+    "olmo2_7b_pt_sft":  OLMo2Adapter,
+    "olmo2_7b_sft_dpo": OLMo2Adapter,
+    "olmo2_7b_dpo_rlvr": OLMo2Adapter,
     "olmo2_32b":        OLMo2Adapter,
 }
 

@@ -1,0 +1,48 @@
+{
+  "compatibility_root": "results/exp23_midlate_interaction_suite/exp25_olmo_smoke_20260428_0854_exp23/analysis/compatibility_permutation",
+  "exp20_root": "results/exp20_divergence_token_counterfactual/exp25_olmo_smoke_20260428_0854_exp20",
+  "exp23_summary": "results/exp23_midlate_interaction_suite/exp25_olmo_smoke_20260428_0854_exp23/analysis/exp23_summary.json",
+  "experiment": "exp25_olmo_stage_progression",
+  "interpretation_note": "Adjacent-stage estimates condition on each transition's own first-divergence events and token pair. They are local transition estimates, not an additive decomposition of PT->RLVR.",
+  "models": [
+    "olmo2_7b_dpo_rlvr"
+  ],
+  "prompt_mode": "raw_shared",
+  "rows": [
+    {
+      "b_late_it_match_rate": 0.17777777777777778,
+      "b_late_margin_mean": -0.2613715277777778,
+      "b_mid_it_match_rate": 0.3333333333333333,
+      "b_midlate_it_match_rate": 0.4,
+      "b_midlate_margin_mean": -0.054459635416666666,
+      "c_late_margin_mean": 0.3361545138888889,
+      "d_late_margin_mean": 0.228515625,
+      "d_late_pt_match_rate": 0.17777777777777778,
+      "d_mid_pt_match_rate": 0.3111111111111111,
+      "earlier_repo": "allenai/OLMo-2-1124-7B-DPO",
+      "earlier_stage": "DPO",
+      "exp23_prompt_clusters": 45,
+      "exp23_units": 45,
+      "first_assistant_marker_events": 4,
+      "first_diff_events": 45,
+      "first_nonformat_events": 28,
+      "interaction": 0.06180555555555556,
+      "interaction_ci_high": 0.10210069444444445,
+      "interaction_ci_low": 0.026944444444444448,
+      "label_swap_p_upper": 0.000999000999000999,
+      "late_effect_later_upstream": 0.22013888888888888,
+      "late_effect_later_upstream_ci_high": 0.35019097222222223,
+      "late_effect_later_upstream_ci_low": 0.11447916666666666,
+      "late_effect_pt_upstream": 0.15833333333333333,
+      "late_effect_pt_upstream_ci_high": 0.2382638888888889,
+      "late_effect_pt_upstream_ci_low": 0.07979166666666666,
+      "late_weight_effect": 0.1892361111111111,
+      "later_repo": "allenai/OLMo-2-1124-7B-Instruct",
+      "later_stage": "RLVR",
+      "model": "olmo2_7b_dpo_rlvr",
+      "records": 50,
+      "transition": "DPO->RLVR",
+      "upstream_context_effect": 0.7461805555555555
+    }
+  ]
+}

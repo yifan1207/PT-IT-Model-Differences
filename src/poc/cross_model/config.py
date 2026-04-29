@@ -11,6 +11,11 @@ from pathlib import Path
 BASE_RESULTS = Path("results/cross_model")
 DATASET_PATH = Path("data/eval_dataset_v2.jsonl")
 
+OLMO2_7B_PT_SHA = "7df9a82518afdecae4e8c026b27adccc8c1f0032"
+OLMO2_7B_SFT_SHA = "1de02c0175118a9de5854aec80a1f970e701e928"
+OLMO2_7B_DPO_SHA = "e34ea60adff2e575f4fe7569eaffd1b28509b6fd"
+OLMO2_7B_RLVR_SHA = "470b1fba1ae01581f270116362ee4aa1b97f4c84"
+
 
 @dataclass
 class ModelSpec:
@@ -139,8 +144,44 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         # OLMo 2 7B uses standard MHA (n_kv_heads == n_heads), not GQA.
         n_kv_heads=32,
         global_attn_layers=frozenset(range(32)),
-        pt_revision="7df9a82518afdecae4e8c026b27adccc8c1f0032",
-        it_revision="470b1fba1ae01581f270116362ee4aa1b97f4c84",
+        pt_revision=OLMO2_7B_PT_SHA,
+        it_revision=OLMO2_7B_RLVR_SHA,
+    ),
+    "olmo2_7b_pt_sft": ModelSpec(
+        name="olmo2_7b_pt_sft",
+        pt_id="allenai/OLMo-2-1124-7B",
+        it_id="allenai/OLMo-2-1124-7B-SFT",
+        n_layers=32,
+        d_model=4096,
+        n_heads=32,
+        n_kv_heads=32,
+        global_attn_layers=frozenset(range(32)),
+        pt_revision=OLMO2_7B_PT_SHA,
+        it_revision=OLMO2_7B_SFT_SHA,
+    ),
+    "olmo2_7b_sft_dpo": ModelSpec(
+        name="olmo2_7b_sft_dpo",
+        pt_id="allenai/OLMo-2-1124-7B-SFT",
+        it_id="allenai/OLMo-2-1124-7B-DPO",
+        n_layers=32,
+        d_model=4096,
+        n_heads=32,
+        n_kv_heads=32,
+        global_attn_layers=frozenset(range(32)),
+        pt_revision=OLMO2_7B_SFT_SHA,
+        it_revision=OLMO2_7B_DPO_SHA,
+    ),
+    "olmo2_7b_dpo_rlvr": ModelSpec(
+        name="olmo2_7b_dpo_rlvr",
+        pt_id="allenai/OLMo-2-1124-7B-DPO",
+        it_id="allenai/OLMo-2-1124-7B-Instruct",
+        n_layers=32,
+        d_model=4096,
+        n_heads=32,
+        n_kv_heads=32,
+        global_attn_layers=frozenset(range(32)),
+        pt_revision=OLMO2_7B_DPO_SHA,
+        it_revision=OLMO2_7B_RLVR_SHA,
     ),
     "olmo2_32b": ModelSpec(
         name="olmo2_32b",

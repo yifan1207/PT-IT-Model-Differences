@@ -17,11 +17,12 @@ This repository exposes the paper claims at three audit levels.
 | Label-swap null for the factorial | same | `results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/compatibility_permutation/` | observed interaction `+2.64`; null 99.9th percentile `+0.239`; `p=5.0e-5` |
 | First-divergence position sensitivity | same | `results/paper_synthesis/exp23_position_sensitivity_table.csv`; `results/paper_synthesis/exp23_position_sensitivity_per_family.csv` | drop position 0 `+2.25`; position `>=3` `+1.52`; Gemma-removed position `>=3` `+0.79`; position `>=5` `+1.64` |
 | Content/reasoning stress test | same | `results/exp23_midlate_interaction_suite/exp23_content_reasoning_residual_20260427_0930_h100x8/analysis/exp23_summary.json` | interaction `+1.81`; late from PT upstream `-1.18` |
+| Qwen2.5-32B external-validity check | same | `results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/`; `results/paper_synthesis/exp24_32b_external_validity/` | interaction `+1.446`; late from PT upstream `+0.977`; late from IT upstream `+2.423`; position `>=3` interaction `+1.020`; raw-KL IT-side interaction `+0.465` |
 | First-divergence identity split | same | `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/summary.json` | raw-shared middle vs late IT-token transfer `26.0%` vs `17.6%`; mirror `31.2%` vs `20.8%` |
 | MLP write-out proxy | same | `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/summary.json`; `analysis/effects.csv` | late IT-token support `+0.789`; PT-host late `+0.0035`; residual-opposing component `-0.0046` |
 | Dense-5 delayed-stabilization context | same | `results/exp09_cross_model_observational_replication/data/convergence_gap_values.json`; `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv` | tuned final-half gap `0.410`; raw final-half gap `0.771`; endpoint-matched raw late gap `+0.425`; endpoint-matched tuned late gap `+0.762` |
 | Matched-prefix late-window localization and random control | same | `results/exp11_matched_prefix_mlp_graft/.../depth_ablation_metrics.json`; `results/exp14_symmetric_matched_prefix_causality/.../exp13_full_summary.json`; `results/exp19_late_mlp_specificity_controls/.../exp19B_summary_light.json` | late graft `+0.341`; late swap `-0.509`; true late random-control contrast `+0.327` vs random `+0.003` |
-| Behavioral sanity check and human audit | same | `results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/exp15_behavior_summary.json`; `results/exp15_symmetric_behavioral_causality/human_eval/human_eval_summary.json` | LLM resolved G2 `56.3%`, `77.1%`; human resolved G2 `60.2%`, `68.4%` |
+| Behavioral sanity check and human audit | same | `results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/exp15_behavior_summary.json`; `results/exp15_symmetric_behavioral_causality/human_eval/human_eval_summary.json` | LLM resolved G2 `56.3%`, `77.1%`; human resolved G2 `60.2%`, `73.1%` |
 
 ## Raw Data And Large Artifacts
 
@@ -34,6 +35,7 @@ Git contains paper-facing summaries and plots, not multi-GB raw traces or probe 
 - `gs://pt-vs-it-results/results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/`
 - `gs://pt-vs-it-results/results/exp23_midlate_interaction_suite/exp23_content_reasoning_residual_20260427_0930_h100x8/`
 - `gs://pt-vs-it-results/results/exp21_productive_opposition/exp21_content_reasoning_20260427_0943_h100x8/`
+- `gs://pt-vs-it-results/results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/`
 
 The minimal audit shard is expected at:
 

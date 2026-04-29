@@ -47,10 +47,20 @@ class BoundaryStateCapture:
 
 @dataclass
 class BoundaryStatePatch:
-    """Replace the full hidden-state tensor entering one transformer layer."""
+    """Replace the full hidden-state tensor entering one transformer layer.
+
+    When ``noop_tol`` is provided, the hook asserts that the host's incoming
+    hidden state matches the donor state to within ``noop_tol`` (per-coordinate
+    max absolute deviation). This is the runtime identity check for the no-op
+    factorial cells (donor = host), and guarantees that the diagonal cells of
+    the 2x2 reproduce the unmodified-checkpoint forward pass to numerical
+    tolerance. Off-diagonal (genuine cross-checkpoint) cells should be
+    constructed with ``noop_tol=None``.
+    """
 
     layer: torch.nn.Module
     donor_state: torch.Tensor
+    noop_tol: float | None = None
 
     def __post_init__(self) -> None:
         self.n_patches = 0
@@ -69,7 +79,16 @@ class BoundaryStatePatch:
                 f"host={tuple(hidden.shape)} donor={tuple(self.donor_state.shape)}"
             )
         patched = self.donor_state.to(device=hidden.device, dtype=hidden.dtype)
-        self.last_max_abs_input_delta = float((patched.float() - hidden.float()).abs().max().item())
+        delta = float((patched.float() - hidden.float()).abs().max().item())
+        self.last_max_abs_input_delta = delta
+        if self.noop_tol is not None and delta > self.noop_tol:
+            raise RuntimeError(
+                "BoundaryStatePatch no-op identity check failed: "
+                f"max-abs delta {delta:.3e} exceeds noop_tol {self.noop_tol:.3e}. "
+                "This means the donor state does not match the host's incoming "
+                "hidden state at the patched layer; no-op factorial cells are "
+                "not reproducing the unmodified checkpoint to tolerance."
+            )
         self.n_patches += 1
         return (patched, *args[1:])
 

@@ -330,6 +330,7 @@ def _forward_cell(
     boundary_layer: int,
     donor_boundary_state: torch.Tensor | None = None,
     collect_trajectories: bool,
+    noop_tol: float | None = None,
 ) -> dict[str, Any]:
     patcher = None
     # Always capture layer outputs so common PT/IT readouts can be applied to
@@ -338,7 +339,9 @@ def _forward_cell(
     residual_capture = LayerResidualCapture(layers=layers, adapter=adapter)
     try:
         if donor_boundary_state is not None:
-            patcher = BoundaryStatePatch(layers[boundary_layer], donor_boundary_state)
+            patcher = BoundaryStatePatch(
+                layers[boundary_layer], donor_boundary_state, noop_tol=noop_tol
+            )
         outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
         all_residuals = residual_capture.snapshot()
     finally:
@@ -549,6 +552,13 @@ def collect_manifest_record(
             ),
         }
         if include_noop_patch:
+            # Hard runtime identity check: when donor == host (no-op cells),
+            # the patched residual must match the host's incoming hidden state
+            # to numerical tolerance. ``noop_tol`` raises if it does not, so the
+            # diagonal cells of the 2x2 are guaranteed to reproduce the
+            # unmodified-checkpoint forward pass. Tolerance is loose enough for
+            # bf16 round-trips on the same device but tight enough to detect any
+            # real bug in the capture/patch pipeline.
             raw_cells["U_PT__L_PT_noop_patch"] = _forward_cell(
                 model=models["pt"],
                 adapter=adapter,
@@ -558,6 +568,7 @@ def collect_manifest_record(
                 boundary_layer=boundary_layer,
                 donor_boundary_state=baselines["pt"]["boundary_state"],
                 collect_trajectories=False,
+                noop_tol=1e-4,
             )
             raw_cells["U_IT__L_IT_noop_patch"] = _forward_cell(
                 model=models["it"],
@@ -568,6 +579,7 @@ def collect_manifest_record(
                 boundary_layer=boundary_layer,
                 donor_boundary_state=baselines["it"]["boundary_state"],
                 collect_trajectories=False,
+                noop_tol=1e-4,
             )
 
         cells = {

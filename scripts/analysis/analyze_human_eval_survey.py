@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import json
 import math
 from collections import Counter, defaultdict
@@ -34,6 +35,8 @@ COMPARISON_LABEL = {
     "pt_late_vs_a": "PT late graft vs PT baseline",
     "it_c_vs_dlate": "IT baseline vs late PT swap",
 }
+PAIRWISE_LABELS = ["target", "other", "tie", "both_bad"]
+PAIRWISE_COLLAPSED_LABELS = ["target", "other", "unresolved"]
 
 
 def parse_args() -> argparse.Namespace:
@@ -134,6 +137,77 @@ def agreement(a: list[str], b: list[str]) -> float:
     return sum(x == y for x, y in zip(a, b)) / len(a)
 
 
+def _mean_pairwise_metric(
+    by_item: dict[str, dict[str, str]],
+    *,
+    raters: list[str],
+    labels: list[str],
+    metric: str,
+    quadratic_weights: bool = False,
+) -> float:
+    values = []
+    for left, right in itertools.combinations(raters, 2):
+        left_values = []
+        right_values = []
+        for item in by_item.values():
+            if left in item and right in item:
+                left_values.append(item[left])
+                right_values.append(item[right])
+        if not left_values:
+            continue
+        if metric == "agreement":
+            values.append(agreement(left_values, right_values))
+        elif metric == "kappa":
+            values.append(
+                cohen_kappa(
+                    left_values,
+                    right_values,
+                    labels=labels,
+                    quadratic_weights=quadratic_weights,
+                )
+            )
+        else:
+            raise ValueError(f"unknown metric: {metric}")
+    kept = [value for value in values if math.isfinite(value)]
+    return float(np.mean(kept)) if kept else float("nan")
+
+
+def fleiss_kappa(
+    by_item: dict[str, dict[str, str]],
+    *,
+    raters: list[str],
+    labels: list[str],
+) -> float:
+    """Nominal Fleiss' kappa over items with all requested raters present."""
+    rows = []
+    for item in by_item.values():
+        if not all(rater in item and item[rater] in labels for rater in raters):
+            continue
+        counts = Counter(item[rater] for rater in raters)
+        rows.append([counts[label] for label in labels])
+    if not rows:
+        return float("nan")
+    counts_arr = np.asarray(rows, dtype=float)
+    n_raters = counts_arr.sum(axis=1)
+    if not np.all(n_raters == n_raters[0]) or n_raters[0] <= 1:
+        return float("nan")
+    n = float(n_raters[0])
+    p_i = ((counts_arr * counts_arr).sum(axis=1) - n) / (n * (n - 1.0))
+    p_bar = float(p_i.mean())
+    p_j = counts_arr.sum(axis=0) / counts_arr.sum()
+    p_e = float((p_j * p_j).sum())
+    if p_e == 1.0:
+        return 1.0 if p_bar == 1.0 else float("nan")
+    return (p_bar - p_e) / (1.0 - p_e)
+
+
+def _rater_id_from_path(path: Path, prefix: str) -> str:
+    stem = path.stem
+    if stem.startswith(prefix):
+        return stem[len(prefix):]
+    return stem
+
+
 def normalize_pairwise_choice(row: dict[str, str], key: dict[str, str]) -> str:
     choice = (row.get("choice") or "").strip().upper()
     if choice == "A":
@@ -165,7 +239,7 @@ def bootstrap_resolved_rate(
     n_boot: int,
     seed: int,
 ) -> tuple[float, float]:
-    """Bootstrap over pair_ids; each sampled item contributes both rater votes."""
+    """Bootstrap over pair_ids; each sampled item contributes all completed rater votes."""
     if not item_votes:
         return (float("nan"), float("nan"))
     rng = np.random.default_rng(seed)
@@ -194,16 +268,49 @@ def summarize_pairwise(
 ) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
     key_rows = read_csv(survey_dir / "keys" / "pairwise_hidden_key.csv")
     key_by_rater_pair = {(row["rater_id"], row["pair_id"]): row for row in key_rows}
+    key_by_pair_signature: dict[tuple[str, str, str], dict[str, str]] = {}
+
+    pairwise_paths = sorted((survey_dir / "pairwise").glob("pairwise_primary_R*.csv"))
+    survey_rows_by_rater: dict[str, list[dict[str, str]]] = {}
+    for path in pairwise_paths:
+        rows = read_csv(path)
+        if not rows:
+            continue
+        rater_id = (rows[0].get("rater_id") or _rater_id_from_path(path, "pairwise_primary_")).strip()
+        survey_rows_by_rater[rater_id] = rows
+
+    # R3/R4 packets may be generated from an existing visible packet without
+    # adding new hidden-key rows.  Decode choices by the actual A/B response
+    # order, not by pair_id alone, because A/B order is rater-randomized.
+    for rater_id, rows in survey_rows_by_rater.items():
+        by_pair = {row["pair_id"]: row for row in rows}
+        for pair_id in by_pair:
+            key = key_by_rater_pair.get((rater_id, pair_id))
+            if key is None:
+                continue
+            row = by_pair[pair_id]
+            signature = (pair_id, row["response_a"], row["response_b"])
+            key_by_pair_signature[signature] = key
 
     human_rows: list[dict[str, Any]] = []
-    for rater_id in ["R1", "R2"]:
-        for row in read_csv(survey_dir / "pairwise" / f"pairwise_primary_{rater_id}.csv"):
-            key = key_by_rater_pair[(rater_id, row["pair_id"])]
+    raters = sorted(survey_rows_by_rater)
+    for rater_id in raters:
+        for row in survey_rows_by_rater[rater_id]:
+            key = key_by_rater_pair.get((rater_id, row["pair_id"]))
+            if key is None:
+                key = key_by_pair_signature.get((row["pair_id"], row["response_a"], row["response_b"]))
+            if key is None:
+                raise KeyError(
+                    f"No hidden key for rater={rater_id} pair={row['pair_id']} "
+                    "with this response_a/response_b order."
+                )
             norm = normalize_pairwise_choice(row, key)
             direction = directional_label(norm, key["comparison"])
             human_rows.append(
                 {
                     **key,
+                    "key_rater_id": key.get("rater_id", ""),
+                    "rater_id": rater_id,
                     "choice": (row.get("choice") or "").strip().upper(),
                     "confidence": row.get("confidence", ""),
                     "notes": row.get("notes", ""),
@@ -240,7 +347,7 @@ def summarize_pairwise(
             )
 
             rater_rates = {}
-            for rater_id in ["R1", "R2"]:
+            for rater_id in raters:
                 rater_subset = [row for row in subset if row["rater_id"] == rater_id]
                 rater_counts = Counter(row["dir"] for row in rater_subset)
                 rater_resolved = rater_counts["target"] + rater_counts["other"]
@@ -267,6 +374,8 @@ def summarize_pairwise(
                     "other_condition": OTHER_CONDITION[comparison],
                     "n_items": len(sampled_pair_ids),
                     "n_votes": len(subset),
+                    "n_raters": len(raters),
+                    "raters": raters,
                     "human_counts": dict(counts),
                     "human_resolved_n": resolved_n,
                     "human_resolved_target_rate": resolved_rate,
@@ -287,39 +396,45 @@ def summarize_pairwise(
 
     for comparison in ["it_c_vs_dlate", "pt_late_vs_a"]:
         for criterion in ["G2", "S2"]:
-            paired = [
-                value
-                for value in by_pair_all.values()
-                if "R1" in value
-                and "R2" in value
-                and value["R1"]["comparison"] == comparison
-                and value["R1"]["criterion"] == criterion
-            ]
-            r1 = [value["R1"]["dir"] for value in paired]
-            r2 = [value["R2"]["dir"] for value in paired]
-            r1_collapsed = ["unresolved" if x in {"tie", "both_bad"} else x for x in r1]
-            r2_collapsed = ["unresolved" if x in {"tie", "both_bad"} else x for x in r2]
+            paired = {}
+            collapsed = {}
+            for pair_id, value in by_pair_all.items():
+                any_row = next(iter(value.values()))
+                if any_row["comparison"] != comparison or any_row["criterion"] != criterion:
+                    continue
+                paired[pair_id] = {rater: row["dir"] for rater, row in value.items()}
+                collapsed[pair_id] = {
+                    rater: ("unresolved" if row["dir"] in {"tie", "both_bad"} else row["dir"])
+                    for rater, row in value.items()
+                }
             agreement_rows.append(
                 {
                     "comparison": comparison,
                     "criterion": criterion,
                     "n_items": len(paired),
-                    "raw_agreement_4label": agreement(r1, r2),
-                    "kappa_4label": cohen_kappa(
-                        r1,
-                        r2,
-                        labels=["target", "other", "tie", "both_bad"],
+                    "n_raters": len(raters),
+                    "mean_pairwise_raw_agreement_4label": _mean_pairwise_metric(
+                        paired, raters=raters, labels=PAIRWISE_LABELS, metric="agreement"
                     ),
-                    "raw_agreement_collapsed": agreement(r1_collapsed, r2_collapsed),
-                    "kappa_collapsed": cohen_kappa(
-                        r1_collapsed,
-                        r2_collapsed,
-                        labels=["target", "other", "unresolved"],
+                    "mean_pairwise_kappa_4label": _mean_pairwise_metric(
+                        paired, raters=raters, labels=PAIRWISE_LABELS, metric="kappa"
+                    ),
+                    "mean_pairwise_raw_agreement_collapsed": _mean_pairwise_metric(
+                        collapsed, raters=raters, labels=PAIRWISE_COLLAPSED_LABELS, metric="agreement"
+                    ),
+                    "mean_pairwise_kappa_collapsed": _mean_pairwise_metric(
+                        collapsed, raters=raters, labels=PAIRWISE_COLLAPSED_LABELS, metric="kappa"
+                    ),
+                    "fleiss_kappa_4label": fleiss_kappa(
+                        paired, raters=raters, labels=PAIRWISE_LABELS
+                    ),
+                    "fleiss_kappa_collapsed": fleiss_kappa(
+                        collapsed, raters=raters, labels=PAIRWISE_COLLAPSED_LABELS
                     ),
                 }
             )
 
-    return summary_rows, {"rows": human_rows}, agreement_rows
+    return summary_rows, {"rows": human_rows, "raters": raters}, agreement_rows
 
 
 def summarize_pointwise(
@@ -337,8 +452,15 @@ def summarize_pointwise(
             judge_by_key[(model, row["condition"], row["record_id"], row["task"])] = row
 
     ratings: list[dict[str, Any]] = []
-    for rater_id in ["R1", "R2"]:
-        for row in read_csv(survey_dir / "pointwise" / f"pointwise_{rater_id}.csv"):
+    pointwise_paths = sorted((survey_dir / "pointwise").glob("pointwise_R*.csv"))
+    raters: list[str] = []
+    for path in pointwise_paths:
+        rows = read_csv(path)
+        if not rows:
+            continue
+        rater_id = (rows[0].get("rater_id") or _rater_id_from_path(path, "pointwise_")).strip()
+        raters.append(rater_id)
+        for row in rows:
             meta = key_by_survey[row["survey_id"]]
             for task in ["g1", "g2", "s1", "s2"]:
                 value = (row.get(task) or "").strip().upper()
@@ -365,9 +487,11 @@ def summarize_pointwise(
 
     summary_rows: list[dict[str, Any]] = []
     for task in ["g1", "g2", "s1", "s2"]:
-        paired = [value for key, value in by_item_task.items() if key[1] == task and "R1" in value and "R2" in value]
-        r1 = [value["R1"] for value in paired]
-        r2 = [value["R2"] for value in paired]
+        paired = {
+            key[0]: value
+            for key, value in by_item_task.items()
+            if key[1] == task and sum(rater in value for rater in raters) >= 2
+        }
         if task in {"g1", "g2"}:
             labels = ["1", "2", "3", "4", "5"]
             weighted = True
@@ -388,9 +512,21 @@ def summarize_pointwise(
         summary_rows.append(
             {
                 "task": task,
-                "n_common_r1_r2": len(paired),
-                "r1_r2_agreement": agreement(r1, r2),
-                "r1_r2_kappa": cohen_kappa(r1, r2, labels=labels, quadratic_weights=weighted),
+                "n_items": len(paired),
+                "n_raters": len(raters),
+                "mean_pairwise_agreement": _mean_pairwise_metric(
+                    paired, raters=raters, labels=labels, metric="agreement"
+                ),
+                "mean_pairwise_kappa": _mean_pairwise_metric(
+                    paired,
+                    raters=raters,
+                    labels=labels,
+                    metric="kappa",
+                    quadratic_weights=weighted,
+                ),
+                "fleiss_kappa": float("nan") if weighted else fleiss_kappa(
+                    paired, raters=raters, labels=labels
+                ),
                 "n_human_llm_ratings": len(human_llm_rows),
                 "human_llm_agreement": agreement(human_values, judge_values),
                 "human_llm_kappa": cohen_kappa(
@@ -426,7 +562,7 @@ def main() -> None:
         "pairwise_interrater": pairwise_agreement,
         "pointwise_interrater_and_judge": pointwise_summary,
         "notes": {
-            "pairwise_rate_definition": "Resolved rate excludes TIE and BOTH_BAD votes; CIs bootstrap over pair_id and include both raters per sampled item.",
+            "pairwise_rate_definition": "Resolved rate excludes TIE and BOTH_BAD votes; CIs bootstrap over pair_id and include all completed rater votes per sampled item.",
             "pointwise_role": "Pointwise labels are used for agreement and judge-validation diagnostics; pairwise labels are the primary diagnostic human behavioral readout.",
         },
     }
@@ -443,6 +579,8 @@ def main() -> None:
             "other_condition",
             "n_items",
             "n_votes",
+            "n_raters",
+            "raters",
             "human_resolved_n",
             "human_resolved_target_rate",
             "human_resolved_target_ci95",
@@ -452,6 +590,8 @@ def main() -> None:
             "llm_same_sample_counts",
             "R1_resolved_rate",
             "R2_resolved_rate",
+            "R3_resolved_rate",
+            "R4_resolved_rate",
         ],
     )
     write_csv(
@@ -461,10 +601,13 @@ def main() -> None:
             "comparison",
             "criterion",
             "n_items",
-            "raw_agreement_4label",
-            "kappa_4label",
-            "raw_agreement_collapsed",
-            "kappa_collapsed",
+            "n_raters",
+            "mean_pairwise_raw_agreement_4label",
+            "mean_pairwise_kappa_4label",
+            "mean_pairwise_raw_agreement_collapsed",
+            "mean_pairwise_kappa_collapsed",
+            "fleiss_kappa_4label",
+            "fleiss_kappa_collapsed",
         ],
     )
     write_csv(
@@ -472,9 +615,11 @@ def main() -> None:
         pointwise_summary,
         [
             "task",
-            "n_common_r1_r2",
-            "r1_r2_agreement",
-            "r1_r2_kappa",
+            "n_items",
+            "n_raters",
+            "mean_pairwise_agreement",
+            "mean_pairwise_kappa",
+            "fleiss_kappa",
             "n_human_llm_ratings",
             "human_llm_agreement",
             "human_llm_kappa",
