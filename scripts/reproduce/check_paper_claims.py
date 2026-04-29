@@ -576,6 +576,21 @@ def exp24_position_prompt_category(position_filter: str, prompt_category: str, m
     return _read
 
 
+def exp25_olmo_stage(transition: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp25_olmo_stage_full_20260428_0905/"
+            "olmo_stage_progression_table.csv",
+        )
+        for row in rows:
+            if row["transition"] == transition:
+                return float(row[column])
+        raise KeyError((transition, column))
+
+    return _read
+
+
 CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Dense-5 tuned final-half convergence gap",
@@ -1903,6 +1918,66 @@ CHECKS: list[ClaimCheck] = [
         "exp24 raw-KL effects.csv",
         -0.12499038208182434,
         exp24_kl_effect("pt", "I_pt", "mean"),
+    ),
+    ClaimCheck(
+        "OLMo stage Base->SFT interaction",
+        "exp25 olmo_stage_progression_table.csv",
+        0.7822269640470806,
+        exp25_olmo_stage("PT->SFT", "interaction"),
+    ),
+    ClaimCheck(
+        "OLMo stage Base->SFT interaction CI low",
+        "exp25 olmo_stage_progression_table.csv",
+        0.6805445260880431,
+        exp25_olmo_stage("PT->SFT", "interaction_ci_low"),
+    ),
+    ClaimCheck(
+        "OLMo stage SFT->DPO interaction",
+        "exp25 olmo_stage_progression_table.csv",
+        0.1352249775583483,
+        exp25_olmo_stage("SFT->DPO", "interaction"),
+    ),
+    ClaimCheck(
+        "OLMo stage DPO->RLVR interaction",
+        "exp25 olmo_stage_progression_table.csv",
+        0.01596030042918455,
+        exp25_olmo_stage("DPO->RLVR", "interaction"),
+    ),
+    ClaimCheck(
+        "OLMo stage DPO->RLVR interaction CI low",
+        "exp25 olmo_stage_progression_table.csv",
+        0.007711909871244635,
+        exp25_olmo_stage("DPO->RLVR", "interaction_ci_low"),
+    ),
+    ClaimCheck(
+        "OLMo stage Base->RLVR interaction",
+        "exp25 olmo_stage_progression_table.csv",
+        1.9304599371379554,
+        exp25_olmo_stage("PT->RLVR", "interaction"),
+    ),
+    ClaimCheck(
+        "OLMo stage Base->RLVR interaction CI high",
+        "exp25 olmo_stage_progression_table.csv",
+        2.1123002976687695,
+        exp25_olmo_stage("PT->RLVR", "interaction_ci_high"),
+    ),
+    ClaimCheck(
+        "OLMo stage Base->SFT mid+late IT-token transfer",
+        "exp25 olmo_stage_progression_table.csv",
+        0.40834845735027225,
+        exp25_olmo_stage("PT->SFT", "b_midlate_it_match_rate"),
+    ),
+    ClaimCheck(
+        "OLMo stage SFT->DPO mid+late IT-token transfer",
+        "exp25 olmo_stage_progression_table.csv",
+        0.5709156193895871,
+        exp25_olmo_stage("SFT->DPO", "b_midlate_it_match_rate"),
+    ),
+    ClaimCheck(
+        "OLMo stage Base->SFT first-diff events",
+        "exp25 olmo_stage_progression_table.csv",
+        551.0,
+        exp25_olmo_stage("PT->SFT", "first_diff_events"),
     ),
     ClaimCheck(
         "LLM judge resolved G2: PT late graft over PT baseline",

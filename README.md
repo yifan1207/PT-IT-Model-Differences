@@ -55,6 +55,7 @@ What is strongest right now:
 - first-divergence 2x2 interaction: common-IT interaction `+2.64` logits over five dense families, positive in every family and `+1.77` without Gemma
 - label-swap null and prompt/position/domain stratifications showing that the interaction is PT/IT-label aligned and not only an immediate-token artifact
 - content/reasoning extension where the interaction remains positive while the PT-upstream late-only term flips negative, strengthening the "conditional, not portable" interpretation
+- non-pooled external checks: Qwen2.5-32B preserves the interaction at larger scale, and an OLMo-2 Base/SFT/DPO/Instruct case study shows positive local transition interactions with the strongest adjacent signal at Base→SFT
 - identity/margin decomposition: middle-positioned windows transfer token identity more often, while late-positioned windows supply stronger margin/readout pressure
 - delayed-stabilization and matched random late-MLP controls as supporting layerwise context
 
