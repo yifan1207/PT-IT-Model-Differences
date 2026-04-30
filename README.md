@@ -5,15 +5,15 @@
 <p align="center">
   <img alt="Python 3.13+" src="https://img.shields.io/badge/python-3.13+-3776AB?style=flat-square&logo=python&logoColor=white">
   <img alt="PyTorch" src="https://img.shields.io/badge/pytorch-2.5+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white">
-  <img alt="5 Dense Model Families" src="https://img.shields.io/badge/models-5%20dense%20families-green?style=flat-square">
+  <img alt="6 Dense PT/IT Pairs" src="https://img.shields.io/badge/models-6%20dense%20PT%2FIT%20pairs-green?style=flat-square">
 
 </p>
 
-> **TL;DR** &mdash; The current paper centers on **first-divergence factorial diffing**. At the first shared-history token where a pretrained checkpoint and its post-trained descendant prefer different next tokens, we cross upstream residual state with downstream late stack and measure the divergent-token margin. Across five dense PT/IT families, the same IT late stack has a much larger effect from IT-shaped upstream state than from PT-shaped upstream state. Convergence-gap curves, matched-prefix graft/swap, MLP write-out, and behavior are supporting context rather than the headline.
+> **TL;DR** &mdash; The current paper centers on **first-divergence factorial diffing**. At the first shared-history token where a pretrained checkpoint and its post-trained descendant prefer different next tokens, we cross upstream residual state with downstream late stack and measure the divergent-token margin. Across six dense PT/IT pairs, including Qwen2.5-32B, late-stack effects are much larger from IT-shaped upstream state than from PT-shaped upstream state. Convergence-gap curves, matched-prefix graft/swap, MLP write-out, residual-opposition ablations, and behavior are supporting context rather than the headline.
 
-![First-divergence residual-state x late-stack factorial](results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/exp23_midlate_interaction.png)
+![First-divergence residual-state x late-stack factorial](results/paper_synthesis/exp23_dense6_core/exp23_dense6_interaction.png)
 
-*Figure 1. Current paper headline: residual-state x late-stack factorial at first-divergence prefixes. The inference target is the upstream-late interaction on the IT-vs-PT divergent-token margin, conditional on the five released dense PT/IT checkpoint pairs.*
+*Figure 1. Current paper headline: upstream-state x late-stack interaction at first-divergence prefixes. The inference target is the interaction on the IT-vs-PT divergent-token margin, conditional on the six released dense PT/IT checkpoint pairs.*
 
 ---
 
@@ -24,7 +24,8 @@ If you are new to the repo, these are the most useful entrypoints:
 - [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md): canonical experiment map and path conventions
 - [scripts/README.md](scripts/README.md): grouped script layout and common commands
 - `uv run python scripts/infra/repo_doctor.py`: lightweight repo health check
-- [paper_draft/PAPER_DRAFT_v23.md](paper_draft/PAPER_DRAFT_v23.md): current paper framing, including the reproducibility and artifact map
+- [paper_draft/PAPER_DRAFT_v24.md](paper_draft/PAPER_DRAFT_v24.md): current paper framing, including the reproducibility and artifact map
+- [paper_draft/arxiv_v24/main.tex](paper_draft/arxiv_v24/main.tex): arXiv-ready LaTeX source generated from v24
 
 The repo has been reorganized into descriptive canonical paths:
 
@@ -36,7 +37,7 @@ A few flat script aliases are still kept where practical, but results now live o
 
 ### Reproducibility artifacts
 
-For double-blind review, the manuscript should point to the anonymized artifact archive rather than this development checkout. Paper-facing summaries and plots are committed under `results/`, including JSON/CSV/MD tables, bootstrap intervals, human-evaluation summaries, and final figures for the main claims. Reviewers can mechanically check the headline numbers with `bash scripts/reproduce/reproduce_claims_from_summaries.sh`; raw or cached shard validation is routed through `bash scripts/reproduce/reproduce_minimal.sh`. Large regenerated intermediates such as raw activation arrays, model/probe tensors, tuned-lens checkpoints, and multi-gigabyte raw per-token traces stay out of git, with scripts, prompt datasets, archive pointers, and the reproducibility guide in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
+For review and public release, paper-facing summaries and plots are committed under `results/`, including JSON/CSV/MD tables, bootstrap intervals, human-evaluation summaries, and final figures for the main claims. Reviewers can mechanically check the headline numbers with `bash scripts/reproduce/reproduce_claims_from_summaries.sh`; raw or cached shard validation is routed through `bash scripts/reproduce/reproduce_minimal.sh`. Large regenerated intermediates such as raw activation arrays, model/probe tensors, tuned-lens checkpoints, and multi-gigabyte raw per-token traces stay out of git, with scripts, prompt datasets, archive pointers, and the reproducibility guide in [REPRODUCIBILITY.md](REPRODUCIBILITY.md).
 
 ---
 
@@ -52,16 +53,16 @@ The current paper-facing story is best understood in three layers:
 
 What is strongest right now:
 
-- first-divergence 2x2 interaction: common-IT interaction `+2.64` logits over five dense families, positive in every family and `+1.77` without Gemma
+- first-divergence 2x2 interaction: Dense-6 family-balanced interaction `+2.44` logits, positive in every family and `+1.71` without Gemma
 - label-swap null and prompt/position/domain stratifications showing that the interaction is PT/IT-label aligned and not only an immediate-token artifact
 - content/reasoning extension where the interaction remains positive while the PT-upstream late-only term flips negative, strengthening the "conditional, not portable" interpretation
-- non-pooled external checks: Qwen2.5-32B preserves the interaction at larger scale, and an OLMo-2 Base/SFT/DPO/Instruct case study shows positive local transition interactions with the strongest adjacent signal at Base→SFT
+- external and staged checks: Qwen2.5-32B is included as the sixth dense core pair, and an OLMo-2 Base/SFT/DPO/Instruct case study shows positive local transition interactions with the strongest adjacent signal at Base→SFT
 - identity/margin decomposition: middle-positioned windows transfer token identity more often, while late-positioned windows supply stronger margin/readout pressure
-- delayed-stabilization and matched random late-MLP controls as supporting layerwise context
+- delayed-stabilization, matched random late-MLP controls, and Exp26 residual-opposition ablations as supporting layerwise/geometric context
 
 What remains intentionally careful:
 
-- the main paper pools five dense 4B-8B families; DeepSeek-V2-Lite is an MoE side case only
+- the main first-divergence factorial synthesis pools six dense PT/IT pairs; Dense-5 rows are support analyses where Qwen2.5-32B was not rerun, and DeepSeek-V2-Lite is an MoE side case only
 - first-divergence prefixes are selected natural disagreement events, strongest in early response formation, not random token positions
 - causal language refers to measured effects in constructed hybrid forward passes, not complete natural-model circuit recovery
 - `KL(layer || own final)` is useful layerwise context but endpoint-relative and no longer the headline causal claim
@@ -152,8 +153,9 @@ bash scripts/run/run_exp16_js_replay_local.sh --mode smoke
 | **Llama 3.1 8B** | 32 | 4096 | GQA, all global | 15T-token pretraining / iterative supervised + preference optimization |
 | **Qwen 3 4B** | 36 | 2560 | GQA, all global | 36T-token multilingual pretraining / multi-stage SFT + RL post-training |
 | **Mistral 7B v0.3** | 32 | 4096 | GQA, sliding window (4096) | Undisclosed pretraining / instruct checkpoint |
-| **DeepSeek-V2-Lite** | 27 | 2048 | MLA, MoE (2 shared + 64 routed, top-6) | 5.7T-token pretraining / **SFT-only** chat checkpoint |
 | **OLMo 2 7B** | 32 | 4096 | MHA, all global | `OLMo-mix-1124` pretraining / T&uuml;lu 3-style SFT + DPO + RLVR |
+| **Qwen2.5 32B** | 64 | 5120 | GQA, all global | Qwen2.5 pretraining / instruct checkpoint |
+| **DeepSeek-V2-Lite** | 27 | 2048 | MLA, MoE (2 shared + 64 routed, top-6) | 5.7T-token pretraining / **SFT-only** chat checkpoint; appendix side case |
 
 OLMo 2 uses a staged base-model recipe with a late `Dolmino-mix-1124` curriculum, so the earlier single-dataset shorthand is inaccurate for this checkpoint. DeepSeek-V2-Lite-Chat is both the only MoE family here and an SFT-only chat checkpoint, so we treat it as a post-training outlier rather than as evidence for the dense-family main claim.
 
@@ -209,7 +211,7 @@ For a full index, see [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md)
 
 ## Broader Experiment Index
 
-This index includes historical and supporting experiments. The current paper's main pooled claims use the five dense families; DeepSeek-V2-Lite remains a MoE side case where artifacts exist.
+This index includes historical and supporting experiments. The current paper's main first-divergence factorial claim uses six dense PT/IT pairs; supporting rows are labeled Dense-5 when Qwen2.5-32B was not rerun, and DeepSeek-V2-Lite remains a MoE side case where artifacts exist.
 
 ### Observational / Layerwise Context
 

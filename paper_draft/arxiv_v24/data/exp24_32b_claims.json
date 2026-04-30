@@ -1,0 +1,13 @@
+{
+  "all_model_interactions_positive": true,
+  "models": [
+    "qwen25_32b"
+  ],
+  "paper_sentence_if_success": "A Qwen2.5-32B external-validity run preserves the positive upstream-state x late-stack interaction, providing a 32B-scale check of the context-gated late-readout result.",
+  "pooled_interaction": 1.4462016821760917,
+  "pooled_interaction_ci_excludes_zero": true,
+  "pooled_interaction_ci_high": 1.5694104554402288,
+  "pooled_interaction_ci_low": 1.321259842519685,
+  "run_root": "/Users/Yifan/Research/structral-semantic-features/results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839",
+  "warnings": []
+}

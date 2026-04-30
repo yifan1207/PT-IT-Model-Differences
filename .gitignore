@@ -418,13 +418,23 @@ paper_draft/*
 !paper_draft/PAPER_DRAFT_v20.md
 !paper_draft/PAPER_DRAFT_v21.md
 !paper_draft/PAPER_DRAFT_v22.md
+!paper_draft/PAPER_DRAFT_v24.md
 !paper_draft/EXP24_32B_EXTERNAL_VALIDITY_PLAN.md
+!paper_draft/arxiv_v24/
+!paper_draft/arxiv_v24/**
+paper_draft/arxiv_v24/*.aux
+paper_draft/arxiv_v24/*.log
+paper_draft/arxiv_v24/*.out
+paper_draft/arxiv_v24/*.toc
+paper_draft/arxiv_v24/*.pdf
+paper_draft/arxiv_v24_bundle.tar.gz
 
 .DS_Store
 cache/
 docs/
 !docs/
 docs/*
+!docs/EXPERIMENT_REGISTRY.md
 !docs/assets/
 docs/assets/*
 !docs/assets/readme_broad_convergence_gap.png

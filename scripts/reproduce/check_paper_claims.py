@@ -434,6 +434,34 @@ def exp23_position_sensitivity(stratum: str, column: str) -> NumberFn:
     return _read
 
 
+def exp23_dense6_effect(effect: str, readout: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_dense6_core/exp23_dense6_core_effects.csv",
+        )
+        for row in rows:
+            if row["effect"] == effect and row["readout"] == readout:
+                return float(row[column])
+        raise KeyError((effect, readout, column))
+
+    return _read
+
+
+def exp23_dense6_position(stratum: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_dense6_core/exp23_dense6_position_sensitivity.csv",
+        )
+        for row in rows:
+            if row["position_stratum"] == stratum:
+                return float(row[column])
+        raise KeyError((stratum, column))
+
+    return _read
+
+
 def exp23_position_family(stratum: str, model: str, column: str) -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
@@ -587,6 +615,46 @@ def exp25_olmo_stage(transition: str, column: str) -> NumberFn:
             if row["transition"] == transition:
                 return float(row[column])
         raise KeyError((transition, column))
+
+    return _read
+
+
+def exp26_effect(
+    variant: str,
+    column: str,
+    *,
+    scope: str = "dense5",
+    subset: str = "all",
+    readout: str = "common_it",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "paper_draft/arxiv_v24/data/exp26_effects.csv")
+        for row in rows:
+            if (
+                row["readout"] == readout
+                and row["scope"] == scope
+                and row["subset"] == subset
+                and row["variant"] == variant
+            ):
+                return float(row[column])
+        raise KeyError((readout, scope, subset, variant, column))
+
+    return _read
+
+
+def exp26_pt_target_comparison(
+    variant: str,
+    column: str,
+    *,
+    scope: str = "dense5",
+    readout: str = "common_it",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "paper_draft/arxiv_v24/data/pt_vs_it_target_comparison.csv")
+        for row in rows:
+            if row["readout"] == readout and row["scope"] == scope and row["variant"] == variant:
+                return float(row[column])
+        raise KeyError((readout, scope, variant, column))
 
     return _read
 
@@ -928,6 +996,78 @@ CHECKS: list[ClaimCheck] = [
         "exp21 effects.csv",
         0.2884991907770899,
         exp21_effect("late_interaction:margin_writein_it_vs_pt"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 late given PT upstream",
+        "exp23_dense6_core_effects.csv",
+        0.6394436240874645,
+        exp23_dense6_effect("late_it_given_pt_upstream", "common_it", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 late given IT upstream",
+        "exp23_dense6_core_effects.csv",
+        3.076473895656491,
+        exp23_dense6_effect("late_it_given_it_upstream", "common_it", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 upstream-context effect",
+        "exp23_dense6_core_effects.csv",
+        3.874074864700922,
+        exp23_dense6_effect("upstream_context_effect", "common_it", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 late-stack main effect",
+        "exp23_dense6_core_effects.csv",
+        1.8579587598719778,
+        exp23_dense6_effect("late_weight_effect", "common_it", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 upstream x late interaction",
+        "exp23_dense6_core_effects.csv",
+        2.4370302715690264,
+        exp23_dense6_effect("interaction", "common_it", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 interaction CI low",
+        "exp23_dense6_core_effects.csv",
+        2.3526391879414423,
+        exp23_dense6_effect("interaction", "common_it", "dense6_ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 interaction CI high",
+        "exp23_dense6_core_effects.csv",
+        2.5214213551966105,
+        exp23_dense6_effect("interaction", "common_it", "dense6_ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 Gemma-removed interaction",
+        "exp23_dense6_core_effects.csv",
+        1.708858200882832,
+        exp23_dense6_effect("interaction", "common_it", "gemma_removed_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 common-PT interaction",
+        "exp23_dense6_core_effects.csv",
+        2.4211752822401453,
+        exp23_dense6_effect("interaction", "common_pt", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 position >=1 interaction",
+        "exp23_dense6_position_sensitivity.csv",
+        2.078516884791658,
+        exp23_dense6_position("positions >=1", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 position >=3 interaction",
+        "exp23_dense6_position_sensitivity.csv",
+        1.4342981832789896,
+        exp23_dense6_position("positions >=3", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 position >=5 interaction",
+        "exp23_dense6_position_sensitivity.csv",
+        1.4799920390405037,
+        exp23_dense6_position("position >=5", "dense6_estimate"),
     ),
     ClaimCheck(
         "Exp23 primary late given PT upstream",
@@ -1978,6 +2118,54 @@ CHECKS: list[ClaimCheck] = [
         "exp25 olmo_stage_progression_table.csv",
         551.0,
         exp25_olmo_stage("PT->SFT", "first_diff_events"),
+    ),
+    ClaimCheck(
+        "Exp26 residual-opposition noopp interaction drop",
+        "exp26_effects.csv",
+        0.2581398757281287,
+        exp26_effect("noopp", "drop"),
+    ),
+    ClaimCheck(
+        "Exp26 residual-opposition noopp drop CI low",
+        "exp26_effects.csv",
+        0.22500021760035854,
+        exp26_effect("noopp", "drop_ci_low"),
+    ),
+    ClaimCheck(
+        "Exp26 residual-opposition noopp mediation fraction",
+        "exp26_effects.csv",
+        0.09795851115508097,
+        exp26_effect("noopp", "mediation_fraction"),
+    ),
+    ClaimCheck(
+        "Exp26 residual-opposition norm-preserving noopp drop",
+        "exp26_effects.csv",
+        0.2528975100519917,
+        exp26_effect("normpres_noopp", "drop"),
+    ),
+    ClaimCheck(
+        "Exp26 residual-opposition flip interaction drop",
+        "exp26_effects.csv",
+        0.4811122210579155,
+        exp26_effect("flipopp", "drop"),
+    ),
+    ClaimCheck(
+        "Exp26 residual-opposition random orthogonal drop",
+        "exp26_effects.csv",
+        0.3215001964973378,
+        exp26_effect("randorth", "drop"),
+    ),
+    ClaimCheck(
+        "Exp26 PT-target noopp drop",
+        "pt_vs_it_target_comparison.csv",
+        0.18647645745432323,
+        exp26_pt_target_comparison("noopp", "pt_drop"),
+    ),
+    ClaimCheck(
+        "Exp26 IT-minus-PT noopp drop difference",
+        "pt_vs_it_target_comparison.csv",
+        0.0716634182738054,
+        exp26_pt_target_comparison("noopp", "it_minus_pt_drop"),
     ),
     ClaimCheck(
         "LLM judge resolved G2: PT late graft over PT baseline",
