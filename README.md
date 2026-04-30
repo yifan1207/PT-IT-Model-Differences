@@ -184,6 +184,15 @@ src/poc/
   exp14_symmetric_matched_prefix_causality/
   exp15_symmetric_behavioral_causality/
   exp16_matched_prefix_js_gap/
+  exp20_divergence_token_counterfactual/
+  exp21_productive_opposition/
+  exp22_endpoint_deconfounded_gap/
+  exp23_midlate_interaction_suite/
+  exp23_midlate_kl_factorial/
+  exp24_32b_external_validity/
+  exp25_olmo_stage_progression/
+  exp26_residual_opposition_mediation/
+  exp27_natural_rollout_residual_opposition_ntp/
 
 scripts/
   analysis/                                      # Post-hoc summaries, cross-checks, paper stats
