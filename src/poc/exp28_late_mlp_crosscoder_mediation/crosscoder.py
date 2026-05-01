@@ -88,7 +88,8 @@ class BatchTopKCrossCoder(nn.Module):
         self.register_buffer("threshold_updates", torch.tensor(0, dtype=torch.long))
 
     def centered(self, x: torch.Tensor) -> torch.Tensor:
-        return x.float() - self.input_mean.to(device=x.device, dtype=torch.float32)
+        dtype = self.encoder.dtype
+        return x.to(dtype=dtype) - self.input_mean.to(device=x.device, dtype=dtype)
 
     def preacts(self, x: torch.Tensor) -> torch.Tensor:
         centered = self.centered(x)
@@ -110,8 +111,9 @@ class BatchTopKCrossCoder(nn.Module):
     ) -> torch.Tensor:
         if x.ndim != 2:
             raise ValueError(f"Branch encoding expects [batch, d_model], got {tuple(x.shape)}")
-        mean = self.input_mean[branch].to(device=x.device, dtype=torch.float32)
-        pre = (x.float() - mean) @ self.encoder[branch] + self.encoder_bias
+        dtype = self.encoder.dtype
+        mean = self.input_mean[branch].to(device=x.device, dtype=dtype)
+        pre = (x.to(dtype=dtype) - mean) @ self.encoder[branch] + self.encoder_bias
         acts = F.relu(pre)
         if use_threshold and float(self.inference_threshold.item()) > 0:
             return acts * (acts >= self.inference_threshold.to(device=acts.device)).to(acts.dtype)
@@ -123,11 +125,11 @@ class BatchTopKCrossCoder(nn.Module):
         return acts * (acts >= cutoff).to(acts.dtype)
 
     def decode(self, features: torch.Tensor) -> torch.Tensor:
-        recon = torch.einsum("bl,lmd->bmd", features.float(), self.decoder)
+        recon = torch.einsum("bl,lmd->bmd", features.to(dtype=self.decoder.dtype), self.decoder)
         return recon + self.decoder_bias
 
     def decode_branch(self, features: torch.Tensor, *, branch: int) -> torch.Tensor:
-        recon = features.float() @ self.decoder[:, branch, :]
+        recon = features.to(dtype=self.decoder.dtype) @ self.decoder[:, branch, :]
         return recon + self.decoder_bias[branch]
 
     def selected_branch_contribution(
@@ -143,10 +145,11 @@ class BatchTopKCrossCoder(nn.Module):
             return torch.zeros_like(x.float()), empty
         selected = latent_ids.to(device=x.device, dtype=torch.long)
         if use_threshold and float(self.inference_threshold.item()) > 0:
-            mean = self.input_mean[branch].to(device=x.device, dtype=torch.float32)
+            dtype = self.encoder.dtype
+            mean = self.input_mean[branch].to(device=x.device, dtype=dtype)
             encoder = self.encoder[branch, :, selected]
             bias = self.encoder_bias[selected]
-            selected_features = F.relu((x.float() - mean) @ encoder + bias)
+            selected_features = F.relu((x.to(dtype=dtype) - mean) @ encoder + bias)
             threshold = self.inference_threshold.to(device=x.device, dtype=selected_features.dtype)
             selected_features = selected_features * (selected_features >= threshold).to(selected_features.dtype)
         else:

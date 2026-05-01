@@ -32,12 +32,14 @@ class CrosscoderMlpModifier:
         selection: FeatureSelection,
         device: torch.device,
         crosscoder_cache: dict[int, BatchTopKCrossCoder] | None = None,
+        crosscoder_dtype: torch.dtype | None = None,
     ) -> None:
         self.model = model
         self.steering_adapter = steering_adapter
         self.run_root = run_root
         self.selection = selection
         self.device = device
+        self.crosscoder_dtype = crosscoder_dtype
         self.layers = steering_adapter.get_layers(model)
         self.crosscoders = crosscoder_cache if crosscoder_cache is not None else {}
         self.latent_tensors: dict[int, torch.Tensor] = {}
@@ -48,7 +50,10 @@ class CrosscoderMlpModifier:
     def _load_layer(self, layer_idx: int) -> BatchTopKCrossCoder:
         if layer_idx not in self.crosscoders:
             path = self.run_root / "dictionaries" / f"layer_{layer_idx}" / "crosscoder.pt"
-            self.crosscoders[layer_idx] = BatchTopKCrossCoder.load(path, device=self.device)
+            crosscoder = BatchTopKCrossCoder.load(path, device=self.device)
+            if self.crosscoder_dtype is not None:
+                crosscoder = crosscoder.to(dtype=self.crosscoder_dtype)
+            self.crosscoders[layer_idx] = crosscoder
         return self.crosscoders[layer_idx]
 
     def _register(self) -> None:

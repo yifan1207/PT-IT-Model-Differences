@@ -193,6 +193,7 @@ def _forward_with_optional_edit(
     selection: FeatureSelection | None = None,
     donor_boundary_state: torch.Tensor | None = None,
     crosscoder_cache: dict[int, Any] | None = None,
+    crosscoder_dtype: torch.dtype | None = None,
 ) -> dict[str, Any]:
     patcher = None
     modifier = None
@@ -208,6 +209,7 @@ def _forward_with_optional_edit(
                 selection=selection,
                 device=input_ids.device,
                 crosscoder_cache=crosscoder_cache,
+                crosscoder_dtype=crosscoder_dtype,
             )
         outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
         residuals = residual_capture.snapshot()
@@ -258,6 +260,16 @@ def _margin(cell: dict[str, Any], readout_bundle: Any, y_pt: int, y_it: int) -> 
 
 def _interaction(cells: dict[str, float]) -> float:
     return (cells["U_IT__L_IT"] - cells["U_IT__L_PT"]) - (cells["U_PT__L_IT"] - cells["U_PT__L_PT"])
+
+
+def _dtype_from_name(name: str) -> torch.dtype | None:
+    if name == "float32":
+        return None
+    if name == "bfloat16":
+        return torch.bfloat16
+    if name == "float16":
+        return torch.float16
+    raise ValueError(f"Unsupported crosscoder dtype: {name}")
 
 
 def _done_keys(path: Path) -> set[str]:
@@ -329,6 +341,7 @@ def run_worker(args: argparse.Namespace) -> None:
         random_seeds=[int(x) for x in args.random_seeds],
     )
     crosscoder_cache: dict[int, Any] = {}
+    crosscoder_dtype = _dtype_from_name(args.crosscoder_dtype)
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"records_w{args.worker_index}.jsonl.gz"
@@ -434,6 +447,7 @@ def run_worker(args: argparse.Namespace) -> None:
                             steering_adapter=steering_adapter,
                             selection=selection,
                             crosscoder_cache=crosscoder_cache,
+                            crosscoder_dtype=crosscoder_dtype,
                         )
                         edit_upt_lit = _forward_with_optional_edit(
                             model=it_model,
@@ -447,6 +461,7 @@ def run_worker(args: argparse.Namespace) -> None:
                             steering_adapter=steering_adapter,
                             selection=selection,
                             crosscoder_cache=crosscoder_cache,
+                            crosscoder_dtype=crosscoder_dtype,
                         )
                         ablate_cells = {
                             "U_PT__L_PT": full_cells["U_PT__L_PT"],
@@ -547,6 +562,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-prompts", type=int, default=200)
     parser.add_argument("--k-list", nargs="+", type=int, default=[50, 200, 1000])
     parser.add_argument("--random-seeds", nargs="+", type=int, default=[0, 1, 2])
+    parser.add_argument("--crosscoder-dtype", choices=["float32", "bfloat16", "float16"], default="bfloat16")
     parser.add_argument("--worker-index", type=int, default=0)
     parser.add_argument("--n-workers", type=int, default=1)
     parser.add_argument("--merge-only", action="store_true")
