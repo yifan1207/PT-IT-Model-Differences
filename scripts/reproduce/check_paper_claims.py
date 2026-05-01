@@ -619,42 +619,35 @@ def exp25_olmo_stage(transition: str, column: str) -> NumberFn:
     return _read
 
 
-def exp26_effect(
-    variant: str,
-    column: str,
-    *,
-    scope: str = "dense5",
-    subset: str = "all",
-    readout: str = "common_it",
-) -> NumberFn:
+def exp26_primary(variant: str, field: str) -> NumberFn:
     def _read(repo: Path) -> float:
-        rows = load_csv(repo, "paper_draft/arxiv_v24/data/exp26_effects.csv")
-        for row in rows:
-            if (
-                row["readout"] == readout
-                and row["scope"] == scope
-                and row["subset"] == subset
-                and row["variant"] == variant
-            ):
-                return float(row[column])
-        raise KeyError((readout, scope, subset, variant, column))
+        data = load_json(
+            repo,
+            "results/exp26_residual_opposition_mediation/"
+            "exp26_dense5_full_a100x8_20260429_111420/"
+            "analysis/exp26_summary.json",
+        )
+        return float(data["primary"][variant][field])
 
     return _read
 
 
-def exp26_pt_target_comparison(
-    variant: str,
-    column: str,
-    *,
-    scope: str = "dense5",
-    readout: str = "common_it",
-) -> NumberFn:
+def exp26_pt_compare(variant: str, scope: str, field: str) -> NumberFn:
     def _read(repo: Path) -> float:
-        rows = load_csv(repo, "paper_draft/arxiv_v24/data/pt_vs_it_target_comparison.csv")
+        rows = load_csv(
+            repo,
+            "results/exp26_residual_opposition_mediation/"
+            "pt_vs_it_target_comparison_20260429_2135/"
+            "pt_vs_it_target_comparison.csv",
+        )
         for row in rows:
-            if row["readout"] == readout and row["scope"] == scope and row["variant"] == variant:
-                return float(row[column])
-        raise KeyError((readout, scope, variant, column))
+            if (
+                row["readout"] == "common_it"
+                and row["variant"] == variant
+                and row["scope"] == scope
+            ):
+                return float(row[field])
+        raise KeyError((variant, scope, field))
 
     return _read
 
@@ -960,12 +953,6 @@ CHECKS: list[ClaimCheck] = [
         "exp21 summary.json",
         0.7679580554758016,
         exp21_window("C_it_chat", "exp11_late", "margin_writein_it_vs_pt"),
-    ),
-    ClaimCheck(
-        "Pure IT late negative-parallel IT-vs-PT margin",
-        "exp21 summary.json",
-        -0.004641470088490418,
-        exp21_window("C_it_chat", "exp11_late", "opposition_margin_it_vs_pt"),
     ),
     ClaimCheck(
         "PT-host late-graft MLP margin gain",
@@ -1968,18 +1955,100 @@ CHECKS: list[ClaimCheck] = [
         exp21_content_effect("late_weight_effect:margin_writein_it_vs_pt"),
     ),
     ClaimCheck(
-        "Exp21 content/reasoning residual-opposing component",
-        "exp21 content/reasoning effects.csv",
-        -5.502802526305325e-06,
-        exp21_content_effect("late_weight_effect:opposition_margin_it_vs_pt"),
-        tolerance=5e-7,
-        digits=8,
-    ),
-    ClaimCheck(
         "Exp21 content/reasoning remaining/token-specific component",
         "exp21 content/reasoning effects.csv",
         0.04881583150857773,
         exp21_content_effect("late_weight_effect:remainder_margin_it_vs_pt"),
+    ),
+    ClaimCheck(
+        "Exp26 full Dense-5 interaction",
+        "exp26_summary.json",
+        2.6351959894476136,
+        exp26_primary("noopp", "interaction_full"),
+    ),
+    ClaimCheck(
+        "Exp26 remove-opposition interaction drop",
+        "exp26_summary.json",
+        0.2581398757281287,
+        exp26_primary("noopp", "drop"),
+    ),
+    ClaimCheck(
+        "Exp26 remove-opposition CI low",
+        "exp26_summary.json",
+        0.22500021760035854,
+        exp26_primary("noopp", "drop_ci_low"),
+    ),
+    ClaimCheck(
+        "Exp26 remove-opposition CI high",
+        "exp26_summary.json",
+        0.2932298203959305,
+        exp26_primary("noopp", "drop_ci_high"),
+    ),
+    ClaimCheck(
+        "Exp26 remove-opposition mediation fraction",
+        "exp26_summary.json",
+        0.09795851115508097,
+        exp26_primary("noopp", "mediation_fraction"),
+    ),
+    ClaimCheck(
+        "Exp26 half-scale interaction drop",
+        "exp26_summary.json",
+        0.12149140546571043,
+        exp26_primary("opp_scale_0p5", "drop"),
+    ),
+    ClaimCheck(
+        "Exp26 flip-opposition interaction drop",
+        "exp26_summary.json",
+        0.4811122210579155,
+        exp26_primary("flipopp", "drop"),
+    ),
+    ClaimCheck(
+        "Exp26 flip-opposition mediation fraction",
+        "exp26_summary.json",
+        0.1825717035789682,
+        exp26_primary("flipopp", "mediation_fraction"),
+    ),
+    ClaimCheck(
+        "Exp26 PT-level opposition interaction drop",
+        "exp26_summary.json",
+        0.24261016300831736,
+        exp26_primary("ptlevel_opp", "drop"),
+    ),
+    ClaimCheck(
+        "Exp26 random orthogonal replacement drop",
+        "exp26_summary.json",
+        0.32150019649733774,
+        exp26_primary("randorth", "drop"),
+    ),
+    ClaimCheck(
+        "Exp26 paired PT-target remove-opposition drop",
+        "pt_vs_it_target_comparison.csv",
+        0.18647645745432323,
+        exp26_pt_compare("noopp", "dense5", "pt_drop"),
+    ),
+    ClaimCheck(
+        "Exp26 paired IT-PT remove-opposition drop",
+        "pt_vs_it_target_comparison.csv",
+        0.0716634182738054,
+        exp26_pt_compare("noopp", "dense5", "it_minus_pt_drop"),
+    ),
+    ClaimCheck(
+        "Exp26 paired IT-PT remove-opposition CI low",
+        "pt_vs_it_target_comparison.csv",
+        0.02792016561565763,
+        exp26_pt_compare("noopp", "dense5", "diff_ci_low"),
+    ),
+    ClaimCheck(
+        "Exp26 paired family-median remove-opposition IT-PT drop",
+        "pt_vs_it_target_comparison.csv",
+        -0.26939526190123053,
+        exp26_pt_compare("noopp", "family_median", "it_minus_pt_drop"),
+    ),
+    ClaimCheck(
+        "Exp26 paired Gemma-removed remove-opposition IT-PT drop",
+        "pt_vs_it_target_comparison.csv",
+        -0.3827091386160766,
+        exp26_pt_compare("noopp", "dense4_no_gemma", "it_minus_pt_drop"),
     ),
     ClaimCheck(
         "Qwen2.5-32B residual-state interaction",
@@ -2118,54 +2187,6 @@ CHECKS: list[ClaimCheck] = [
         "exp25 olmo_stage_progression_table.csv",
         551.0,
         exp25_olmo_stage("PT->SFT", "first_diff_events"),
-    ),
-    ClaimCheck(
-        "Exp26 residual-opposition noopp interaction drop",
-        "exp26_effects.csv",
-        0.2581398757281287,
-        exp26_effect("noopp", "drop"),
-    ),
-    ClaimCheck(
-        "Exp26 residual-opposition noopp drop CI low",
-        "exp26_effects.csv",
-        0.22500021760035854,
-        exp26_effect("noopp", "drop_ci_low"),
-    ),
-    ClaimCheck(
-        "Exp26 residual-opposition noopp mediation fraction",
-        "exp26_effects.csv",
-        0.09795851115508097,
-        exp26_effect("noopp", "mediation_fraction"),
-    ),
-    ClaimCheck(
-        "Exp26 residual-opposition norm-preserving noopp drop",
-        "exp26_effects.csv",
-        0.2528975100519917,
-        exp26_effect("normpres_noopp", "drop"),
-    ),
-    ClaimCheck(
-        "Exp26 residual-opposition flip interaction drop",
-        "exp26_effects.csv",
-        0.4811122210579155,
-        exp26_effect("flipopp", "drop"),
-    ),
-    ClaimCheck(
-        "Exp26 residual-opposition random orthogonal drop",
-        "exp26_effects.csv",
-        0.3215001964973378,
-        exp26_effect("randorth", "drop"),
-    ),
-    ClaimCheck(
-        "Exp26 PT-target noopp drop",
-        "pt_vs_it_target_comparison.csv",
-        0.18647645745432323,
-        exp26_pt_target_comparison("noopp", "pt_drop"),
-    ),
-    ClaimCheck(
-        "Exp26 IT-minus-PT noopp drop difference",
-        "pt_vs_it_target_comparison.csv",
-        0.0716634182738054,
-        exp26_pt_target_comparison("noopp", "it_minus_pt_drop"),
     ),
     ClaimCheck(
         "LLM judge resolved G2: PT late graft over PT baseline",

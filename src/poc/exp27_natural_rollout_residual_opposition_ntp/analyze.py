@@ -306,7 +306,14 @@ def _bootstrap_compare(
     return est
 
 
-def _rows_for_units(units: list[Unit], *, models: list[str], n_boot: int, seed: int) -> list[dict[str, Any]]:
+def _rows_for_units(
+    units: list[Unit],
+    *,
+    models: list[str],
+    n_boot: int,
+    seed: int,
+    bootstrap_detail_tables: bool = False,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     variants = sorted({unit.variant for unit in units if unit.seed is None and unit.variant != "full"})
     buckets = sorted({unit.bucket for unit in units})
@@ -330,7 +337,10 @@ def _rows_for_units(units: list[Unit], *, models: list[str], n_boot: int, seed: 
                     scope_units = [unit for unit in category_units if unit.model in _scope_models(scope, models)]
                     if not scope_units:
                         continue
-                    est = _bootstrap_compare(scope_units, scope=scope, models=models, n_boot=n_boot, seed=seed)
+                    row_boot = n_boot
+                    if not bootstrap_detail_tables and (bucket != "all" or category != "all"):
+                        row_boot = 0
+                    est = _bootstrap_compare(scope_units, scope=scope, models=models, n_boot=row_boot, seed=seed)
                     rows.append({"variant": variant, "bucket": bucket, "category": category, "scope": scope, **est})
     return rows
 
@@ -446,7 +456,13 @@ def analyze(args: argparse.Namespace) -> dict[str, Any]:
     units = load_units(args.exp27_root, args.models)
     if not units:
         raise RuntimeError("No Exp27 units loaded")
-    rows = _rows_for_units(units, models=args.models, n_boot=args.n_boot, seed=args.seed)
+    rows = _rows_for_units(
+        units,
+        models=args.models,
+        n_boot=args.n_boot,
+        seed=args.seed,
+        bootstrap_detail_tables=args.bootstrap_detail_tables,
+    )
     args.out_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(args.out_dir / "exp27_effects.csv", rows)
     _write_csv(
@@ -482,6 +498,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--models", nargs="+", default=list(DENSE5_MODELS))
     parser.add_argument("--n-boot", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--bootstrap-detail-tables",
+        action="store_true",
+        help=(
+            "Also bootstrap category and position-bucket appendix rows. By default, "
+            "2,000-bootstrap CIs are computed for the primary all-token/all-category "
+            "rows only, and detail tables get point estimates."
+        ),
+    )
     return parser.parse_args()
 
 
