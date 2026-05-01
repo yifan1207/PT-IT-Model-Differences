@@ -171,12 +171,42 @@ def _success_gates(effect_rows: list[dict[str, Any]]) -> dict[str, Any]:
     top_frac = top_200[0].get("mediation_fraction_mean") if top_200 else None
     rand_frac = _mean([r.get("mediation_fraction_mean") for r in random_200])
     recon_frac = recon[0].get("mediation_fraction_mean") if recon else None
+    causal_200 = [
+        r for r in effect_rows
+        if r["feature_set"] == "causal_top" and int(r["k"]) == 200 and r["control_seed"] == "none"
+    ]
+    causal_random_200 = [
+        r for r in effect_rows
+        if r["feature_set"] == "causal_matched_random" and int(r["k"]) == 200
+    ]
+    causal_frac = causal_200[0].get("mediation_fraction_mean") if causal_200 else None
+    causal_rand_frac = _mean([r.get("mediation_fraction_mean") for r in causal_random_200])
+    causal_drop = causal_200[0].get("interaction_drop_mean") if causal_200 else None
+    causal_rand_drop = _mean([r.get("interaction_drop_mean") for r in causal_random_200])
     return {
         "top200_mediation_fraction": top_frac,
         "matched_random200_mediation_fraction_mean": rand_frac,
+        "causal_top200_mediation_fraction": causal_frac,
+        "causal_matched_random200_mediation_fraction_mean": causal_rand_frac,
+        "causal_top200_interaction_drop": causal_drop,
+        "causal_matched_random200_interaction_drop_mean": causal_rand_drop,
         "full_reconstruction_mediation_fraction": recon_frac,
         "coverage_norm90_mediation_fraction": _coverage_frac(effect_rows, "coverage_norm", 90),
         "coverage_margin_pos90_mediation_fraction": _coverage_frac(effect_rows, "coverage_margin_pos", 90),
+        "causal_strong_result": bool(
+            causal_frac is not None
+            and causal_drop is not None
+            and causal_rand_drop is not None
+            and causal_frac >= 0.15
+            and causal_drop >= 0.40
+            and causal_rand_drop <= 0.05
+        ),
+        "causal_moderate_result": bool(
+            causal_drop is not None
+            and causal_rand_drop is not None
+            and causal_drop >= 0.20
+            and causal_rand_drop < causal_drop
+        ),
         "strong_result": bool(
             top_frac is not None
             and top_frac >= 0.40
@@ -213,6 +243,8 @@ def _plot_curve(path: Path, rows: list[dict[str, Any]]) -> None:
         "coverage_margin_pos": ("#4c72b0", "X"),
         "coverage_margin_abs": ("#64b5cd", "*"),
         "coverage_activation": ("#ccb974", "h"),
+        "causal_top": ("#111111", "o"),
+        "causal_matched_random": ("#b0b0b0", "s"),
     }
     plotted = []
     for feature_set, (color, marker) in styles.items():
@@ -249,6 +281,7 @@ def _plot_curve(path: Path, rows: list[dict[str, Any]]) -> None:
 
 def _write_packet(run_root: Path, out_dir: Path, summary: dict[str, Any]) -> None:
     top_features = _load_feature_rows(run_root / "feature_stats" / "top_interaction_candidates.csv", limit=50)
+    causal_features = _load_feature_rows(run_root / "feature_stats" / "causal_top_features.csv", limit=50)
     lines = [
         "# Exp28 Crosscoder Feature Packet",
         "",
@@ -260,11 +293,32 @@ def _write_packet(run_root: Path, out_dir: Path, summary: dict[str, Any]) -> Non
         json.dumps(summary["success_gates"], indent=2),
         "```",
         "",
+        "## Causal-Ranked Features",
+        "",
+        "| layer | latent | score mean | native attr | PT-upstream attr | active rate |",
+        "|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in causal_features:
+        lines.append(
+            "| {layer} | {latent_id} | {score_mean:.4g} | {native_attr_mean:.4g} | "
+            "{ptup_attr_mean:.4g} | {active_union_rate:.3g} |".format(
+                layer=row["layer"],
+                latent_id=row["latent_id"],
+                score_mean=float(row["score_mean"]),
+                native_attr_mean=float(row["native_attr_mean"]),
+                ptup_attr_mean=float(row["ptup_attr_mean"]),
+                active_union_rate=float(row["active_union_rate"]),
+            )
+        )
+    lines.extend(
+        [
+            "",
         "## Top Interaction Features",
         "",
         "| layer | latent | score | type | IT/PT act ratio | scaling ratio | local attr |",
         "|---:|---:|---:|---|---:|---:|---:|",
-    ]
+        ]
+    )
     for row in top_features:
         lines.append(
             "| {layer} | {latent_id} | {interaction_score:.4g} | {feature_type} | "

@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 export PYTHONPATH="${ROOT}:${PYTHONPATH:-}"
 
-MODE="${MODE:-smoke}"  # smoke|full|cache|train|rank|mediate-dev|mediate-full|analyze-only
+MODE="${MODE:-smoke}"  # smoke|full|cache|train|rank|causal-rank|mediate-dev|mediate-full|causal-mediate-dev|causal-mediate-full|analyze-only
 RUN_NAME="${RUN_NAME:-exp28_llama31_8b_late_mlp_btopk_$(date -u +%Y%m%d_%H%M%S)}"
 RUN_ROOT="${RUN_ROOT:-results/exp28_late_mlp_crosscoder_mediation/${RUN_NAME}}"
 MODEL="${MODEL:-llama31_8b}"
@@ -48,17 +48,26 @@ K_LIST="${K_LIST:-50 200 1000}"
 RANDOM_SEEDS="${RANDOM_SEEDS:-0 1 2}"
 COVERAGE_FRACS="${COVERAGE_FRACS:-}"
 COVERAGE_METRICS="${COVERAGE_METRICS:-norm margin_pos}"
+SELECTION_SUITE="${SELECTION_SUITE:-default}"
+SKIP_PROMPTS="${SKIP_PROMPTS:-0}"
+CAUSAL_FEATURE_CSV="${CAUSAL_FEATURE_CSV:-}"
+CAUSAL_LAYERS="${CAUSAL_LAYERS:-29 30 31}"
+CAUSAL_RANK_PROMPTS="${CAUSAL_RANK_PROMPTS:-128}"
+CAUSAL_RANK_SKIP_PROMPTS="${CAUSAL_RANK_SKIP_PROMPTS:-0}"
+CAUSAL_MEDIATE_SKIP_PROMPTS="${CAUSAL_MEDIATE_SKIP_PROMPTS:-128}"
+CAUSAL_K_LIST="${CAUSAL_K_LIST:-25 50 100 200 500}"
 N_BOOT="${N_BOOT:-1000}"
 MIN_VE="${MIN_VE:-0.80}"
 
 usage() {
   cat <<EOF
 Usage:
-  MODE=smoke|full|cache|train|rank|mediate-dev|mediate-full|analyze-only bash scripts/run/run_exp28_late_mlp_crosscoder_mediation.sh
+  MODE=smoke|full|cache|train|rank|causal-rank|mediate-dev|mediate-full|causal-mediate-dev|causal-mediate-full|analyze-only bash scripts/run/run_exp28_late_mlp_crosscoder_mediation.sh
 
 Important env vars:
   RUN_NAME RUN_ROOT MODEL LAYERS GPU_LIST DATASET_TRAIN DATASET_EVAL
   N_TOKENS DICT_SIZE K STEPS BATCH_TOKENS K_LIST RANDOM_SEEDS GCS_SYNC_DEST
+  CAUSAL_LAYERS CAUSAL_RANK_PROMPTS CAUSAL_MEDIATE_SKIP_PROMPTS CAUSAL_K_LIST
 EOF
 }
 
@@ -67,7 +76,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-if [[ "$MODE" != "smoke" && "$MODE" != "full" && "$MODE" != "cache" && "$MODE" != "train" && "$MODE" != "rank" && "$MODE" != "mediate-dev" && "$MODE" != "mediate-full" && "$MODE" != "analyze-only" ]]; then
+if [[ "$MODE" != "smoke" && "$MODE" != "full" && "$MODE" != "cache" && "$MODE" != "train" && "$MODE" != "rank" && "$MODE" != "causal-rank" && "$MODE" != "mediate-dev" && "$MODE" != "mediate-full" && "$MODE" != "causal-mediate-dev" && "$MODE" != "causal-mediate-full" && "$MODE" != "analyze-only" ]]; then
   echo "[exp28] invalid MODE=${MODE}" >&2
   usage
   exit 2
@@ -243,6 +252,55 @@ run_rank() {
     >"${RUN_ROOT}/logs/rank.log" 2>&1
 }
 
+causal_rank_one_worker() {
+  local gpu="$1"
+  local worker="$2"
+  local n_workers="$3"
+  echo "[exp28] causal-rank worker=${worker}/${n_workers} gpu=${gpu} layers=${CAUSAL_LAYERS}"
+  CUDA_VISIBLE_DEVICES="$gpu" $PY_RUNNER -m src.poc.exp28_late_mlp_crosscoder_mediation causal-rank \
+    --run-root "$RUN_ROOT" \
+    --out-dir "${RUN_ROOT}/feature_stats" \
+    --model "$MODEL" \
+    --dataset "$DATASET_EVAL" \
+    --exp20-root "$EXP20_ROOT" \
+    --exp20-fallback-root "$EXP20_FALLBACK_ROOT" \
+    --prompt-mode "$PROMPT_MODE" \
+    --event-kinds ${EVENT_KINDS} \
+    --n-prompts "$CAUSAL_RANK_PROMPTS" \
+    --skip-prompts "$CAUSAL_RANK_SKIP_PROMPTS" \
+    --layers ${CAUSAL_LAYERS} \
+    --worker-index "$worker" \
+    --n-workers "$n_workers" \
+    --device cuda:0 \
+    >"${RUN_ROOT}/logs/causal_rank_w${worker}of${n_workers}.log" 2>&1
+}
+
+run_causal_rank() {
+  local n_workers="${#GPUS[@]}"
+  local -a pids=()
+  for worker in $(seq 0 $((n_workers - 1))); do
+    causal_rank_one_worker "${GPUS[$worker]}" "$worker" "$n_workers" &
+    pids+=("$!")
+  done
+  local status=0
+  for pid in "${pids[@]}"; do
+    if ! wait "$pid"; then
+      status=1
+    fi
+  done
+  if [[ "$status" -ne 0 ]]; then
+    echo "[exp28] causal-rank failed" >&2
+    exit "$status"
+  fi
+  $PY_RUNNER -m src.poc.exp28_late_mlp_crosscoder_mediation causal-rank \
+    --run-root "$RUN_ROOT" \
+    --out-dir "${RUN_ROOT}/feature_stats" \
+    --model "$MODEL" \
+    --merge-only \
+    --n-workers "$n_workers" \
+    >"${RUN_ROOT}/logs/causal_rank_merge.log" 2>&1
+}
+
 mediate_one_worker() {
   local gpu="$1"
   local worker="$2"
@@ -260,10 +318,13 @@ mediate_one_worker() {
     --prompt-mode "$PROMPT_MODE" \
     --event-kinds ${EVENT_KINDS} \
     --n-prompts "$prompts" \
+    --skip-prompts "$SKIP_PROMPTS" \
     --k-list ${K_LIST} \
     --random-seeds ${RANDOM_SEEDS} \
     ${COVERAGE_FRACS:+--coverage-fracs ${COVERAGE_FRACS}} \
     ${COVERAGE_FRACS:+--coverage-metrics ${COVERAGE_METRICS}} \
+    --selection-suite "$SELECTION_SUITE" \
+    ${CAUSAL_FEATURE_CSV:+--causal-feature-csv "$CAUSAL_FEATURE_CSV"} \
     --worker-index "$worker" \
     --n-workers "$n_workers" \
     --device cuda:0 \
@@ -342,6 +403,10 @@ case "$MODE" in
     run_rank "$LAYERS"
     sync_outputs
     ;;
+  causal-rank)
+    run_causal_rank
+    sync_outputs
+    ;;
   mediate-dev)
     run_mediate "$DEV_PROMPTS" "dev"
     run_analyze
@@ -349,6 +414,26 @@ case "$MODE" in
     ;;
   mediate-full)
     run_mediate "$FULL_PROMPTS" "full"
+    run_analyze
+    sync_outputs
+    ;;
+  causal-mediate-dev)
+    SELECTION_SUITE="causal"
+    K_LIST="$CAUSAL_K_LIST"
+    SKIP_PROMPTS="$CAUSAL_MEDIATE_SKIP_PROMPTS"
+    COVERAGE_FRACS=""
+    CAUSAL_FEATURE_CSV="${CAUSAL_FEATURE_CSV:-${RUN_ROOT}/feature_stats/causal_feature_scores.csv}"
+    run_mediate "$DEV_PROMPTS" "causal_dev"
+    run_analyze
+    sync_outputs
+    ;;
+  causal-mediate-full)
+    SELECTION_SUITE="causal"
+    K_LIST="$CAUSAL_K_LIST"
+    SKIP_PROMPTS="$CAUSAL_MEDIATE_SKIP_PROMPTS"
+    COVERAGE_FRACS=""
+    CAUSAL_FEATURE_CSV="${CAUSAL_FEATURE_CSV:-${RUN_ROOT}/feature_stats/causal_feature_scores.csv}"
+    run_mediate "$FULL_PROMPTS" "causal_full"
     run_analyze
     sync_outputs
     ;;

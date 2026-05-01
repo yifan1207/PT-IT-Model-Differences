@@ -94,6 +94,92 @@ def _load_latent_rows(path: Path) -> list[LatentRow]:
     return rows
 
 
+def _load_manifest_records_window(
+    *,
+    exp20_root: Path,
+    exp20_fallback_root: Path | None,
+    prompt_mode: str,
+    model: str,
+    n_examples: int | None,
+    skip_examples: int,
+    worker_index: int,
+    n_workers: int,
+) -> list[dict[str, Any]]:
+    """Load a contiguous manifest window, then shard it across workers.
+
+    Exp28 causal feature ranking uses a calibration/heldout split over the
+    same ordered holdout prompt file. The upstream Exp23 helper shards before
+    slicing, so this wrapper first loads the requested global window and only
+    then applies worker sharding. That makes commands like
+    ``--skip-prompts 128 --n-prompts 472`` mean exactly prompts 128:600.
+    """
+
+    total = None if n_examples is None else int(skip_examples) + int(n_examples)
+    rows = _load_manifest_records(
+        exp20_root=exp20_root,
+        exp20_fallback_root=exp20_fallback_root,
+        prompt_mode=prompt_mode,
+        model=model,
+        n_examples=total,
+        worker_index=0,
+        n_workers=1,
+    )
+    if skip_examples:
+        rows = rows[int(skip_examples):]
+    if n_examples is not None:
+        rows = rows[: int(n_examples)]
+    sliced = rows[worker_index::n_workers]
+    log.info(
+        "[exp28-mediate] manifest window skip=%d n=%s -> %d rows for worker %d/%d",
+        skip_examples,
+        n_examples,
+        len(sliced),
+        worker_index,
+        n_workers,
+    )
+    return sliced
+
+
+def _load_causal_rank_rows(path: Path) -> tuple[list[LatentRow], list[LatentRow]]:
+    """Load causal-rank CSV as ranked rows plus a calibration-matched pool.
+
+    The causal-rank phase writes every feature active on the calibration slice,
+    not just the positive hits. We encode active-rate and absolute attribution
+    into LatentRow's existing matching fields, so causal matched-random controls
+    are same-layer and similar in calibration activity/attribution mass even
+    when the original all_latents.csv cache has been cleaned from a remote.
+    """
+
+    if not path.exists():
+        raise FileNotFoundError(f"Causal feature CSV not found: {path}")
+    rows: list[LatentRow] = []
+    with path.open("r", newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        for row in reader:
+            score_mean = float(row["score_mean"])
+            active_rate = float(row.get("active_union_rate", 0.0))
+            score_abs = float(row.get("score_abs_mean", abs(score_mean)))
+            rows.append(
+                LatentRow(
+                    layer=int(row["layer"]),
+                    latent_id=int(row["latent_id"]),
+                    feature_type="causal_ranked",
+                    interaction_score=score_mean,
+                    mean_activation_it=active_rate,
+                    mean_activation_pt=0.0,
+                    decoder_norm_it=max(score_abs, 1e-12),
+                    decoder_norm_pt=0.0,
+                    latent_scaling_ratio=1.0,
+                    local_margin_attr=score_mean,
+                )
+            )
+    if not rows:
+        raise RuntimeError(f"No causal-ranked features loaded from {path}")
+    rows.sort(key=lambda r: r.interaction_score, reverse=True)
+    positive = [row for row in rows if row.interaction_score > 0.0]
+    return (positive or rows), rows
+
+
 def _top_interaction(rows: list[LatentRow], k: int) -> list[LatentRow]:
     candidates = [r for r in rows if r.feature_type in {"interaction_candidate", "it_biased"}]
     if len(candidates) < k:
@@ -145,56 +231,79 @@ def build_feature_selections(
     random_seeds: list[int],
     coverage_fracs: list[float] | None = None,
     coverage_metrics: list[str] | None = None,
+    selection_suite: str = "default",
+    causal_rows: list[LatentRow] | None = None,
+    causal_pool_rows: list[LatentRow] | None = None,
 ) -> list[tuple[str, int, int | None, FeatureSelection]]:
     selections: list[tuple[str, int, int | None, FeatureSelection]] = [
         ("full_reconstruction", 0, None, FeatureSelection("full_reconstruction", {}, mode="full_reconstruct"))
     ]
-    for metric in coverage_metrics or []:
-        for frac in coverage_fracs or []:
-            pct = int(round(float(frac) * 100))
-            selections.append(
-                (
-                    f"coverage_{metric}",
-                    pct,
-                    None,
-                    FeatureSelection(
-                        name=f"coverage_{metric}_{pct}",
-                        by_layer={},
-                        mode="coverage_ablate",
-                        coverage_fraction=float(frac),
-                        coverage_metric=metric,
-                    ),
+    include_default = selection_suite in {"default", "default_plus_causal"}
+    include_causal = selection_suite in {"causal", "default_plus_causal"}
+    if include_default:
+        for metric in coverage_metrics or []:
+            for frac in coverage_fracs or []:
+                pct = int(round(float(frac) * 100))
+                selections.append(
+                    (
+                        f"coverage_{metric}",
+                        pct,
+                        None,
+                        FeatureSelection(
+                            name=f"coverage_{metric}_{pct}",
+                            by_layer={},
+                            mode="coverage_ablate",
+                            coverage_fraction=float(frac),
+                            coverage_metric=metric,
+                        ),
+                    )
                 )
-            )
     available_layers = sorted({r.layer for r in latent_rows})
     next_layer = {
         layer: available_layers[(idx + 1) % len(available_layers)]
         for idx, layer in enumerate(available_layers)
     }
     for k in k_list:
-        top = _top_interaction(latent_rows, k)
-        selections.append(("top_interaction", k, None, _to_selection(f"top_interaction_k{k}", top)))
-        selections.append(("shared", k, None, _to_selection(f"shared_k{k}", _shared(latent_rows, k))))
-        selections.append(("pt_biased", k, None, _to_selection(f"pt_biased_k{k}", _pt_biased(latent_rows, k))))
-        shifted = [
-            LatentRow(
-                layer=next_layer[r.layer],
-                latent_id=r.latent_id,
-                feature_type=r.feature_type,
-                interaction_score=r.interaction_score,
-                mean_activation_it=r.mean_activation_it,
-                mean_activation_pt=r.mean_activation_pt,
-                decoder_norm_it=r.decoder_norm_it,
-                decoder_norm_pt=r.decoder_norm_pt,
-                latent_scaling_ratio=r.latent_scaling_ratio,
-                local_margin_attr=r.local_margin_attr,
-            )
-            for r in top
-        ]
-        selections.append(("shuffle_layers", k, None, _to_selection(f"shuffle_layers_k{k}", shifted)))
-        for seed in random_seeds:
-            rand_rows = _matched_random(latent_rows, top, seed=seed)
-            selections.append(("matched_random", k, seed, _to_selection(f"matched_random_k{k}_seed{seed}", rand_rows)))
+        if include_default:
+            top = _top_interaction(latent_rows, k)
+            selections.append(("top_interaction", k, None, _to_selection(f"top_interaction_k{k}", top)))
+            selections.append(("shared", k, None, _to_selection(f"shared_k{k}", _shared(latent_rows, k))))
+            selections.append(("pt_biased", k, None, _to_selection(f"pt_biased_k{k}", _pt_biased(latent_rows, k))))
+            shifted = [
+                LatentRow(
+                    layer=next_layer[r.layer],
+                    latent_id=r.latent_id,
+                    feature_type=r.feature_type,
+                    interaction_score=r.interaction_score,
+                    mean_activation_it=r.mean_activation_it,
+                    mean_activation_pt=r.mean_activation_pt,
+                    decoder_norm_it=r.decoder_norm_it,
+                    decoder_norm_pt=r.decoder_norm_pt,
+                    latent_scaling_ratio=r.latent_scaling_ratio,
+                    local_margin_attr=r.local_margin_attr,
+                )
+                for r in top
+            ]
+            selections.append(("shuffle_layers", k, None, _to_selection(f"shuffle_layers_k{k}", shifted)))
+            for seed in random_seeds:
+                rand_rows = _matched_random(latent_rows, top, seed=seed)
+                selections.append(("matched_random", k, seed, _to_selection(f"matched_random_k{k}_seed{seed}", rand_rows)))
+        if include_causal:
+            if causal_rows is None:
+                raise ValueError("selection_suite includes causal selections but causal_rows is None")
+            causal_pool = causal_pool_rows or latent_rows
+            causal_top = causal_rows[:k]
+            selections.append(("causal_top", k, None, _to_selection(f"causal_top_k{k}", causal_top)))
+            for seed in random_seeds:
+                rand_rows = _matched_random(causal_pool, causal_top, seed=seed)
+                selections.append(
+                    (
+                        "causal_matched_random",
+                        k,
+                        seed,
+                        _to_selection(f"causal_matched_random_k{k}_seed{seed}", rand_rows),
+                    )
+                )
     return selections
 
 
@@ -361,22 +470,37 @@ def run_worker(args: argparse.Namespace) -> None:
     adapter = steering_adapter.adapter
     boundary_layer = _late_boundary(args.model)
     dataset_by_id = _dataset_lookup(args.dataset)
-    manifest_rows = _load_manifest_records(
+    manifest_rows = _load_manifest_records_window(
         exp20_root=args.exp20_root,
         exp20_fallback_root=args.exp20_fallback_root,
         prompt_mode=args.prompt_mode,
         model=args.model,
         n_examples=args.n_prompts,
+        skip_examples=args.skip_prompts,
         worker_index=args.worker_index,
         n_workers=args.n_workers,
     )
-    latent_rows = _load_latent_rows(args.run_root / "feature_stats" / "all_latents.csv")
+    latent_path = args.run_root / "feature_stats" / "all_latents.csv"
+    include_default = args.selection_suite in {"default", "default_plus_causal"}
+    if include_default:
+        latent_rows = _load_latent_rows(latent_path)
+    else:
+        latent_rows = []
+    causal_rows = None
+    causal_pool_rows = None
+    if args.causal_feature_csv is not None:
+        causal_rows, causal_pool_rows = _load_causal_rank_rows(args.causal_feature_csv)
+        if not latent_rows:
+            latent_rows = causal_pool_rows
     selections = build_feature_selections(
         latent_rows=latent_rows,
         k_list=[int(x) for x in args.k_list],
         random_seeds=[int(x) for x in args.random_seeds],
         coverage_fracs=[float(x) for x in args.coverage_fracs],
         coverage_metrics=list(args.coverage_metrics),
+        selection_suite=args.selection_suite,
+        causal_rows=causal_rows,
+        causal_pool_rows=causal_pool_rows,
     )
     crosscoder_cache: dict[int, Any] = {}
     crosscoder_dtype = _dtype_from_name(args.crosscoder_dtype)
@@ -384,7 +508,14 @@ def run_worker(args: argparse.Namespace) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"records_w{args.worker_index}.jsonl.gz"
     done = _done_keys(out_path)
-    log.info("[exp28-mediate] worker=%d/%d manifest_rows=%d selections=%d", args.worker_index, args.n_workers, len(manifest_rows), len(selections))
+    log.info(
+        "[exp28-mediate] worker=%d/%d manifest_rows=%d selections=%d suite=%s",
+        args.worker_index,
+        args.n_workers,
+        len(manifest_rows),
+        len(selections),
+        args.selection_suite,
+    )
     valid_events = 0
     records_written = 0
     failures = 0
@@ -615,6 +746,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--event-kinds", nargs="*", choices=list(DEFAULT_EVENT_KINDS), default=["first_diff"])
     parser.add_argument("--readout-name", default="common_it")
     parser.add_argument("--n-prompts", type=int, default=200)
+    parser.add_argument("--skip-prompts", type=int, default=0)
     parser.add_argument("--k-list", nargs="+", type=int, default=[50, 200, 1000])
     parser.add_argument("--random-seeds", nargs="+", type=int, default=[0, 1, 2])
     parser.add_argument("--coverage-fracs", nargs="*", type=float, default=[])
@@ -623,6 +755,18 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         choices=["norm", "activation", "margin_pos", "margin_abs"],
         default=["norm", "margin_pos"],
+    )
+    parser.add_argument(
+        "--selection-suite",
+        choices=["default", "causal", "default_plus_causal"],
+        default="default",
+        help="Feature-selection family to evaluate. 'causal' uses causal-rank outputs plus matched random controls.",
+    )
+    parser.add_argument(
+        "--causal-feature-csv",
+        type=Path,
+        default=None,
+        help="CSV from the causal-rank phase, sorted by factorial-aware feature score.",
     )
     parser.add_argument("--crosscoder-dtype", choices=["float32", "bfloat16", "float16"], default="bfloat16")
     parser.add_argument("--worker-index", type=int, default=0)
