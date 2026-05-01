@@ -411,24 +411,8 @@ results/exp23_midlate_interaction_suite/**
 !results/paper_synthesis/**
 
 paper_draft/*
-!paper_draft/PAPER_DRAFT_v14.md
-!paper_draft/PAPER_DRAFT_v15.md
-!paper_draft/PAPER_DRAFT_v18.md
-!paper_draft/PAPER_DRAFT_v19.md
-!paper_draft/PAPER_DRAFT_v20.md
-!paper_draft/PAPER_DRAFT_v21.md
-!paper_draft/PAPER_DRAFT_v22.md
-!paper_draft/PAPER_DRAFT_v24.md
 !paper_draft/PAPER_DRAFT_v25.md
-!paper_draft/EXP24_32B_EXTERNAL_VALIDITY_PLAN.md
-!paper_draft/arxiv_v24/
-!paper_draft/arxiv_v24/**
-paper_draft/arxiv_v24/*.aux
-paper_draft/arxiv_v24/*.log
-paper_draft/arxiv_v24/*.out
-paper_draft/arxiv_v24/*.toc
-paper_draft/arxiv_v24/*.pdf
-paper_draft/arxiv_v24_bundle.tar.gz
+!paper_draft/PAPER_DRAFT_v25.pdf
 
 .DS_Store
 cache/

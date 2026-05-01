@@ -38,8 +38,8 @@ This repo now uses descriptive canonical paths for experiments, results, and scr
 | 23b | Mid-late KL factorial | `src/poc/exp23_midlate_kl_factorial/` | `results/exp23_midlate_interaction_suite/` | Raw-KL bridge/factorial support for the first-divergence interaction suite |
 | 24 | 32B external validity | `src/poc/exp24_32b_external_validity/` | `results/exp24_32b_external_validity/` and `results/paper_synthesis/exp24_32b_external_validity/` | Qwen2.5-32B repetition of Exp20/21/23 and raw-KL bridge; included as the sixth Dense-6 core pair |
 | 25 | OLMo stage progression | `src/poc/exp25_olmo_stage_progression/` | `results/paper_synthesis/exp25_olmo_stage_full_20260428_0905/` | Base/SFT/DPO/Instruct local-transition case study using the first-divergence factorial |
-| 26 | Residual-opposition mediation | `src/poc/exp26_residual_opposition_mediation/` | `paper_draft/arxiv_v24/data/exp26_*.csv` and `pt_vs_it_target_comparison.csv` | Support check that removes/scales/flips/PT-levels/randomizes residual-opposing late-MLP components inside the Exp23 factorial |
-| 27 | Natural-rollout residual-opposition NTP | `src/poc/exp27_natural_rollout_residual_opposition_ntp/` | pending run outputs | Natural greedy rollout follow-up measuring how residual-opposition ablations affect each model's own generated-token next-token prediction |
+| 26 | Residual-opposition mediation | `src/poc/exp26_residual_opposition_mediation/` | `results/exp26_residual_opposition_mediation/` | Archived support check that removes/scales/flips/PT-levels/randomizes residual-opposing late-MLP components inside the Exp23 factorial; not part of the current paper spine |
+| 27 | Natural-rollout residual-opposition NTP | `src/poc/exp27_natural_rollout_residual_opposition_ntp/` | `results/exp27_natural_rollout_residual_opposition_ntp/exp27_full_dense5_combined_20260430_2050/` | Current appendix mechanism check: natural greedy rollout follow-up measuring how residual-opposition ablations affect each model's own generated-token next-token prediction |
 
 ## Special Notes
 
@@ -48,7 +48,7 @@ This repo now uses descriptive canonical paths for experiments, results, and scr
 - New exp16 matched-prefix native-JS replays should go to `results/exp16_matched_prefix_js_gap/`.
 - New exp19 specificity-control outputs should go to `results/exp19_late_mlp_specificity_controls/`.
 - New exp23 paper-facing synthesis outputs should go to `results/paper_synthesis/exp23_dense6_core/`.
-- New exp26/27 lightweight analysis data for the current arXiv bundle should be mirrored into `paper_draft/arxiv_v24/data/` if the manuscript quotes it.
+- Paper-facing markdown and PDF live directly under `paper_draft/`; older draft bundles are intentionally ignored.
 - `results/cross_model/` remains a shared cross-family workspace because it spans multiple numbered experiments.
 - Lightweight repo sanity checks live at `scripts/infra/repo_doctor.py`.
 

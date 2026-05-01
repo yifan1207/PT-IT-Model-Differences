@@ -37,6 +37,8 @@ DICT_SIZE="${DICT_SIZE:-32768}"
 K="${K:-64}"
 STEPS="${STEPS:-4000}"
 BATCH_TOKENS="${BATCH_TOKENS:-4096}"
+CHECKPOINT_EVERY="${CHECKPOINT_EVERY:-1000}"
+RESUME_TRAIN="${RESUME_TRAIN:-0}"
 MAX_SEQ_LEN="${MAX_SEQ_LEN:-512}"
 APPEND_PT_GREEDY_TOKENS="${APPEND_PT_GREEDY_TOKENS:-0}"
 CACHE_BATCH_SIZE="${CACHE_BATCH_SIZE:-8}"
@@ -137,6 +139,10 @@ train_one_layer() {
   local kk="$4"
   local steps="$5"
   local batch_tokens="$6"
+  local -a resume_args=()
+  if [[ "$RESUME_TRAIN" == "1" ]]; then
+    resume_args+=(--resume)
+  fi
   echo "[exp28] train layer=${layer} gpu=${gpu}"
   CUDA_VISIBLE_DEVICES="$gpu" $PY_RUNNER -m src.poc.exp28_late_mlp_crosscoder_mediation train \
     --run-root "$RUN_ROOT" \
@@ -145,7 +151,9 @@ train_one_layer() {
     --k "$kk" \
     --steps "$steps" \
     --batch-tokens "$batch_tokens" \
+    --checkpoint-every "$CHECKPOINT_EVERY" \
     --device cuda:0 \
+    "${resume_args[@]}" \
     >"${RUN_ROOT}/logs/train_layer_${layer}.log" 2>&1
 }
 

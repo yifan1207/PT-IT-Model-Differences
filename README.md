@@ -9,7 +9,7 @@
 
 </p>
 
-> **TL;DR** &mdash; The current paper centers on **first-divergence factorial diffing**. At the first shared-history token where a pretrained checkpoint and its post-trained descendant prefer different next tokens, we cross upstream residual state with downstream late stack and measure the divergent-token margin. Across six dense PT/IT pairs, including Qwen2.5-32B, late-stack effects are much larger from IT-shaped upstream state than from PT-shaped upstream state. Convergence-gap curves, matched-prefix graft/swap, MLP write-out, residual-opposition ablations, and behavior are supporting context rather than the headline.
+> **TL;DR** &mdash; The current paper centers on **first-divergence factorial diffing**. At the first shared-history token where a pretrained checkpoint and its post-trained descendant prefer different next tokens, we cross upstream residual state with downstream late stack and measure the divergent-token margin. Across six dense PT/IT pairs, including Qwen2.5-32B, late-stack effects are much larger from IT-shaped upstream state than from PT-shaped upstream state. The factual/reasoning stress test shows why one-cell late-only patching can mislead, while convergence-gap curves, matched-prefix graft/swap, MLP write-out, natural-rollout residual-opposition checks, and behavior remain supporting context rather than the headline.
 
 ![First-divergence residual-state x late-stack factorial](results/paper_synthesis/exp23_dense6_core/exp23_dense6_interaction.png)
 
@@ -24,8 +24,8 @@ If you are new to the repo, these are the most useful entrypoints:
 - [docs/EXPERIMENT_REGISTRY.md](docs/EXPERIMENT_REGISTRY.md): canonical experiment map and path conventions
 - [scripts/README.md](scripts/README.md): grouped script layout and common commands
 - `uv run python scripts/infra/repo_doctor.py`: lightweight repo health check
-- [paper_draft/PAPER_DRAFT_v24.md](paper_draft/PAPER_DRAFT_v24.md): current paper framing, including the reproducibility and artifact map
-- [paper_draft/arxiv_v24/main.tex](paper_draft/arxiv_v24/main.tex): arXiv-ready LaTeX source generated from v24
+- [paper_draft/PAPER_DRAFT_v25.md](paper_draft/PAPER_DRAFT_v25.md): current paper framing, including the reproducibility and artifact map
+- [paper_draft/PAPER_DRAFT_v25.pdf](paper_draft/PAPER_DRAFT_v25.pdf): rendered PDF of the current draft
 
 The repo has been reorganized into descriptive canonical paths:
 
@@ -58,7 +58,7 @@ What is strongest right now:
 - content/reasoning extension where the interaction remains positive while the PT-upstream late-only term flips negative, strengthening the "conditional, not portable" interpretation
 - external and staged checks: Qwen2.5-32B is included as the sixth dense core pair, and an OLMo-2 Base/SFT/DPO/Instruct case study shows positive local transition interactions with the strongest adjacent signal at Base→SFT
 - identity/margin decomposition: middle-positioned windows transfer token identity more often, while late-positioned windows supply stronger margin/readout pressure
-- delayed-stabilization, matched random late-MLP controls, and Exp26 residual-opposition ablations as supporting layerwise/geometric context
+- delayed-stabilization, matched random late-MLP controls, and Exp27 natural-rollout residual-opposition ablations as auxiliary layerwise/geometric context
 
 What remains intentionally careful:
 

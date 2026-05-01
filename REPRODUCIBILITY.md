@@ -4,8 +4,8 @@ This repository exposes the paper claims at three audit levels.
 
 Current paper sources:
 
-- Markdown draft: `paper_draft/PAPER_DRAFT_v24.md`
-- arXiv LaTeX bundle: `paper_draft/arxiv_v24/`
+- Markdown draft: `paper_draft/PAPER_DRAFT_v25.md`
+- Rendered PDF: `paper_draft/PAPER_DRAFT_v25.pdf`
 - paper-facing Dense-6 synthesis: `results/paper_synthesis/exp23_dense6_core/`
 
 | Audit level | Command | What it verifies | Expected cost |
@@ -24,7 +24,7 @@ Current paper sources:
 | Content/reasoning stress test | same | `results/exp23_midlate_interaction_suite/exp23_content_reasoning_residual_20260427_0930_h100x8/analysis/exp23_summary.json` | interaction `+1.81`; late from PT upstream `-1.18` |
 | Qwen2.5-32B external-validity check | same | `results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/`; `results/paper_synthesis/exp24_32b_external_validity/` | interaction `+1.446`; late from PT upstream `+0.977`; late from IT upstream `+2.423`; position `>=3` interaction `+1.020`; raw-KL IT-side interaction `+0.465` |
 | OLMo-2 stage-progression case study | same | `results/paper_synthesis/exp25_olmo_stage_full_20260428_0905/olmo_stage_progression_table.csv`; `olmo_stage_progression_summary.json`; `olmo_stage_preflight.json` | Base→SFT interaction `+0.782`; SFT→DPO `+0.135`; DPO→RLVR `+0.016`; Base→RLVR `+1.930` |
-| Exp26 residual-opposition support check | same | `paper_draft/arxiv_v24/data/exp26_effects.csv`; `exp26_family_table.csv`; `pt_vs_it_target_comparison.csv` plus source package `src/poc/exp26_residual_opposition_mediation/` | removing late IT residual-opposition drops the Dense-5 interaction by `+0.258` logits (`9.8%`); sign-flipping drops `+0.481`; effect is family-dependent |
+| Exp27 natural-rollout residual-opposition support check | same | `results/exp27_natural_rollout_residual_opposition_ntp/exp27_full_dense5_combined_20260430_2050/analysis/exp27_summary.json`; `exp27_effects.csv`; `exp27_natural_rollout_ntp.png` | no-opposition NLL hurt: PT `+0.0004`, IT `+0.0432`, IT-PT `+0.0428`; norm-preserving IT-PT `+0.0336`; no-opposition true-logit IT-PT `+6.54` |
 | First-divergence identity split | same | `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/summary.json` | raw-shared middle vs late IT-token transfer `26.0%` vs `17.6%`; mirror `31.2%` vs `20.8%` |
 | MLP write-out proxy | same | `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/summary.json`; `analysis/effects.csv` | late IT-token support `+0.789`; PT-host late `+0.0035`; residual-opposing component `-0.0046` |
 | Dense-5 delayed-stabilization context | same | `results/exp09_cross_model_observational_replication/data/convergence_gap_values.json`; `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv` | tuned final-half gap `0.410`; raw final-half gap `0.771`; endpoint-matched raw late gap `+0.425`; endpoint-matched tuned late gap `+0.762` |
@@ -43,7 +43,7 @@ Git contains paper-facing summaries and plots, not multi-GB raw traces or probe 
 - `gs://pt-vs-it-results/results/exp23_midlate_interaction_suite/exp23_content_reasoning_residual_20260427_0930_h100x8/`
 - `gs://pt-vs-it-results/results/exp21_productive_opposition/exp21_content_reasoning_20260427_0943_h100x8/`
 - `gs://pt-vs-it-results/results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/`
-- `gs://pt-vs-it-results/results/exp26_residual_opposition_mediation/`
+- `gs://pt-vs-it-results/results/exp27_natural_rollout_residual_opposition_ntp/exp27_full_dense5_combined_20260430_2050/`
 - Exp25 OLMo-2 stage-progression raw and analysis artifacts are reproducible from the committed synthesis table plus `scripts/run/run_exp25_olmo_stage_progression_runpod.sh`; the paper-facing summaries live under `results/paper_synthesis/exp25_olmo_stage_full_20260428_0905/`.
 
 The minimal audit shard is expected at:

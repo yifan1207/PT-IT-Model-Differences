@@ -134,16 +134,44 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
     model = BatchTopKCrossCoder(config, input_mean=input_mean, device=device)
     model.train()
     lr = _lr_for_dict_size(args.dict_size, args.lr)
-    opt = torch.optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999))
-    generator = torch.Generator().manual_seed(args.seed + layer)
-
     out_dir = args.run_root / "dictionaries" / f"layer_{layer}"
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path = out_dir / "train_log.jsonl"
+    opt = torch.optim.Adam(model.parameters(), lr=lr, betas=(0.9, 0.999))
+    generator = torch.Generator().manual_seed(args.seed + layer)
+    ckpt_path = out_dir / "checkpoint_latest.pt"
+    final_path = out_dir / "crosscoder.pt"
+    start_step = 1
+    if args.resume and ckpt_path.exists():
+        ckpt = torch.load(ckpt_path, map_location=device, weights_only=False)
+        model.load_state_dict(ckpt["model_state"])
+        opt.load_state_dict(ckpt["optimizer_state"])
+        generator.set_state(ckpt["generator_state"].cpu())
+        start_step = int(ckpt["step"]) + 1
+        log.info("[exp28-train] layer=%d resuming from step=%d", layer, start_step - 1)
+    elif args.resume and final_path.exists():
+        payload_final = torch.load(final_path, map_location=device, weights_only=False)
+        saved_config = payload_final.get("config", {})
+        expected = config.__dict__
+        for key in ("activation_dim", "dict_size", "k", "n_branches"):
+            if int(saved_config.get(key, -1)) != int(expected[key]):
+                raise RuntimeError(
+                    f"Cannot resume layer={layer} from {final_path}: "
+                    f"saved {key}={saved_config.get(key)} but requested {expected[key]}"
+                )
+        model.load_state_dict(payload_final["state_dict"])
+        previous_steps = int(payload_final.get("extra", {}).get("steps", 0))
+        start_step = previous_steps + 1
+        log.info(
+            "[exp28-train] layer=%d continuing from final weights at step=%d",
+            layer,
+            previous_steps,
+        )
     auxk = int(args.auxk if args.auxk is not None else args.k)
 
-    with log_path.open("w", encoding="utf-8") as log_f:
-        for step in range(1, args.steps + 1):
+    log_mode = "a" if args.resume and start_step > 1 else "w"
+    with log_path.open(log_mode, encoding="utf-8") as log_f:
+        for step in range(start_step, args.steps + 1):
             xb = _sample_batch(
                 x,
                 train_idx,
@@ -206,6 +234,17 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
                     row["heldout_variance_explained_it"],
                     row["effective_l0"],
                 )
+            if args.checkpoint_every > 0 and (step % args.checkpoint_every == 0):
+                torch.save(
+                    {
+                        "step": int(step),
+                        "model_state": model.state_dict(),
+                        "optimizer_state": opt.state_dict(),
+                        "generator_state": generator.get_state(),
+                        "config": config.__dict__,
+                    },
+                    ckpt_path,
+                )
 
     metrics = _eval_model(
         model,
@@ -225,6 +264,8 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
         "metrics": metrics,
     }
     model.save(out_dir / "crosscoder.pt", extra=extra)
+    if ckpt_path.exists():
+        ckpt_path.unlink()
     (out_dir / "config.json").write_text(
         json.dumps({"crosscoder": config.__dict__, **extra}, indent=2) + "\n",
         encoding="utf-8",
@@ -266,6 +307,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--auxk", type=int, default=None)
     parser.add_argument("--grad-clip-norm", type=float, default=1.0)
     parser.add_argument("--log-every", type=int, default=50)
+    parser.add_argument("--checkpoint-every", type=int, default=1000)
+    parser.add_argument("--resume", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
     return parser.parse_args()
@@ -277,4 +320,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
