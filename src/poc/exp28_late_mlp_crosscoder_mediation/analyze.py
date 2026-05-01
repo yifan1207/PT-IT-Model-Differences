@@ -202,7 +202,7 @@ def _coverage_frac(effect_rows: list[dict[str, Any]], feature_set: str, k: int) 
 
 
 def _plot_curve(path: Path, rows: list[dict[str, Any]]) -> None:
-    fig, ax = plt.subplots(figsize=(7, 4.2))
+    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.4), sharex=True)
     styles = {
         "top_interaction": ("#2364aa", "o"),
         "matched_random": ("#999999", "s"),
@@ -214,6 +214,7 @@ def _plot_curve(path: Path, rows: list[dict[str, Any]]) -> None:
         "coverage_margin_abs": ("#64b5cd", "*"),
         "coverage_activation": ("#ccb974", "h"),
     }
+    plotted = []
     for feature_set, (color, marker) in styles.items():
         subset = [r for r in rows if r["feature_set"] == feature_set]
         if not subset:
@@ -226,14 +227,22 @@ def _plot_curve(path: Path, rows: list[dict[str, Any]]) -> None:
         xs = sorted(by_k)
         ys = [float(np.mean(by_k[x])) for x in xs]
         if xs:
+            plotted.append((xs, ys, marker, color, feature_set))
+    for ax in axes:
+        for xs, ys, marker, color, feature_set in plotted:
             ax.plot(xs, ys, marker=marker, color=color, label=feature_set)
-    ax.axhline(0.0, color="#222222", linewidth=0.8)
-    ax.set_xscale("symlog", linthresh=50)
-    ax.set_xlabel("Global K features / coverage percent")
-    ax.set_ylabel("Mediation fraction")
-    ax.set_title("Exp28 Llama Late-MLP Crosscoder Mediation")
-    ax.legend(frameon=False)
+        ax.axhline(0.0, color="#222222", linewidth=0.8)
+        ax.set_xscale("symlog", linthresh=50)
+        ax.set_xlabel("Global K features / coverage percent")
+    axes[0].set_ylabel("Mediation fraction")
+    axes[0].set_title("Full range")
+    axes[1].set_title("Zoomed main effects")
+    axes[1].set_ylim(-0.25, 1.35)
+    fig.suptitle("Exp28 Llama Late-MLP Crosscoder Mediation")
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.02))
     fig.tight_layout()
+    fig.subplots_adjust(bottom=0.25, top=0.84)
     fig.savefig(path, dpi=200)
     plt.close(fig)
 
