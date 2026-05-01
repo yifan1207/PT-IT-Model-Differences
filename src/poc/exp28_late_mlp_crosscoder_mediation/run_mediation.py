@@ -143,10 +143,29 @@ def build_feature_selections(
     latent_rows: list[LatentRow],
     k_list: list[int],
     random_seeds: list[int],
+    coverage_fracs: list[float] | None = None,
+    coverage_metrics: list[str] | None = None,
 ) -> list[tuple[str, int, int | None, FeatureSelection]]:
     selections: list[tuple[str, int, int | None, FeatureSelection]] = [
         ("full_reconstruction", 0, None, FeatureSelection("full_reconstruction", {}, mode="full_reconstruct"))
     ]
+    for metric in coverage_metrics or []:
+        for frac in coverage_fracs or []:
+            pct = int(round(float(frac) * 100))
+            selections.append(
+                (
+                    f"coverage_{metric}",
+                    pct,
+                    None,
+                    FeatureSelection(
+                        name=f"coverage_{metric}_{pct}",
+                        by_layer={},
+                        mode="coverage_ablate",
+                        coverage_fraction=float(frac),
+                        coverage_metric=metric,
+                    ),
+                )
+            )
     available_layers = sorted({r.layer for r in latent_rows})
     next_layer = {
         layer: available_layers[(idx + 1) % len(available_layers)]
@@ -194,6 +213,7 @@ def _forward_with_optional_edit(
     donor_boundary_state: torch.Tensor | None = None,
     crosscoder_cache: dict[int, Any] | None = None,
     crosscoder_dtype: torch.dtype | None = None,
+    coverage_margin_vector: torch.Tensor | None = None,
 ) -> dict[str, Any]:
     patcher = None
     modifier = None
@@ -210,6 +230,7 @@ def _forward_with_optional_edit(
                 device=input_ids.device,
                 crosscoder_cache=crosscoder_cache,
                 crosscoder_dtype=crosscoder_dtype,
+                coverage_margin_vector=coverage_margin_vector,
             )
         outputs = model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
         residuals = residual_capture.snapshot()
@@ -272,22 +293,37 @@ def _dtype_from_name(name: str) -> torch.dtype | None:
     raise ValueError(f"Unsupported crosscoder dtype: {name}")
 
 
+def _readout_margin_vector(readout_bundle: Any, *, y_pt: int, y_it: int, device: torch.device) -> torch.Tensor:
+    """Proxy local margin vector used only to rank active feature coverage.
+
+    The Exp23 margin is scored after downstream blocks and final norm, so this
+    vector is not a linear causal readout of an intermediate MLP output. It is a
+    practical ranking proxy for dynamic coverage ablations; the causal quantity
+    remains the full four-cell forward-pass interaction measured after editing.
+    """
+
+    weight = readout_bundle.lm_head.weight.detach().float()
+    return (weight[int(y_it)] - weight[int(y_pt)]).to(device=device)
+
+
 def _done_keys(path: Path) -> set[str]:
-    if not path.exists():
-        return set()
     out = set()
-    for row in _json_rows(path):
-        out.add(
-            "|".join(
-                [
-                    str(row.get("prompt_id")),
-                    str(row.get("event_kind")),
-                    str(row.get("feature_set")),
-                    str(row.get("k")),
-                    str(row.get("control_seed")),
-                ]
+    candidates = [path, path.parent / "records.jsonl.gz"]
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        for row in _json_rows(candidate):
+            out.add(
+                "|".join(
+                    [
+                        str(row.get("prompt_id")),
+                        str(row.get("event_kind")),
+                        str(row.get("feature_set")),
+                        str(row.get("k")),
+                        str(row.get("control_seed")),
+                    ]
+                )
             )
-        )
     return out
 
 
@@ -339,6 +375,8 @@ def run_worker(args: argparse.Namespace) -> None:
         latent_rows=latent_rows,
         k_list=[int(x) for x in args.k_list],
         random_seeds=[int(x) for x in args.random_seeds],
+        coverage_fracs=[float(x) for x in args.coverage_fracs],
+        coverage_metrics=list(args.coverage_metrics),
     )
     crosscoder_cache: dict[int, Any] = {}
     crosscoder_dtype = _dtype_from_name(args.crosscoder_dtype)
@@ -387,6 +425,7 @@ def run_worker(args: argparse.Namespace) -> None:
                 input_ids = torch.tensor([full_ids], dtype=torch.long, device=device)
                 attention_mask = torch.ones_like(input_ids, dtype=torch.long, device=device)
                 try:
+                    margin_vector = _readout_margin_vector(readout_bundle, y_pt=y_pt, y_it=y_it, device=device)
                     base_pt = _baseline_with_boundary(
                         model=pt_model,
                         adapter=adapter,
@@ -448,6 +487,7 @@ def run_worker(args: argparse.Namespace) -> None:
                             selection=selection,
                             crosscoder_cache=crosscoder_cache,
                             crosscoder_dtype=crosscoder_dtype,
+                            coverage_margin_vector=margin_vector,
                         )
                         edit_upt_lit = _forward_with_optional_edit(
                             model=it_model,
@@ -462,6 +502,7 @@ def run_worker(args: argparse.Namespace) -> None:
                             selection=selection,
                             crosscoder_cache=crosscoder_cache,
                             crosscoder_dtype=crosscoder_dtype,
+                            coverage_margin_vector=margin_vector,
                         )
                         ablate_cells = {
                             "U_PT__L_PT": full_cells["U_PT__L_PT"],
@@ -524,7 +565,21 @@ def merge_workers(out_dir: Path, n_workers: int) -> Path:
     merged = out_dir / "records.jsonl.gz"
     seen: set[tuple[Any, ...]] = set()
     n_written = 0
+    existing_rows = list(_json_rows(merged)) if merged.exists() else []
     with gzip.open(merged, "wt", encoding="utf-8") as fout:
+        for row in existing_rows:
+            key = (
+                row.get("prompt_id"),
+                row.get("event_kind"),
+                row.get("feature_set"),
+                row.get("k"),
+                row.get("control_seed"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            fout.write(json.dumps(row, separators=(",", ":")) + "\n")
+            n_written += 1
         for worker in range(n_workers):
             path = out_dir / f"records_w{worker}.jsonl.gz"
             if not path.exists():
@@ -562,6 +617,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-prompts", type=int, default=200)
     parser.add_argument("--k-list", nargs="+", type=int, default=[50, 200, 1000])
     parser.add_argument("--random-seeds", nargs="+", type=int, default=[0, 1, 2])
+    parser.add_argument("--coverage-fracs", nargs="*", type=float, default=[])
+    parser.add_argument(
+        "--coverage-metrics",
+        nargs="*",
+        choices=["norm", "activation", "margin_pos", "margin_abs"],
+        default=["norm", "margin_pos"],
+    )
     parser.add_argument("--crosscoder-dtype", choices=["float32", "bfloat16", "float16"], default="bfloat16")
     parser.add_argument("--worker-index", type=int, default=0)
     parser.add_argument("--n-workers", type=int, default=1)

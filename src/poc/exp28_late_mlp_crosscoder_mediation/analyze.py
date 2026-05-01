@@ -127,6 +127,18 @@ def analyze(args: argparse.Namespace) -> dict[str, Any]:
                         for r in group
                     ]
                 ),
+                "mean_active_l0_it_late": _mean(
+                    [
+                        ((r.get("hook_summary_it_late") or {}).get("mean_active_l0"))
+                        for r in group
+                    ]
+                ),
+                "mean_removed_mass_frac_it_late": _mean(
+                    [
+                        ((r.get("hook_summary_it_late") or {}).get("mean_removed_mass_frac"))
+                        for r in group
+                    ]
+                ),
             }
         )
     out_dir = args.run_root / "analysis"
@@ -163,6 +175,8 @@ def _success_gates(effect_rows: list[dict[str, Any]]) -> dict[str, Any]:
         "top200_mediation_fraction": top_frac,
         "matched_random200_mediation_fraction_mean": rand_frac,
         "full_reconstruction_mediation_fraction": recon_frac,
+        "coverage_norm90_mediation_fraction": _coverage_frac(effect_rows, "coverage_norm", 90),
+        "coverage_margin_pos90_mediation_fraction": _coverage_frac(effect_rows, "coverage_margin_pos", 90),
         "strong_result": bool(
             top_frac is not None
             and top_frac >= 0.40
@@ -177,6 +191,16 @@ def _success_gates(effect_rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _coverage_frac(effect_rows: list[dict[str, Any]], feature_set: str, k: int) -> float | None:
+    rows = [
+        r for r in effect_rows
+        if r["feature_set"] == feature_set and int(r["k"]) == k and r["control_seed"] == "none"
+    ]
+    if not rows:
+        return None
+    return rows[0].get("mediation_fraction_mean")
+
+
 def _plot_curve(path: Path, rows: list[dict[str, Any]]) -> None:
     fig, ax = plt.subplots(figsize=(7, 4.2))
     styles = {
@@ -185,6 +209,10 @@ def _plot_curve(path: Path, rows: list[dict[str, Any]]) -> None:
         "shared": ("#55a868", "^"),
         "pt_biased": ("#c44e52", "v"),
         "shuffle_layers": ("#8172b3", "D"),
+        "coverage_norm": ("#dd8452", "P"),
+        "coverage_margin_pos": ("#4c72b0", "X"),
+        "coverage_margin_abs": ("#64b5cd", "*"),
+        "coverage_activation": ("#ccb974", "h"),
     }
     for feature_set, (color, marker) in styles.items():
         subset = [r for r in rows if r["feature_set"] == feature_set]
@@ -201,7 +229,7 @@ def _plot_curve(path: Path, rows: list[dict[str, Any]]) -> None:
             ax.plot(xs, ys, marker=marker, color=color, label=feature_set)
     ax.axhline(0.0, color="#222222", linewidth=0.8)
     ax.set_xscale("symlog", linthresh=50)
-    ax.set_xlabel("Global K features")
+    ax.set_xlabel("Global K features / coverage percent")
     ax.set_ylabel("Mediation fraction")
     ax.set_title("Exp28 Llama Late-MLP Crosscoder Mediation")
     ax.legend(frameon=False)
@@ -258,4 +286,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

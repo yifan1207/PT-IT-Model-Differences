@@ -46,6 +46,8 @@ DEV_PROMPTS="${DEV_PROMPTS:-200}"
 FULL_PROMPTS="${FULL_PROMPTS:-600}"
 K_LIST="${K_LIST:-50 200 1000}"
 RANDOM_SEEDS="${RANDOM_SEEDS:-0 1 2}"
+COVERAGE_FRACS="${COVERAGE_FRACS:-}"
+COVERAGE_METRICS="${COVERAGE_METRICS:-norm margin_pos}"
 N_BOOT="${N_BOOT:-1000}"
 MIN_VE="${MIN_VE:-0.80}"
 
@@ -260,6 +262,8 @@ mediate_one_worker() {
     --n-prompts "$prompts" \
     --k-list ${K_LIST} \
     --random-seeds ${RANDOM_SEEDS} \
+    ${COVERAGE_FRACS:+--coverage-fracs ${COVERAGE_FRACS}} \
+    ${COVERAGE_FRACS:+--coverage-metrics ${COVERAGE_METRICS}} \
     --worker-index "$worker" \
     --n-workers "$n_workers" \
     --device cuda:0 \
