@@ -58,7 +58,6 @@ def _append_pt_greedy_tokens(
 ) -> None:
     if max_new_tokens <= 0:
         return
-    eos_ids = [int(x) for x in getattr(tokenizer, "all_special_ids", []) if x is not None]
     pad_id = tokenizer.pad_token_id
     if pad_id is None:
         pad_id = tokenizer.eos_token_id if tokenizer.eos_token_id is not None else 0
@@ -66,39 +65,49 @@ def _append_pt_greedy_tokens(
         prefix_budget = max(1, max_seq_len - max_new_tokens)
         for row in rows:
             row["input_ids"] = row["input_ids"][:prefix_budget]
-    for start in range(0, len(rows), max(1, int(batch_size))):
-        batch = rows[start : start + max(1, int(batch_size))]
-        max_len = max(len(row["input_ids"]) for row in batch)
-        padded: list[list[int]] = []
-        masks: list[list[int]] = []
-        pad_counts: list[int] = []
-        for row in batch:
-            ids = [int(x) for x in row["input_ids"]]
-            n_pad = max_len - len(ids)
-            pad_counts.append(n_pad)
-            padded.append([int(pad_id)] * n_pad + ids)
-            masks.append([0] * n_pad + [1] * len(ids))
-        input_ids = torch.tensor(padded, dtype=torch.long, device=device)
-        attention_mask = torch.tensor(masks, dtype=torch.long, device=device)
-        generated = model.generate(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            do_sample=False,
-            max_new_tokens=max_new_tokens,
-            pad_token_id=int(pad_id),
-            eos_token_id=eos_ids or tokenizer.eos_token_id,
-        ).detach().cpu()
-        for local_idx, row in enumerate(batch):
-            seq = generated[local_idx].tolist()
-            n_pad = pad_counts[local_idx]
-            if n_pad:
-                seq = seq[n_pad:]
-            if max_seq_len > 0:
-                seq = seq[:max_seq_len]
-            row["input_ids"] = [int(x) for x in seq]
-        done = min(start + len(batch), len(rows))
-        if done % 25 == 0 or done == len(rows):
-            log.info("[exp28-cache] generated prefixes for %d/%d prompts", done, len(rows))
+    old_eos = getattr(model.generation_config, "eos_token_id", None)
+    old_forced_eos = getattr(model.generation_config, "forced_eos_token_id", None)
+    model.generation_config.eos_token_id = None
+    model.generation_config.forced_eos_token_id = None
+    try:
+        for start in range(0, len(rows), max(1, int(batch_size))):
+            batch = rows[start : start + max(1, int(batch_size))]
+            max_len = max(len(row["input_ids"]) for row in batch)
+            padded: list[list[int]] = []
+            masks: list[list[int]] = []
+            pad_counts: list[int] = []
+            for row in batch:
+                ids = [int(x) for x in row["input_ids"]]
+                n_pad = max_len - len(ids)
+                pad_counts.append(n_pad)
+                padded.append([int(pad_id)] * n_pad + ids)
+                masks.append([0] * n_pad + [1] * len(ids))
+            input_ids = torch.tensor(padded, dtype=torch.long, device=device)
+            attention_mask = torch.tensor(masks, dtype=torch.long, device=device)
+            generated = model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                do_sample=False,
+                max_new_tokens=max_new_tokens,
+                min_new_tokens=max_new_tokens,
+                pad_token_id=int(pad_id),
+                eos_token_id=None,
+                forced_eos_token_id=None,
+            ).detach().cpu()
+            for local_idx, row in enumerate(batch):
+                seq = generated[local_idx].tolist()
+                n_pad = pad_counts[local_idx]
+                if n_pad:
+                    seq = seq[n_pad:]
+                if max_seq_len > 0:
+                    seq = seq[:max_seq_len]
+                row["input_ids"] = [int(x) for x in seq]
+            done = min(start + len(batch), len(rows))
+            if done % 25 == 0 or done == len(rows):
+                log.info("[exp28-cache] generated prefixes for %d/%d prompts", done, len(rows))
+    finally:
+        model.generation_config.eos_token_id = old_eos
+        model.generation_config.forced_eos_token_id = old_forced_eos
 
 
 def _make_batch(

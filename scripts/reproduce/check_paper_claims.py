@@ -619,35 +619,15 @@ def exp25_olmo_stage(transition: str, column: str) -> NumberFn:
     return _read
 
 
-def exp26_primary(variant: str, field: str) -> NumberFn:
+def exp27_primary(variant: str, field: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
             repo,
-            "results/exp26_residual_opposition_mediation/"
-            "exp26_dense5_full_a100x8_20260429_111420/"
-            "analysis/exp26_summary.json",
+            "results/exp27_natural_rollout_residual_opposition_ntp/"
+            "exp27_full_dense5_combined_20260430_2050/"
+            "analysis/exp27_summary.json",
         )
         return float(data["primary"][variant][field])
-
-    return _read
-
-
-def exp26_pt_compare(variant: str, scope: str, field: str) -> NumberFn:
-    def _read(repo: Path) -> float:
-        rows = load_csv(
-            repo,
-            "results/exp26_residual_opposition_mediation/"
-            "pt_vs_it_target_comparison_20260429_2135/"
-            "pt_vs_it_target_comparison.csv",
-        )
-        for row in rows:
-            if (
-                row["readout"] == "common_it"
-                and row["variant"] == variant
-                and row["scope"] == scope
-            ):
-                return float(row[field])
-        raise KeyError((variant, scope, field))
 
     return _read
 
@@ -1961,94 +1941,76 @@ CHECKS: list[ClaimCheck] = [
         exp21_content_effect("late_weight_effect:remainder_margin_it_vs_pt"),
     ),
     ClaimCheck(
-        "Exp26 full Dense-5 interaction",
-        "exp26_summary.json",
-        2.6351959894476136,
-        exp26_primary("noopp", "interaction_full"),
+        "Exp27 no-opposition PT NLL hurt",
+        "exp27_summary.json",
+        0.0004003626910650624,
+        exp27_primary("noopp", "pt_nll_delta"),
     ),
     ClaimCheck(
-        "Exp26 remove-opposition interaction drop",
-        "exp26_summary.json",
-        0.2581398757281287,
-        exp26_primary("noopp", "drop"),
+        "Exp27 no-opposition IT NLL hurt",
+        "exp27_summary.json",
+        0.04324806564819389,
+        exp27_primary("noopp", "it_nll_delta"),
     ),
     ClaimCheck(
-        "Exp26 remove-opposition CI low",
-        "exp26_summary.json",
-        0.22500021760035854,
-        exp26_primary("noopp", "drop_ci_low"),
+        "Exp27 no-opposition IT-PT NLL hurt",
+        "exp27_summary.json",
+        0.04284770295712883,
+        exp27_primary("noopp", "it_minus_pt_nll_delta"),
     ),
     ClaimCheck(
-        "Exp26 remove-opposition CI high",
-        "exp26_summary.json",
-        0.2932298203959305,
-        exp26_primary("noopp", "drop_ci_high"),
+        "Exp27 no-opposition IT-PT NLL hurt CI low",
+        "exp27_summary.json",
+        0.04026022867670021,
+        exp27_primary("noopp", "it_minus_pt_nll_delta_ci_low"),
     ),
     ClaimCheck(
-        "Exp26 remove-opposition mediation fraction",
-        "exp26_summary.json",
-        0.09795851115508097,
-        exp26_primary("noopp", "mediation_fraction"),
+        "Exp27 no-opposition IT-PT NLL hurt CI high",
+        "exp27_summary.json",
+        0.04525020986159794,
+        exp27_primary("noopp", "it_minus_pt_nll_delta_ci_high"),
     ),
     ClaimCheck(
-        "Exp26 half-scale interaction drop",
-        "exp26_summary.json",
-        0.12149140546571043,
-        exp26_primary("opp_scale_0p5", "drop"),
+        "Exp27 norm-preserving IT-PT NLL hurt",
+        "exp27_summary.json",
+        0.03356535901970479,
+        exp27_primary("normpres_noopp", "it_minus_pt_nll_delta"),
     ),
     ClaimCheck(
-        "Exp26 flip-opposition interaction drop",
-        "exp26_summary.json",
-        0.4811122210579155,
-        exp26_primary("flipopp", "drop"),
+        "Exp27 flip-opposition IT-PT NLL hurt",
+        "exp27_summary.json",
+        0.07438064366204855,
+        exp27_primary("flipopp", "it_minus_pt_nll_delta"),
     ),
     ClaimCheck(
-        "Exp26 flip-opposition mediation fraction",
-        "exp26_summary.json",
-        0.1825717035789682,
-        exp26_primary("flipopp", "mediation_fraction"),
+        "Exp27 random-removal IT-PT NLL hurt",
+        "exp27_summary.json",
+        -0.03441470189085599,
+        exp27_primary("randremove", "it_minus_pt_nll_delta"),
     ),
     ClaimCheck(
-        "Exp26 PT-level opposition interaction drop",
-        "exp26_summary.json",
-        0.24261016300831736,
-        exp26_primary("ptlevel_opp", "drop"),
+        "Exp27 no-opposition IT-PT true-logit drop",
+        "exp27_summary.json",
+        6.542463737939043,
+        exp27_primary("noopp", "it_minus_pt_true_logit_drop"),
     ),
     ClaimCheck(
-        "Exp26 random orthogonal replacement drop",
-        "exp26_summary.json",
-        0.32150019649733774,
-        exp26_primary("randorth", "drop"),
+        "Exp27 no-opposition IT-PT true-logit drop CI low",
+        "exp27_summary.json",
+        6.402845100091115,
+        exp27_primary("noopp", "it_minus_pt_true_logit_drop_ci_low"),
     ),
     ClaimCheck(
-        "Exp26 paired PT-target remove-opposition drop",
-        "pt_vs_it_target_comparison.csv",
-        0.18647645745432323,
-        exp26_pt_compare("noopp", "dense5", "pt_drop"),
+        "Exp27 norm-preserving IT-PT true-logit drop",
+        "exp27_summary.json",
+        5.836304256624378,
+        exp27_primary("normpres_noopp", "it_minus_pt_true_logit_drop"),
     ),
     ClaimCheck(
-        "Exp26 paired IT-PT remove-opposition drop",
-        "pt_vs_it_target_comparison.csv",
-        0.0716634182738054,
-        exp26_pt_compare("noopp", "dense5", "it_minus_pt_drop"),
-    ),
-    ClaimCheck(
-        "Exp26 paired IT-PT remove-opposition CI low",
-        "pt_vs_it_target_comparison.csv",
-        0.02792016561565763,
-        exp26_pt_compare("noopp", "dense5", "diff_ci_low"),
-    ),
-    ClaimCheck(
-        "Exp26 paired family-median remove-opposition IT-PT drop",
-        "pt_vs_it_target_comparison.csv",
-        -0.26939526190123053,
-        exp26_pt_compare("noopp", "family_median", "it_minus_pt_drop"),
-    ),
-    ClaimCheck(
-        "Exp26 paired Gemma-removed remove-opposition IT-PT drop",
-        "pt_vs_it_target_comparison.csv",
-        -0.3827091386160766,
-        exp26_pt_compare("noopp", "dense4_no_gemma", "it_minus_pt_drop"),
+        "Exp27 residual-norm random-removal IT-PT true-logit drop",
+        "exp27_summary.json",
+        7.2153228103302816,
+        exp27_primary("randremove_resnorm", "it_minus_pt_true_logit_drop"),
     ),
     ClaimCheck(
         "Qwen2.5-32B residual-state interaction",
