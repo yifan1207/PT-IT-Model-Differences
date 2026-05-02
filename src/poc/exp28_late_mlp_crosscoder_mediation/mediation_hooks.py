@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from torch.nn import functional as F
 
 from src.poc.exp28_late_mlp_crosscoder_mediation.crosscoder import BatchTopKCrossCoder
 
@@ -20,6 +21,97 @@ class FeatureSelection:
     use_threshold: bool = True
     coverage_fraction: float | None = None
     coverage_metric: str = "norm"
+
+
+class SlicedBranchCrossCoder:
+    """Inference-only view over a feature subset from a trained crosscoder.
+
+    Causal mediation only ablates named latent IDs. Loading the full dictionary
+    for large OLMo/Qwen crosscoders can waste tens of GB per worker, so optional
+    sliced checkpoints keep just the encoder/decoder rows needed by the causal
+    selection suite while preserving original latent IDs.
+    """
+
+    def __init__(
+        self,
+        *,
+        config: dict[str, Any],
+        latent_ids: torch.Tensor,
+        encoder: torch.Tensor,
+        encoder_bias: torch.Tensor,
+        decoder: torch.Tensor,
+        input_mean: torch.Tensor,
+        inference_threshold: torch.Tensor,
+        score_weights: torch.Tensor,
+        device: torch.device,
+        dtype: torch.dtype | None,
+    ) -> None:
+        self.config = type("Config", (), dict(config))()
+        self.latent_ids = latent_ids.to(device=device, dtype=torch.long)
+        self.encoder = encoder.to(device=device, dtype=dtype or encoder.dtype)
+        self.encoder_bias = encoder_bias.to(device=device, dtype=dtype or encoder_bias.dtype)
+        self.decoder = decoder.to(device=device, dtype=dtype or decoder.dtype)
+        self.input_mean = input_mean.to(device=device, dtype=dtype or input_mean.dtype)
+        self.inference_threshold = inference_threshold.to(device=device)
+        self.score_weights = score_weights.to(device=device, dtype=dtype or score_weights.dtype)
+        dict_size = int(config.get("dict_size", int(self.latent_ids.max().item()) + 1))
+        self.id_to_pos = torch.full((dict_size,), -1, device=device, dtype=torch.long)
+        self.id_to_pos[self.latent_ids] = torch.arange(self.latent_ids.numel(), device=device)
+
+    @classmethod
+    def load(
+        cls,
+        path: Path,
+        *,
+        device: torch.device,
+        dtype: torch.dtype | None,
+    ) -> "SlicedBranchCrossCoder":
+        payload = torch.load(path, map_location="cpu", weights_only=False)
+        return cls(
+            config=payload["config"],
+            latent_ids=payload["latent_ids"],
+            encoder=payload["encoder"],
+            encoder_bias=payload["encoder_bias"],
+            decoder=payload["decoder"],
+            input_mean=payload["input_mean"],
+            inference_threshold=payload["inference_threshold"],
+            score_weights=payload["score_weights"],
+            device=device,
+            dtype=dtype,
+        )
+
+    def selected_branch_contribution(
+        self,
+        x: torch.Tensor,
+        *,
+        branch: int,
+        latent_ids: torch.Tensor,
+        use_threshold: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if latent_ids.numel() == 0:
+            empty = torch.zeros((x.shape[0], 0), device=x.device, dtype=torch.float32)
+            return torch.zeros_like(x.float()), empty
+        original_ids = latent_ids.to(device=x.device, dtype=torch.long)
+        if int(original_ids.max().item()) >= self.id_to_pos.numel():
+            raise KeyError("Sliced crosscoder is missing at least one requested latent ID")
+        selected = self.id_to_pos[original_ids]
+        if bool((selected < 0).any().item()):
+            missing = original_ids[selected < 0][:10].detach().cpu().tolist()
+            raise KeyError(f"Sliced crosscoder is missing requested latent IDs: {missing}")
+        dtype = self.encoder.dtype
+        mean = self.input_mean[int(branch)].to(device=x.device, dtype=dtype)
+        encoder = self.encoder[int(branch), :, selected]
+        bias = self.encoder_bias[selected]
+        selected_features = F.relu((x.to(dtype=dtype) - mean) @ encoder + bias)
+        if use_threshold and float(self.inference_threshold.item()) > 0:
+            if bool(getattr(self.config, "scale_topk_by_decoder_norm", False)):
+                scores = selected_features * self.score_weights[selected]
+            else:
+                scores = selected_features
+            threshold = self.inference_threshold.to(device=x.device, dtype=scores.dtype)
+            selected_features = selected_features * (scores >= threshold).to(selected_features.dtype)
+        contrib = selected_features @ self.decoder[selected, int(branch), :]
+        return contrib, selected_features
 
 
 class CrosscoderMlpModifier:
@@ -51,12 +143,22 @@ class CrosscoderMlpModifier:
         self.layer_diagnostics: dict[int, list[dict[str, float | int | str]]] = defaultdict(list)
         self._register()
 
-    def _load_layer(self, layer_idx: int) -> BatchTopKCrossCoder:
+    def _load_layer(self, layer_idx: int) -> BatchTopKCrossCoder | SlicedBranchCrossCoder:
         if layer_idx not in self.crosscoders:
-            path = self.run_root / "dictionaries" / f"layer_{layer_idx}" / "crosscoder.pt"
-            crosscoder = BatchTopKCrossCoder.load(path, device=self.device)
+            layer_dir = self.run_root / "dictionaries" / f"layer_{layer_idx}"
+            sliced_path = layer_dir / "crosscoder_sliced_causal.pt"
+            if self.selection.mode == "ablate" and sliced_path.exists():
+                crosscoder = SlicedBranchCrossCoder.load(
+                    sliced_path,
+                    device=self.device,
+                    dtype=self.crosscoder_dtype,
+                )
+            else:
+                path = layer_dir / "crosscoder.pt"
+                crosscoder = BatchTopKCrossCoder.load(path, device=self.device)
             if self.crosscoder_dtype is not None:
-                crosscoder = crosscoder.to(dtype=self.crosscoder_dtype)
+                if hasattr(crosscoder, "to"):
+                    crosscoder = crosscoder.to(dtype=self.crosscoder_dtype)
             self.crosscoders[layer_idx] = crosscoder
         return self.crosscoders[layer_idx]
 

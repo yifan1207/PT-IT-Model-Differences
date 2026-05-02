@@ -235,11 +235,13 @@ def build_feature_selections(
     causal_rows: list[LatentRow] | None = None,
     causal_pool_rows: list[LatentRow] | None = None,
 ) -> list[tuple[str, int, int | None, FeatureSelection]]:
-    selections: list[tuple[str, int, int | None, FeatureSelection]] = [
-        ("full_reconstruction", 0, None, FeatureSelection("full_reconstruction", {}, mode="full_reconstruct"))
-    ]
+    selections: list[tuple[str, int, int | None, FeatureSelection]] = []
     include_default = selection_suite in {"default", "default_plus_causal"}
     include_causal = selection_suite in {"causal", "default_plus_causal"}
+    if include_default:
+        selections.append(
+            ("full_reconstruction", 0, None, FeatureSelection("full_reconstruction", {}, mode="full_reconstruct"))
+        )
     if include_default:
         for metric in coverage_metrics or []:
             for frac in coverage_fracs or []:
