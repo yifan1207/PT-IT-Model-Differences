@@ -31,6 +31,7 @@ VAL_FRACTION="${VAL_FRACTION:-0.10}"
 MAX_SEQ_LEN="${MAX_SEQ_LEN:-512}"
 APPEND_PT_GREEDY_TOKENS="${APPEND_PT_GREEDY_TOKENS:-384}"
 CACHE_BATCH_SIZE="${CACHE_BATCH_SIZE:-8}"
+CACHE_WORKERS="${CACHE_WORKERS:-0}"  # 0 means min(num GPUs, 8).
 FORCE_CACHE="${FORCE_CACHE:-0}"
 
 LR="${LR:-1e-4}"
@@ -148,7 +149,6 @@ run_cache() {
   local layers="$2"
   local tokens="$3"
   local prompts="$4"
-  local gpu="${GPUS[0]}"
   if [[ "$FORCE_CACHE" != "1" ]] && cache_complete "$root" "$layers"; then
     echo "[exp30] cache already present root=${root} layers=${layers}"
     return
@@ -158,22 +158,82 @@ run_cache() {
     exclude_args=(--exclude-dataset "${EXCLUDE_DATASET_ARR[@]}")
   fi
   mkdir -p "${root}/logs"
-  echo "[exp30] cache gpu=${gpu} root=${root} layers=${layers} tokens=${tokens}"
-  CUDA_VISIBLE_DEVICES="$gpu" $PY_RUNNER -m src.poc.exp28_late_mlp_crosscoder_mediation cache \
+  local workers="$CACHE_WORKERS"
+  if [[ "$workers" -le 0 ]]; then
+    workers="${#GPUS[@]}"
+    [[ "$workers" -gt 8 ]] && workers=8
+  fi
+  [[ "$workers" -lt 1 ]] && workers=1
+  if [[ "$workers" -eq 1 ]]; then
+    local gpu="${GPUS[0]}"
+    echo "[exp30] cache gpu=${gpu} root=${root} layers=${layers} tokens=${tokens}"
+    CUDA_VISIBLE_DEVICES="$gpu" $PY_RUNNER -m src.poc.exp28_late_mlp_crosscoder_mediation cache \
+      --model "$MODEL" \
+      --dataset "${TRAIN_DATASET_ARR[@]}" \
+      "${exclude_args[@]}" \
+      --out-dir "$root" \
+      --layers ${layers} \
+      --n-prompts "$prompts" \
+      --n-tokens "$tokens" \
+      --batch-size "$CACHE_BATCH_SIZE" \
+      --max-seq-len "$MAX_SEQ_LEN" \
+      --append-pt-greedy-tokens "$APPEND_PT_GREEDY_TOKENS" \
+      --val-fraction "$VAL_FRACTION" \
+      --val-split "$VAL_SPLIT" \
+      --device cuda:0 \
+      >"${root}/logs/cache.log" 2>&1
+    return
+  fi
+
+  local per_worker_tokens=$(( (tokens + workers - 1) / workers ))
+  echo "[exp30] cache workers=${workers} root=${root} layers=${layers} total_tokens=${tokens} per_worker_tokens=${per_worker_tokens}"
+  FREE_GPUS=("${GPUS[@]}")
+  ACTIVE_PIDS=()
+  ACTIVE_GPUS=()
+  WAIT_STATUS=0
+  for worker in $(seq 0 $((workers - 1))); do
+    while [[ "${#FREE_GPUS[@]}" -lt 1 ]]; do
+      wait_for_any_active_train
+    done
+    local gpu="${FREE_GPUS[0]}"
+    FREE_GPUS=("${FREE_GPUS[@]:1}")
+    echo "[exp30] cache worker=${worker}/${workers} gpu=${gpu}"
+    CUDA_VISIBLE_DEVICES="$gpu" $PY_RUNNER -m src.poc.exp28_late_mlp_crosscoder_mediation cache \
+      --model "$MODEL" \
+      --dataset "${TRAIN_DATASET_ARR[@]}" \
+      "${exclude_args[@]}" \
+      --out-dir "$root" \
+      --layers ${layers} \
+      --n-prompts "$prompts" \
+      --n-tokens "$per_worker_tokens" \
+      --batch-size "$CACHE_BATCH_SIZE" \
+      --max-seq-len "$MAX_SEQ_LEN" \
+      --append-pt-greedy-tokens "$APPEND_PT_GREEDY_TOKENS" \
+      --val-fraction "$VAL_FRACTION" \
+      --val-split "$VAL_SPLIT" \
+      --worker-index "$worker" \
+      --n-workers "$workers" \
+      --device cuda:0 \
+      >"${root}/logs/cache_w${worker}of${workers}.log" 2>&1 &
+    local pid="$!"
+    ACTIVE_PIDS+=("$pid")
+    ACTIVE_GPUS+=("$gpu")
+  done
+  while [[ "${#ACTIVE_PIDS[@]}" -gt 0 ]]; do
+    wait_for_any_active_train
+  done
+  if [[ "$WAIT_STATUS" -ne 0 ]]; then
+    return "$WAIT_STATUS"
+  fi
+  $PY_RUNNER -m src.poc.exp28_late_mlp_crosscoder_mediation cache \
     --model "$MODEL" \
-    --dataset "${TRAIN_DATASET_ARR[@]}" \
-    "${exclude_args[@]}" \
     --out-dir "$root" \
     --layers ${layers} \
-    --n-prompts "$prompts" \
-    --n-tokens "$tokens" \
-    --batch-size "$CACHE_BATCH_SIZE" \
-    --max-seq-len "$MAX_SEQ_LEN" \
-    --append-pt-greedy-tokens "$APPEND_PT_GREEDY_TOKENS" \
     --val-fraction "$VAL_FRACTION" \
     --val-split "$VAL_SPLIT" \
-    --device cuda:0 \
-    >"${root}/logs/cache.log" 2>&1
+    --n-workers "$workers" \
+    --merge-workers \
+    >"${root}/logs/cache_merge.log" 2>&1
 }
 
 train_one() {

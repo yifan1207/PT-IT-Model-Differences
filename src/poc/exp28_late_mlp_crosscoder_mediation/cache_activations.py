@@ -231,6 +231,7 @@ def _write_layer_cache(
     val_fraction: float,
     val_split: str,
     seed: int,
+    cache_suffix: str = "",
 ) -> None:
     pt_mlp = torch.cat(pt_chunks, dim=0)
     it_mlp = torch.cat(it_chunks, dim=0)
@@ -257,13 +258,74 @@ def _write_layer_cache(
         "split": "train_recon_val",
         "val_split": val_split,
     }
-    path = out_dir / f"layer_{layer}.pt"
+    path = out_dir / f"layer_{layer}{cache_suffix}.pt"
     path.parent.mkdir(parents=True, exist_ok=True)
     torch.save(payload, path)
     log.info("[exp28-cache] wrote %s tokens=%d", path, n_tokens)
 
 
+def _validation_mask(
+    *,
+    prompt_ids: list[str],
+    n_tokens: int,
+    val_fraction: float,
+    val_split: str,
+    seed: int,
+    layer: int,
+) -> torch.Tensor:
+    if val_split == "prompt":
+        unique_prompts = sorted(set(prompt_ids))
+        rng = random.Random(seed + int(layer))
+        rng.shuffle(unique_prompts)
+        n_val_prompts = max(1, int(round(len(unique_prompts) * float(val_fraction))))
+        val_prompts = set(unique_prompts[:n_val_prompts])
+        return torch.tensor([pid in val_prompts for pid in prompt_ids], dtype=torch.bool)
+    generator = torch.Generator().manual_seed(seed + int(layer))
+    return torch.rand(n_tokens, generator=generator) < float(val_fraction)
+
+
+def _merge_worker_caches(args: argparse.Namespace) -> None:
+    out_dir = args.out_dir / "cache"
+    for layer in [int(x) for x in args.layers]:
+        paths = [out_dir / f"layer_{layer}_w{worker}.pt" for worker in range(int(args.n_workers))]
+        missing = [path for path in paths if not path.exists()]
+        if missing:
+            raise FileNotFoundError(f"Missing worker caches for layer {layer}: {missing[:5]}")
+        payloads = [torch.load(path, map_location="cpu", weights_only=False) for path in paths]
+        prompt_ids = [pid for payload in payloads for pid in payload["prompt_id"]]
+        pt_mlp = torch.cat([payload["pt_mlp"] for payload in payloads], dim=0)
+        it_mlp = torch.cat([payload["it_mlp"] for payload in payloads], dim=0)
+        is_val = _validation_mask(
+            prompt_ids=prompt_ids,
+            n_tokens=int(pt_mlp.shape[0]),
+            val_fraction=args.val_fraction,
+            val_split=args.val_split,
+            seed=args.seed,
+            layer=layer,
+        )
+        merged = {
+            "model": payloads[0].get("model", args.model),
+            "layer": int(layer),
+            "pt_mlp": pt_mlp,
+            "it_mlp": it_mlp,
+            "prompt_id": prompt_ids,
+            "token_pos": torch.cat([payload["token_pos"] for payload in payloads], dim=0),
+            "token_id": torch.cat([payload["token_id"] for payload in payloads], dim=0),
+            "is_val": is_val,
+            "split": "train_recon_val",
+            "val_split": args.val_split,
+            "merged_workers": int(args.n_workers),
+        }
+        path = out_dir / f"layer_{layer}.pt"
+        torch.save(merged, path)
+        log.info("[exp28-cache] merged %d worker caches -> %s tokens=%d", args.n_workers, path, pt_mlp.shape[0])
+
+
 def run(args: argparse.Namespace) -> None:
+    if args.merge_workers:
+        _merge_worker_caches(args)
+        return
+
     device = torch.device(args.device)
     spec = get_spec(args.model)
     adapter = get_steering_adapter(args.model)
@@ -283,11 +345,19 @@ def run(args: argparse.Namespace) -> None:
     )
     if not records:
         raise RuntimeError("No training records remain after dataset filtering")
+    if int(args.n_workers) > 1:
+        records = records[int(args.worker_index) :: int(args.n_workers)]
+        if not records:
+            raise RuntimeError(
+                f"No training records assigned to worker {args.worker_index}/{args.n_workers}"
+            )
     log.info(
-        "[exp28-cache] loaded records=%d datasets=%s excluded=%s",
+        "[exp28-cache] loaded records=%d datasets=%s excluded=%s worker=%d/%d",
         len(records),
         ",".join(str(path) for path in args.dataset),
         ",".join(str(path) for path in args.exclude_dataset) or "<none>",
+        int(args.worker_index),
+        int(args.n_workers),
     )
 
     pt_model, pt_tokenizer = load_model_and_tokenizer(
@@ -385,6 +455,7 @@ def run(args: argparse.Namespace) -> None:
             val_fraction=args.val_fraction,
             val_split=args.val_split,
             seed=args.seed,
+            cache_suffix=f"_w{int(args.worker_index)}" if int(args.n_workers) > 1 else "",
         )
     config = {
         "model": args.model,
@@ -400,8 +471,11 @@ def run(args: argparse.Namespace) -> None:
         "val_fraction": args.val_fraction,
         "val_split": args.val_split,
         "dedupe_prompts": not args.no_dedupe_prompts,
+        "worker_index": int(args.worker_index),
+        "n_workers": int(args.n_workers),
     }
-    (args.out_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
+    suffix = f"_w{int(args.worker_index)}" if int(args.n_workers) > 1 else ""
+    (args.out_dir / f"config{suffix}.json").write_text(json.dumps(config, indent=2) + "\n")
 
 
 def parse_args() -> argparse.Namespace:
@@ -419,6 +493,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--val-fraction", type=float, default=0.10)
     parser.add_argument("--val-split", choices=["token", "prompt"], default="token")
     parser.add_argument("--no-dedupe-prompts", action="store_true")
+    parser.add_argument("--worker-index", type=int, default=0)
+    parser.add_argument("--n-workers", type=int, default=1)
+    parser.add_argument("--merge-workers", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
     return parser.parse_args()
