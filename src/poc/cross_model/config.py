@@ -159,6 +159,18 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         pt_revision=OLMO2_7B_PT_SHA,
         it_revision=OLMO2_7B_SFT_SHA,
     ),
+    "olmo2_7b_pt_dpo": ModelSpec(
+        name="olmo2_7b_pt_dpo",
+        pt_id="allenai/OLMo-2-1124-7B",
+        it_id="allenai/OLMo-2-1124-7B-DPO",
+        n_layers=32,
+        d_model=4096,
+        n_heads=32,
+        n_kv_heads=32,
+        global_attn_layers=frozenset(range(32)),
+        pt_revision=OLMO2_7B_PT_SHA,
+        it_revision=OLMO2_7B_DPO_SHA,
+    ),
     "olmo2_7b_sft_dpo": ModelSpec(
         name="olmo2_7b_sft_dpo",
         pt_id="allenai/OLMo-2-1124-7B-SFT",

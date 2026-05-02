@@ -1,0 +1,37 @@
+{
+  "artifacts": {
+    "cell_metrics": "cell_metrics.csv",
+    "degradation_ratios": "offdiag_degradation_ratios.csv",
+    "effect_bootstrap": "effect_bootstrap.csv",
+    "effect_sanity": "effect_sanity.csv",
+    "report": "offmanifold_sanity_report.md"
+  },
+  "event_kind": "first_diff",
+  "invalid_by_model": {
+    "mistral_7b": 3,
+    "olmo2_7b": 14
+  },
+  "models": [
+    "gemma3_4b",
+    "llama31_8b",
+    "mistral_7b",
+    "olmo2_7b",
+    "qwen3_4b"
+  ],
+  "n_invalid": 17,
+  "n_valid": 2983,
+  "noop": {
+    "all_common_it_top1_equal": true,
+    "max_common_it_margin_abs_delta": 0.0,
+    "max_patch_input_delta_abs": 0.0,
+    "n_checks": 5966
+  },
+  "records_root": "results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/residual_factorial/raw_shared",
+  "valid_by_model": {
+    "gemma3_4b": 600,
+    "llama31_8b": 600,
+    "mistral_7b": 597,
+    "olmo2_7b": 586,
+    "qwen3_4b": 600
+  }
+}
