@@ -234,6 +234,7 @@ run_cache() {
     --n-workers "$workers" \
     --merge-workers \
     >"${root}/logs/cache_merge.log" 2>&1
+  find "${root}/cache" -name 'layer_*_w*.pt' -delete
 }
 
 train_one() {
