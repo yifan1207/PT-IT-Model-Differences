@@ -95,7 +95,8 @@ def _auxk_loss(
     budget = min(aux_scores.numel(), aux_scores.shape[0] * auxk)
     if budget <= 0:
         return x.new_tensor(0.0)
-    cutoff = torch.topk(aux_scores.flatten(), k=budget, largest=True).values[-1]
+    top_values = torch.topk(aux_scores.flatten(), k=budget, largest=True, sorted=False).values
+    cutoff = top_values.min()
     aux_features = aux_acts * (aux_scores >= cutoff).to(aux_acts.dtype)
     aux_recon = model.decode(aux_features) - model.decoder_bias
     residual = (x.float() - recon.float()).detach()
@@ -159,7 +160,8 @@ def _calibrate_threshold(
         budget = min(scores.numel(), int(scores.shape[0]) * int(k))
         if budget <= 0:
             continue
-        thresholds.append(float(torch.topk(scores.flatten(), k=budget, largest=True).values[-1].item()))
+        top_values = torch.topk(scores.flatten(), k=budget, largest=True, sorted=False).values
+        thresholds.append(float(top_values.min().item()))
     if not thresholds:
         return float(model.inference_threshold.item())
     threshold = float(sum(thresholds) / len(thresholds))

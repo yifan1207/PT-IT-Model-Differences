@@ -43,7 +43,8 @@ def batch_topk_mask(values: torch.Tensor, k: int) -> torch.Tensor:
     if budget <= 0:
         return torch.zeros_like(values, dtype=torch.bool)
     flat = values.flatten()
-    cutoff = torch.topk(flat, k=budget, largest=True).values[-1]
+    top_values = torch.topk(flat, k=budget, largest=True, sorted=False).values
+    cutoff = top_values.min()
     return values >= cutoff
 
 
@@ -150,7 +151,8 @@ class BatchTopKCrossCoder(nn.Module):
         if per_item_k <= 0:
             return torch.zeros_like(acts)
         keep = min(per_item_k, acts.shape[-1])
-        cutoff = torch.topk(scores, k=keep, dim=-1).values[:, -1:]
+        top_values = torch.topk(scores, k=keep, dim=-1, largest=True, sorted=False).values
+        cutoff = top_values.min(dim=-1).values[:, None]
         return acts * (scores >= cutoff).to(acts.dtype)
 
     def decode(self, features: torch.Tensor) -> torch.Tensor:
@@ -228,7 +230,8 @@ class BatchTopKCrossCoder(nn.Module):
         budget = min(scores.numel(), int(scores.shape[0]) * int(k or self.config.k))
         if budget <= 0:
             return
-        batch_threshold = torch.topk(scores.flatten(), k=budget, largest=True).values[-1].float()
+        top_values = torch.topk(scores.flatten(), k=budget, largest=True, sorted=False).values
+        batch_threshold = top_values.min().float()
         if int(self.threshold_updates.item()) == 0:
             self.inference_threshold.copy_(batch_threshold.cpu())
         else:
