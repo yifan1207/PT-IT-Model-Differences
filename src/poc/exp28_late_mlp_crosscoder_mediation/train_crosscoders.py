@@ -22,6 +22,14 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
+def _configure_cuda_math() -> None:
+    if not torch.cuda.is_available():
+        return
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    torch.set_float32_matmul_precision("high")
+
+
 def _load_cache(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(path)
@@ -344,6 +352,7 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
 
 
 def run(args: argparse.Namespace) -> None:
+    _configure_cuda_math()
     args.run_root.mkdir(parents=True, exist_ok=True)
     summaries = []
     for layer in args.layers:
