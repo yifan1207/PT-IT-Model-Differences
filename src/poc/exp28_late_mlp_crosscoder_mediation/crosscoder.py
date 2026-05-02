@@ -43,11 +43,8 @@ def batch_topk_mask(values: torch.Tensor, k: int) -> torch.Tensor:
     if budget <= 0:
         return torch.zeros_like(values, dtype=torch.bool)
     flat = values.flatten()
-    # Exact cutoff for the global top-k budget. ``kthvalue`` avoids allocating
-    # and partially sorting millions of selected activations just to recover
-    # their minimum.
-    cutoff_rank = flat.numel() - int(budget) + 1
-    cutoff = torch.kthvalue(flat, k=cutoff_rank).values
+    top_values = torch.topk(flat, k=budget, largest=True, sorted=False).values
+    cutoff = top_values.min()
     return values >= cutoff
 
 
@@ -233,9 +230,8 @@ class BatchTopKCrossCoder(nn.Module):
         budget = min(scores.numel(), int(scores.shape[0]) * int(k or self.config.k))
         if budget <= 0:
             return
-        flat = scores.flatten()
-        cutoff_rank = flat.numel() - int(budget) + 1
-        batch_threshold = torch.kthvalue(flat, k=cutoff_rank).values.float()
+        top_values = torch.topk(scores.flatten(), k=budget, largest=True, sorted=False).values
+        batch_threshold = top_values.min().float()
         if int(self.threshold_updates.item()) == 0:
             self.inference_threshold.copy_(batch_threshold.cpu())
         else:
