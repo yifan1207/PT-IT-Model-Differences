@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import random
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -13,11 +14,47 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 from src.poc.cross_model.config import MODEL_REGISTRY, get_spec, model_id_for_variant
-from src.poc.cross_model.utils import get_raw_prompt, load_dataset, load_model_and_tokenizer
+from src.poc.cross_model.utils import get_raw_prompt, load_model_and_tokenizer
 from src.poc.exp06_corrective_direction_steering.model_adapter import get_steering_adapter
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+
+def _load_jsonl_records(path: Path) -> list[dict[str, Any]]:
+    with path.open("r", encoding="utf-8") as handle:
+        return [json.loads(line) for line in handle if line.strip()]
+
+
+def _load_training_records(
+    *,
+    dataset_paths: list[Path],
+    exclude_dataset_paths: list[Path],
+    n_prompts: int | None,
+    dedupe_prompts: bool,
+) -> list[dict[str, Any]]:
+    excluded_ids: set[str] = set()
+    excluded_prompts: set[str] = set()
+    for path in exclude_dataset_paths:
+        for row in _load_jsonl_records(path):
+            excluded_ids.add(str(row.get("id", row.get("record_id", ""))))
+            excluded_prompts.add(get_raw_prompt(row))
+
+    records: list[dict[str, Any]] = []
+    seen_prompts: set[str] = set()
+    for path in dataset_paths:
+        for row in _load_jsonl_records(path):
+            row_id = str(row.get("id", row.get("record_id", "")))
+            prompt = get_raw_prompt(row)
+            if row_id in excluded_ids or prompt in excluded_prompts:
+                continue
+            if dedupe_prompts and prompt in seen_prompts:
+                continue
+            seen_prompts.add(prompt)
+            records.append(row)
+            if n_prompts is not None and len(records) >= n_prompts:
+                return records
+    return records
 
 
 def _special_ids(tokenizer: Any) -> set[int]:
@@ -192,13 +229,22 @@ def _write_layer_cache(
     token_pos: list[torch.Tensor],
     token_ids: list[torch.Tensor],
     val_fraction: float,
+    val_split: str,
     seed: int,
 ) -> None:
     pt_mlp = torch.cat(pt_chunks, dim=0)
     it_mlp = torch.cat(it_chunks, dim=0)
     n_tokens = int(pt_mlp.shape[0])
     generator = torch.Generator().manual_seed(seed + int(layer))
-    is_val = torch.rand(n_tokens, generator=generator) < float(val_fraction)
+    if val_split == "prompt":
+        unique_prompts = sorted(set(prompt_ids))
+        rng = random.Random(seed + int(layer))
+        rng.shuffle(unique_prompts)
+        n_val_prompts = max(1, int(round(len(unique_prompts) * float(val_fraction))))
+        val_prompts = set(unique_prompts[:n_val_prompts])
+        is_val = torch.tensor([pid in val_prompts for pid in prompt_ids], dtype=torch.bool)
+    else:
+        is_val = torch.rand(n_tokens, generator=generator) < float(val_fraction)
     payload = {
         "model": model_name,
         "layer": int(layer),
@@ -209,6 +255,7 @@ def _write_layer_cache(
         "token_id": torch.cat(token_ids, dim=0),
         "is_val": is_val,
         "split": "train_recon_val",
+        "val_split": val_split,
     }
     path = out_dir / f"layer_{layer}.pt"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -227,7 +274,21 @@ def run(args: argparse.Namespace) -> None:
     if bad:
         raise ValueError(f"Invalid layers for {args.model}: {bad}")
 
-    records = load_dataset(args.dataset, n_examples=args.n_prompts)
+    n_prompts = None if args.n_prompts is None or int(args.n_prompts) <= 0 else int(args.n_prompts)
+    records = _load_training_records(
+        dataset_paths=[Path(path) for path in args.dataset],
+        exclude_dataset_paths=[Path(path) for path in args.exclude_dataset],
+        n_prompts=n_prompts,
+        dedupe_prompts=not args.no_dedupe_prompts,
+    )
+    if not records:
+        raise RuntimeError("No training records remain after dataset filtering")
+    log.info(
+        "[exp28-cache] loaded records=%d datasets=%s excluded=%s",
+        len(records),
+        ",".join(str(path) for path in args.dataset),
+        ",".join(str(path) for path in args.exclude_dataset) or "<none>",
+    )
 
     pt_model, pt_tokenizer = load_model_and_tokenizer(
         model_id_for_variant(spec, "pt"),
@@ -322,18 +383,23 @@ def run(args: argparse.Namespace) -> None:
             token_pos=token_pos_all,
             token_ids=token_ids_all,
             val_fraction=args.val_fraction,
+            val_split=args.val_split,
             seed=args.seed,
         )
     config = {
         "model": args.model,
         "layers": layers,
         "n_tokens": n_seen,
-        "dataset": str(args.dataset),
-        "n_prompts": args.n_prompts,
+        "dataset": [str(path) for path in args.dataset],
+        "exclude_dataset": [str(path) for path in args.exclude_dataset],
+        "n_prompts": n_prompts,
+        "n_records_loaded": len(records),
         "append_pt_greedy_tokens": args.append_pt_greedy_tokens,
         "batch_size": args.batch_size,
         "max_seq_len": args.max_seq_len,
         "val_fraction": args.val_fraction,
+        "val_split": args.val_split,
+        "dedupe_prompts": not args.no_dedupe_prompts,
     }
     (args.out_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 
@@ -341,7 +407,8 @@ def run(args: argparse.Namespace) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", choices=list(MODEL_REGISTRY), default="llama31_8b")
-    parser.add_argument("--dataset", type=Path, default=Path("data/eval_dataset_v2.jsonl"))
+    parser.add_argument("--dataset", nargs="+", type=Path, default=[Path("data/eval_dataset_v2.jsonl")])
+    parser.add_argument("--exclude-dataset", nargs="*", type=Path, default=[])
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--layers", nargs="+", type=int, required=True)
     parser.add_argument("--n-prompts", type=int, default=600)
@@ -350,6 +417,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-seq-len", type=int, default=512)
     parser.add_argument("--append-pt-greedy-tokens", type=int, default=0)
     parser.add_argument("--val-fraction", type=float, default=0.10)
+    parser.add_argument("--val-split", choices=["token", "prompt"], default="token")
+    parser.add_argument("--no-dedupe-prompts", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda:0")
     return parser.parse_args()

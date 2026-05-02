@@ -38,6 +38,46 @@ def test_crosscoder_shapes_and_branch_contribution() -> None:
     assert branch_features.shape == (5, 3)
 
 
+def test_crosscoder_same_init_and_decoder_norm_target() -> None:
+    torch.manual_seed(0)
+    model = BatchTopKCrossCoder(
+        CrosscoderConfig(
+            activation_dim=8,
+            dict_size=16,
+            k=4,
+            same_init_for_all_branches=True,
+            norm_init_scale=0.5,
+            decoder_norm_target=0.25,
+        )
+    )
+    assert torch.allclose(model.decoder[:, 0, :], model.decoder[:, 1, :])
+    flat_norms = model.decoder.detach().flatten(start_dim=1).norm(dim=1)
+    assert torch.allclose(flat_norms, torch.full_like(flat_norms, 0.5), atol=1e-5)
+
+    model.normalize_decoder_()
+    flat_norms = model.decoder.detach().flatten(start_dim=1).norm(dim=1)
+    assert torch.allclose(flat_norms, torch.full_like(flat_norms, 0.25), atol=1e-5)
+
+
+def test_norm_scaled_topk_keeps_raw_activations() -> None:
+    model = BatchTopKCrossCoder(
+        CrosscoderConfig(
+            activation_dim=4,
+            dict_size=3,
+            k=1,
+            scale_topk_by_decoder_norm=True,
+        )
+    )
+    acts = torch.tensor([[5.0, 4.0, 1.0]])
+    with torch.no_grad():
+        model.decoder.fill_(0.0)
+        model.decoder[0].fill_(0.01)
+        model.decoder[1].fill_(1.0)
+        model.decoder[2].fill_(0.01)
+    kept = acts * batch_topk_mask(model._topk_scores(acts), k=1).to(acts.dtype)
+    assert kept.tolist() == [[0.0, 4.0, 0.0]]
+
+
 def test_coverage_branch_contribution_selects_active_mass() -> None:
     torch.manual_seed(0)
     model = BatchTopKCrossCoder(CrosscoderConfig(activation_dim=8, dict_size=16, k=4))

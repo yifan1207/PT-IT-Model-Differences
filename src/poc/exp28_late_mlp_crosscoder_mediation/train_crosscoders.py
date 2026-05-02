@@ -55,6 +55,18 @@ def _sample_batch(
     return x[choices].to(device=device, dtype=torch.float32, non_blocking=True)
 
 
+def _current_k(args: argparse.Namespace, step: int) -> int:
+    target = int(args.k)
+    start = int(args.k_anneal_start or target)
+    steps = int(args.k_anneal_steps or 0)
+    if steps <= 0 or start == target:
+        return target
+    if step >= steps:
+        return target
+    frac = max(0.0, min(1.0, step / float(steps)))
+    return int(round(start + frac * (target - start)))
+
+
 def _auxk_loss(
     model: BatchTopKCrossCoder,
     x: torch.Tensor,
@@ -71,11 +83,12 @@ def _auxk_loss(
     if not bool(inactive.any().item()):
         return x.new_tensor(0.0)
     aux_acts = acts.masked_fill(~inactive, 0.0)
-    budget = min(aux_acts.numel(), aux_acts.shape[0] * auxk)
+    aux_scores = model._topk_scores(aux_acts)
+    budget = min(aux_scores.numel(), aux_scores.shape[0] * auxk)
     if budget <= 0:
         return x.new_tensor(0.0)
-    cutoff = torch.topk(aux_acts.flatten(), k=budget, largest=True).values[-1]
-    aux_features = aux_acts * (aux_acts >= cutoff).to(aux_acts.dtype)
+    cutoff = torch.topk(aux_scores.flatten(), k=budget, largest=True).values[-1]
+    aux_features = aux_acts * (aux_scores >= cutoff).to(aux_acts.dtype)
     aux_recon = model.decode(aux_features) - model.decoder_bias
     residual = (x.float() - recon.float()).detach()
     return F.mse_loss(aux_recon, residual)
@@ -89,12 +102,13 @@ def _eval_model(
     *,
     batch_tokens: int,
     device: torch.device,
+    k: int | None = None,
 ) -> dict[str, float]:
     if len(val_idx) == 0:
         val_idx = torch.arange(min(len(x), batch_tokens))
     take = val_idx[: min(len(val_idx), max(batch_tokens, 1024))]
     xb = x[take].to(device=device, dtype=torch.float32)
-    recon, features = model(xb, output_features=True)
+    recon, features = model(xb, output_features=True, k=k)
     fv = fvu(recon.detach().cpu(), xb.detach().cpu())
     l0 = (features > 0).float().sum(dim=1).mean()
     alive = (features > 0).any(dim=0).float().mean()
@@ -110,6 +124,40 @@ def _eval_model(
         "dead_latents": int(features.shape[1] - int((features > 0).any(dim=0).sum().item())),
         "inference_threshold": float(model.inference_threshold.item()),
     }
+
+
+@torch.no_grad()
+def _calibrate_threshold(
+    model: BatchTopKCrossCoder,
+    x: torch.Tensor,
+    train_idx: torch.Tensor,
+    *,
+    batch_tokens: int,
+    n_batches: int,
+    generator: torch.Generator,
+    device: torch.device,
+    k: int,
+) -> float:
+    thresholds: list[float] = []
+    for _ in range(max(1, int(n_batches))):
+        xb = _sample_batch(
+            x,
+            train_idx,
+            batch_tokens=batch_tokens,
+            generator=generator,
+            device=device,
+        )
+        scores = model._topk_scores(torch.relu(model.preacts(xb)))
+        budget = min(scores.numel(), int(scores.shape[0]) * int(k))
+        if budget <= 0:
+            continue
+        thresholds.append(float(torch.topk(scores.flatten(), k=budget, largest=True).values[-1].item()))
+    if not thresholds:
+        return float(model.inference_threshold.item())
+    threshold = float(sum(thresholds) / len(thresholds))
+    model.inference_threshold.copy_(torch.tensor(threshold, dtype=model.inference_threshold.dtype))
+    model.threshold_updates.fill_(len(thresholds))
+    return threshold
 
 
 def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
@@ -129,6 +177,10 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
         k=args.k,
         threshold_beta=args.threshold_beta,
         threshold_start_step=args.threshold_start_step,
+        same_init_for_all_branches=args.same_init_for_all_branches,
+        norm_init_scale=args.norm_init_scale,
+        decoder_norm_target=args.decoder_norm_scale,
+        scale_topk_by_decoder_norm=args.scale_topk_by_decoder_norm,
     )
     device = torch.device(args.device)
     model = BatchTopKCrossCoder(config, input_mean=input_mean, device=device)
@@ -180,7 +232,8 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
                 device=device,
             )
             opt.zero_grad(set_to_none=True)
-            recon, features, preacts = model(xb, output_features=True, return_preacts=True)
+            current_k = _current_k(args, step)
+            recon, features, preacts = model(xb, output_features=True, return_preacts=True, k=current_k)
             main_loss = F.mse_loss(recon.float(), xb.float())
             aux_loss = _auxk_loss(
                 model,
@@ -204,7 +257,7 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
                     group["lr"] = lr
             opt.step()
             model.normalize_decoder_()
-            model.update_threshold(preacts, step=step)
+            model.update_threshold(preacts, step=step, k=current_k)
 
             if step == 1 or step % args.log_every == 0 or step == args.steps:
                 metrics = _eval_model(
@@ -213,10 +266,12 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
                     val_idx,
                     batch_tokens=min(args.batch_tokens, 2048),
                     device=device,
+                    k=current_k,
                 )
                 row = {
                     "layer": layer,
                     "step": step,
+                    "current_k": int(current_k),
                     "loss": float(loss.item()),
                     "main_loss": float(main_loss.item()),
                     "aux_loss": float(aux_loss.item()),
@@ -246,12 +301,23 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
                     ckpt_path,
                 )
 
+    threshold = _calibrate_threshold(
+        model,
+        x,
+        train_idx,
+        batch_tokens=min(max(args.batch_tokens, 2048), 8192),
+        n_batches=args.threshold_calibration_batches,
+        generator=generator,
+        device=device,
+        k=args.k,
+    )
     metrics = _eval_model(
         model,
         x,
         val_idx,
         batch_tokens=min(max(args.batch_tokens, 2048), 8192),
         device=device,
+        k=args.k,
     )
     extra = {
         "model": payload.get("model"),
@@ -261,6 +327,10 @@ def train_layer(args: argparse.Namespace, layer: int) -> dict[str, Any]:
         "lr": lr,
         "steps": int(args.steps),
         "batch_tokens": int(args.batch_tokens),
+        "k_anneal_start": int(args.k_anneal_start or args.k),
+        "k_anneal_steps": int(args.k_anneal_steps or 0),
+        "threshold_calibration_batches": int(args.threshold_calibration_batches),
+        "threshold_calibrated": threshold,
         "metrics": metrics,
     }
     model.save(out_dir / "crosscoder.pt", extra=extra)
@@ -303,9 +373,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--warmup-steps", type=int, default=1000)
     parser.add_argument("--threshold-beta", type=float, default=0.999)
     parser.add_argument("--threshold-start-step", type=int, default=1000)
+    parser.add_argument("--threshold-calibration-batches", type=int, default=64)
     parser.add_argument("--auxk-alpha", type=float, default=1.0 / 32.0)
     parser.add_argument("--auxk", type=int, default=None)
     parser.add_argument("--grad-clip-norm", type=float, default=1.0)
+    parser.add_argument("--same-init-for-all-branches", action="store_true")
+    parser.add_argument("--norm-init-scale", type=float, default=1.0)
+    parser.add_argument("--decoder-norm-scale", type=float, default=1.0)
+    parser.add_argument("--scale-topk-by-decoder-norm", action="store_true")
+    parser.add_argument("--k-anneal-start", type=int, default=None)
+    parser.add_argument("--k-anneal-steps", type=int, default=0)
     parser.add_argument("--log-every", type=int, default=50)
     parser.add_argument("--checkpoint-every", type=int, default=1000)
     parser.add_argument("--resume", action="store_true")

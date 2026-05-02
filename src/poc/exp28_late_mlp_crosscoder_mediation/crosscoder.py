@@ -25,6 +25,10 @@ class CrosscoderConfig:
     n_branches: int = 2
     threshold_beta: float = 0.999
     threshold_start_step: int = 1000
+    same_init_for_all_branches: bool = False
+    norm_init_scale: float = 1.0
+    decoder_norm_target: float = 1.0
+    scale_topk_by_decoder_norm: bool = False
     eps: float = 1e-8
 
 
@@ -57,15 +61,24 @@ class BatchTopKCrossCoder(nn.Module):
         self.config = config
         c = config
         init_std = 1.0 / math.sqrt(c.activation_dim)
-        decoder = torch.randn(
-            c.dict_size,
-            c.n_branches,
-            c.activation_dim,
-            device=device,
-            dtype=torch.float32,
-        ) * init_std
+        if c.same_init_for_all_branches:
+            shared = torch.randn(
+                c.dict_size,
+                c.activation_dim,
+                device=device,
+                dtype=torch.float32,
+            ) * init_std
+            decoder = shared[:, None, :].expand(-1, c.n_branches, -1).contiguous()
+        else:
+            decoder = torch.randn(
+                c.dict_size,
+                c.n_branches,
+                c.activation_dim,
+                device=device,
+                dtype=torch.float32,
+            ) * init_std
         self.decoder = nn.Parameter(decoder)
-        self.normalize_decoder_()
+        self.normalize_decoder_(target_norm=float(c.norm_init_scale))
 
         # Initialize encoder close to the transpose of the normalized decoder.
         encoder = self.decoder.detach().permute(1, 2, 0).contiguous().clone()
@@ -95,11 +108,25 @@ class BatchTopKCrossCoder(nn.Module):
         centered = self.centered(x)
         return torch.einsum("bmd,mdl->bl", centered, self.encoder) + self.encoder_bias
 
-    def encode(self, x: torch.Tensor, *, batch_topk: bool = True) -> torch.Tensor:
+    def _score_weights(self, *, branch: int | None = None) -> torch.Tensor:
+        if branch is None:
+            weights = self.decoder.detach().norm(dim=-1).sum(dim=-1)
+        else:
+            weights = self.decoder.detach()[:, int(branch), :].norm(dim=-1)
+        return weights.clamp_min(self.config.eps)
+
+    def _topk_scores(self, acts: torch.Tensor, *, branch: int | None = None) -> torch.Tensor:
+        if not self.config.scale_topk_by_decoder_norm:
+            return acts
+        weights = self._score_weights(branch=branch).to(device=acts.device, dtype=acts.dtype)
+        return acts * weights
+
+    def encode(self, x: torch.Tensor, *, batch_topk: bool = True, k: int | None = None) -> torch.Tensor:
         acts = F.relu(self.preacts(x))
         if not batch_topk:
             return acts
-        return acts * batch_topk_mask(acts, self.config.k).to(dtype=acts.dtype)
+        scores = self._topk_scores(acts)
+        return acts * batch_topk_mask(scores, int(k or self.config.k)).to(dtype=acts.dtype)
 
     def encode_branch(
         self,
@@ -115,14 +142,16 @@ class BatchTopKCrossCoder(nn.Module):
         mean = self.input_mean[branch].to(device=x.device, dtype=dtype)
         pre = (x.to(dtype=dtype) - mean) @ self.encoder[branch] + self.encoder_bias
         acts = F.relu(pre)
+        scores = self._topk_scores(acts)
         if use_threshold and float(self.inference_threshold.item()) > 0:
-            return acts * (acts >= self.inference_threshold.to(device=acts.device)).to(acts.dtype)
+            threshold = self.inference_threshold.to(device=acts.device, dtype=scores.dtype)
+            return acts * (scores >= threshold).to(acts.dtype)
         per_item_k = int(topk or self.config.k)
         if per_item_k <= 0:
             return torch.zeros_like(acts)
         keep = min(per_item_k, acts.shape[-1])
-        cutoff = torch.topk(acts, k=keep, dim=-1).values[:, -1:]
-        return acts * (acts >= cutoff).to(acts.dtype)
+        cutoff = torch.topk(scores, k=keep, dim=-1).values[:, -1:]
+        return acts * (scores >= cutoff).to(acts.dtype)
 
     def decode(self, features: torch.Tensor) -> torch.Tensor:
         recon = torch.einsum("bl,lmd->bmd", features.to(dtype=self.decoder.dtype), self.decoder)
@@ -150,8 +179,13 @@ class BatchTopKCrossCoder(nn.Module):
             encoder = self.encoder[branch, :, selected]
             bias = self.encoder_bias[selected]
             selected_features = F.relu((x.to(dtype=dtype) - mean) @ encoder + bias)
-            threshold = self.inference_threshold.to(device=x.device, dtype=selected_features.dtype)
-            selected_features = selected_features * (selected_features >= threshold).to(selected_features.dtype)
+            if self.config.scale_topk_by_decoder_norm:
+                weights = self._score_weights().to(device=x.device, dtype=selected_features.dtype)[selected]
+                scores = selected_features * weights
+            else:
+                scores = selected_features
+            threshold = self.inference_threshold.to(device=x.device, dtype=scores.dtype)
+            selected_features = selected_features * (scores >= threshold).to(selected_features.dtype)
         else:
             features = self.encode_branch(x, branch=branch, use_threshold=use_threshold)
             selected_features = features[:, selected]
@@ -164,10 +198,11 @@ class BatchTopKCrossCoder(nn.Module):
         *,
         output_features: bool = False,
         return_preacts: bool = False,
+        k: int | None = None,
     ):
         pre = self.preacts(x)
         acts = F.relu(pre)
-        features = acts * batch_topk_mask(acts, self.config.k).to(dtype=acts.dtype)
+        features = acts * batch_topk_mask(self._topk_scores(acts), int(k or self.config.k)).to(dtype=acts.dtype)
         recon = self.decode(features)
         outs: list[torch.Tensor] = [recon]
         if output_features:
@@ -177,20 +212,23 @@ class BatchTopKCrossCoder(nn.Module):
         return tuple(outs) if len(outs) > 1 else recon
 
     @torch.no_grad()
-    def normalize_decoder_(self) -> None:
+    def normalize_decoder_(self, *, target_norm: float | None = None) -> None:
+        if target_norm is None:
+            target_norm = float(self.config.decoder_norm_target)
         flat = self.decoder.data.flatten(start_dim=1)
         norms = flat.norm(dim=1, keepdim=True).clamp_min(self.config.eps)
-        self.decoder.data.div_(norms.view(-1, 1, 1))
+        self.decoder.data.mul_(float(target_norm) / norms.view(-1, 1, 1))
 
     @torch.no_grad()
-    def update_threshold(self, preacts: torch.Tensor, *, step: int) -> None:
+    def update_threshold(self, preacts: torch.Tensor, *, step: int, k: int | None = None) -> None:
         if step < self.config.threshold_start_step:
             return
         acts = F.relu(preacts.detach())
-        budget = min(acts.numel(), int(acts.shape[0]) * int(self.config.k))
+        scores = self._topk_scores(acts)
+        budget = min(scores.numel(), int(scores.shape[0]) * int(k or self.config.k))
         if budget <= 0:
             return
-        batch_threshold = torch.topk(acts.flatten(), k=budget, largest=True).values[-1].float()
+        batch_threshold = torch.topk(scores.flatten(), k=budget, largest=True).values[-1].float()
         if int(self.threshold_updates.item()) == 0:
             self.inference_threshold.copy_(batch_threshold.cpu())
         else:
