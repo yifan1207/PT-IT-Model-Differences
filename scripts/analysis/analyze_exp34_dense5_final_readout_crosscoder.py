@@ -589,9 +589,14 @@ def run_synthesis(args: argparse.Namespace) -> dict[str, Any]:
     available = [row for row in model_rows if row.get("paper_gate") != "missing"]
     summary_rows = []
     if available:
-        summary_rows.append(_summary_row("Dense-5 family mean", available, "mean"))
-        no_gemma = [row for row in available if row.get("model") != "gemma3_4b"]
-        if no_gemma:
+        family_label = (
+            "Dense-5 family mean"
+            if {row.get("model") for row in available} == set(DENSE5_MODELS)
+            else f"Dense-{len(available)} available-family mean"
+        )
+        summary_rows.append(_summary_row(family_label, available, "mean"))
+        if any(row.get("model") == "gemma3_4b" for row in available):
+            no_gemma = [row for row in available if row.get("model") != "gemma3_4b"]
             summary_rows.append(_summary_row("Gemma-removed Dense-4", no_gemma, "mean"))
         summary_rows.append(_summary_row("family median", available, "median"))
         summary_rows.append(_summary_row("trimmed mean", available, "trimmed"))
