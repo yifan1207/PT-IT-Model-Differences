@@ -96,6 +96,10 @@ export HF_HOME="${HF_HOME:-/workspace/.cache/huggingface}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-${HF_HOME}}"
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 export MKL_NUM_THREADS="${MKL_NUM_THREADS:-8}"
+export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
+if [[ -z "${UV_PROJECT_ENVIRONMENT:-}" && "$ROOT" == /workspace/* ]]; then
+  export UV_PROJECT_ENVIRONMENT="/tmp/exp34_uv_venv"
+fi
 
 mkdir -p "$RUN_ROOT/logs" "$OUT_DIR"
 
