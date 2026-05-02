@@ -65,11 +65,15 @@ CONDITIONS = {
     "B_early_raw": ConditionSpec("B_early_raw", "pt", "it", "early"),
     "B_mid_raw": ConditionSpec("B_mid_raw", "pt", "it", "mid"),
     "B_late_raw": ConditionSpec("B_late_raw", "pt", "it", "late"),
+    "B_last3_raw": ConditionSpec("B_last3_raw", "pt", "it", "last3"),
+    "B_last1_raw": ConditionSpec("B_last1_raw", "pt", "it", "last1"),
     "B_midlate_raw": ConditionSpec("B_midlate_raw", "pt", "it", "midlate"),
     "C_it_chat": ConditionSpec("C_it_chat", "it", None, None),
     "D_early_ptswap": ConditionSpec("D_early_ptswap", "it", "pt", "early"),
     "D_mid_ptswap": ConditionSpec("D_mid_ptswap", "it", "pt", "mid"),
     "D_late_ptswap": ConditionSpec("D_late_ptswap", "it", "pt", "late"),
+    "D_last3_ptswap": ConditionSpec("D_last3_ptswap", "it", "pt", "last3"),
+    "D_last1_ptswap": ConditionSpec("D_last1_ptswap", "it", "pt", "last1"),
     "D_midlate_ptswap": ConditionSpec("D_midlate_ptswap", "it", "pt", "midlate"),
 }
 
@@ -83,6 +87,8 @@ def _window_defs(model_name: str, n_layers: int) -> dict[str, tuple[int, int]]:
         "exp11_early": DEPTH_ABLATION_WINDOWS[model_name]["early"],
         "exp11_mid": DEPTH_ABLATION_WINDOWS[model_name]["mid"],
         "exp11_late": DEPTH_ABLATION_WINDOWS[model_name]["late"],
+        "terminal_last3": (n_layers - 3, n_layers),
+        "terminal_last1": (n_layers - 1, n_layers),
     }
 
 
@@ -117,6 +123,11 @@ def _prompt_for_condition(
 def _graft_window(model_name: str, condition: ConditionSpec) -> tuple[int, int] | None:
     if condition.graft_kind is None:
         return None
+    spec = get_spec(model_name)
+    if condition.graft_kind == "last3":
+        return spec.n_layers - 3, spec.n_layers
+    if condition.graft_kind == "last1":
+        return spec.n_layers - 1, spec.n_layers
     if condition.graft_kind == "earlymid":
         early_start, early_end = DEPTH_ABLATION_WINDOWS[model_name]["early"]
         mid_start, mid_end = DEPTH_ABLATION_WINDOWS[model_name]["mid"]

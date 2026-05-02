@@ -181,6 +181,27 @@ def _late_boundary(model_name: str) -> int:
     return int(DEPTH_ABLATION_WINDOWS[model_name]["late"][0])
 
 
+def _boundary_metadata(
+    *,
+    boundary_layer: int,
+    n_layers: int,
+    override: int | None,
+    experiment_name: str | None = None,
+    boundary_mode: str | None = None,
+) -> dict[str, Any]:
+    source = "cli_override" if override is not None else "depth_ablation_windows"
+    experiment = experiment_name or (
+        "exp29_last3_stack_factorial" if override is not None else "exp23_midlate_interaction_suite"
+    )
+    return {
+        "experiment": experiment,
+        "boundary_mode": boundary_mode,
+        "boundary_layer": int(boundary_layer),
+        "boundary_source": source,
+        "downstream_stack": f"layers_{int(boundary_layer)}_{int(n_layers) - 1}_plus_readout",
+    }
+
+
 def _token_text(tokenizer: Any, token_id: int) -> str:
     return tokenizer.decode([int(token_id)], skip_special_tokens=False, clean_up_tokenization_spaces=False)
 
@@ -450,11 +471,30 @@ def collect_manifest_record(
     device: torch.device,
     collect_trajectories: bool,
     include_noop_patch: bool,
+    boundary_layer_override: int | None = None,
+    experiment_name: str | None = None,
+    boundary_mode: str | None = None,
 ) -> dict[str, Any]:
     prompt_id = str(manifest_record.get("prompt_id"))
-    boundary_layer = _late_boundary(model_name)
     pt_layers = steering_adapter.get_layers(models["pt"])
     it_layers = steering_adapter.get_layers(models["it"])
+    boundary_layer = (
+        int(boundary_layer_override)
+        if boundary_layer_override is not None
+        else _late_boundary(model_name)
+    )
+    if boundary_layer < 0 or boundary_layer >= min(len(pt_layers), len(it_layers)):
+        raise ValueError(
+            f"Boundary layer {boundary_layer} is outside {model_name} layer range "
+            f"pt={len(pt_layers)} it={len(it_layers)}"
+        )
+    boundary_info = _boundary_metadata(
+        boundary_layer=boundary_layer,
+        n_layers=min(len(pt_layers), len(it_layers)),
+        override=boundary_layer_override,
+        experiment_name=experiment_name,
+        boundary_mode=boundary_mode,
+    )
     layer_map = {"pt": pt_layers, "it": it_layers}
     adapter = steering_adapter.adapter
     raw_prompt = get_prompt_for_variant(
@@ -496,6 +536,7 @@ def collect_manifest_record(
                 "event": event,
                 "valid": False,
                 "validation": validation,
+                **boundary_info,
                 "cells": {},
             }
             event_cache[cache_key] = payload
@@ -628,7 +669,7 @@ def collect_manifest_record(
             "event": event,
             "valid": True,
             "validation": validation,
-            "boundary_layer": boundary_layer,
+            **boundary_info,
             "prefix_length": len(prefix_ids),
             "full_length": len(full_ids),
             "pt_token_id": y_pt,
@@ -642,7 +683,7 @@ def collect_manifest_record(
         events_out[kind] = payload
 
     return {
-        "experiment": "exp23_midlate_interaction_suite",
+        **boundary_info,
         "part": "residual_factorial",
         "model": model_name,
         "prompt_id": prompt_id,
@@ -702,6 +743,19 @@ def run_worker(args: argparse.Namespace) -> None:
         "pt": steering_adapter.real_token_mask(pt_tokenizer, device, pt_model),
         "it": steering_adapter.real_token_mask(it_tokenizer, device, it_model),
     }
+    boundary_layer = (
+        int(args.boundary_layer_override)
+        if args.boundary_layer_override is not None
+        else _late_boundary(args.model)
+    )
+    log.info(
+        "[exp23] residual boundary model=%s layer=%d source=%s mode=%s experiment=%s",
+        args.model,
+        boundary_layer,
+        "cli_override" if args.boundary_layer_override is not None else "depth_ablation_windows",
+        args.boundary_mode,
+        args.experiment_name,
+    )
     readouts = _make_readouts(
         models=models,
         tokenizers=tokenizers,
@@ -745,6 +799,9 @@ def run_worker(args: argparse.Namespace) -> None:
                     device=device,
                     collect_trajectories=args.collect_trajectories,
                     include_noop_patch=not args.no_noop_patch,
+                    boundary_layer_override=args.boundary_layer_override,
+                    experiment_name=args.experiment_name,
+                    boundary_mode=args.boundary_mode,
                 )
                 fout.write(json.dumps(result, separators=(",", ":")) + "\n")
                 fout.flush()
@@ -788,6 +845,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--event-kinds", nargs="*", choices=list(DEFAULT_EVENT_KINDS), default=list(DEFAULT_EVENT_KINDS))
     parser.add_argument("--collect-trajectories", action="store_true")
     parser.add_argument("--no-noop-patch", action="store_true")
+    parser.add_argument(
+        "--boundary-layer-override",
+        type=int,
+        default=None,
+        help=(
+            "Patch at this transformer-block input instead of the model's default late-window "
+            "boundary. Used by Exp29 to test Llama layers 29-31 plus readout."
+        ),
+    )
+    parser.add_argument(
+        "--experiment-name",
+        default=None,
+        help="Optional experiment label stored in output metadata.",
+    )
+    parser.add_argument(
+        "--boundary-mode",
+        default=None,
+        help="Optional boundary-mode label stored in output metadata, e.g. full_late, last3, last1.",
+    )
     parser.add_argument("--merge-only", action="store_true")
     return parser.parse_args()
 
