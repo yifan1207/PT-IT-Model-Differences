@@ -1573,6 +1573,22 @@ def autointerp(
         client = OpenAI()
         packet = _build_autointerp_packet(row)
         user = (
+            "Important role context: this feature may be either a causally selected feature or a control "
+            "feature sampled from the same trained crosscoder. If it is a control and the evidence is weak, "
+            "do not invent a meaning. It is acceptable, and often correct, to label it as 'no coherent pattern: ...' "
+            "with low confidence. Causal features also require concrete evidence; do not flatter them.\n\n"
+            "Calibration examples:\n"
+            "1. If top examples repeatedly show a newline followed by '-' or '*' and promoted tokens include "
+            "newline/list markers, use a label like 'bullet-list newline/item boundary', not 'formatting'.\n"
+            "2. If examples center on ':' after fields such as Answer, Reason, or Name, use "
+            "'colon after field label in response template', not 'punctuation'.\n"
+            "3. If examples mix URLs, numbers, rare Unicode, and common continuation tokens with no stable "
+            "semantic or structural pattern, use 'no coherent pattern: dense tokenization/artifact mixture' "
+            "and paper_example_quality='not_showcase'.\n"
+            "4. If examples are all multiple-choice labels like '(A)', 'B.', or option openings, use "
+            "'multiple-choice option label boundary'.\n"
+            "5. If the feature mainly fires on generic high-frequency words across unrelated contexts, use "
+            "'no coherent pattern: common-token frequency feature'.\n\n"
             "Given this feature packet, produce JSON with these keys:\n"
             "- feature_id\n"
             "- specific_label: 5-14 words, concrete and testable. Bad: 'formatting feature'. "
@@ -1762,11 +1778,132 @@ def validate_labels(
         "mean_accuracy": _mean([row.get("accuracy") for row in results]),
         "mean_auroc": _mean([row.get("auroc") for row in results]),
         "by_role": _aggregate_validation_by_role(results),
+        "by_control_kind": _aggregate_validation_by_control_kind(results),
         "baseline": baseline,
         "feature_results": results,
     }
     _write_json(run_dir / "autointerp" / "label_validation.json", payload)
     return payload
+
+
+def group_labels(
+    *,
+    out_root: Path,
+    run_name: str,
+    model: str,
+) -> dict[str, Any]:
+    run_dir = _run_dir(out_root, run_name)
+    labels_path = run_dir / "autointerp" / "llm_feature_labels.jsonl"
+    labels = _dashboard_rows(labels_path)
+    dashboards = {row.get("feature_id"): row for row in _dashboard_rows(run_dir / "dashboards" / "feature_dashboards.jsonl")}
+    out_dir = run_dir / "autointerp"
+    if not labels:
+        payload = {"status": "skipped_no_labels"}
+        _write_json(out_dir / "label_groups.json", payload)
+        return payload
+    if not os.environ.get("OPENAI_API_KEY"):
+        payload = {"status": "skipped_no_openai_api_key", "n_labels": len(labels)}
+        _write_json(out_dir / "label_groups.json", payload)
+        return payload
+
+    compact = []
+    for label in labels:
+        dash = dashboards.get(label.get("feature_id"), {})
+        compact.append(
+            {
+                "feature_id": label.get("feature_id"),
+                "role": label.get("role"),
+                "control_kind": label.get("control_kind", ""),
+                "model": label.get("model"),
+                "score_mean": dash.get("score_mean"),
+                "density": dash.get("dashboard_density_bin") or dash.get("density_bin"),
+                "specific_label": label.get("specific_label") or label.get("label"),
+                "coarse_category": label.get("coarse_category") or label.get("category"),
+                "fires_on": label.get("fires_on"),
+                "output_effect": label.get("output_effect"),
+                "artifact_risk": label.get("artifact_risk"),
+                "confidence": label.get("confidence"),
+                "paper_example_quality": label.get("paper_example_quality"),
+                "ambiguity": label.get("counterexamples_or_ambiguity"),
+            }
+        )
+
+    from openai import OpenAI
+
+    client = OpenAI()
+    system = (
+        "You cluster fine-grained mechanistic feature labels. Build niche subgroups; do not collapse "
+        "everything into broad categories like formatting or punctuation. Return only JSON."
+    )
+    user = json.dumps(
+        {
+            "task": (
+                "Create fine-grained subgroups for these crosscoder feature labels. "
+                "Use the specific labels and evidence fields, not only coarse_category. "
+                "Controls may be incoherent; put weak random/control features into explicit "
+                "'no coherent pattern' or 'generic frequency artifact' groups when warranted. "
+                "Prefer 10-25 subgroups. Each subgroup should be narrow enough to be paper-useful."
+            ),
+            "group_schema": {
+                "group_id": "short stable id like newline_list_boundary",
+                "group_name": "human-readable niche subgroup",
+                "parent_category": "coarse category",
+                "description": "one sentence",
+                "paper_use": "showcase | support | diagnostic_only | reject",
+            },
+            "assignment_schema": {
+                "feature_id": "feature id",
+                "group_id": "one group_id",
+                "assignment_confidence": 0.0,
+                "reason": "short reason",
+            },
+            "records": compact,
+            "return_schema": {"groups": [], "assignments": []},
+        },
+        ensure_ascii=False,
+    )
+    try:
+        response = _chat_json_completion(
+            client,
+            model=model,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        )
+        payload = json.loads(response.choices[0].message.content or "{}")
+        payload["status"] = "complete"
+        payload["model"] = model
+    except Exception as exc:
+        payload = {"status": "failed", "model": model, "error": str(exc)[:1000], "n_labels": len(labels)}
+        _write_json(out_dir / "label_groups.json", payload)
+        return payload
+
+    assignments = {
+        str(row.get("feature_id")): row
+        for row in payload.get("assignments", [])
+        if row.get("feature_id") is not None
+    }
+    groups = {str(row.get("group_id")): row for row in payload.get("groups", []) if row.get("group_id") is not None}
+    grouped_labels = []
+    for label in labels:
+        assignment = assignments.get(str(label.get("feature_id")), {})
+        group = groups.get(str(assignment.get("group_id")), {})
+        updated = dict(label)
+        updated["induced_group_id"] = assignment.get("group_id", "")
+        updated["induced_group_name"] = group.get("group_name", "")
+        updated["induced_group_parent_category"] = group.get("parent_category", updated.get("category", ""))
+        updated["induced_group_paper_use"] = group.get("paper_use", "")
+        updated["induced_group_assignment_confidence"] = assignment.get("assignment_confidence", "")
+        updated["induced_group_assignment_reason"] = assignment.get("reason", "")
+        grouped_labels.append(updated)
+    _write_json(out_dir / "label_groups.json", payload)
+    _write_jsonl(out_dir / "llm_feature_labels_grouped.jsonl", grouped_labels)
+    _write_csv(out_dir / "llm_feature_label_grouped_summary.csv", grouped_labels)
+    return {
+        "status": payload.get("status"),
+        "model": model,
+        "n_labels": len(labels),
+        "n_groups": len(groups),
+        "n_assignments": len(assignments),
+    }
 
 
 def _auroc(y_true: list[int], y_score: list[float]) -> float | None:
@@ -1807,6 +1944,22 @@ def _aggregate_validation_by_role(results: list[dict[str, Any]]) -> dict[str, An
     }
 
 
+def _aggregate_validation_by_control_kind(results: list[dict[str, Any]]) -> dict[str, Any]:
+    by_kind: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in results:
+        if row.get("role") != "control":
+            continue
+        by_kind[str(row.get("control_kind", ""))].append(row)
+    return {
+        kind: {
+            "n": len(rows),
+            "mean_accuracy": _mean(row.get("accuracy") for row in rows),
+            "mean_auroc": _mean(row.get("auroc") for row in rows),
+        }
+        for kind, rows in by_kind.items()
+    }
+
+
 def _validation_baseline(results: list[dict[str, Any]]) -> dict[str, Any]:
     # The LLM validation prompt compares labels to context. With no second LLM pass,
     # the defensible baseline is chance plus control-feature performance.
@@ -1831,7 +1984,8 @@ def analyze(
     run_name: str,
 ) -> dict[str, Any]:
     run_dir = _run_dir(out_root, run_name)
-    labels = _dashboard_rows(run_dir / "autointerp" / "llm_feature_labels.jsonl")
+    grouped_label_path = run_dir / "autointerp" / "llm_feature_labels_grouped.jsonl"
+    labels = _dashboard_rows(grouped_label_path if grouped_label_path.exists() else run_dir / "autointerp" / "llm_feature_labels.jsonl")
     dashboards = _dashboard_rows(run_dir / "dashboards" / "feature_dashboards.jsonl")
     validation = _read_json(run_dir / "autointerp" / "label_validation.json", {}) or {}
     dash_by_id = {row.get("feature_id"): row for row in dashboards}
@@ -1845,10 +1999,19 @@ def analyze(
                 "layer": label.get("layer"),
                 "latent_id": label.get("latent_id"),
                 "role": label.get("role"),
+                "control_kind": label.get("control_kind", ""),
                 "category": label.get("category"),
+                "coarse_category": label.get("coarse_category") or label.get("category"),
                 "label": label.get("label"),
+                "specific_label": label.get("specific_label") or label.get("label"),
                 "confidence": label.get("confidence"),
                 "label_source": label.get("label_source"),
+                "artifact_risk": label.get("artifact_risk"),
+                "paper_example_quality": label.get("paper_example_quality"),
+                "induced_group_id": label.get("induced_group_id", ""),
+                "induced_group_name": label.get("induced_group_name", ""),
+                "induced_group_parent_category": label.get("induced_group_parent_category", ""),
+                "induced_group_paper_use": label.get("induced_group_paper_use", ""),
                 "score_mean": dash.get("score_mean"),
                 "density_bin": dash.get("density_bin"),
                 "dashboard_density_bin": dash.get("dashboard_density_bin"),
@@ -1857,6 +2020,7 @@ def analyze(
             }
         )
     category_rows = _category_table(rows)
+    group_rows = _group_table(rows)
     summary = {
         "run_name": run_name,
         "n_dashboard_features": len(dashboards),
@@ -1868,12 +2032,20 @@ def analyze(
             row["category"]: row["causal_score_mean_sum"]
             for row in category_rows
         },
+        "group_counts": _count_by(rows, "induced_group_name"),
+        "group_score_mass": {
+            row["group_name"]: row["causal_score_mean_sum"]
+            for row in group_rows
+            if row["group_name"]
+        },
+        "control_kind_counts": _count_by(rows, "control_kind"),
         "paper_integration_recommendation": _paper_recommendation(rows, validation),
     }
     analysis_dir = run_dir / "analysis"
     _write_csv(analysis_dir / "feature_category_table.csv", category_rows)
+    _write_csv(analysis_dir / "feature_group_table.csv", group_rows)
     _write_json(analysis_dir / "model_diff_feature_summary.json", summary)
-    _write_paper_note(analysis_dir / "exp39_paper_note.md", summary, category_rows)
+    _write_paper_note(analysis_dir / "exp39_paper_note.md", summary, category_rows, group_rows)
     return summary
 
 
@@ -1891,12 +2063,59 @@ def _category_table(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "n_total": len(group),
                 "n_causal": len(causal),
                 "n_control": len(controls),
+                "n_control_matched": sum(1 for row in controls if row.get("control_kind") == "matched_noncausal"),
+                "n_control_random_active": sum(
+                    1 for row in controls if row.get("control_kind") == "random_active_noncausal"
+                ),
                 "causal_score_mean_sum": sum(_float(row, "score_mean") for row in causal),
                 "mean_confidence": _mean(row.get("confidence") for row in group),
                 "models": ",".join(sorted({str(row.get("model")) for row in group})),
                 "density_bins": json.dumps(_count_by(group, "dashboard_density_bin")),
             }
         )
+    return out
+
+
+def _group_table(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        group_name = str(row.get("induced_group_name") or "")
+        if not group_name:
+            continue
+        grouped[group_name].append(row)
+    out = []
+    for group_name, group in sorted(grouped.items()):
+        causal = [row for row in group if row.get("role") == "causal"]
+        controls = [row for row in group if row.get("role") == "control"]
+        out.append(
+            {
+                "group_name": group_name,
+                "group_id": next((str(row.get("induced_group_id")) for row in group if row.get("induced_group_id")), ""),
+                "parent_category": next(
+                    (str(row.get("induced_group_parent_category")) for row in group if row.get("induced_group_parent_category")),
+                    "",
+                ),
+                "paper_use": next(
+                    (str(row.get("induced_group_paper_use")) for row in group if row.get("induced_group_paper_use")),
+                    "",
+                ),
+                "n_total": len(group),
+                "n_causal": len(causal),
+                "n_control": len(controls),
+                "n_control_matched": sum(1 for row in controls if row.get("control_kind") == "matched_noncausal"),
+                "n_control_random_active": sum(
+                    1 for row in controls if row.get("control_kind") == "random_active_noncausal"
+                ),
+                "causal_score_mean_sum": sum(_float(row, "score_mean") for row in causal),
+                "mean_confidence": _mean(row.get("confidence") for row in group),
+                "models": ",".join(sorted({str(row.get("model")) for row in group})),
+                "example_labels": " | ".join(
+                    str(row.get("specific_label") or row.get("label"))
+                    for row in sorted(group, key=lambda r: -_float(r, "score_mean"))[:4]
+                ),
+            }
+        )
+    out.sort(key=lambda row: (-int(row["n_causal"]), -float(row["causal_score_mean_sum"])))
     return out
 
 
@@ -1912,7 +2131,12 @@ def _paper_recommendation(rows: list[dict[str, Any]], validation: dict[str, Any]
     return "appendix_or_future_work_until_validation_strengthens"
 
 
-def _write_paper_note(path: Path, summary: dict[str, Any], category_rows: list[dict[str, Any]]) -> None:
+def _write_paper_note(
+    path: Path,
+    summary: dict[str, Any],
+    category_rows: list[dict[str, Any]],
+    group_rows: list[dict[str, Any]] | None = None,
+) -> None:
     lines = ["# Exp39 Paper Note", ""]
     lines.append(f"Recommendation: `{summary.get('paper_integration_recommendation')}`")
     lines.append("")
@@ -1925,6 +2149,15 @@ def _write_paper_note(path: Path, summary: dict[str, Any], category_rows: list[d
             f"- {row['category']}: n_causal={row['n_causal']}, "
             f"score_mass={float(row['causal_score_mean_sum']):.4f}, models={row['models']}"
         )
+    if group_rows:
+        lines.append("")
+        lines.append("## Fine-Grained Groups")
+        for row in group_rows[:15]:
+            lines.append(
+                f"- {row['group_name']}: n_causal={row['n_causal']}, "
+                f"matched_controls={row['n_control_matched']}, random_active_controls={row['n_control_random_active']}, "
+                f"paper_use={row['paper_use']}"
+            )
     lines.append("")
     lines.append("Use cautious wording: these are causally selected IT-weighted terminal features, not canonical atoms.")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1954,6 +2187,7 @@ def main_select() -> None:
     parser.add_argument("--families", nargs="*", default=None)
     parser.add_argument("--top-n", type=int, default=25)
     parser.add_argument("--control-per-feature", type=int, default=1)
+    parser.add_argument("--random-control-per-feature", type=int, default=1)
     parser.add_argument("--seed", type=int, default=39)
     args = parser.parse_args()
     payload = select_features(
@@ -1962,6 +2196,7 @@ def main_select() -> None:
         families=_families_from_args(args.families),
         top_n=args.top_n,
         control_per_feature=args.control_per_feature,
+        random_control_per_feature=args.random_control_per_feature,
         seed=args.seed,
     )
     print(json.dumps(payload, indent=2, default=_json_default))
@@ -2047,6 +2282,16 @@ def main_autointerp() -> None:
     print(json.dumps(payload, indent=2, default=_json_default))
 
 
+def main_group_labels() -> None:
+    parser = argparse.ArgumentParser(description="Cluster Exp39 fine-grained labels into subgroups")
+    parser.add_argument("--out-root", type=Path, default=DEFAULT_OUT_ROOT)
+    parser.add_argument("--run-name", required=True)
+    parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL", "gpt-5.5"))
+    args = parser.parse_args()
+    payload = group_labels(out_root=args.out_root, run_name=args.run_name, model=args.model)
+    print(json.dumps(payload, indent=2, default=_json_default))
+
+
 def main_validate() -> None:
     parser = argparse.ArgumentParser(description="Validate LLM labels on held-out dashboard contexts")
     parser.add_argument("--out-root", type=Path, default=DEFAULT_OUT_ROOT)
@@ -2081,6 +2326,7 @@ def main_run_all() -> None:
     parser.add_argument("--families", nargs="*", default=None)
     parser.add_argument("--top-n", type=int, default=25)
     parser.add_argument("--control-per-feature", type=int, default=1)
+    parser.add_argument("--random-control-per-feature", type=int, default=1)
     parser.add_argument("--n-prompts", type=int, default=3000)
     args, rest = parser.parse_known_args()
     families = _families_from_args(args.families)
@@ -2091,6 +2337,7 @@ def main_run_all() -> None:
         families=families,
         top_n=args.top_n,
         control_per_feature=args.control_per_feature,
+        random_control_per_feature=args.random_control_per_feature,
         seed=39,
     )
     dashboard_args = argparse.Namespace(
@@ -2141,6 +2388,11 @@ def main_run_all() -> None:
         max_features=None,
         include_controls=True,
         parallelism=parallelism,
+    )
+    group_labels(
+        out_root=args.out_root,
+        run_name=args.run_name,
+        model=os.environ.get("OPENAI_MODEL", "gpt-5.5"),
     )
     validate_labels(
         out_root=args.out_root,

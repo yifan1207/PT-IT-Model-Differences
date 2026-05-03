@@ -11,6 +11,7 @@ OUT_ROOT="${OUT_ROOT:-results/exp39_causal_feature_interpretation}"
 FAMILIES="${FAMILIES:-gemma3_4b llama31_8b mistral_7b qwen3_4b}"
 TOP_N="${TOP_N:-25}"
 CONTROL_PER_FEATURE="${CONTROL_PER_FEATURE:-1}"
+RANDOM_CONTROL_PER_FEATURE="${RANDOM_CONTROL_PER_FEATURE:-1}"
 N_PROMPTS="${N_PROMPTS:-3000}"
 MAX_SEQ_LEN="${MAX_SEQ_LEN:-512}"
 APPEND_PT_GREEDY_TOKENS="${APPEND_PT_GREEDY_TOKENS:-384}"
@@ -200,7 +201,8 @@ $PY_RUNNER -m src.poc.exp39_causal_feature_interpretation select \
   --run-name "$RUN_NAME" \
   --families "${FAMILY_ARR[@]}" \
   --top-n "$TOP_N" \
-  --control-per-feature "$CONTROL_PER_FEATURE"
+  --control-per-feature "$CONTROL_PER_FEATURE" \
+  --random-control-per-feature "$RANDOM_CONTROL_PER_FEATURE"
 
 mkdir -p "${OUT_ROOT}/${RUN_NAME}/logs"
 pids=()
@@ -259,6 +261,10 @@ if [[ "$RUN_AUTOINTERP" == "1" ]]; then
     --model "$OPENAI_MODEL" \
     --parallelism "$OPENAI_PARALLELISM" \
     --include-controls
+  $PY_RUNNER -m src.poc.exp39_causal_feature_interpretation group-labels \
+    --out-root "$OUT_ROOT" \
+    --run-name "$RUN_NAME" \
+    --model "$OPENAI_MODEL"
   $PY_RUNNER -m src.poc.exp39_causal_feature_interpretation validate \
     --out-root "$OUT_ROOT" \
     --run-name "$RUN_NAME" \

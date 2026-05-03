@@ -462,6 +462,46 @@ def exp23_dense6_position(stratum: str, column: str) -> NumberFn:
     return _read
 
 
+def exp40_effect(scope: str, metric: str, column: str = "estimate", readout: str = "common_it") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp40_prelate_commitment_control/"
+            "exp40_exp20_layerwise_proxy_20260503_110001/analysis/effects.csv",
+        )
+        for row in rows:
+            if (
+                row["readout"] == readout
+                and row["analysis"] == "scope"
+                and row["scope"] == scope
+                and row["metric"] == metric
+            ):
+                return float(row[column])
+        raise KeyError((scope, metric, column, readout))
+
+    return _read
+
+
+def exp40_regression(scope: str, metric: str, column: str = "estimate", readout: str = "common_it") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp40_prelate_commitment_control/"
+            "exp40_exp20_layerwise_proxy_20260503_110001/analysis/effects.csv",
+        )
+        for row in rows:
+            if (
+                row["readout"] == readout
+                and row["analysis"] == "regression"
+                and row["scope"] == scope
+                and row["metric"] == metric
+            ):
+                return float(row[column])
+        raise KeyError((scope, metric, column, readout))
+
+    return _read
+
+
 def exp23_position_family(stratum: str, model: str, column: str) -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
@@ -1082,6 +1122,78 @@ CHECKS: list[ClaimCheck] = [
             "interaction",
             "ci95_high",
         ),
+    ),
+    ClaimCheck(
+        "Exp40 no-commitment subset interaction",
+        "exp40 effects.csv",
+        2.433592810805311,
+        exp40_effect("boundary_it_le_zero", "interaction"),
+    ),
+    ClaimCheck(
+        "Exp40 no-commitment subset interaction CI low",
+        "exp40 effects.csv",
+        2.284572178945279,
+        exp40_effect("boundary_it_le_zero", "interaction", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp40 no-commitment subset interaction CI high",
+        "exp40 effects.csv",
+        2.58326602422306,
+        exp40_effect("boundary_it_le_zero", "interaction", "ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp40 lowest boundary-margin tercile interaction",
+        "exp40 effects.csv",
+        2.4115178659923044,
+        exp40_effect("boundary_it_low_tercile", "interaction"),
+    ),
+    ClaimCheck(
+        "Exp40 lowest boundary-margin tercile interaction CI low",
+        "exp40 effects.csv",
+        2.2632523066640764,
+        exp40_effect("boundary_it_low_tercile", "interaction", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp40 lowest boundary-margin tercile interaction CI high",
+        "exp40 effects.csv",
+        2.559536429649379,
+        exp40_effect("boundary_it_low_tercile", "interaction", "ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp40 state-level IT-upstream coefficient",
+        "exp40 effects.csv",
+        2.598430860276424,
+        exp40_regression("state_level_all_support", "it_upstream_provenance_coef"),
+    ),
+    ClaimCheck(
+        "Exp40 state-level IT-upstream coefficient CI low",
+        "exp40 effects.csv",
+        2.4881395571629077,
+        exp40_regression("state_level_all_support", "it_upstream_provenance_coef", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp40 state-level IT-upstream coefficient CI high",
+        "exp40 effects.csv",
+        2.7053516554242503,
+        exp40_regression("state_level_all_support", "it_upstream_provenance_coef", "ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp40 pair-level zero boundary-delta interaction",
+        "exp40 effects.csv",
+        1.8369208468503628,
+        exp40_regression("pair_level_delta_adjusted", "interaction_at_zero_boundary_delta"),
+    ),
+    ClaimCheck(
+        "Exp40 pair-level zero boundary-delta interaction CI low",
+        "exp40 effects.csv",
+        1.7253462438147371,
+        exp40_regression("pair_level_delta_adjusted", "interaction_at_zero_boundary_delta", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp40 pair-level zero boundary-delta interaction CI high",
+        "exp40 effects.csv",
+        1.9430040299977105,
+        exp40_regression("pair_level_delta_adjusted", "interaction_at_zero_boundary_delta", "ci95_high"),
     ),
     ClaimCheck(
         "Exp23 Gemma interaction",

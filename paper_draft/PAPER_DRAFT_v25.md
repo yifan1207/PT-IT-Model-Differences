@@ -117,6 +117,8 @@ The estimand is not just native-stack compatibility. Because both upstream rows 
 
 The 32B family is part of the Dense-6 core, not a separate pooled claim: Qwen2.5-32B alone gives a positive interaction of `+1.446` (`[+1.321, +1.569]`), with `+0.977` late effect from PT upstream and `+2.423` from IT upstream. The effect is therefore not restricted to 4B-8B models.
 
+**Pre-late commitment control.** The factorial is not just asking whether the IT late stack reads out an already-decided IT token. Exp40 joins the Exp23 interaction to a pre-late commitment proxy from the stored Exp20 layerwise readouts: the native `logit(t_IT)-logit(t_PT)` margin at the start of the late window. In `1,148` joined events, the IT boundary state does not yet favor `t_IT` by this proxy (`B_IT <= 0`), but the common-IT upstream x late interaction remains `+2.434` (`[+2.285, +2.583]`). The lowest within-family IT-boundary-margin tercile gives the same conclusion (`+2.412`, `[+2.263, +2.560]`). A state-level regression of the late-stack replacement effect on pre-late boundary margin, an IT-upstream indicator, and family fixed effects leaves a large IT-upstream coefficient (`+2.598`, `[+2.488, +2.705]`); a paired regression of the interaction on the PT->IT boundary-margin delta gives `+1.837` (`[+1.725, +1.943]`) at zero boundary-margin delta. Thus pre-late token commitment modulates the effect, but it does not explain it away.
+
 **Hybrid-state validation.** Because the off-diagonal cells are constructed hybrids, Exp36 tests whether the interaction behaves like a representation-mismatch artifact. The checks point the other way. Diagonal no-op reconstruction is exact over `5,966` checks; common-IT and common-PT readouts give nearly identical interactions (`+2.635` vs `+2.610` logits); rerunning the endpoint interaction gives `+2.649` (`[+2.548, +2.751]`), within `+0.013` logits of the Exp23 stored estimate. More directly, interpolating the boundary state from PT-shaped to IT-shaped gives a smooth aggregate dose response in late-stack advantage, from `+0.575` at the PT endpoint to `+3.223` at the IT endpoint (slope `+2.702`, `[+2.601, +2.799]`). The effect also survives pre-output low-anomaly filtering: the low-anomaly half has interaction `+2.784` (`[+2.642, +2.932]`), while a same-norm signed-permutation control is only `0.253x` the observed magnitude. These checks make a practical off-manifold mismatch explanation unlikely, but the estimand remains a constructed compatibility counterfactual rather than a complete natural-state circuit claim.
 
 **Label and position controls.** A PT/IT label-swap null preserves each prompt's four factorial cell values but randomly swaps PT/IT labels. On the five-family raw-record subset, the observed interaction is far outside the null (`p=5e-5` over 20,000 permutations; null 99.9th percentile `+0.239` logits). The result is also not only a first-token opening effect. Removing immediate position-0 divergences leaves a Dense-6 interaction of `+2.079` (`[+1.963, +2.194]`); restricting to generated position `>=3` gives `+1.434` (`[+1.300, +1.569]`); position `>=5` gives `+1.480` (`[+1.276, +1.684]`). Position changes the regime mix and the magnitude, but the direction remains positive.
@@ -351,6 +353,21 @@ The Exp37 first-divergence selection baselines are:
 | Random IT-rollout disagreement | `+1.962` `[+1.870, +2.057]` | `74%` |
 | Pre-divergence prefix, future token pair | `+0.082` `[-0.058, +0.215]` | `3%` |
 
+The Exp40 pre-late commitment control uses the stored Exp20 native layerwise margin at the start of the late window as a CPU-only boundary-commitment proxy, then joins it to the Exp23 Dense-5 residual-state factorial:
+
+- `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/summary.json`
+- `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/effects.csv`
+- `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/exp40_prelate_commitment_report.md`
+- `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/prelate_commitment_bins.png`
+
+| Exp40 scope/statistic | Result |
+|---|---:|
+| All joined events, common-IT interaction | `+2.635` `[+2.538, +2.735]` |
+| IT boundary margin `<= 0`, common-IT interaction | `+2.434` `[+2.285, +2.583]` |
+| Lowest IT-boundary-margin tercile, common-IT interaction | `+2.412` `[+2.263, +2.560]` |
+| State-level IT-upstream coefficient controlling boundary margin | `+2.598` `[+2.488, +2.705]` |
+| Pair-level interaction at zero boundary-margin delta | `+1.837` `[+1.725, +1.943]` |
+
 The content/reasoning stress test is:
 
 - `results/exp23_midlate_interaction_suite/exp23_content_reasoning_residual_20260427_0930_h100x8/analysis/exp23_summary.json`
@@ -416,6 +433,7 @@ The result is a local lineage case study: in this released OLMo-2 path, the meas
 | Off-manifold sanity audit | `scripts/analysis/analyze_exp23_offmanifold_sanity.py` | `results/paper_synthesis/exp23_offmanifold_sanity/` |
 | Exp36 hybrid-state validation | `scripts/run/run_exp36_offmanifold_validation_runpod.sh`; `scripts/analysis/analyze_exp36_offmanifold_validation.py` | `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/` |
 | Exp37 selection baselines | `scripts/run/run_exp37_random_prefix_baseline_runpod.sh`; `scripts/analysis/analyze_exp37_random_prefix_baseline.py` | `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/` |
+| Exp40 pre-late commitment control | `scripts/analysis/analyze_exp40_prelate_commitment_control.py`; exact collector in `src/poc/exp40_prelate_commitment_control/collect.py` | `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/` |
 | Endpoint-matched convergence gap | `scripts/analysis/build_exp22_endpoint_deconfounded_synthesis.py` | `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv` |
 | Late MLP random control | Exp19 analysis scripts | `results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/` |
 | Residual-opposition natural rollout | `scripts/analysis/analyze_exp27_natural_rollout_residual_opposition_ntp.py` | `results/exp27_natural_rollout_residual_opposition_ntp/exp27_full_dense5_combined_20260430_2050/analysis/` |
