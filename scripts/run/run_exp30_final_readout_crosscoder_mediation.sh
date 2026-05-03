@@ -551,13 +551,38 @@ run_analyze() {
     >"${root}/logs/analyze.log" 2>&1
 }
 
+has_causal_features() {
+  local root="$1"
+  local csv="${root}/feature_stats/causal_feature_scores.csv"
+  [[ -s "$csv" ]] || return 1
+  $PY_RUNNER - "$csv" <<'PY'
+import csv
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+with path.open("r", newline="") as handle:
+    reader = csv.DictReader(handle)
+    for _ in reader:
+        sys.exit(0)
+sys.exit(1)
+PY
+}
+
 run_score_grid() {
   local status=0
   local roots=("${RUN_ROOT}"/grid/*)
   for cfg_root in "${roots[@]}"; do
     [[ -d "$cfg_root" ]] || continue
     echo "[exp30] scoring grid config ${cfg_root}"
-    RUN_ROOT="$cfg_root" run_causal_rank || status=1
+    RUN_ROOT="$cfg_root" run_causal_rank || {
+      status=1
+      continue
+    }
+    if ! has_causal_features "$cfg_root"; then
+      echo "[exp30] no causal-ranked features for ${cfg_root}; skipping mediation/analyze"
+      continue
+    fi
     RUN_ROOT="$cfg_root" run_causal_mediate "$DEV_PROMPTS" "dev" || status=1
     RUN_ROOT="$cfg_root" run_analyze || status=1
   done

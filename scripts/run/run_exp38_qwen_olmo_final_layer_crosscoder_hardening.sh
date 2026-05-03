@@ -152,6 +152,7 @@ from pathlib import Path
 
 root = Path(sys.argv[1])
 rows = []
+seen_roots = set()
 summary_paths = (
     sorted(root.glob("*/*/analysis/summary.json"))
     + sorted(root.glob("*/*/selected_*/analysis/summary.json"))
@@ -167,8 +168,10 @@ for summary in summary_paths:
         metrics = cfg.get("metrics", {})
         layer = cfg.get("layer")
     gates = data.get("success_gates", {})
+    row_root = str(summary.parents[1])
+    seen_roots.add(row_root)
     rows.append({
-        "root": str(summary.parents[1]),
+        "root": row_root,
         "layer": layer,
         "ve_pt": metrics.get("heldout_variance_explained_pt"),
         "ve_it": metrics.get("heldout_variance_explained_it"),
@@ -178,6 +181,22 @@ for summary in summary_paths:
         "causal_matched_random200_interaction_drop_mean": gates.get("causal_matched_random200_interaction_drop_mean"),
         "causal_moderate_result": gates.get("causal_moderate_result"),
     })
+for grid_summary in sorted(root.glob("*/final1_pilot/grid_summary.json")):
+    for item in json.loads(grid_summary.read_text()):
+        row_root = str(grid_summary.parent / "grid" / item.get("config", ""))
+        if row_root in seen_roots:
+            continue
+        rows.append({
+            "root": row_root,
+            "layer": item.get("layer"),
+            "ve_pt": item.get("ve_pt"),
+            "ve_it": item.get("ve_it"),
+            "effective_l0": item.get("effective_l0"),
+            "alive_fraction": item.get("alive_fraction"),
+            "causal_top200_interaction_drop": None,
+            "causal_matched_random200_interaction_drop_mean": None,
+            "causal_moderate_result": "no_causal_rank_features_or_not_scored",
+        })
 out_dir = root / "analysis"
 out_dir.mkdir(parents=True, exist_ok=True)
 (out_dir / "exp38_summary.json").write_text(json.dumps(rows, indent=2) + "\n")
