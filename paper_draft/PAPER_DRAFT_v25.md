@@ -20,15 +20,17 @@ We give three convergent measurements that, taken together, show the instruct ch
 
 The third signature is the central paired-checkpoint intervention test. We define the **first-divergence prefix** as the earliest shared-history prefix where PT and IT prefer different next tokens. At that prefix we cross the upstream residual state (`U_PT` or `U_IT`) with the downstream late stack (`L_PT` or `L_IT`) and score the margin `logit(t_IT) - logit(t_PT)`. If the base/instruct contrast were well summarized by a portable late-only effect, the IT late stack should add similar IT-token margin from either upstream state. It does not: across six dense PT/IT pairs the upstream x late interaction is positive in every family, although the magnitude is family-dependent and largest in Gemma.
 
-The contribution is therefore not a new claim that late computation reads upstream state. It is a paired-checkpoint model-diffing result: released base/instruct contrasts differ in next-token formation through a window-level middle-to-late handoff. We use *handoff* operationally: middle-positioned MLP substitutions are more tied to divergent-token identity, while late and terminal MLPs shape the final margin. The evidence is intervention-scoped: it estimates effects on specified next-token readouts in constructed forward passes, not a complete feature-level circuit.
+The contribution is therefore not a new claim that late computation reads upstream state. It is a paired-checkpoint model-diffing result: released base/instruct contrasts differ in next-token formation through a window-level middle-to-late handoff. We use *handoff* operationally: middle-positioned MLP substitutions are more tied to divergent-token identity, while late and terminal MLPs shape the final margin. The evidence is intervention-scoped: it estimates effects on specified next-token readouts in constructed forward passes, not feature-level circuit recovery.
 
 **Contributions.** The named object of this paper is the **paired-checkpoint first-divergence factorial**: a local counterfactual estimand for how a released base/instruct contrast differs in next-token formation at the exact token where PT and IT first disagree. The other analyses triangulate why that estimand behaves as it does.
 
 1. **Late refinement/readout is stronger on the IT side of the released pair.** Lad et al. (2025) document late residual sharpening as a general stage of inference; Joshi et al. (2025) document late confidence calibration. Neither compares paired PT/IT checkpoints at the same natural disagreement token. We show that this late-stage configuration is stronger in the IT side of 5/5 dense pairs: IT delayed stabilization is positive under endpoint-matched controls, late MLP `δ-cosine` is more residual-opposing in IT than PT in every family with family-dependent magnitude, and learned late MLP substitutions localize the delay where matched random projections do not (`+0.327` vs `+0.003` nats).
 2. **IT-specific ablation sensitivity of the late residual-opposing component.** Removing late residual-opposing MLP components causes a much larger true-token logit drop in IT than PT (`+7.37` vs `+0.83` logits; IT-PT difference `+6.54`) and hurts IT NLL while PT NLL remains compatible with zero (`+0.0432` vs `+0.0004`). Norm-preserving and same-magnitude random-removal controls preserve the asymmetry. This intervention asymmetry across paired checkpoints, with cross-family controls, has not previously been reported.
-3. **First-divergence factorial estimand.** First-divergence factorial diffing crosses upstream residual state with downstream late stack at the natural token where PT and IT first prefer different next tokens. Across six dense PT/IT pairs the upstream × late interaction is positive in every family, with heterogeneous magnitude (Gemma-removed `+1.71`, Dense-6 `+2.44`); it is label-aligned (`p=5×10⁻⁵`), persists at generated positions `≥3`, and dissociates from the simple late-only term, which flips negative on a factual/reasoning stress test while the interaction stays positive (`+1.81`). Middle-positioned MLP substitutions transfer divergent-token identity more often than late (`26%` vs `18%`); late and terminal MLPs dominate margin/readout. To our knowledge no prior paired-checkpoint diffing work measures this estimand.
+3. **First-divergence factorial estimand.** First-divergence factorial diffing crosses upstream residual state with downstream late stack at the natural token where PT and IT first prefer different next tokens. Across six dense PT/IT pairs the upstream × late interaction is positive in every family, with heterogeneous magnitude (Gemma-removed `+1.71`, Dense-6 `+2.44`); it is label-aligned (`p=5×10⁻⁵`), persists at generated positions `≥3`, and is not explained by arbitrary token-pair selection: random local disagreements retain only `63%` of the first-divergence value, while pre-divergence prefixes scored on the future divergent token pair are near zero. The interaction also dissociates from the simple late-only term, which flips negative on a factual/reasoning stress test while the interaction stays positive (`+1.81`). Middle-positioned MLP substitutions transfer divergent-token identity more often than late (`26%` vs `18%`); late and terminal MLPs dominate margin/readout. To our knowledge no prior paired-checkpoint diffing work measures this estimand.
 
 The first-divergence factorial is the new object; the supporting analyses separate its interpretation from a generic late-layer fact or simple patching artifact. Together they show a recurring PT-to-IT model-diff pattern across representative dense instruction-following descendants: released base/instruct contrasts differ through an upstream-conditioned, window-level handoff, not by adding a portable late-only effect. We use **IT** as shorthand for instruction-following post-trained descendants; the recipes are heterogeneous, so the main claim is about paired PT-versus-post-trained model diffs, not one training algorithm.
+
+**Reader map.** The paper has one central intervention: the first-divergence upstream x late factorial (§3.2). Section 3.1 explains why late refinement/readout is the right place to look; §3.2 tests the paired-checkpoint effect and validates it against the main artifacts; §3.3 explains the depth anatomy behind the effect; §3.4 shows the same estimand along one released OLMo-2 lineage. The appendices keep the full audit trail so the main text can focus on the evidence chain.
 
 ---
 
@@ -57,7 +59,7 @@ The primary estimand is the upstream x late interaction:
 
 `[Y(U_IT,L_IT) - Y(U_IT,L_PT)] - [Y(U_PT,L_IT) - Y(U_PT,L_PT)]`.
 
-Equivalently, it asks how much larger the IT-late-stack effect is when the upstream state is IT-shaped rather than PT-shaped. This is a difference-in-differences: it subtracts the PT-late-stack baseline under each upstream state, so it does not merely ask whether a native late stack works better on its native upstream distribution. Common-IT and common-PT readouts score all four cells with one fixed final norm, `lm_head`, and real-token mask; native readouts use each host checkpoint's own readout. Unless stated otherwise, the main factorial numbers use common-IT.
+Equivalently, first compare the two columns within each row: how much does replacing the PT late stack with the IT late stack change the IT-vs-PT token margin? Then compare those two row-wise effects. The interaction asks how much larger the IT-late-stack replacement effect is when the upstream state is IT-shaped rather than PT-shaped. This is a difference-in-differences: it subtracts the PT-late-stack baseline under each upstream state, so it does not merely ask whether a native late stack works better on its native upstream distribution. Common-IT and common-PT readouts score all four cells with one fixed final norm, `lm_head`, and real-token mask; native readouts use each host checkpoint's own readout. Unless stated otherwise, the main factorial numbers use common-IT.
 
 All raw-shared first-divergence and residual-state runs force both PT and IT branches to raw text and validate identical raw prompt token IDs before comparing residual states. Position 0 is therefore the first generated token after the full raw prompt, not a chat-template artifact.
 
@@ -71,7 +73,7 @@ All intervention language below is readout-scoped: replacing an upstream state, 
 
 ## 3. Results
 
-The results follow a claim ladder. Section 3.1 establishes a late refinement/readout signature and its IT-specific natural-rollout importance. Section 3.2 gives the primary paired-checkpoint intervention test at the first PT/IT divergent token, plus direct hybrid-state sanity checks. Section 3.3 decomposes the depth anatomy into identity, margin, and terminal readout components. Section 3.4 uses one released OLMo-2 lineage as a case study of how the same estimand appears during staged post-training.
+The results are ordered as a short evidence chain. Section 3.1 shows that late refinement/readout is stronger on the instruct side of released pairs. Section 3.2 is the central test: at the first PT/IT divergent token, it measures whether the IT late-stack effect is portable or upstream-conditioned. Section 3.3 explains the depth anatomy of that effect. Section 3.4 uses one released OLMo-2 lineage as a case study of how the same estimand appears during staged post-training.
 
 ### 3.1 Late Refinement/Readout Is Stronger in Base-to-Instruct Diffs
 
@@ -101,11 +103,11 @@ This section supports the existence and base-to-instruct strengthening of late r
 
 ### 3.2 First-Divergence Factorial: Late Computation Is Upstream-Conditioned
 
-**Claim.** At the first natural PT/IT next-token disagreement, IT late computation is not a portable late-only effect. It contributes much more IT-token margin when the upstream residual state is already IT-shaped.
+**Main estimand.** At the first natural PT/IT next-token disagreement, IT late computation is not a portable late-only effect. It contributes much more IT-token margin when the upstream residual state is already IT-shaped.
 
 Under common-IT readout, swapping in the IT late stack shifts the IT-vs-PT divergent-token margin by `+0.639` logits (`[+0.570, +0.709]`) from a PT upstream state, but by `+3.076` (`[+2.978, +3.174]`) from an IT upstream state. The Dense-6 upstream x late interaction is therefore `+2.437` logits (`[+2.353, +2.521]`). Because Gemma is the largest family-specific effect, we report the Gemma-removed Dense-5 estimate as the conservative magnitude headline: `+1.709` (`[+1.637, +1.780]`). The common-PT readout cross-check gives the same conclusion: interaction `+2.421` (`[+2.337, +2.506]`).
 
-The estimand is not just native-stack compatibility. Because both upstream rows include both late stacks, the interaction isolates how the *IT-minus-PT late-stack replacement effect* changes with upstream state. The remaining controls below then test whether that replacement effect is an artifact of readout choice, label orientation, hybrid mismatch, first-token selection, or arbitrary token-pair scoring.
+The estimand is not just native-stack compatibility. Because both upstream rows include both late stacks, the interaction isolates how the *IT-minus-PT late-stack replacement effect* changes with upstream state. The remaining controls test whether that replacement effect is an artifact of readout choice, label orientation, hybrid mismatch, pre-late token commitment, first-token/style support, or arbitrary token-pair scoring.
 
 ![Figure 4: First-divergence upstream x late interaction. The same IT late stack has a much larger IT-token margin effect from IT-shaped upstream state than from PT-shaped upstream state.](../results/paper_synthesis/exp23_dense6_core/exp23_dense6_interaction.png)
 
@@ -117,15 +119,25 @@ The estimand is not just native-stack compatibility. Because both upstream rows 
 
 The 32B family is part of the Dense-6 core, not a separate pooled claim: Qwen2.5-32B alone gives a positive interaction of `+1.446` (`[+1.321, +1.569]`), with `+0.977` late effect from PT upstream and `+2.423` from IT upstream. The effect is therefore not restricted to 4B-8B models.
 
-**Pre-late commitment control.** The factorial is not just asking whether the IT late stack reads out an already-decided IT token. Exp40 joins the Exp23 interaction to a pre-late commitment proxy from the stored Exp20 layerwise readouts: the native `logit(t_IT)-logit(t_PT)` margin at the start of the late window. In `1,148` joined events, the IT boundary state does not yet favor `t_IT` by this proxy (`B_IT <= 0`), but the common-IT upstream x late interaction remains `+2.434` (`[+2.285, +2.583]`). The lowest within-family IT-boundary-margin tercile gives the same conclusion (`+2.412`, `[+2.263, +2.560]`). A state-level regression of the late-stack replacement effect on pre-late boundary margin, an IT-upstream indicator, and family fixed effects leaves a large IT-upstream coefficient (`+2.598`, `[+2.488, +2.705]`); a paired regression of the interaction on the PT->IT boundary-margin delta gives `+1.837` (`[+1.725, +1.943]`) at zero boundary-margin delta. Thus pre-late token commitment modulates the effect, but it does not explain it away.
+**Pre-late commitment validation.** The factorial is not just asking whether the IT late stack reads out an already-decided IT token. Exp40 joins the Exp23 interaction to a pre-late commitment proxy from stored Exp20 layerwise readouts: the native `logit(t_IT)-logit(t_PT)` margin at the start of the late window. In `1,148` joined events, the IT boundary state does not yet favor `t_IT` by this proxy (`B_IT <= 0`), but the common-IT upstream x late interaction remains `+2.434` (`[+2.285, +2.583]`). The lowest within-family IT-boundary-margin tercile gives the same conclusion (`+2.412`, `[+2.263, +2.560]`). Commitment-adjusted regressions also stay positive: a state-level IT-upstream coefficient of `+2.598` (`[+2.488, +2.705]`) and a pair-level interaction of `+1.837` (`[+1.725, +1.943]`) at zero PT->IT boundary-margin delta. Pre-late token commitment modulates the effect, but it does not explain it away.
 
-**Hybrid-state validation.** Because the off-diagonal cells are constructed hybrids, Exp36 tests whether the interaction behaves like a representation-mismatch artifact. The checks point the other way. Diagonal no-op reconstruction is exact over `5,966` checks; common-IT and common-PT readouts give nearly identical interactions (`+2.635` vs `+2.610` logits); rerunning the endpoint interaction gives `+2.649` (`[+2.548, +2.751]`), within `+0.013` logits of the Exp23 stored estimate. More directly, interpolating the boundary state from PT-shaped to IT-shaped gives a smooth aggregate dose response in late-stack advantage, from `+0.575` at the PT endpoint to `+3.223` at the IT endpoint (slope `+2.702`, `[+2.601, +2.799]`). The effect also survives pre-output low-anomaly filtering: the low-anomaly half has interaction `+2.784` (`[+2.642, +2.932]`), while a same-norm signed-permutation control is only `0.253x` the observed magnitude. These checks make a practical off-manifold mismatch explanation unlikely, but the estimand remains a constructed compatibility counterfactual rather than a complete natural-state circuit claim.
+**Interpretation checks for the first-divergence factorial.** The controls below show that the signal is stable under changes of readout, support, position, domain, and hybrid-state diagnostics.
 
-**Label and position controls.** A PT/IT label-swap null preserves each prompt's four factorial cell values but randomly swaps PT/IT labels. On the five-family raw-record subset, the observed interaction is far outside the null (`p=5e-5` over 20,000 permutations; null 99.9th percentile `+0.239` logits). The result is also not only a first-token opening effect. Removing immediate position-0 divergences leaves a Dense-6 interaction of `+2.079` (`[+1.963, +2.194]`); restricting to generated position `>=3` gives `+1.434` (`[+1.300, +1.569]`); position `>=5` gives `+1.480` (`[+1.276, +1.684]`). Position changes the regime mix and the magnitude, but the direction remains positive.
+| Check | Validation result |
+|---|---|
+| Readout robustness | Common-PT readout gives the same interaction: `+2.421` `[+2.337, +2.506]`. |
+| 2x2 compatibility contrast | The interaction isolates the IT-minus-PT late-stack replacement effect under both upstream states. |
+| Pre-late commitment | Exp40 no/low pre-late commitment subsets remain large: `+2.434` and `+2.412`. |
+| Hybrid-state diagnostics | Exp36 diagonal reconstruction is exact; PT->IT interpolation slope is `+2.702`; low-anomaly half is `+2.784`; signed-permutation control is `0.253x`. |
+| Selection enrichment | Exp37 source-balanced random local disagreements retain only `63%`; pre-divergence future-token control is near zero (`3%`). |
+| Support significance | Position `>=3` remains `+1.434`, position `>=5` remains `+1.480`; selected-support audit finds `73.4%` substantive events and only `2.3%` pure surface-format pairs. |
+| Label alignment | Label-swap null gives `p=5e-5` over 20,000 permutations. |
+| Domain stress test | On factual/reasoning prompts, the late-only PT-upstream term is `-1.18`, but the interaction remains `+1.81`. |
+| Family heterogeneity | Every dense family is positive; the conservative Gemma-removed Dense-5 headline is `+1.709` `[+1.637, +1.780]`. |
 
-**Matched-prefix baselines.** Exp37 tests whether the first-divergence result is merely an arbitrary token-pair or generic local-disagreement artifact. It is not. Random local PT/IT disagreement prefixes also show an upstream x late interaction, indicating that the effect is a broader disagreement-regime phenomenon, but the true first-divergence point is substantially enriched: `+1.672` (`[+1.592, +1.751]`), about `63%` of the first-divergence value. Scoring the future first-divergence token pair on earlier shared prefixes where PT and IT had not yet diverged gives a near-zero interaction (`+0.082`, `[-0.058, +0.215]`, about `3%`). Thus first divergence is the earliest natural PT/IT disagreement point and a high-signal regime, not an arbitrary token-pair artifact.
+**Hybrid/readout validation.** Exp36 directly probes the practical off-manifold concern. Diagonal no-op reconstruction is exact over `5,966` checks, common-IT and common-PT endpoint interactions agree, and rerunning the endpoint gives `+2.649` (`[+2.548, +2.751]`), within `+0.013` logits of the stored Exp23 estimate. More importantly, interpolating the boundary state from PT-shaped to IT-shaped gives a smooth dose response in late-stack advantage (`+0.575` to `+3.223`; slope `+2.702`, `[+2.601, +2.799]`), the low-anomaly half retains the effect (`+2.784`, `[+2.642, +2.932]`), and a same-norm signed-permutation control is much smaller (`0.253x`). These checks validate the intervention as an intervention-scoped compatibility estimate, not as feature-level circuit recovery.
 
-**Stress test.** On factual/reasoning prompts, the simple late-only term from PT upstream moves against the IT token (`-1.18` logits, `[-1.26, -1.09]`), while the upstream x late interaction remains positive (`+1.81`, `[+1.72, +1.90]`). This is the key failure mode for a portable late-only summary: late IT computation can be weak or even counterproductive from the wrong upstream state while still being effective in its matched IT context.
+**Selection/support validation.** First divergence is intentionally selected: it is the earliest token where the released PT/IT pair changes preference under shared generated history. Exp37 shows that selection is not what explains the effect. Source-balanced random local PT/IT disagreement prefixes retain only `63%` of the first-divergence interaction (`+1.672`, `[+1.592, +1.751]`, versus `+2.649`, `[+2.552, +2.749]`), while scoring the future first-divergence token pair on earlier shared prefixes where PT and IT have not yet diverged gives a near-zero interaction (`+0.082`, `[-0.058, +0.215]`, about `3%`). The selected support is therefore a high-signal disagreement regime rather than an arbitrary token-pair artifact. It is also not mostly whitespace or punctuation: pure surface-format pairs are `2.3%`, and a stratified LLM audit estimates `73.4%` substantive events. Position changes the regime mix and magnitude, but not the sign: generated positions `>=3` and `>=5` remain positive. Finally, the factual/reasoning stress test shows why the interaction, rather than the simple late-only term, is the stable estimand: late-only from PT upstream is negative (`-1.18`), while the upstream x late interaction remains positive (`+1.81`).
 
 ### 3.3 Depth Anatomy: Identity, Margin, and Terminal Blocks
 
@@ -180,7 +192,7 @@ The fixed-support label-swap null passes the same orientation test as the main f
 
 ## 5. Scope and Next Tests
 
-The main claim is local to first-divergence next-token readouts. This is deliberate: the estimand measures the first token where a released PT/IT pair changes preference under shared history. Position-stratified and factual/reasoning results show the upstream x late interaction persists outside response-opening regimes, while its magnitude varies with position and prompt domain.
+The main claim is local to first-divergence next-token readouts. This is deliberate: the estimand measures the first token where a released PT/IT pair changes preference under shared history. The selected-support audit shows these events are mostly substantive within instruction, safety, and formatting regimes, but not a representative sample of all factual or reasoning behavior. Position-stratified and factual/reasoning results show the upstream x late interaction persists outside response-opening regimes, while its magnitude varies with position and prompt domain.
 
 The interventions are window-level compatibility tests, not feature-level circuit recovery. Exp36 makes a practical off-manifold artifact explanation unlikely: the endpoint reconstructs Exp23, common-IT and common-PT readouts agree, PT-to-IT interpolation is smooth, the effect survives low-anomaly filtering, and signed-permutation controls are much smaller. The natural next test is feature-level mediation with crosscoders or transcoder-style adapters at the late boundary.
 
@@ -248,7 +260,7 @@ The appendices are organized by claim rather than experiment number.
 |---|---|---|
 | Model scope and checkpoints | A | Dense-6 core set, Dense-5 support set, checkpoint IDs, prompt modes. |
 | Late refinement/readout signature | B | Exp9, Exp11/14, Exp19, Exp22, and Exp27 artifacts. |
-| First-divergence factorial | C | Exp23/24 Dense-6 synthesis, Exp36 hybrid validation, Exp37 selection baselines, label-swap null, position sensitivity, stress test. |
+| First-divergence factorial | C | Exp23/24 Dense-6 synthesis, Exp36 hybrid validation, Exp37 selection baselines, selected-support audit, label-swap null, position sensitivity, stress test. |
 | Depth anatomy | D | Exp20/21 identity and write-out, Exp31/32/33 terminal-depth audits. |
 | Stage progression | E | Fixed-support OLMo-2 Base/SFT/DPO/RLVR case study. |
 | Auxiliary evidence | F | Exp16 JS, Exp15 LLM-judge behavior, Exp18 chronology, DeepSeek MoE, Exp26, Exp28/30. |
@@ -339,7 +351,7 @@ Key Exp36 checks:
 | Signed-permutation random/observed ratio | `0.253x` |
 | Position `>=3` interaction | `+1.538` `[+1.379, +1.700]` |
 
-The Exp37 first-divergence selection baselines are:
+The Exp37 first-divergence selection baselines test whether the main result is an arbitrary-token-pair artifact caused by conditioning on a selected event. The answer is no: random local disagreement prefixes retain a substantial but smaller interaction, while the future first-divergence token pair scored on pre-divergence prefixes is near zero.
 
 - `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/summary.json`
 - `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/effects.csv`
@@ -352,6 +364,37 @@ The Exp37 first-divergence selection baselines are:
 | Random PT-rollout disagreement | `+1.346` `[+1.231, +1.464]` | `51%` |
 | Random IT-rollout disagreement | `+1.962` `[+1.870, +2.057]` | `74%` |
 | Pre-divergence prefix, future token pair | `+0.082` `[-0.058, +0.215]` | `3%` |
+
+The selected-support audit asks what kinds of token pairs define the Dense-5 first-divergence support:
+
+- `scripts/analysis/analyze_first_divergence_token_support.py`
+- `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/summary.json`
+- `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/token_support_report.md`
+
+Deterministic full-support token audit:
+
+| Support property | Fraction | Count |
+|---|---:|---:|
+| Generated position 0 | `50.3%` `[48.5%, 52.0%]` | `1,499 / 2,983` |
+| Generated position `>=3` | `26.8%` `[25.3%, 28.4%]` | `800 / 2,983` |
+| Generated position `>=5` | `16.6%` `[15.3%, 18.0%]` | `495 / 2,983` |
+| Both tokens pure surface format | `2.3%` `[1.8%, 2.9%]` | `68 / 2,983` |
+| Any token content-classified | `59.7%` `[57.9%, 61.4%]` | `1,780 / 2,983` |
+| Any token format-classified | `35.5%` `[33.8%, 37.2%]` | `1,059 / 2,983` |
+
+Population-weighted LLM audit of the stratified sample (`749` judged records; `gpt-5.5` primary with `gpt-5.4` fallback):
+
+| LLM category | Population-weighted fraction |
+|---|---:|
+| Semantic content | `30.2%` `[28.1%, 32.2%]` |
+| Structural instruction format | `22.0%` `[19.8%, 24.3%]` |
+| Discourse/style opening | `16.7%` `[14.6%, 19.0%]` |
+| Safety/refusal/helpfulness | `14.5%` `[12.9%, 16.2%]` |
+| Surface format, low significance | `8.4%` `[6.9%, 10.0%]` |
+| Mixed/uncertain | `6.1%` `[4.5%, 7.8%]` |
+| Reasoning/answer token | `2.1%` `[1.1%, 3.1%]` |
+
+The audit supports the main-text scope statement: the selected support is mostly substantive within governance, safety, and formatting regimes, but it is not a representative factual/reasoning sample.
 
 The Exp40 pre-late commitment control uses the stored Exp20 native layerwise margin at the start of the late window as a CPU-only boundary-commitment proxy, then joins it to the Exp23 Dense-5 residual-state factorial:
 
@@ -433,6 +476,7 @@ The result is a local lineage case study: in this released OLMo-2 path, the meas
 | Off-manifold sanity audit | `scripts/analysis/analyze_exp23_offmanifold_sanity.py` | `results/paper_synthesis/exp23_offmanifold_sanity/` |
 | Exp36 hybrid-state validation | `scripts/run/run_exp36_offmanifold_validation_runpod.sh`; `scripts/analysis/analyze_exp36_offmanifold_validation.py` | `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/` |
 | Exp37 selection baselines | `scripts/run/run_exp37_random_prefix_baseline_runpod.sh`; `scripts/analysis/analyze_exp37_random_prefix_baseline.py` | `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/` |
+| First-divergence selected-support audit | `scripts/analysis/analyze_first_divergence_token_support.py` | `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/` |
 | Exp40 pre-late commitment control | `scripts/analysis/analyze_exp40_prelate_commitment_control.py`; exact collector in `src/poc/exp40_prelate_commitment_control/collect.py` | `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/` |
 | Endpoint-matched convergence gap | `scripts/analysis/build_exp22_endpoint_deconfounded_synthesis.py` | `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv` |
 | Late MLP random control | Exp19 analysis scripts | `results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/` |

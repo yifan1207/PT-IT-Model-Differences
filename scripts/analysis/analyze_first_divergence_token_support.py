@@ -453,7 +453,57 @@ def run_llm_judge(
     return list(_json_rows(results_path))
 
 
-def summarize_llm(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def _sample_stratum_key(row: dict[str, Any] | EventRow) -> tuple[str, str, str]:
+    if isinstance(row, EventRow):
+        return (row.prompt_category, row.position_bin, row.pair_kind)
+    return (str(row.get("prompt_category")), str(row.get("position_bin")), str(row.get("pair_kind")))
+
+
+def _weighted_fraction_ci(
+    rows: list[dict[str, Any]],
+    *,
+    field: str,
+    value: str,
+    population_counts: Counter[tuple[str, str, str]],
+    sample_counts: Counter[tuple[str, str, str]],
+    n_bootstrap: int = 2000,
+    seed: int = 41,
+) -> dict[str, Any]:
+    if not rows:
+        return {"fraction": float("nan"), "ci95_low": float("nan"), "ci95_high": float("nan")}
+    by_stratum: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        by_stratum[_sample_stratum_key(row)].append(row)
+
+    def estimate(sampled_by_stratum: dict[tuple[str, str, str], list[dict[str, Any]]]) -> float:
+        num = 0.0
+        den = 0.0
+        for key, vals in sampled_by_stratum.items():
+            if not vals:
+                continue
+            weight = population_counts[key] / max(1, len(vals))
+            for row in vals:
+                den += weight
+                if str(row.get(field)) == value:
+                    num += weight
+        return num / den if den else float("nan")
+
+    point = estimate(by_stratum)
+    rng = np.random.default_rng(seed)
+    boots = []
+    keys = sorted(by_stratum)
+    for _ in range(n_bootstrap):
+        sampled: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+        for key in keys:
+            vals = by_stratum[key]
+            idx = rng.integers(0, len(vals), size=len(vals))
+            sampled[key] = [vals[int(i)] for i in idx]
+        boots.append(estimate(sampled))
+    lo, hi = np.nanpercentile(boots, [2.5, 97.5])
+    return {"fraction": float(point), "ci95_low": float(lo), "ci95_high": float(hi)}
+
+
+def summarize_llm(rows: list[dict[str, Any]], population_rows: list[EventRow] | None = None) -> dict[str, Any]:
     n = len(rows)
     out: dict[str, Any] = {"n": n}
     for attr in ["llm_category", "llm_substantive", "llm_instruction_relevant", "llm_content_or_reasoning_relevant", "llm_confidence"]:
@@ -473,6 +523,29 @@ def summarize_llm(rows: list[dict[str, Any]]) -> dict[str, Any]:
     out["substantive_by_prompt_category"] = {
         key: _bool_rate(vals, "llm_substantive") for key, vals in sorted(by_prompt.items())
     }
+    if population_rows:
+        population_counts = Counter(_sample_stratum_key(row) for row in population_rows)
+        sample_counts = Counter(_sample_stratum_key(row) for row in rows)
+        weighted: dict[str, list[dict[str, Any]]] = {}
+        for field in [
+            "llm_category",
+            "llm_substantive",
+            "llm_instruction_relevant",
+            "llm_content_or_reasoning_relevant",
+        ]:
+            values = sorted({str(row.get(field)) for row in rows})
+            weighted[field] = []
+            for value in values:
+                effect = _weighted_fraction_ci(
+                    rows,
+                    field=field,
+                    value=value,
+                    population_counts=population_counts,
+                    sample_counts=sample_counts,
+                )
+                weighted[field].append({"value": value, **effect})
+            weighted[field].sort(key=lambda row: row["fraction"], reverse=True)
+        out["population_weighted"] = weighted
     return out
 
 
@@ -501,6 +574,11 @@ def write_report(summary: dict[str, Any], llm_summary: dict[str, Any] | None, ou
 
     def pct(row: dict[str, Any]) -> str:
         return f"{100 * row['fraction']:.1f}%"
+
+    def pct_ci(row: dict[str, Any]) -> str:
+        if "ci95_low" not in row:
+            return pct(row)
+        return f"{100 * row['fraction']:.1f}% [{100 * row['ci95_low']:.1f}%, {100 * row['ci95_high']:.1f}%]"
 
     lines = [
         "# First-Divergence Token Support Audit",
@@ -534,6 +612,21 @@ def write_report(summary: dict[str, Any], llm_summary: dict[str, Any] | None, ou
         lines.append(f"| {row['value']} | {pct(row)} | `{row['n']}` |")
     if llm_summary:
         lines.extend(["", "## LLM-Judged Sample", "", f"Judged sample: `{llm_summary['n']}` records.", ""])
+        weighted = llm_summary.get("population_weighted") or {}
+        if weighted:
+            lines.extend(["Population-weighted estimates by prompt/position/pair-kind stratum:", "", "| LLM category | Fraction |", "|---|---:|"])
+            for row in weighted.get("llm_category", []):
+                lines.append(f"| {row['value']} | {pct_ci(row)} |")
+            lines.extend(["", "| LLM flag | Fraction |", "|---|---:|"])
+            for field, label in [
+                ("llm_substantive", "Substantive"),
+                ("llm_instruction_relevant", "Instruction-relevant"),
+                ("llm_content_or_reasoning_relevant", "Content/reasoning-relevant"),
+            ]:
+                true_row = next((row for row in weighted.get(field, []) if row["value"] == "True"), None)
+                if true_row:
+                    lines.append(f"| {label} | {pct_ci(true_row)} |")
+            lines.extend(["", "Unweighted judged-sample counts:", ""])
         lines.extend(["| LLM category | Fraction | n |", "|---|---:|---:|"])
         for row in llm_summary["llm_category"]:
             lines.append(f"| {row['value']} | {pct(row)} | `{row['n']}` |")
@@ -592,7 +685,7 @@ def main() -> None:
             max_retries=args.max_retries,
         )
         write_csv(llm_rows, out_dir / "llm_judgments.csv")
-        llm_summary = summarize_llm(llm_rows)
+        llm_summary = summarize_llm(llm_rows, rows)
     output = {
         "experiment": "first_divergence_token_support",
         "exp20_root": str(args.exp20_root),

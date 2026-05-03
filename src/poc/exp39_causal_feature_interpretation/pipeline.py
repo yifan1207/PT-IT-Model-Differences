@@ -1132,6 +1132,9 @@ def merge_dashboards(
     observed_rows = [_merge_observed_feature_rows(parts) for parts in observed_by_feature.values()]
     rows.sort(key=lambda row: (str(row.get("model")), str(row.get("role")), -_float(row, "score_mean")))
     observed_rows.sort(key=lambda row: (str(row.get("model")), str(row.get("role")), str(row.get("layer")), str(row.get("latent_id"))))
+    feature_counts = _count_by(rows, "model")
+    for model, count in feature_counts.items():
+        merged_summary["families"].setdefault(model, {})["n_features"] = count
     _write_jsonl(dash_dir / "feature_dashboards.jsonl", rows)
     _write_optional_parquet(dash_dir / "feature_dashboards.parquet", rows)
     _write_csv(dash_dir / "feature_observed_stats.csv", observed_rows)
@@ -1410,25 +1413,22 @@ def _build_autointerp_packet(row: dict[str, Any]) -> str:
             "model": row.get("model"),
             "layer": row.get("layer"),
             "latent_id": row.get("latent_id"),
-            "role": row.get("role"),
-            "control_kind": row.get("control_kind"),
         },
         "diagnostics": {
-            "causal_score_mean": row.get("score_mean"),
             "density_bin_calibration": row.get("density_bin"),
             "dashboard_density_bin": row.get("dashboard_density_bin"),
-            "decoder_norm_ratio_it_pt": row.get("decoder_norm_ratio_it_pt"),
-            "decoder_cosine_pt_it": row.get("decoder_cosine_pt_it"),
-            "dashboard_activation_ratio_it_pt": row.get("dashboard_activation_ratio_it_pt"),
+            "decoder_norm_ratio_split_a_split_b": row.get("decoder_norm_ratio_it_pt"),
+            "decoder_cosine_split_a_split_b": row.get("decoder_cosine_pt_it"),
+            "dashboard_activation_ratio_split_a_split_b": row.get("dashboard_activation_ratio_it_pt"),
         },
         "top_promoted_tokens": projection.get("top_promoted", [])[:12],
         "top_suppressed_tokens": projection.get("top_suppressed", [])[:12],
         "examples": {
-            "top_it": _compact_examples(examples.get("top_it", [])[:8]),
-            "contrast_it_over_pt": _compact_examples(examples.get("contrast_it_over_pt", [])[:8]),
-            "top_pt": _compact_examples(examples.get("top_pt", [])[:5]),
+            "split_a_high_activation": _compact_examples(examples.get("top_it", [])[:8]),
+            "split_a_high_split_b_low_contrast": _compact_examples(examples.get("contrast_it_over_pt", [])[:8]),
+            "split_b_high_activation": _compact_examples(examples.get("top_pt", [])[:5]),
             "near_miss": _compact_examples(examples.get("near_miss", [])[:5]),
-            "inactive_random": _compact_examples(examples.get("inactive_random", [])[:5]),
+            "low_activation_background": _compact_examples(examples.get("inactive_random", [])[:5]),
         },
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
@@ -1562,9 +1562,11 @@ def autointerp(
         stale_skip_marker.unlink()
 
     system = (
-        "You label individual PT/IT crosscoder latents for mechanistic interpretability. "
-        "Give a concrete, falsifiable feature hypothesis, not just a broad category. "
-        "Use the ontology only as a separate coarse_category field. Return only JSON."
+        "You label one latent from a paired-model crosscoder for mechanistic interpretability. "
+        "You are blind to how this latent was selected. Give a concrete, falsifiable feature "
+        "hypothesis when the evidence supports one, and explicitly assign probability mass to "
+        "unknown/artifact explanations when it does not. Use the ontology only as a separate "
+        "coarse_category field. Return only JSON."
     )
 
     def label_one(index: int, row: dict[str, Any]) -> tuple[int, dict[str, Any]]:
@@ -1573,10 +1575,11 @@ def autointerp(
         client = OpenAI()
         packet = _build_autointerp_packet(row)
         user = (
-            "Important role context: this feature may be either a causally selected feature or a control "
-            "feature sampled from the same trained crosscoder. If it is a control and the evidence is weak, "
-            "do not invent a meaning. It is acceptable, and often correct, to label it as 'no coherent pattern: ...' "
-            "with low confidence. Causal features also require concrete evidence; do not flatter them.\n\n"
+            "Important blinding context: the packet intentionally does not tell you why this latent was selected. "
+            "Do not infer that it is important from its presence here. Some latents have real, specific patterns; "
+            "others are generic, polysemantic, or artifacts. If the evidence is weak, do not invent a meaning. "
+            "Use a label like 'no coherent pattern: ...' or 'weak mixture: ...' with low confidence, and put "
+            "substantial probability mass on unknown/artifact explanations.\n\n"
             "Calibration examples:\n"
             "1. If top examples repeatedly show a newline followed by '-' or '*' and promoted tokens include "
             "newline/list markers, use a label like 'bullet-list newline/item boundary', not 'formatting'.\n"
@@ -1600,14 +1603,20 @@ def autointerp(
             "- fires_on: concise description of contexts/tokens that activate it\n"
             "- output_effect: what promoted/suppressed tokens suggest the feature pushes toward\n"
             "- mechanism_hypothesis: one sentence linking activation evidence and output evidence\n"
+            "- label_distribution: 2-4 hypotheses with probability percentages summing to 100. Include "
+            "'unknown/no coherent pattern' when plausible.\n"
+            "- uncertainty_allocation: object with keys pattern_hypothesis, polysemantic_mixture, "
+            "tokenization_or_frequency_artifact, insufficient_evidence; values are percentages summing to 100.\n"
             "- evidence: 3 short bullets from examples/projections\n"
             "- counterexamples_or_ambiguity: concrete failure modes, not generic hedging\n"
             "- artifact_risk: low, medium, or high\n"
             "- confidence: 0.0 to 1.0\n"
-            "- pt_it_specificity: one of IT-weighted, PT-weighted, shared-amplified, shared-suppressed, unclear\n"
+            "- split_specificity: one of split-A-weighted, split-B-weighted, shared-amplified, "
+            "shared-suppressed, unclear\n"
             "- paper_example_quality: showcase, usable_with_caution, or not_showcase\n\n"
             "Be conservative, but do not collapse to only ontology names. If the feature is dense or polysemantic, "
-            "name the most likely specific mixture and mark artifact_risk/high ambiguity.\n\n"
+            "name the most likely specific mixture and mark artifact_risk/high ambiguity. The first task is the "
+            "best real label for this individual feature; grouping will happen later in a separate step.\n\n"
             f"{packet}"
         )
         try:
@@ -1626,10 +1635,37 @@ def autointerp(
         parsed.setdefault("feature_id", row.get("feature_id"))
         parsed.setdefault("specific_label", parsed.get("label"))
         parsed.setdefault("label", parsed.get("specific_label"))
+        if parsed.get("split_specificity") and not parsed.get("pt_it_specificity"):
+            parsed["pt_it_specificity"] = parsed.get("split_specificity")
+        parsed.setdefault(
+            "uncertainty_allocation",
+            {
+                "pattern_hypothesis": int(round(100 * float(parsed.get("confidence", 0.0) or 0.0))),
+                "polysemantic_mixture": 0,
+                "tokenization_or_frequency_artifact": 0,
+                "insufficient_evidence": int(round(100 * (1.0 - float(parsed.get("confidence", 0.0) or 0.0)))),
+            },
+        )
+        parsed.setdefault(
+            "label_distribution",
+            [
+                {
+                    "label": parsed.get("specific_label") or parsed.get("label") or "unclear feature",
+                    "probability": int(round(100 * float(parsed.get("confidence", 0.0) or 0.0))),
+                    "reason": "Fallback distribution from confidence.",
+                },
+                {
+                    "label": "unknown/no coherent pattern",
+                    "probability": int(round(100 * (1.0 - float(parsed.get("confidence", 0.0) or 0.0)))),
+                    "reason": "Fallback uncertainty mass.",
+                },
+            ],
+        )
         if parsed.get("coarse_category") and not parsed.get("category"):
             parsed["category"] = parsed.get("coarse_category")
         if parsed.get("category") and not parsed.get("coarse_category"):
             parsed["coarse_category"] = parsed.get("category")
+        parsed["labeler_blinded_to_selection_role"] = True
         parsed["role"] = row.get("role")
         parsed["control_kind"] = row.get("control_kind")
         parsed["model"] = row.get("model")

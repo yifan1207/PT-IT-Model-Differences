@@ -502,6 +502,119 @@ def exp40_regression(scope: str, metric: str, column: str = "estimate", readout:
     return _read
 
 
+def exp36_summary(readout: str, metric: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp36_offmanifold_validation/"
+            "exp36_offmanifold_dense5_full_a100x8_20260502_233904/"
+            "analysis/summary.json",
+        )
+        value = data["readouts"][readout][metric]
+        if column:
+            value = value[column]
+        return float(value)
+
+    return _read
+
+
+def exp36_anomaly(subset: str, readout: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp36_offmanifold_validation/"
+            "exp36_offmanifold_dense5_full_a100x8_20260502_233904/"
+            "analysis/anomaly_effects.csv",
+        )
+        for row in rows:
+            if row["subset"] == subset and row["readout"] == readout:
+                return float(row[column])
+        raise KeyError((subset, readout, column))
+
+    return _read
+
+
+def exp36_random_control(readout: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp36_offmanifold_validation/"
+            "exp36_offmanifold_dense5_full_a100x8_20260502_233904/"
+            "analysis/random_control_effects.csv",
+        )
+        for row in rows:
+            if (
+                row["scope"] == "Dense-5 family mean"
+                and row["readout"] == readout
+                and row["control"] == "signed_permutation"
+            ):
+                return float(row[column])
+        raise KeyError((readout, column))
+
+    return _read
+
+
+def exp37_effect(key: str, column: str, readout: str = "common_it") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp37_random_prefix_baseline/"
+            "exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/"
+            "analysis/effects.csv",
+        )
+        for row in rows:
+            if (
+                row["key"] == key
+                and row["readout"] == readout
+                and row["effect"] == "interaction"
+                and row["scope"] == "dense5"
+            ):
+                return float(row[column])
+        raise KeyError((key, column, readout))
+
+    return _read
+
+
+def token_support_bool(metric: str, column: str = "fraction") -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/first_divergence_token_support/"
+            "dense5_llm_gpt55_20260503_121500/summary.json",
+        )
+        return float(data["deterministic"]["boolean_support"][metric][column])
+
+    return _read
+
+
+def token_support_weighted(field: str, value: str, column: str = "fraction") -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/first_divergence_token_support/"
+            "dense5_llm_gpt55_20260503_121500/summary.json",
+        )
+        rows = data["llm"]["population_weighted"][field]
+        for row in rows:
+            if row["value"] == value:
+                return float(row[column])
+        raise KeyError((field, value, column))
+
+    return _read
+
+
+def token_support_llm_n() -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/first_divergence_token_support/"
+            "dense5_llm_gpt55_20260503_121500/summary.json",
+        )
+        return float(data["llm"]["n"])
+
+    return _read
+
+
 def exp23_position_family(stratum: str, model: str, column: str) -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
@@ -1122,6 +1235,180 @@ CHECKS: list[ClaimCheck] = [
             "interaction",
             "ci95_high",
         ),
+    ),
+    ClaimCheck(
+        "Exp36 endpoint interaction common-IT",
+        "exp36 summary.json",
+        2.64851678944894,
+        exp36_summary("common_it", "endpoint_interaction", "estimate"),
+    ),
+    ClaimCheck(
+        "Exp36 endpoint interaction common-IT CI low",
+        "exp36 summary.json",
+        2.5477349113866485,
+        exp36_summary("common_it", "endpoint_interaction", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp36 endpoint delta from Exp23",
+        "exp36 summary.json",
+        0.013320800001326294,
+        exp36_summary("common_it", "exp23_endpoint_delta", ""),
+    ),
+    ClaimCheck(
+        "Exp36 PT-to-IT interpolation slope",
+        "exp36 summary.json",
+        2.7021306712781774,
+        exp36_summary("common_it", "slope", "estimate"),
+    ),
+    ClaimCheck(
+        "Exp36 PT-to-IT interpolation slope CI low",
+        "exp36 summary.json",
+        2.601459001103588,
+        exp36_summary("common_it", "slope", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp36 PT-to-IT interpolation slope CI high",
+        "exp36 summary.json",
+        2.7989111041624213,
+        exp36_summary("common_it", "slope", "ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp36 low-anomaly half interaction",
+        "exp36 anomaly_effects.csv",
+        2.783980627591492,
+        exp36_anomaly("low_anomaly_half", "common_it", "interaction"),
+    ),
+    ClaimCheck(
+        "Exp36 low-anomaly half interaction CI low",
+        "exp36 anomaly_effects.csv",
+        2.64226523363606,
+        exp36_anomaly("low_anomaly_half", "common_it", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp36 signed-permutation random/observed ratio",
+        "exp36 random_control_effects.csv",
+        0.25264588477770933,
+        exp36_random_control("common_it", "random_abs_over_observed_abs"),
+    ),
+    ClaimCheck(
+        "Exp37 source-balanced random local interaction",
+        "exp37 effects.csv",
+        1.6716716595066665,
+        exp37_effect("random_local_disagreement__source_balanced", "estimate"),
+    ),
+    ClaimCheck(
+        "Exp37 source-balanced random local ratio",
+        "exp37 effects.csv",
+        0.6311377879758742,
+        exp37_effect("random_local_disagreement__source_balanced", "ratio_to_first_diff"),
+    ),
+    ClaimCheck(
+        "Exp37 pre-divergence future-token interaction",
+        "exp37 effects.csv",
+        0.08207303801785182,
+        exp37_effect("prediv_future_pair__shared_prediv", "estimate"),
+    ),
+    ClaimCheck(
+        "Exp37 pre-divergence future-token interaction CI low",
+        "exp37 effects.csv",
+        -0.05763438322703556,
+        exp37_effect("prediv_future_pair__shared_prediv", "ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp37 pre-divergence future-token ratio",
+        "exp37 effects.csv",
+        0.030986584819134605,
+        exp37_effect("prediv_future_pair__shared_prediv", "ratio_to_first_diff"),
+    ),
+    ClaimCheck(
+        "First-divergence support generated position 0 fraction",
+        "first_divergence_token_support summary.json",
+        0.5025142474019444,
+        token_support_bool("position_0"),
+    ),
+    ClaimCheck(
+        "First-divergence support generated position >=3 fraction",
+        "first_divergence_token_support summary.json",
+        0.2681863895407308,
+        token_support_bool("position_ge_3"),
+    ),
+    ClaimCheck(
+        "First-divergence support generated position >=5 fraction",
+        "first_divergence_token_support summary.json",
+        0.16594032852832719,
+        token_support_bool("position_ge_5"),
+    ),
+    ClaimCheck(
+        "First-divergence support pure surface-format fraction",
+        "first_divergence_token_support summary.json",
+        0.022795843110962118,
+        token_support_bool("both_surface_format"),
+    ),
+    ClaimCheck(
+        "First-divergence support any content-token fraction",
+        "first_divergence_token_support summary.json",
+        0.596714716728126,
+        token_support_bool("any_content_token"),
+    ),
+    ClaimCheck(
+        "First-divergence support any format-token fraction",
+        "first_divergence_token_support summary.json",
+        0.35501173315454243,
+        token_support_bool("any_format_token"),
+    ),
+    ClaimCheck(
+        "First-divergence LLM judged sample n",
+        "first_divergence_token_support summary.json",
+        749.0,
+        token_support_llm_n(),
+    ),
+    ClaimCheck(
+        "First-divergence LLM substantive weighted fraction",
+        "first_divergence_token_support summary.json",
+        0.7343898928358606,
+        token_support_weighted("llm_substantive", "True"),
+    ),
+    ClaimCheck(
+        "First-divergence LLM substantive weighted CI low",
+        "first_divergence_token_support summary.json",
+        0.7080377494821853,
+        token_support_weighted("llm_substantive", "True", "ci95_low"),
+    ),
+    ClaimCheck(
+        "First-divergence LLM substantive weighted CI high",
+        "first_divergence_token_support summary.json",
+        0.7587230200004381,
+        token_support_weighted("llm_substantive", "True", "ci95_high"),
+    ),
+    ClaimCheck(
+        "First-divergence LLM semantic-content weighted fraction",
+        "first_divergence_token_support summary.json",
+        0.30212041609300516,
+        token_support_weighted("llm_category", "semantic_content"),
+    ),
+    ClaimCheck(
+        "First-divergence LLM structural-format weighted fraction",
+        "first_divergence_token_support summary.json",
+        0.22037039389556823,
+        token_support_weighted("llm_category", "structural_instruction_format"),
+    ),
+    ClaimCheck(
+        "First-divergence LLM safety weighted fraction",
+        "first_divergence_token_support summary.json",
+        0.14533774552206602,
+        token_support_weighted("llm_category", "safety_refusal_helpfulness"),
+    ),
+    ClaimCheck(
+        "First-divergence LLM discourse weighted fraction",
+        "first_divergence_token_support summary.json",
+        0.16690677391987604,
+        token_support_weighted("llm_category", "discourse_style_opening"),
+    ),
+    ClaimCheck(
+        "First-divergence LLM surface-format weighted fraction",
+        "first_divergence_token_support summary.json",
+        0.08393264751458093,
+        token_support_weighted("llm_category", "surface_format_low"),
     ),
     ClaimCheck(
         "Exp40 no-commitment subset interaction",
