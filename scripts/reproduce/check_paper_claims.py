@@ -526,21 +526,6 @@ def exp15_llm_pairwise(comparison: str, criterion: str) -> NumberFn:
     return _read
 
 
-def exp15_human_pairwise(comparison: str, criterion: str) -> NumberFn:
-    def _read(repo: Path) -> float:
-        data = load_json(
-            repo,
-            "results/exp15_symmetric_behavioral_causality/human_eval/"
-            "human_eval_summary.json",
-        )
-        for row in data["pairwise_primary"]:
-            if row["comparison"] == comparison and row["criterion"] == criterion:
-                return float(row["human_resolved_target_rate"])
-        raise KeyError((comparison, criterion))
-
-    return _read
-
-
 def exp24_residual_effect(readout: str, effect: str, column: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -2161,18 +2146,6 @@ CHECKS: list[ClaimCheck] = [
         "exp15 behavior summary.json",
         0.7714025500910747,
         exp15_llm_pairwise("it_c_vs_dlate", "g2"),
-    ),
-    ClaimCheck(
-        "Human resolved G2: IT baseline over late PT swap",
-        "exp15 human_eval_summary.json",
-        0.7311557788944724,
-        exp15_human_pairwise("it_c_vs_dlate", "G2"),
-    ),
-    ClaimCheck(
-        "Human resolved G2: PT late graft over PT baseline",
-        "exp15 human_eval_summary.json",
-        0.6018518518518519,
-        exp15_human_pairwise("pt_late_vs_a", "G2"),
     ),
 ]
 

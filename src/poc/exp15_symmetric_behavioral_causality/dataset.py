@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import csv
 import hashlib
 import json
 from collections import Counter
@@ -11,24 +10,6 @@ from typing import Callable
 CONVERSATION_SOURCES = {"MT-Bench", "WildChat-style"}
 SUBSET_NAME = "exp15_eval_core_600"
 SUBSET_SEED = 20260420
-HUMAN_AUDIT_CONDITIONS = [
-    "A_pt_raw",
-    "B_early_raw",
-    "B_mid_raw",
-    "B_late_raw",
-    "C_it_chat",
-    "D_early_ptswap",
-    "D_mid_ptswap",
-    "D_late_ptswap",
-]
-HUMAN_AUDIT_BUCKETS = [
-    "conversation_source",
-    "gov_register",
-    "safety_benign",
-    "safety_harmful",
-]
-
-
 def _hash_hex(*parts: object) -> str:
     payload = "::".join(str(part) for part in parts)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -190,53 +171,10 @@ def build_exp15_core_subset(
     return out
 
 
-def build_human_audit_manifest(
-    selected_records: list[dict],
-    *,
-    seed: int = SUBSET_SEED,
-) -> list[dict]:
-    bucket_predicates: dict[str, Callable[[dict], bool]] = {
-        "conversation_source": is_conversation_source,
-        "gov_register": lambda record: record.get("category") == "GOV-REGISTER",
-        "safety_benign": is_safety_benign,
-        "safety_harmful": is_safety_harmful,
-    }
-    rows: list[dict] = []
-    for bucket_idx, bucket in enumerate(HUMAN_AUDIT_BUCKETS):
-        pool = [record for record in selected_records if bucket_predicates[bucket](record)]
-        picked = _sorted_by_hash(pool, seed=seed, namespace=f"human_audit:{bucket}")[:30]
-        if len(picked) != 30:
-            raise ValueError(f"Expected 30 records for human audit bucket {bucket}, found {len(picked)}")
-        for local_idx, record in enumerate(picked):
-            split = "overlap" if local_idx < 20 else "holdout"
-            condition = HUMAN_AUDIT_CONDITIONS[(bucket_idx + local_idx) % len(HUMAN_AUDIT_CONDITIONS)]
-            rows.append(
-                {
-                    "audit_id": f"{split}_{bucket}_{local_idx:02d}",
-                    "audit_split": split,
-                    "audit_bucket": bucket,
-                    "record_id": record["id"],
-                    "condition": condition,
-                    "category": record.get("category", ""),
-                    "source": record.get("source", ""),
-                    "expected_behavior": (
-                        record.get("expected_behavior")
-                        or record.get("metadata", {}).get("expected_behavior")
-                        or ""
-                    ),
-                }
-            )
-    if len(rows) != 120:
-        raise ValueError(f"Expected 120 human audit rows, found {len(rows)}")
-    return sorted(rows, key=lambda row: (row["audit_split"], row["audit_bucket"], row["audit_id"]))
-
-
-def subset_summary(selected_records: list[dict], audit_rows: list[dict]) -> dict:
+def subset_summary(selected_records: list[dict]) -> dict:
     category_counts = Counter(record.get("category", "") for record in selected_records)
     source_counts = Counter(record.get("source", "") for record in selected_records)
     bucket_counts = Counter(record.get("exp15_selection_bucket", "") for record in selected_records)
-    audit_split_counts = Counter(row["audit_split"] for row in audit_rows)
-    audit_bucket_counts = Counter(row["audit_bucket"] for row in audit_rows)
     return {
         "n_records": len(selected_records),
         "category_counts": dict(sorted(category_counts.items())),
@@ -246,9 +184,6 @@ def subset_summary(selected_records: list[dict], audit_rows: list[dict]) -> dict
         "conversation_source_count": sum(1 for record in selected_records if record.get("exp15_conversation_source")),
         "safety_benign_count": sum(1 for record in selected_records if record.get("exp15_safety_benign")),
         "safety_harmful_count": sum(1 for record in selected_records if record.get("exp15_safety_harmful")),
-        "human_audit_rows": len(audit_rows),
-        "human_audit_split_counts": dict(sorted(audit_split_counts.items())),
-        "human_audit_bucket_counts": dict(sorted(audit_bucket_counts.items())),
     }
 
 
@@ -257,37 +192,3 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
     with open(path, "w", encoding="utf-8") as handle:
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def write_human_audit_csv(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "audit_id",
-        "audit_split",
-        "audit_bucket",
-        "record_id",
-        "condition",
-        "category",
-        "source",
-        "expected_behavior",
-        "question",
-        "response",
-        "human_rater1_g1",
-        "human_rater1_g2",
-        "human_rater1_s1",
-        "human_rater1_s2",
-        "human_rater2_g1",
-        "human_rater2_g2",
-        "human_rater2_s1",
-        "human_rater2_s2",
-        "adjudicated_g1",
-        "adjudicated_g2",
-        "adjudicated_s1",
-        "adjudicated_s2",
-        "notes",
-    ]
-    with open(path, "w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({key: row.get(key, "") for key in fieldnames})

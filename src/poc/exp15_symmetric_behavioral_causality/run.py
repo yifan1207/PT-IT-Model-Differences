@@ -19,9 +19,7 @@ from src.poc.exp15_symmetric_behavioral_causality.dataset import (
     SUBSET_NAME,
     SUBSET_SEED,
     build_exp15_core_subset,
-    build_human_audit_manifest,
     subset_summary,
-    write_human_audit_csv,
     write_jsonl,
 )
 from src.poc.exp06_corrective_direction_steering.model_adapter import SteeringAdapter, get_steering_adapter
@@ -526,8 +524,6 @@ def main() -> None:
     pipeline_manifest_path = out_dir / "pipeline_manifest.json"
     sample_outputs_path = out_dir / "sample_outputs.jsonl"
     forced_choice_outputs_path = out_dir / "forced_choice_outputs.jsonl"
-    audit_manifest_path = out_dir / "human_audit_manifest.jsonl"
-    audit_template_path = out_dir / "human_audit_template.csv"
     config_path = out_dir / "config.json"
     summary_path = out_dir / "summary.json"
 
@@ -541,24 +537,11 @@ def main() -> None:
     if args.limit_prompts is not None:
         selected_shard = selected_shard[: args.limit_prompts]
 
-    audit_manifest = build_human_audit_manifest(selected_records, seed=args.subset_seed)
-    audit_rows_with_blanks = []
-    for row in audit_manifest:
-        audit_rows_with_blanks.append(
-            {
-                **row,
-                "question": "",
-                "response": "",
-            }
-        )
-
     pipeline_manifest = _build_pipeline_manifest(args.model, spec)
     selected_pipelines = [row for row in pipeline_manifest if row["condition"] in set(args.pipelines)]
 
     write_jsonl(prompts_path, selected_shard)
     write_jsonl(prompts_full_path, selected_records)
-    write_jsonl(audit_manifest_path, audit_manifest)
-    write_human_audit_csv(audit_template_path, audit_rows_with_blanks)
     pipeline_manifest_path.write_text(json.dumps(selected_pipelines, indent=2), encoding="utf-8")
 
     config = {
@@ -583,8 +566,7 @@ def main() -> None:
         "dataset_manifest_hash": _file_hash(prompts_full_path),
         "dataset_shard_hash": _file_hash(prompts_path),
         "pipeline_manifest_hash": _file_hash(pipeline_manifest_path),
-        "human_audit_manifest_hash": _file_hash(audit_manifest_path),
-        "subset_summary": subset_summary(selected_records, audit_manifest),
+        "subset_summary": subset_summary(selected_records),
     }
     config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 

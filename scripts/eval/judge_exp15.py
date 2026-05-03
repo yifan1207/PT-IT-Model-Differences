@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import csv
 import hashlib
 import json
 import random
@@ -15,7 +14,6 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
-from src.poc.exp15_symmetric_behavioral_causality.dataset import write_human_audit_csv
 from src.poc.exp06_corrective_direction_steering.eval_registry import MODEL_COSTS, RUBRICS, estimate_cost
 from src.poc.shared.llm_provider import build_openai_client
 
@@ -485,74 +483,6 @@ def _materialize_final_pointwise(
     return final_rows
 
 
-def _write_human_audit_packs(
-    *,
-    run_dir: Path,
-    audit_manifest: list[dict],
-    output_by_key: dict[tuple[str, str], dict],
-    records_by_id: dict[str, dict],
-) -> None:
-    rows_for_master: list[dict] = []
-    rater_fieldnames = [
-        "audit_id",
-        "audit_split",
-        "audit_bucket",
-        "record_id",
-        "condition",
-        "category",
-        "source",
-        "expected_behavior",
-        "question",
-        "response",
-        "g1",
-        "g2",
-        "s1",
-        "s2",
-        "notes",
-    ]
-    rater1_rows: list[dict] = []
-    rater2_rows: list[dict] = []
-    for row in audit_manifest:
-        if (row["condition"], row["record_id"]) not in output_by_key or row["record_id"] not in records_by_id:
-            continue
-        output = output_by_key[(row["condition"], row["record_id"])]
-        record = records_by_id[row["record_id"]]
-        merged = {
-            **row,
-            "question": _strip_prompt_suffix(record.get("formats", {}).get("B", output.get("prompt", ""))),
-            "response": output.get("generated_text", ""),
-        }
-        rows_for_master.append(merged)
-        for sink in (rater1_rows, rater2_rows):
-            sink.append(
-                {
-                    "audit_id": merged["audit_id"],
-                    "audit_split": merged["audit_split"],
-                    "audit_bucket": merged["audit_bucket"],
-                    "record_id": merged["record_id"],
-                    "condition": merged["condition"],
-                    "category": merged["category"],
-                    "source": merged["source"],
-                    "expected_behavior": merged["expected_behavior"],
-                    "question": merged["question"],
-                    "response": merged["response"],
-                    "g1": "",
-                    "g2": "",
-                    "s1": "",
-                    "s2": "",
-                    "notes": "",
-                }
-            )
-
-    write_human_audit_csv(run_dir / "human_audit_master.csv", rows_for_master)
-    for name, rows in (("human_audit_rater1.csv", rater1_rows), ("human_audit_rater2.csv", rater2_rows)):
-        with open(run_dir / name, "w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=rater_fieldnames)
-            writer.writeheader()
-            for row in rows:
-                writer.writerow(row)
-
-
 def _build_pairwise_items(
     *,
     records_by_id: dict[str, dict],
@@ -737,13 +667,6 @@ def main() -> None:
         raise FileNotFoundError(f"Run dir does not exist: {run_dir}")
 
     items, records_by_id, config, pipeline_manifest, output_by_key = _load_pointwise_items(run_dir)
-    audit_manifest = _load_jsonl(run_dir / "human_audit_manifest.jsonl")
-    _write_human_audit_packs(
-        run_dir=run_dir,
-        audit_manifest=audit_manifest,
-        output_by_key=output_by_key,
-        records_by_id=records_by_id,
-    )
 
     pointwise_rubric_hashes = {task: _hash_text(RUBRICS[task]) for task in POINTWISE_TASKS}
     pairwise_rubric_hashes = {task: _hash_text(PAIRWISE_RUBRICS[task]) for task in PAIRWISE_TASKS}
@@ -841,7 +764,6 @@ def main() -> None:
         "pairwise_parser_version": PAIRWISE_PARSER_VERSION,
         "dataset_manifest_hash": config["dataset_manifest_hash"],
         "pipeline_manifest_hash": config["pipeline_manifest_hash"],
-        "human_audit_manifest_hash": config["human_audit_manifest_hash"],
         "sample_outputs_hash": _file_hash(run_dir / "sample_outputs.jsonl"),
         "rubric_hashes": pointwise_rubric_hashes,
         "pairwise_rubric_hashes": pairwise_rubric_hashes,

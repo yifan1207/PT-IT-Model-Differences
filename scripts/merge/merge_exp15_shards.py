@@ -73,8 +73,6 @@ def main() -> None:
     prompts_shard_paths = [shard_dir / "prompts_shard.jsonl" for shard_dir in shard_dirs]
     sample_paths = [shard_dir / "sample_outputs.jsonl" for shard_dir in shard_dirs]
     forced_choice_paths = [shard_dir / "forced_choice_outputs.jsonl" for shard_dir in shard_dirs]
-    audit_paths = [shard_dir / "human_audit_manifest.jsonl" for shard_dir in shard_dirs]
-    audit_template_paths = [shard_dir / "human_audit_template.csv" for shard_dir in shard_dirs]
     pipeline_manifest_paths = [shard_dir / "pipeline_manifest.json" for shard_dir in shard_dirs]
     config_paths = [shard_dir / "config.json" for shard_dir in shard_dirs]
 
@@ -103,14 +101,6 @@ def main() -> None:
         key_fn=lambda row: (row["condition"], row["record_id"]),
         sort_key=lambda row: (row["condition"], row["record_id"]),
     )
-    _merge_jsonl_unique(
-        audit_paths,
-        merged_dir / "human_audit_manifest.jsonl",
-        key_fn=lambda row: row["audit_id"],
-        sort_key=lambda row: row["audit_id"],
-        allow_identical_duplicates=True,
-    )
-    _copy_first_existing(audit_template_paths, merged_dir / "human_audit_template.csv")
     _copy_first_existing(pipeline_manifest_paths, merged_dir / "pipeline_manifest.json")
 
     config = {}

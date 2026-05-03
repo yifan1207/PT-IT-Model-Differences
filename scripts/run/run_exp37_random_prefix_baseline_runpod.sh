@@ -141,8 +141,8 @@ run_collect() {
   echo "[exp37] phase collect manifests"
   local pids=()
   local idx=0
-  for model in "${MODEL_ARRAY[@]}"; do
-    for ((w=0; w<COLLECT_WORKERS_PER_MODEL; w++)); do
+  for ((w=0; w<COLLECT_WORKERS_PER_MODEL; w++)); do
+    for model in "${MODEL_ARRAY[@]}"; do
       local gpu="${GPUS[$((idx % ${#GPUS[@]}))]}"
       CUDA_VISIBLE_DEVICES="$gpu" uv run python -m src.poc.exp37_random_prefix_baseline.collect_prefix_manifests \
         --model "$model" \
@@ -163,7 +163,7 @@ run_collect() {
         flush_jobs collect "${pids[@]}"
         pids=()
       fi
-    done
+  done
   done
   flush_jobs collect "${pids[@]}"
   for model in "${MODEL_ARRAY[@]}"; do
@@ -185,8 +185,8 @@ run_factorial() {
   local pids=()
   local idx=0
   for key in "${keys[@]}"; do
-    for model in "${MODEL_ARRAY[@]}"; do
-      for ((w=0; w<FACTORIAL_WORKERS_PER_MODEL; w++)); do
+    for ((w=0; w<FACTORIAL_WORKERS_PER_MODEL; w++)); do
+      for model in "${MODEL_ARRAY[@]}"; do
         local gpu="${GPUS[$((idx % ${#GPUS[@]}))]}"
         local out_dir="${FACTORIAL_ROOT}/${key}/raw_shared/${model}"
         CUDA_VISIBLE_DEVICES="$gpu" uv run python -m src.poc.exp23_midlate_interaction_suite.residual_factorial \
@@ -209,7 +209,7 @@ run_factorial() {
           flush_jobs factorial "${pids[@]}"
           pids=()
         fi
-      done
+    done
     done
   done
   flush_jobs factorial "${pids[@]}"

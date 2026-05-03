@@ -17,7 +17,6 @@
         "pairwise_parser_version": "exp15_pairwise_parser_v1",
         "dataset_manifest_hash": "60d354e35bfa8c19a06c769adcd0a1066bf8d56040d99c6db26a77239cdb764b",
         "pipeline_manifest_hash": "19ae74ffeae5d71855fd4200963481c6aad2d7d896ce406dedf628baba624103",
-        "human_audit_manifest_hash": "3a1421b6acbf3b56896d96d1d217ec842cde7973391c584a52008b4e8c20db4b",
         "sample_outputs_hash": "619efbf09e6b7ac1cc6fe626acc02324353762cea1e2da706ec78cd2891d96d3",
         "rubric_hashes": {
           "g1": "525fca5c87d80d71e9518d0ac4ec2c9a94f16b5588ddfa250d5c00c16bd18c8a",
@@ -1166,7 +1165,6 @@
         "pairwise_parser_version": "exp15_pairwise_parser_v1",
         "dataset_manifest_hash": "60d354e35bfa8c19a06c769adcd0a1066bf8d56040d99c6db26a77239cdb764b",
         "pipeline_manifest_hash": "729a33a4f4d94eb07a14f25d55fd424a86e5d458f8368765e11c0f173aaa9a9c",
-        "human_audit_manifest_hash": "3a1421b6acbf3b56896d96d1d217ec842cde7973391c584a52008b4e8c20db4b",
         "sample_outputs_hash": "6ee76d2f90ea74deffe9628c9608877e14a46d3afd896e39a9a721d6c34ffb66",
         "rubric_hashes": {
           "g1": "525fca5c87d80d71e9518d0ac4ec2c9a94f16b5588ddfa250d5c00c16bd18c8a",
@@ -2318,7 +2316,6 @@
         "pairwise_parser_version": "exp15_pairwise_parser_v1",
         "dataset_manifest_hash": "60d354e35bfa8c19a06c769adcd0a1066bf8d56040d99c6db26a77239cdb764b",
         "pipeline_manifest_hash": "5b02b8c1a92964202eab207ae86891fde0e92ffff31dc0af43fd1899e0783dd4",
-        "human_audit_manifest_hash": "3a1421b6acbf3b56896d96d1d217ec842cde7973391c584a52008b4e8c20db4b",
         "sample_outputs_hash": "d8f217b09078163fcbbac8dba327707c1823b3f198c9d26eb5cae6d9e36edeae",
         "rubric_hashes": {
           "g1": "525fca5c87d80d71e9518d0ac4ec2c9a94f16b5588ddfa250d5c00c16bd18c8a",
@@ -3469,7 +3466,6 @@
         "pairwise_parser_version": "exp15_pairwise_parser_v1",
         "dataset_manifest_hash": "60d354e35bfa8c19a06c769adcd0a1066bf8d56040d99c6db26a77239cdb764b",
         "pipeline_manifest_hash": "5b02b8c1a92964202eab207ae86891fde0e92ffff31dc0af43fd1899e0783dd4",
-        "human_audit_manifest_hash": "3a1421b6acbf3b56896d96d1d217ec842cde7973391c584a52008b4e8c20db4b",
         "sample_outputs_hash": "d54350f652aba436067db6ce0c3314ba0213ecb2189bdb58cf3c04e7df3bc5fb",
         "rubric_hashes": {
           "g1": "525fca5c87d80d71e9518d0ac4ec2c9a94f16b5588ddfa250d5c00c16bd18c8a",
@@ -4619,7 +4615,6 @@
         "pairwise_parser_version": "exp15_pairwise_parser_v1",
         "dataset_manifest_hash": "60d354e35bfa8c19a06c769adcd0a1066bf8d56040d99c6db26a77239cdb764b",
         "pipeline_manifest_hash": "5b02b8c1a92964202eab207ae86891fde0e92ffff31dc0af43fd1899e0783dd4",
-        "human_audit_manifest_hash": "3a1421b6acbf3b56896d96d1d217ec842cde7973391c584a52008b4e8c20db4b",
         "sample_outputs_hash": "51ebd2f249e2b296d424c4f63cad73b9abe958914316863cc50fd9e18c7fd0b8",
         "rubric_hashes": {
           "g1": "525fca5c87d80d71e9518d0ac4ec2c9a94f16b5588ddfa250d5c00c16bd18c8a",

@@ -7,7 +7,6 @@ sensitivity to boundary shifts. Two perturbation tests:
 
 Additional analyses:
   - LLM judge validation: score 200 tokens with Claude, compute Cohen's kappa
-  - Human judgment CSV template: export for manual spot-check
   - Baseline category rates + enrichment ratio (IT/PT token category divergence)
 
 Usage:
@@ -28,14 +27,12 @@ Usage:
 Outputs:
   results/exp07_methodology_validation_tier0/0E/classifier_documentation.json
   results/exp07_methodology_validation_tier0/0E/classifier_robustness.json
-  results/exp07_methodology_validation_tier0/0E/human_judgment_template.csv
   results/exp07_methodology_validation_tier0/0E/category_enrichment.json
   results/exp07_methodology_validation_tier0/0E/llm_judge_validation.json   (if --llm-judge)
 """
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sys
 from collections import Counter
@@ -174,82 +171,6 @@ def compute_category_enrichment(
     return results
 
 
-# ── Human judgment CSV template ──────────────────────────────────────────────
-
-def generate_human_judgment_template(
-    texts: list[str],
-    output_path: Path,
-    n_tokens: int = 200,
-    seed: int = 42,
-) -> None:
-    """Export a CSV template for human annotation of token categories.
-
-    Randomly samples tokens from generated texts, pre-fills the classifier's
-    label, and leaves a column for human judgment.
-
-    Columns: token, context (5 words around token), classifier_label, human_label, agree
-    """
-    rng = np.random.default_rng(seed)
-    token_entries: list[dict] = []
-
-    for text in texts[:1000]:
-        words = text.split()
-        if len(words) < 3:
-            continue
-        cats = _classify_tokens(words)
-        for i, (word, cat) in enumerate(zip(words, cats)):
-            context_start = max(0, i - 2)
-            context_end = min(len(words), i + 3)
-            context = " ".join(words[context_start:context_end])
-            token_entries.append({
-                "token": word.strip(),
-                "context": context,
-                "classifier_label": cat,
-            })
-
-    if not token_entries:
-        return
-
-    # Stratified sample: proportional to category distribution, but ensure
-    # all categories are represented
-    by_cat: dict[str, list[dict]] = {}
-    for entry in token_entries:
-        by_cat.setdefault(entry["classifier_label"], []).append(entry)
-
-    sampled: list[dict] = []
-    per_cat = max(n_tokens // max(len(by_cat), 1), 10)
-    for cat, entries in by_cat.items():
-        k = min(per_cat, len(entries))
-        idxs = rng.choice(len(entries), k, replace=False)
-        for idx in idxs:
-            sampled.append(entries[idx])
-
-    # Fill remaining slots randomly
-    remaining = n_tokens - len(sampled)
-    if remaining > 0:
-        extra_idxs = rng.choice(len(token_entries), min(remaining, len(token_entries)), replace=False)
-        for idx in extra_idxs:
-            if token_entries[idx] not in sampled:
-                sampled.append(token_entries[idx])
-
-    sampled = sampled[:n_tokens]
-    rng.shuffle(sampled)
-
-    with open(output_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["token", "context", "classifier_label", "human_label", "agree"])
-        writer.writeheader()
-        for entry in sampled:
-            writer.writerow({
-                "token": entry["token"],
-                "context": entry["context"],
-                "classifier_label": entry["classifier_label"],
-                "human_label": "",  # to be filled by annotator
-                "agree": "",  # to be filled: Y/N
-            })
-
-    print(f"[0E] Human judgment template ({len(sampled)} tokens) -> {output_path}", flush=True)
-
-
 # ── LLM judge validation ────────────────────────────────────────────────────
 
 def llm_judge_validation(
@@ -261,7 +182,7 @@ def llm_judge_validation(
     """Score 200 tokens with an LLM judge and compute Cohen's kappa vs classifier.
 
     Uses Claude via OpenRouter to classify tokens into the 5 categories,
-    then computes inter-rater agreement (Cohen's weighted kappa).
+    then computes agreement (Cohen's weighted kappa).
     """
     import os
     rng = np.random.default_rng(seed)
@@ -584,11 +505,6 @@ def main() -> None:
         print(f"  Baseline ({baseline_key}) category rates:", flush=True)
         for cat in ["STRUCTURAL", "DISCOURSE", "PUNCTUATION", "FUNCTION", "CONTENT"]:
             print(f"    {cat:15s}: {rates.get(cat, 0):.4f}", flush=True)
-
-    # ── Human judgment CSV template ───────────────────────────────────────────
-    print("[0E] Generating human judgment template...", flush=True)
-    csv_path = output_dir / "human_judgment_template.csv"
-    generate_human_judgment_template(all_texts, csv_path)
 
     # ── LLM judge validation ─────────────────────────────────────────────────
     if args.llm_judge:
