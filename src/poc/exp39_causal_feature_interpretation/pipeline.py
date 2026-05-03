@@ -20,6 +20,7 @@ import math
 import os
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -298,15 +299,17 @@ def _matched_controls(
     selected: list[dict[str, Any]],
     per_selected: int,
     seed: int,
+    exclude_keys: set[tuple[int, int]] | None = None,
 ) -> list[dict[str, Any]]:
     rng = random.Random(seed)
     selected_keys = {(int(row["layer"]), int(row["latent_id"])) for row in selected}
+    excluded = set(exclude_keys or set()) | selected_keys
     by_layer: dict[int, list[dict[str, str]]] = defaultdict(list)
     score_abs_values = [abs(_float(row, "score_mean")) for row in rows]
     score_cutoff = sorted(score_abs_values)[max(0, int(0.35 * max(len(score_abs_values), 1)) - 1)] if rows else 0.0
     for row in rows:
         key = (_int(row, "layer"), _int(row, "latent_id"))
-        if key in selected_keys:
+        if key in excluded:
             continue
         if _float(row, "score_mean") > 0 and abs(_float(row, "score_mean")) > score_cutoff:
             continue
@@ -319,7 +322,7 @@ def _matched_controls(
         target_abs = abs(float(target.get("score_abs_mean", target.get("score_mean", 0.0))))
         pool = [row for row in by_layer.get(target_layer, []) if (_int(row, "layer"), _int(row, "latent_id")) not in used]
         if not pool:
-            pool = [row for row in rows if (_int(row, "layer"), _int(row, "latent_id")) not in selected_keys | used]
+            pool = [row for row in rows if (_int(row, "layer"), _int(row, "latent_id")) not in excluded | used]
         ranked = sorted(
             pool,
             key=lambda row: (
@@ -335,6 +338,72 @@ def _matched_controls(
             control["matched_to_layer"] = target_layer
             control["matched_to_latent_id"] = int(target["latent_id"])
             controls.append(_normalize_feature_row(control, role="control", control_kind="matched_noncausal"))
+    return controls
+
+
+def _random_active_controls(
+    *,
+    rows: list[dict[str, str]],
+    selected: list[dict[str, Any]],
+    per_selected: int,
+    seed: int,
+    exclude_keys: set[tuple[int, int]] | None = None,
+) -> list[dict[str, Any]]:
+    """Sample active noncausal controls from the trained dictionary background.
+
+    This is intentionally not pure random. Pure random latents are often dead or
+    tiny-norm, which makes them an unfair control for dashboard interpretability.
+    The random-active control asks whether a typical active, low-causal-score
+    crosscoder feature from the same layer/density regime gets equally good labels.
+    """
+
+    rng = random.Random(seed)
+    selected_keys = {(int(row["layer"]), int(row["latent_id"])) for row in selected}
+    excluded = set(exclude_keys or set()) | selected_keys
+    abs_scores = sorted(abs(_float(row, "score_mean")) for row in rows)
+    score_cutoff = abs_scores[max(0, int(0.50 * max(len(abs_scores), 1)) - 1)] if abs_scores else 0.0
+    pools: dict[tuple[int, str], list[dict[str, str]]] = defaultdict(list)
+    layer_pools: dict[int, list[dict[str, str]]] = defaultdict(list)
+    global_pool: list[dict[str, str]] = []
+    for row in rows:
+        key = (_int(row, "layer"), _int(row, "latent_id"))
+        if key in excluded:
+            continue
+        active_rate = _float(row, "active_union_rate")
+        if active_rate <= 0.0:
+            continue
+        if _float(row, "score_mean") > 0 and abs(_float(row, "score_mean")) > score_cutoff:
+            continue
+        density = _density_bin(active_rate)
+        layer = key[0]
+        pools[(layer, density)].append(row)
+        layer_pools[layer].append(row)
+        global_pool.append(row)
+
+    controls: list[dict[str, Any]] = []
+    used: set[tuple[int, int]] = set()
+    for target in selected:
+        target_layer = int(target["layer"])
+        target_density = str(target.get("density_bin") or _density_bin(float(target.get("active_union_rate", 0.0))))
+        candidates = [
+            row for row in pools.get((target_layer, target_density), [])
+            if (_int(row, "layer"), _int(row, "latent_id")) not in used
+        ]
+        if not candidates:
+            candidates = [
+                row for row in layer_pools.get(target_layer, [])
+                if (_int(row, "layer"), _int(row, "latent_id")) not in used
+            ]
+        if not candidates:
+            candidates = [row for row in global_pool if (_int(row, "layer"), _int(row, "latent_id")) not in used]
+        rng.shuffle(candidates)
+        for row in candidates[:per_selected]:
+            key = (_int(row, "layer"), _int(row, "latent_id"))
+            used.add(key)
+            control = {**row}
+            control["matched_to_layer"] = target_layer
+            control["matched_to_latent_id"] = int(target["latent_id"])
+            controls.append(_normalize_feature_row(control, role="control", control_kind="random_active_noncausal"))
     return controls
 
 
@@ -382,6 +451,7 @@ def select_features(
     families: dict[str, Exp39Family],
     top_n: int,
     control_per_feature: int,
+    random_control_per_feature: int,
     seed: int,
 ) -> dict[str, Any]:
     run_dir = _run_dir(out_root, run_name)
@@ -406,6 +476,15 @@ def select_features(
             per_selected=control_per_feature,
             seed=seed + len(selected_rows),
         )
+        used_control_keys = {(_int(row, "layer"), _int(row, "latent_id")) for row in controls}
+        random_controls = _random_active_controls(
+            rows=score_rows,
+            selected=chosen,
+            per_selected=random_control_per_feature,
+            seed=seed + 1009 + len(selected_rows),
+            exclude_keys=used_control_keys,
+        )
+        controls.extend(random_controls)
         for control in controls:
             control["model"] = family.model
             control["result_root"] = str(root)
@@ -437,7 +516,13 @@ def select_features(
             "n_positive_features": len(positive),
             "n_selected": len(chosen),
             "n_controls": len(controls),
+            "n_matched_controls": sum(1 for row in controls if row.get("control_kind") == "matched_noncausal"),
+            "n_random_active_controls": sum(
+                1 for row in controls if row.get("control_kind") == "random_active_noncausal"
+            ),
             "density_counts_selected": _count_by(chosen, "density_bin"),
+            "density_counts_controls": _count_by(controls, "density_bin"),
+            "control_kind_counts": _count_by(controls, "control_kind"),
             "effect_summary": effects,
             "layer_metrics": layer_metrics,
         }
@@ -1382,17 +1467,62 @@ def _heuristic_label(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "feature_id": row.get("feature_id"),
         "label": label,
+        "specific_label": label,
         "category": category,
+        "coarse_category": category,
+        "fires_on": "Unavailable; heuristic fallback only.",
+        "mechanism_hypothesis": "Unavailable; heuristic fallback only.",
+        "artifact_risk": "high",
         "evidence": ["Heuristic fallback only; no LLM API key was available."],
         "counterexamples_or_ambiguity": "Not paper-grade without LLM autointerp and held-out validation.",
         "confidence": 0.1,
         "pt_it_specificity": "unclear",
         "label_source": "heuristic_not_paper_grade",
         "role": row.get("role"),
+        "control_kind": row.get("control_kind"),
         "model": row.get("model"),
         "layer": row.get("layer"),
         "latent_id": row.get("latent_id"),
     }
+
+
+def _chat_json_completion(
+    client: Any,
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    max_retries: int = 5,
+) -> Any:
+    kwargs: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "response_format": {"type": "json_object"},
+    }
+    if not model.startswith("gpt-5.5"):
+        kwargs["temperature"] = 0
+    for attempt in range(max_retries):
+        try:
+            return client.chat.completions.create(**kwargs)
+        except Exception as exc:
+            message = str(exc)
+            if "temperature" in kwargs and "Unsupported value: 'temperature'" in message:
+                kwargs.pop("temperature", None)
+                continue
+            transient = any(
+                marker in message.lower()
+                for marker in (
+                    "rate limit",
+                    "server error",
+                    "temporarily unavailable",
+                    "timeout",
+                    "connection",
+                    "try again",
+                )
+            )
+            if attempt + 1 >= max_retries or not transient:
+                raise
+            time.sleep(min(30.0, 2.0 * (2**attempt)) + random.random())
+    raise RuntimeError("unreachable OpenAI retry state")
 
 
 def autointerp(
@@ -1402,6 +1532,7 @@ def autointerp(
     model: str,
     max_features: int | None,
     include_controls: bool,
+    parallelism: int,
 ) -> dict[str, Any]:
     run_dir = _run_dir(out_root, run_name)
     rows = _dashboard_rows(run_dir / "dashboards" / "feature_dashboards.jsonl")
@@ -1426,29 +1557,48 @@ def autointerp(
         _write_json(out_dir / "label_validation.json", marker)
         _write_json(out_dir / "skipped_no_openai_key.json", marker)
         return marker
+    stale_skip_marker = out_dir / "skipped_no_openai_key.json"
+    if stale_skip_marker.exists():
+        stale_skip_marker.unlink()
 
-    from openai import OpenAI
-
-    client = OpenAI()
-    labels = []
     system = (
-        "You label sparse/crosscoder features for mechanistic interpretability. "
-        "Be conservative. Use the fixed ontology exactly. Return only JSON."
+        "You label individual PT/IT crosscoder latents for mechanistic interpretability. "
+        "Give a concrete, falsifiable feature hypothesis, not just a broad category. "
+        "Use the ontology only as a separate coarse_category field. Return only JSON."
     )
-    for row in rows:
+
+    def label_one(index: int, row: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        from openai import OpenAI
+
+        client = OpenAI()
         packet = _build_autointerp_packet(row)
         user = (
-            "Given this feature packet, produce JSON with keys: "
-            "feature_id, label, category, evidence, counterexamples_or_ambiguity, "
-            "confidence, pt_it_specificity. The category must be one of: "
-            f"{ONTOLOGY}. Do not overfit to one context.\n\n{packet}"
+            "Given this feature packet, produce JSON with these keys:\n"
+            "- feature_id\n"
+            "- specific_label: 5-14 words, concrete and testable. Bad: 'formatting feature'. "
+            "Good: 'newline before bullet-list item', 'multiple-choice option label token', "
+            "'colon after field name in Q/A template'.\n"
+            "- label: same as specific_label unless you need a shorter alias.\n"
+            f"- coarse_category: exactly one of {ONTOLOGY}\n"
+            "- category: same as coarse_category for compatibility\n"
+            "- fires_on: concise description of contexts/tokens that activate it\n"
+            "- output_effect: what promoted/suppressed tokens suggest the feature pushes toward\n"
+            "- mechanism_hypothesis: one sentence linking activation evidence and output evidence\n"
+            "- evidence: 3 short bullets from examples/projections\n"
+            "- counterexamples_or_ambiguity: concrete failure modes, not generic hedging\n"
+            "- artifact_risk: low, medium, or high\n"
+            "- confidence: 0.0 to 1.0\n"
+            "- pt_it_specificity: one of IT-weighted, PT-weighted, shared-amplified, shared-suppressed, unclear\n"
+            "- paper_example_quality: showcase, usable_with_caution, or not_showcase\n\n"
+            "Be conservative, but do not collapse to only ontology names. If the feature is dense or polysemantic, "
+            "name the most likely specific mixture and mark artifact_risk/high ambiguity.\n\n"
+            f"{packet}"
         )
         try:
-            response = client.chat.completions.create(
+            response = _chat_json_completion(
+                client,
                 model=model,
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-                response_format={"type": "json_object"},
-                temperature=0,
             )
             content = response.choices[0].message.content or "{}"
             parsed = json.loads(content)
@@ -1458,14 +1608,41 @@ def autointerp(
             parsed["label_source"] = f"llm_failed_fallback:{type(exc).__name__}"
             parsed["error"] = str(exc)[:500]
         parsed.setdefault("feature_id", row.get("feature_id"))
+        parsed.setdefault("specific_label", parsed.get("label"))
+        parsed.setdefault("label", parsed.get("specific_label"))
+        if parsed.get("coarse_category") and not parsed.get("category"):
+            parsed["category"] = parsed.get("coarse_category")
+        if parsed.get("category") and not parsed.get("coarse_category"):
+            parsed["coarse_category"] = parsed.get("category")
         parsed["role"] = row.get("role")
+        parsed["control_kind"] = row.get("control_kind")
         parsed["model"] = row.get("model")
         parsed["layer"] = row.get("layer")
         parsed["latent_id"] = row.get("latent_id")
-        labels.append(parsed)
-        _write_jsonl(out_dir / "llm_feature_labels.jsonl", labels)
+        return index, parsed
+
+    labels_by_index: list[dict[str, Any] | None] = [None] * len(rows)
+    max_workers = max(1, int(parallelism))
+    if max_workers == 1:
+        for index, row in enumerate(rows):
+            done_index, parsed = label_one(index, row)
+            labels_by_index[done_index] = parsed
+            _write_jsonl(out_dir / "llm_feature_labels.jsonl", [label for label in labels_by_index if label is not None])
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(label_one, index, row): index for index, row in enumerate(rows)}
+            for future in as_completed(futures):
+                done_index, parsed = future.result()
+                labels_by_index[done_index] = parsed
+                if sum(label is not None for label in labels_by_index) % 10 == 0:
+                    _write_jsonl(
+                        out_dir / "llm_feature_labels.jsonl",
+                        [label for label in labels_by_index if label is not None],
+                    )
+    labels = [label for label in labels_by_index if label is not None]
+    _write_jsonl(out_dir / "llm_feature_labels.jsonl", labels)
     _write_csv(out_dir / "llm_feature_label_summary.csv", labels)
-    return {"status": "complete", "n_labels": len(labels), "model": model}
+    return {"status": "complete", "n_labels": len(labels), "model": model, "parallelism": max_workers}
 
 
 def validate_labels(
@@ -1474,6 +1651,7 @@ def validate_labels(
     run_name: str,
     model: str,
     max_features: int | None,
+    parallelism: int,
 ) -> dict[str, Any]:
     run_dir = _run_dir(out_root, run_name)
     dash_rows = {row.get("feature_id"): row for row in _dashboard_rows(run_dir / "dashboards" / "feature_dashboards.jsonl")}
@@ -1493,15 +1671,14 @@ def validate_labels(
         _write_json(run_dir / "autointerp" / "label_validation.json", payload)
         return payload
 
-    from openai import OpenAI
+    def validate_one(label: dict[str, Any]) -> dict[str, Any] | None:
+        from openai import OpenAI
 
-    client = OpenAI()
-    results = []
-    for label in labels:
+        client = OpenAI()
         feature_id = label.get("feature_id")
         row = dash_rows.get(feature_id)
         if not row:
-            continue
+            return None
         val = row.get("validation_examples") or {}
         examples = []
         for high_kind in ("top_it", "contrast_it_over_pt", "top_pt"):
@@ -1511,7 +1688,7 @@ def validate_labels(
             for ex in val.get(low_kind, [])[:6]:
                 examples.append((0, ex))
         if len(examples) < 4:
-            continue
+            return None
         prompt_examples = [
             {
                 "index": idx,
@@ -1524,47 +1701,63 @@ def validate_labels(
         user = json.dumps(
             {
                 "task": "Predict whether each context is high activation for the supplied feature label.",
-                "feature_label": label.get("label"),
-                "category": label.get("category"),
+                "feature_label": label.get("specific_label") or label.get("label"),
+                "coarse_category": label.get("coarse_category") or label.get("category"),
+                "fires_on": label.get("fires_on"),
+                "output_effect": label.get("output_effect"),
+                "mechanism_hypothesis": label.get("mechanism_hypothesis"),
+                "counterexamples_or_ambiguity": label.get("counterexamples_or_ambiguity"),
                 "examples": prompt_examples,
                 "return_schema": {"predictions": [{"index": 0, "high_activation_probability": 0.0}]},
             },
             ensure_ascii=False,
         )
         try:
-            response = client.chat.completions.create(
+            response = _chat_json_completion(
+                client,
                 model=model,
                 messages=[
                     {"role": "system", "content": "Return only JSON. Calibrate probabilities."},
                     {"role": "user", "content": user},
                 ],
-                response_format={"type": "json_object"},
-                temperature=0,
             )
             parsed = json.loads(response.choices[0].message.content or "{}")
             preds = {int(p["index"]): float(p["high_activation_probability"]) for p in parsed.get("predictions", [])}
         except Exception as exc:
-            results.append({"feature_id": feature_id, "status": "failed", "error": str(exc)[:300]})
-            continue
+            return {"feature_id": feature_id, "status": "failed", "error": str(exc)[:300]}
         y_true = [truth for truth, _ex in examples]
         y_score = [preds.get(idx, 0.5) for idx in range(len(examples))]
         acc = sum((score >= 0.5) == bool(truth) for truth, score in zip(y_true, y_score, strict=False)) / len(y_true)
         auroc = _auroc(y_true, y_score)
-        results.append(
-            {
-                "feature_id": feature_id,
-                "role": label.get("role"),
-                "category": label.get("category"),
-                "accuracy": acc,
-                "auroc": auroc,
-                "n_examples": len(y_true),
-                "status": "complete",
-            }
-        )
+        return {
+            "feature_id": feature_id,
+            "role": label.get("role"),
+            "control_kind": label.get("control_kind"),
+            "category": label.get("category"),
+            "coarse_category": label.get("coarse_category") or label.get("category"),
+            "specific_label": label.get("specific_label") or label.get("label"),
+            "accuracy": acc,
+            "auroc": auroc,
+            "n_examples": len(y_true),
+            "status": "complete",
+        }
+
+    results_by_index: list[dict[str, Any] | None] = [None] * len(labels)
+    max_workers = max(1, int(parallelism))
+    if max_workers == 1:
+        for index, label in enumerate(labels):
+            results_by_index[index] = validate_one(label)
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(validate_one, label): index for index, label in enumerate(labels)}
+            for future in as_completed(futures):
+                results_by_index[futures[future]] = future.result()
+    results = [row for row in results_by_index if row is not None]
     baseline = _validation_baseline(results)
     payload = {
         "status": "complete",
         "model": model,
+        "parallelism": max_workers,
         "n_features": len(results),
         "mean_accuracy": _mean([row.get("accuracy") for row in results]),
         "mean_auroc": _mean([row.get("auroc") for row in results]),
@@ -1841,6 +2034,7 @@ def main_autointerp() -> None:
     parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"))
     parser.add_argument("--max-features", type=int, default=None)
     parser.add_argument("--include-controls", action="store_true")
+    parser.add_argument("--parallelism", type=int, default=int(os.environ.get("OPENAI_PARALLELISM", "1")))
     args = parser.parse_args()
     payload = autointerp(
         out_root=args.out_root,
@@ -1848,6 +2042,7 @@ def main_autointerp() -> None:
         model=args.model,
         max_features=args.max_features,
         include_controls=args.include_controls,
+        parallelism=args.parallelism,
     )
     print(json.dumps(payload, indent=2, default=_json_default))
 
@@ -1858,12 +2053,14 @@ def main_validate() -> None:
     parser.add_argument("--run-name", required=True)
     parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"))
     parser.add_argument("--max-features", type=int, default=None)
+    parser.add_argument("--parallelism", type=int, default=int(os.environ.get("OPENAI_PARALLELISM", "1")))
     args = parser.parse_args()
     payload = validate_labels(
         out_root=args.out_root,
         run_name=args.run_name,
         model=args.model,
         max_features=args.max_features,
+        parallelism=args.parallelism,
     )
     print(json.dumps(payload, indent=2, default=_json_default))
 
@@ -1936,6 +2133,20 @@ def main_run_all() -> None:
         crosscoder_dtype_name=dashboard_args.crosscoder_dtype,
         projection_top_k=dashboard_args.projection_top_k,
     )
-    autointerp(out_root=args.out_root, run_name=args.run_name, model=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"), max_features=None, include_controls=True)
-    validate_labels(out_root=args.out_root, run_name=args.run_name, model=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"), max_features=None)
+    parallelism = int(os.environ.get("OPENAI_PARALLELISM", "1"))
+    autointerp(
+        out_root=args.out_root,
+        run_name=args.run_name,
+        model=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"),
+        max_features=None,
+        include_controls=True,
+        parallelism=parallelism,
+    )
+    validate_labels(
+        out_root=args.out_root,
+        run_name=args.run_name,
+        model=os.environ.get("OPENAI_MODEL", "gpt-4.1-mini"),
+        max_features=None,
+        parallelism=parallelism,
+    )
     analyze(out_root=args.out_root, run_name=args.run_name)

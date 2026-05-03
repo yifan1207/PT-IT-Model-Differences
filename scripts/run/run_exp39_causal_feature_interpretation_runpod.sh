@@ -24,7 +24,8 @@ PROJECTION_TOP_K="${PROJECTION_TOP_K:-30}"
 PULL_GCS="${PULL_GCS:-1}"
 PULL_CACHE="${PULL_CACHE:-0}"
 RUN_AUTOINTERP="${RUN_AUTOINTERP:-1}"
-OPENAI_MODEL="${OPENAI_MODEL:-gpt-4.1-mini}"
+OPENAI_MODEL="${OPENAI_MODEL:-gpt-5.5}"
+OPENAI_PARALLELISM="${OPENAI_PARALLELISM:-8}"
 GCS_SYNC_DEST="${GCS_SYNC_DEST:-}"
 GPU_LIST="${GPU_LIST:-}"
 SHARDS_PER_FAMILY="${SHARDS_PER_FAMILY:-auto}"
@@ -256,11 +257,13 @@ if [[ "$RUN_AUTOINTERP" == "1" ]]; then
     --out-root "$OUT_ROOT" \
     --run-name "$RUN_NAME" \
     --model "$OPENAI_MODEL" \
+    --parallelism "$OPENAI_PARALLELISM" \
     --include-controls
   $PY_RUNNER -m src.poc.exp39_causal_feature_interpretation validate \
     --out-root "$OUT_ROOT" \
     --run-name "$RUN_NAME" \
-    --model "$OPENAI_MODEL"
+    --model "$OPENAI_MODEL" \
+    --parallelism "$OPENAI_PARALLELISM"
 fi
 
 $PY_RUNNER -m src.poc.exp39_causal_feature_interpretation analyze \
