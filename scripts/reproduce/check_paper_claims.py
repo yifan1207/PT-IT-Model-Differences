@@ -1017,6 +1017,47 @@ def exp38_layer(run_key: str, layer: str, field: str) -> NumberFn:
     return _read
 
 
+def exp40_terminal_grid_row(path: str, config: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_json(repo, path)
+        for row in rows:
+            if row["config"] == config:
+                return float(row[field])
+        raise KeyError((path, config, field))
+
+    return _read
+
+
+def exp40_terminal_grid_effect(root: str, config: str, feature_set: str, k: int, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, f"{root}/grid/{config}/analysis/effects.csv")
+        vals = []
+        for row in rows:
+            if row["feature_set"] != feature_set:
+                continue
+            if int(float(row["k"])) != k:
+                continue
+            vals.append(float(row[field]))
+        if not vals:
+            raise KeyError((root, config, feature_set, k, field))
+        return float(sum(vals) / len(vals))
+
+    return _read
+
+
+def exp40_olmo30_selected(field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp40_terminal_crosscoder_hardening/"
+            "exp40_olmo2_7b_layer30_grid_20260503_1210_a100x4_localshm_compact/"
+            "olmo2_7b/layer30_grid/analysis/olmo30_selected_candidate.json",
+        )
+        return float(data["selected"][field])
+
+    return _read
+
+
 def exp39_validation(field: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -1158,6 +1199,46 @@ def exp41_structure_interaction_drop(alpha: float, condition_kind: str, model: s
             vals.append(float(row["interaction_drop_mean"]))
         if not vals:
             raise KeyError((alpha, condition_kind, model))
+        return float(sum(vals) / len(vals))
+
+    return _read
+
+
+def exp42_family_estimate(name: str, field: str = "estimate", family: str | None = None) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp42_terminal_feature_upstream_conditioning/"
+            "exp42_full_4fam_h100x8_20260503_155212/analysis/"
+            "feature_gating_summary.json",
+        )
+        row = data["family_estimates"][name]
+        if family is not None:
+            return float(row["family_means"][family])
+        return float(row[field])
+
+    return _read
+
+
+def exp42_effect(feature_set: str, k: int, field: str, model: str | None = None) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp42_terminal_feature_upstream_conditioning/"
+            "exp42_full_4fam_h100x8_20260503_155212/analysis/"
+            "feature_gating_effects.csv",
+        )
+        vals = []
+        for row in rows:
+            if row["feature_set"] != feature_set:
+                continue
+            if int(float(row["k"])) != k:
+                continue
+            if model is not None and row["model"] != model:
+                continue
+            vals.append(float(row[field]))
+        if not vals:
+            raise KeyError((feature_set, k, field, model))
         return float(sum(vals) / len(vals))
 
     return _read
@@ -3246,6 +3327,50 @@ CHECKS: list[ClaimCheck] = [
         ),
     ),
     ClaimCheck(
+        "Exp40 Qwen layer-33 best-grid IT VE",
+        "exp40 qwen layer33 grid_summary.json",
+        0.7434459030628204,
+        exp40_terminal_grid_row(
+            "results/exp40_terminal_crosscoder_hardening/"
+            "exp40_qwen3_4b_layer33_grid_20260503_1115_a100x4_localtmp_compact/"
+            "qwen3_4b/layer33_grid/grid_summary.json",
+            "qwen_l33_d196608_k96",
+            "ve_it",
+        ),
+    ),
+    ClaimCheck(
+        "Exp40 Qwen layer-33 best-grid top-200 drop",
+        "exp40 qwen layer33 effects.csv",
+        0.09778645833333334,
+        exp40_terminal_grid_effect(
+            "results/exp40_terminal_crosscoder_hardening/"
+            "exp40_qwen3_4b_layer33_grid_20260503_1115_a100x4_localtmp_compact/"
+            "qwen3_4b/layer33_grid",
+            "qwen_l33_d196608_k96",
+            "causal_top",
+            200,
+            "interaction_drop_mean",
+        ),
+    ),
+    ClaimCheck(
+        "Exp40 OLMo layer-30 selected-grid IT VE",
+        "exp40 olmo layer30 selected_candidate.json",
+        0.6348804533481598,
+        exp40_olmo30_selected("ve_it"),
+    ),
+    ClaimCheck(
+        "Exp40 OLMo layer-30 selected-grid top-200 drop",
+        "exp40 olmo layer30 selected_candidate.json",
+        0.45155696278994845,
+        exp40_olmo30_selected("causal_top200_interaction_drop"),
+    ),
+    ClaimCheck(
+        "Exp40 OLMo layer-30 selected-grid matched-random drop",
+        "exp40 olmo layer30 selected_candidate.json",
+        -0.08282137736422089,
+        exp40_olmo30_selected("causal_matched_random200_interaction_drop_mean"),
+    ),
+    ClaimCheck(
         "Exp39 autointerp feature count",
         "exp39 label_validation.json",
         300.0,
@@ -3346,6 +3471,140 @@ CHECKS: list[ClaimCheck] = [
         "exp41 bucket_effects_by_model.csv",
         0.10986979166666666,
         exp41_structure_interaction_drop(2.0, "feature_bucket", model="qwen3_4b"),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 absolute causal feature gate mean",
+        "exp42 feature_gating_effects.csv",
+        1.0226069353573286,
+        exp42_effect("causal_top", 200, "feature_causal_gate_mean"),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 causal gate vs matched-random estimate",
+        "exp42 feature_gating_summary.json",
+        1.2736012551346552,
+        exp42_family_estimate("feature_causal_gate__causal_minus_causal_matched_random__k200"),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 causal gate vs matched-random CI low",
+        "exp42 feature_gating_summary.json",
+        1.1981219387288735,
+        exp42_family_estimate("feature_causal_gate__causal_minus_causal_matched_random__k200", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 causal gate vs matched-random CI high",
+        "exp42 feature_gating_summary.json",
+        1.3505247632287054,
+        exp42_family_estimate("feature_causal_gate__causal_minus_causal_matched_random__k200", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 causal gate vs top-active estimate",
+        "exp42 feature_gating_summary.json",
+        2.0614680428560854,
+        exp42_family_estimate("feature_causal_gate__causal_minus_top_active_noncausal__k200"),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 causal gate vs top-active CI low",
+        "exp42 feature_gating_summary.json",
+        1.9526834287819153,
+        exp42_family_estimate("feature_causal_gate__causal_minus_top_active_noncausal__k200", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 causal gate vs top-active CI high",
+        "exp42 feature_gating_summary.json",
+        2.1751352306570437,
+        exp42_family_estimate("feature_causal_gate__causal_minus_top_active_noncausal__k200", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 margin-weighted activation gate vs matched-random estimate",
+        "exp42 feature_gating_summary.json",
+        0.4227289413772968,
+        exp42_family_estimate(
+            "activation_gate_decoder_margin_weighted__causal_minus_causal_matched_random__k200"
+        ),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 margin-weighted activation gate vs matched-random CI low",
+        "exp42 feature_gating_summary.json",
+        0.3648426126601312,
+        exp42_family_estimate(
+            "activation_gate_decoder_margin_weighted__causal_minus_causal_matched_random__k200",
+            "ci_low",
+        ),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 margin-weighted activation gate vs matched-random CI high",
+        "exp42 feature_gating_summary.json",
+        0.48144207303777403,
+        exp42_family_estimate(
+            "activation_gate_decoder_margin_weighted__causal_minus_causal_matched_random__k200",
+            "ci_high",
+        ),
+    ),
+    ClaimCheck(
+        "Exp42 top-200 causal gate position>=3 mean",
+        "exp42 feature_gating_effects.csv",
+        0.735790508779449,
+        exp42_effect("causal_top", 200, "feature_causal_gate_pos3_mean"),
+    ),
+    ClaimCheck(
+        "Exp42 Gemma top-200 absolute causal gate",
+        "exp42 feature_gating_effects.csv",
+        1.9826106770833334,
+        exp42_effect("causal_top", 200, "feature_causal_gate_mean", model="gemma3_4b"),
+    ),
+    ClaimCheck(
+        "Exp42 Llama top-200 absolute causal gate",
+        "exp42 feature_gating_effects.csv",
+        0.9222066243489583,
+        exp42_effect("causal_top", 200, "feature_causal_gate_mean", model="llama31_8b"),
+    ),
+    ClaimCheck(
+        "Exp42 Mistral top-200 absolute causal gate",
+        "exp42 feature_gating_effects.csv",
+        0.8155490996649917,
+        exp42_effect("causal_top", 200, "feature_causal_gate_mean", model="mistral_7b"),
+    ),
+    ClaimCheck(
+        "Exp42 Qwen top-200 absolute causal gate",
+        "exp42 feature_gating_effects.csv",
+        0.37006134033203125,
+        exp42_effect("causal_top", 200, "feature_causal_gate_mean", model="qwen3_4b"),
+    ),
+    ClaimCheck(
+        "Exp42 Gemma top-200 causal gate vs matched-random",
+        "exp42 feature_gating_summary.json",
+        2.4323589409722226,
+        exp42_family_estimate(
+            "feature_causal_gate__causal_minus_causal_matched_random__k200",
+            family="gemma3_4b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp42 Llama top-200 causal gate vs matched-random",
+        "exp42 feature_gating_summary.json",
+        1.2535394965277777,
+        exp42_family_estimate(
+            "feature_causal_gate__causal_minus_causal_matched_random__k200",
+            family="llama31_8b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp42 Mistral top-200 causal gate vs matched-random",
+        "exp42 feature_gating_summary.json",
+        0.9824513190954773,
+        exp42_family_estimate(
+            "feature_causal_gate__causal_minus_causal_matched_random__k200",
+            family="mistral_7b",
+        ),
+    ),
+    ClaimCheck(
+        "Exp42 Qwen top-200 causal gate vs matched-random",
+        "exp42 feature_gating_summary.json",
+        0.42605526394314236,
+        exp42_family_estimate(
+            "feature_causal_gate__causal_minus_causal_matched_random__k200",
+            family="qwen3_4b",
+        ),
     ),
     ClaimCheck(
         "LLM judge resolved G2: PT late graft over PT baseline",
