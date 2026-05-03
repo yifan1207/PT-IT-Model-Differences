@@ -198,8 +198,8 @@ echo "[exp36] alphas=${ALPHAS} n_random=${N_RANDOM} random_control=${RANDOM_CONT
 
 declare -a job_models=()
 declare -a job_worker_indices=()
-for model in $MODEL_LIST; do
-  for ((worker=0; worker<WORKERS_PER_MODEL; worker++)); do
+for ((worker=0; worker<WORKERS_PER_MODEL; worker++)); do
+  for model in $MODEL_LIST; do
     job_models+=("$model")
     job_worker_indices+=("$worker")
   done
