@@ -328,12 +328,14 @@ run_pilot_grid() {
   ACTIVE_PIDS=()
   ACTIVE_GPUS=()
   WAIT_STATUS=0
+  local cache_abs
+  cache_abs="$(cd "${RUN_ROOT}/cache" && pwd)"
   for cfg in "${cfgs[@]}"; do
     [[ -z "$cfg" ]] && continue
     IFS=',' read -r name layer dict_size kk steps batch_tokens auxk seed <<< "$cfg"
     local cfg_root="${RUN_ROOT}/grid/${name}"
     mkdir -p "$cfg_root"
-    ln -sfn "${RUN_ROOT}/cache" "${cfg_root}/cache"
+    ln -sfn "$cache_abs" "${cfg_root}/cache"
     while [[ "${#FREE_GPUS[@]}" -lt 1 ]]; do
       wait_for_any_active_train
     done

@@ -161,7 +161,7 @@ def _preselect_rows_for_token_budget(
     # Leave slack for special-token filtering and shorter records. This keeps the
     # exact token target intact while avoiding continuations for thousands of rows
     # that will never enter the cache.
-    estimated_usable_tokens = max(1, int(max_seq_len * 0.80))
+    estimated_usable_tokens = max(1, int(max_seq_len * 0.20))
     needed = int(math.ceil(n_tokens / estimated_usable_tokens)) + max(1, int(batch_size)) * 2
     if needed >= len(rows):
         return rows
