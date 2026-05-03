@@ -1632,7 +1632,9 @@ def autointerp(
             parsed = _heuristic_label(row)
             parsed["label_source"] = f"llm_failed_fallback:{type(exc).__name__}"
             parsed["error"] = str(exc)[:500]
-        parsed.setdefault("feature_id", row.get("feature_id"))
+        # Keep the canonical ID from the dashboard row. Models sometimes drop
+        # the control suffix even when instructed to echo feature_id verbatim.
+        parsed["feature_id"] = row.get("feature_id")
         parsed.setdefault("specific_label", parsed.get("label"))
         parsed.setdefault("label", parsed.get("specific_label"))
         if parsed.get("split_specificity") and not parsed.get("pt_it_specificity"):
@@ -1730,7 +1732,15 @@ def validate_labels(
         feature_id = label.get("feature_id")
         row = dash_rows.get(feature_id)
         if not row:
-            return None
+            return {
+                "feature_id": feature_id,
+                "role": label.get("role"),
+                "control_kind": label.get("control_kind"),
+                "category": label.get("category"),
+                "coarse_category": label.get("coarse_category") or label.get("category"),
+                "specific_label": label.get("specific_label") or label.get("label"),
+                "status": "skipped_missing_dashboard",
+            }
         val = row.get("validation_examples") or {}
         examples = []
         for high_kind in ("top_it", "contrast_it_over_pt", "top_pt"):
@@ -1740,7 +1750,16 @@ def validate_labels(
             for ex in val.get(low_kind, [])[:6]:
                 examples.append((0, ex))
         if len(examples) < 4:
-            return None
+            return {
+                "feature_id": feature_id,
+                "role": label.get("role"),
+                "control_kind": label.get("control_kind"),
+                "category": label.get("category"),
+                "coarse_category": label.get("coarse_category") or label.get("category"),
+                "specific_label": label.get("specific_label") or label.get("label"),
+                "n_examples": len(examples),
+                "status": "skipped_insufficient_validation_examples",
+            }
         prompt_examples = [
             {
                 "index": idx,
@@ -1776,7 +1795,61 @@ def validate_labels(
             parsed = json.loads(response.choices[0].message.content or "{}")
             preds = {int(p["index"]): float(p["high_activation_probability"]) for p in parsed.get("predictions", [])}
         except Exception as exc:
-            return {"feature_id": feature_id, "status": "failed", "error": str(exc)[:300]}
+            message = str(exc)
+            if "cybersecurity risk" not in message.lower() and "content" not in message.lower():
+                return {"feature_id": feature_id, "status": "failed", "error": message[:300]}
+            sanitized_examples = [
+                {
+                    "index": idx,
+                    "context_window": "[withheld after automated safety filter]",
+                    "token_text": ex.get("token_text"),
+                    "token_source": ex.get("token_source"),
+                    "prompt_category": ex.get("prompt_category"),
+                }
+                for idx, (_truth, ex) in enumerate(examples)
+            ]
+            sanitized_user = json.dumps(
+                {
+                    "task": (
+                        "Predict whether each context is high activation for the supplied feature label. "
+                        "The full context was withheld after an automated safety filter; use token text, "
+                        "token source, prompt category, and the feature label only. Calibrate uncertainty."
+                    ),
+                    "feature_label": label.get("specific_label") or label.get("label"),
+                    "coarse_category": label.get("coarse_category") or label.get("category"),
+                    "fires_on": label.get("fires_on"),
+                    "output_effect": label.get("output_effect"),
+                    "mechanism_hypothesis": label.get("mechanism_hypothesis"),
+                    "counterexamples_or_ambiguity": label.get("counterexamples_or_ambiguity"),
+                    "examples": sanitized_examples,
+                    "return_schema": {"predictions": [{"index": 0, "high_activation_probability": 0.0}]},
+                },
+                ensure_ascii=False,
+            )
+            try:
+                response = _chat_json_completion(
+                    client,
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "Return only JSON. Calibrate probabilities."},
+                        {"role": "user", "content": sanitized_user},
+                    ],
+                )
+                parsed = json.loads(response.choices[0].message.content or "{}")
+                preds = {
+                    int(p["index"]): float(p["high_activation_probability"])
+                    for p in parsed.get("predictions", [])
+                }
+                sanitized_retry = True
+            except Exception as retry_exc:
+                return {
+                    "feature_id": feature_id,
+                    "status": "failed",
+                    "error": message[:240],
+                    "sanitized_retry_error": str(retry_exc)[:240],
+                }
+        else:
+            sanitized_retry = False
         y_true = [truth for truth, _ex in examples]
         y_score = [preds.get(idx, 0.5) for idx in range(len(examples))]
         acc = sum((score >= 0.5) == bool(truth) for truth, score in zip(y_true, y_score, strict=False)) / len(y_true)
@@ -1792,6 +1865,7 @@ def validate_labels(
             "auroc": auroc,
             "n_examples": len(y_true),
             "status": "complete",
+            "sanitized_retry": sanitized_retry,
         }
 
     results_by_index: list[dict[str, Any] | None] = [None] * len(labels)
@@ -1973,6 +2047,7 @@ def _aggregate_validation_by_role(results: list[dict[str, Any]]) -> dict[str, An
     return {
         role: {
             "n": len(rows),
+            "n_scored": sum(row.get("accuracy") not in (None, "") for row in rows),
             "mean_accuracy": _mean(row.get("accuracy") for row in rows),
             "mean_auroc": _mean(row.get("auroc") for row in rows),
         }
@@ -1989,6 +2064,7 @@ def _aggregate_validation_by_control_kind(results: list[dict[str, Any]]) -> dict
     return {
         kind: {
             "n": len(rows),
+            "n_scored": sum(row.get("accuracy") not in (None, "") for row in rows),
             "mean_accuracy": _mean(row.get("accuracy") for row in rows),
             "mean_auroc": _mean(row.get("auroc") for row in rows),
         }
@@ -2057,11 +2133,19 @@ def analyze(
         )
     category_rows = _category_table(rows)
     group_rows = _group_table(rows)
+    recommendation = _paper_recommendation(rows, validation)
+    n_llm_labeled = sum(1 for row in rows if "heuristic_not_paper_grade" not in str(row.get("label_source")))
+    n_paper_grade = n_llm_labeled if recommendation.startswith("candidate_main_text") else 0
     summary = {
         "run_name": run_name,
         "n_dashboard_features": len(dashboards),
         "n_labels": len(labels),
-        "n_paper_grade_labels": sum(1 for row in rows if "heuristic_not_paper_grade" not in str(row.get("label_source"))),
+        "n_llm_labeled_features": n_llm_labeled,
+        "n_paper_grade_labels": n_paper_grade,
+        "paper_grade_rule": (
+            "LLM-labeled features are counted as paper-grade only when held-out label validation "
+            "beats control-feature validation by the predeclared margin."
+        ),
         "validation": validation,
         "category_counts": _count_by(rows, "category"),
         "category_score_mass": {
@@ -2075,7 +2159,7 @@ def analyze(
             if row["group_name"]
         },
         "control_kind_counts": _count_by(rows, "control_kind"),
-        "paper_integration_recommendation": _paper_recommendation(rows, validation),
+        "paper_integration_recommendation": recommendation,
     }
     analysis_dir = run_dir / "analysis"
     _write_csv(analysis_dir / "feature_category_table.csv", category_rows)
@@ -2177,7 +2261,11 @@ def _write_paper_note(
     lines.append(f"Recommendation: `{summary.get('paper_integration_recommendation')}`")
     lines.append("")
     lines.append(f"Dashboard features: {summary.get('n_dashboard_features')}")
-    lines.append(f"Labels: {summary.get('n_labels')} (paper-grade: {summary.get('n_paper_grade_labels')})")
+    lines.append(
+        f"Labels: {summary.get('n_labels')} "
+        f"(LLM-labeled: {summary.get('n_llm_labeled_features')}, "
+        f"paper-grade under control-beating rule: {summary.get('n_paper_grade_labels')})"
+    )
     lines.append("")
     lines.append("## Categories")
     for row in category_rows:

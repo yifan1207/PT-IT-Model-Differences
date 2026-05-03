@@ -575,6 +575,19 @@ def exp37_effect(key: str, column: str, readout: str = "common_it") -> NumberFn:
     return _read
 
 
+def exp37_token_support(scope: str, metric: str, column: str = "fraction") -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp37_random_prefix_baseline/"
+            "exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/"
+            "analysis/token_support_control/summary.json",
+        )
+        return float(data["comparison"][scope]["family_balanced"][metric][column])
+
+    return _read
+
+
 def token_support_bool(metric: str, column: str = "fraction") -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -766,6 +779,185 @@ def exp27_primary(variant: str, field: str) -> NumberFn:
             "analysis/exp27_summary.json",
         )
         return float(data["primary"][variant][field])
+
+    return _read
+
+
+def exp34_model(model: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/paper_synthesis/exp34_dense5_final_readout_crosscoder/"
+            "combined_dense5_20260503_0018/exp34_dense5_crosscoder_summary.json",
+        )
+        for row in data["models"]:
+            if row["model"] == model:
+                return float(row[field])
+        raise KeyError((model, field))
+
+    return _read
+
+
+def exp34_model_drop_share(model: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/paper_synthesis/exp34_dense5_final_readout_crosscoder/"
+            "combined_dense5_20260503_0018/exp34_dense5_crosscoder_summary.json",
+        )
+        for row in data["models"]:
+            if row["model"] == model:
+                return float(row["causal_top200_interaction_drop"]) / float(row["interaction_full"])
+        raise KeyError(model)
+
+    return _read
+
+
+def exp38_gate(run_key: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp38_qwen_olmo_final_layer_crosscoder_hardening/"
+            "exp38_qwen_olmo_final_summary_20260503/analysis/"
+            "exp38_qwen_olmo_decision_summary.json",
+        )
+        return float(data["runs"][run_key]["success_gates"][field])
+
+    return _read
+
+
+def exp38_qwen_final2_drop_share() -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp38_qwen_olmo_final_layer_crosscoder_hardening/"
+            "exp38_qwen3_4b_final2_d81920_k64_20260503_0451_a100x2/"
+            "selected_d81920_k64/analysis/summary.json",
+        )
+        for row in data["effects"]:
+            if row.get("feature_set") == "causal_top" and int(row.get("k", -1)) == 200:
+                return float(row["interaction_drop_mean"]) / float(row["interaction_full_mean"])
+        raise KeyError("qwen_final2 causal_top k=200")
+
+    return _read
+
+
+def exp38_layer(run_key: str, layer: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp38_qwen_olmo_final_layer_crosscoder_hardening/"
+            "exp38_qwen_olmo_final_summary_20260503/analysis/"
+            "exp38_qwen_olmo_decision_summary.json",
+        )
+        return float(data["runs"][run_key]["metrics_by_layer"][layer][field])
+
+    return _read
+
+
+def exp39_validation(field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp39_causal_feature_interpretation/"
+            "exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/"
+            "autointerp/label_validation.json",
+        )
+        return float(data[field])
+
+    return _read
+
+
+def exp39_taxonomy_summary_count(category: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp39_causal_feature_interpretation/"
+            "exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/"
+            "analysis/exp39_causal_paper_taxonomy_summary_v3.json",
+        )
+        return float(data["overall_counts"].get(category, 0))
+
+    return _read
+
+
+def exp39_taxonomy_group(group: str) -> NumberFn:
+    groups = {
+        "instruction_tuned_behavior_readout": {
+            "assistant_register_or_user_facing_style",
+            "alignment_safety_or_advice_boundary",
+            "instruction_following_or_format_control",
+            "response_structure_or_answer_readout",
+            "evaluation_or_multiple_choice_scaffold",
+            "code_or_tool_syntax_readout",
+        },
+        "surface_tokenization_adjacent": {
+            "surface_punctuation_or_tokenization",
+        },
+        "artifact_or_unclear": {
+            "dataset_or_repetition_artifact",
+            "rare_unicode_or_web_artifact",
+            "generic_frequency_or_unclear",
+        },
+    }
+
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp39_causal_feature_interpretation/"
+            "exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/"
+            "analysis/exp39_causal_paper_taxonomy_summary_v3.json",
+        )
+        categories = groups[group]
+        return float(sum(data["overall_counts"].get(category, 0) for category in categories))
+
+    return _read
+
+
+def exp39_taxonomy_overall(category: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp39_causal_feature_interpretation/"
+            "exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/"
+            "analysis/causal_paper_taxonomy_overall_v3.csv",
+        )
+        for row in rows:
+            if row["paper_category"] == category:
+                return float(row[field])
+        raise KeyError((category, field))
+
+    return _read
+
+
+def exp39_taxonomy_set(name: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp39_causal_feature_interpretation/"
+            "exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/"
+            "analysis/all_paper_taxonomy_set_tests_v4.csv",
+        )
+        for row in rows:
+            if row["set"] == name:
+                return float(row[field])
+        raise KeyError((name, field))
+
+    return _read
+
+
+def exp39_taxonomy_category(category: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp39_causal_feature_interpretation/"
+            "exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/"
+            "analysis/all_paper_taxonomy_category_by_role_v4.csv",
+        )
+        for row in rows:
+            if row["paper_category"] == category:
+                return float(row[field])
+        raise KeyError((category, field))
 
     return _read
 
@@ -1319,6 +1511,48 @@ CHECKS: list[ClaimCheck] = [
         "exp37 effects.csv",
         0.030986584819134605,
         exp37_effect("prediv_future_pair__shared_prediv", "ratio_to_first_diff"),
+    ),
+    ClaimCheck(
+        "Exp37 token support true first-diff position 0",
+        "exp37 token_support_control summary.json",
+        0.502778059809857,
+        exp37_token_support("first_diff__reference", "position_0"),
+    ),
+    ClaimCheck(
+        "Exp37 token support random local position >=3",
+        "exp37 token_support_control summary.json",
+        0.9487884335219119,
+        exp37_token_support("random_local_disagreement__source_balanced", "position_ge_3"),
+    ),
+    ClaimCheck(
+        "Exp37 token support random local position >=5",
+        "exp37 token_support_control summary.json",
+        0.9122868874694541,
+        exp37_token_support("random_local_disagreement__source_balanced", "position_ge_5"),
+    ),
+    ClaimCheck(
+        "Exp37 token support first-diff any content",
+        "exp37 token_support_control summary.json",
+        0.5967986576797526,
+        exp37_token_support("first_diff__reference", "any_content_token"),
+    ),
+    ClaimCheck(
+        "Exp37 token support random local any content",
+        "exp37 token_support_control summary.json",
+        0.6858233281261132,
+        exp37_token_support("random_local_disagreement__source_balanced", "any_content_token"),
+    ),
+    ClaimCheck(
+        "Exp37 token support first-diff any format",
+        "exp37 token_support_control summary.json",
+        0.35500477930036983,
+        exp37_token_support("first_diff__reference", "any_format_token"),
+    ),
+    ClaimCheck(
+        "Exp37 token support random local any format",
+        "exp37 token_support_control summary.json",
+        0.2631593047068337,
+        exp37_token_support("random_local_disagreement__source_balanced", "any_format_token"),
     ),
     ClaimCheck(
         "First-divergence support generated position 0 fraction",
@@ -2533,6 +2767,142 @@ CHECKS: list[ClaimCheck] = [
         "exp25 olmo_stage_progression_table.csv",
         551.0,
         exp25_olmo_stage("PT->SFT", "first_diff_events"),
+    ),
+    ClaimCheck(
+        "Exp34 Gemma terminal crosscoder top-200 drop",
+        "exp34_dense5_crosscoder_summary.json",
+        1.6945490056818182,
+        exp34_model("gemma3_4b", "causal_top200_interaction_drop"),
+    ),
+    ClaimCheck(
+        "Exp34 Gemma terminal crosscoder matched-random drop",
+        "exp34_dense5_crosscoder_summary.json",
+        -0.30980705492424243,
+        exp34_model("gemma3_4b", "causal_matched_random200_drop_mean"),
+    ),
+    ClaimCheck(
+        "Exp34 Gemma terminal crosscoder drop share",
+        "exp34_dense5_crosscoder_summary.json",
+        0.2793708688753974,
+        exp34_model_drop_share("gemma3_4b"),
+    ),
+    ClaimCheck(
+        "Exp34 Llama terminal crosscoder top-200 drop",
+        "exp34_dense5_crosscoder_summary.json",
+        0.5987082741477273,
+        exp34_model("llama31_8b", "causal_top200_interaction_drop"),
+    ),
+    ClaimCheck(
+        "Exp34 Llama terminal crosscoder matched-random drop",
+        "exp34_dense5_crosscoder_summary.json",
+        -0.2094970703125,
+        exp34_model("llama31_8b", "causal_matched_random200_drop_mean"),
+    ),
+    ClaimCheck(
+        "Exp34 Llama terminal crosscoder drop share",
+        "exp34_dense5_crosscoder_summary.json",
+        0.4845227156121652,
+        exp34_model_drop_share("llama31_8b"),
+    ),
+    ClaimCheck(
+        "Exp34 Mistral terminal crosscoder top-200 drop",
+        "exp34_dense5_crosscoder_summary.json",
+        0.6844608123569794,
+        exp34_model("mistral_7b", "causal_top200_interaction_drop"),
+    ),
+    ClaimCheck(
+        "Exp34 Mistral terminal crosscoder matched-random drop",
+        "exp34_dense5_crosscoder_summary.json",
+        -0.09979262013729977,
+        exp34_model("mistral_7b", "causal_matched_random200_drop_mean"),
+    ),
+    ClaimCheck(
+        "Exp34 Mistral terminal crosscoder drop share",
+        "exp34_dense5_crosscoder_summary.json",
+        0.2607540796033454,
+        exp34_model_drop_share("mistral_7b"),
+    ),
+    ClaimCheck(
+        "Exp38 Qwen final-two crosscoder top-200 drop",
+        "exp38_qwen_olmo_decision_summary.json",
+        0.32359397194602274,
+        exp38_gate("qwen_final2_clean_pass", "causal_top200_interaction_drop"),
+    ),
+    ClaimCheck(
+        "Exp38 Qwen final-two crosscoder matched-random drop",
+        "exp38_qwen_olmo_decision_summary.json",
+        -0.033422111742424244,
+        exp38_gate("qwen_final2_clean_pass", "causal_matched_random200_interaction_drop_mean"),
+    ),
+    ClaimCheck(
+        "Exp38 Qwen final-two crosscoder drop share",
+        "exp38 qwen final-two summary.json",
+        0.3746184402557093,
+        exp38_qwen_final2_drop_share(),
+    ),
+    ClaimCheck(
+        "Exp38 Qwen layer-34 IT VE",
+        "exp38_qwen_olmo_decision_summary.json",
+        0.9595943056046963,
+        exp38_layer("qwen_final2_clean_pass", "layer_34", "heldout_variance_explained_it"),
+    ),
+    ClaimCheck(
+        "Exp38 Qwen layer-35 IT VE",
+        "exp38_qwen_olmo_decision_summary.json",
+        0.9701936151832342,
+        exp38_layer("qwen_final2_clean_pass", "layer_35", "heldout_variance_explained_it"),
+    ),
+    ClaimCheck(
+        "Exp38 OLMo final-two diagnostic top-200 drop",
+        "exp38_qwen_olmo_decision_summary.json",
+        0.5982546506228147,
+        exp38_gate("olmo_original_final2_causal_pass_quality_fail", "causal_top200_interaction_drop"),
+    ),
+    ClaimCheck(
+        "Exp38 OLMo final-two diagnostic matched-random drop",
+        "exp38_qwen_olmo_decision_summary.json",
+        -0.06800053855107567,
+        exp38_gate("olmo_original_final2_causal_pass_quality_fail", "causal_matched_random200_interaction_drop_mean"),
+    ),
+    ClaimCheck(
+        "Exp38 OLMo layer-30 IT VE quality failure",
+        "exp38_qwen_olmo_decision_summary.json",
+        0.6157933473587036,
+        exp38_layer(
+            "olmo_original_final2_causal_pass_quality_fail",
+            "layer_30",
+            "heldout_variance_explained_it",
+        ),
+    ),
+    ClaimCheck(
+        "Exp39 autointerp feature count",
+        "exp39 label_validation.json",
+        300.0,
+        exp39_validation("n_features"),
+    ),
+    ClaimCheck(
+        "Exp39 autointerp mean AUROC",
+        "exp39 label_validation.json",
+        0.8777546296296297,
+        exp39_validation("mean_auroc"),
+    ),
+    ClaimCheck(
+        "Exp39 causal behavior/readout feature count",
+        "exp39_causal_paper_taxonomy_summary_v3.json",
+        42.0,
+        exp39_taxonomy_group("instruction_tuned_behavior_readout"),
+    ),
+    ClaimCheck(
+        "Exp39 causal surface/tokenization feature count",
+        "exp39_causal_paper_taxonomy_summary_v3.json",
+        17.0,
+        exp39_taxonomy_group("surface_tokenization_adjacent"),
+    ),
+    ClaimCheck(
+        "Exp39 causal artifact/unclear feature count",
+        "exp39_causal_paper_taxonomy_summary_v3.json",
+        41.0,
+        exp39_taxonomy_group("artifact_or_unclear"),
     ),
     ClaimCheck(
         "LLM judge resolved G2: PT late graft over PT baseline",
