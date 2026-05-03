@@ -448,6 +448,120 @@ def exp23_dense6_effect(effect: str, readout: str, column: str) -> NumberFn:
     return _read
 
 
+def exp23_dense6_native_shift(readout: str, scope: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_dense6_core/exp23_dense6_core_effects.csv",
+        )
+        by_effect = {
+            row["effect"]: row
+            for row in rows
+            if row["readout"] == readout
+        }
+        column = f"{scope}_estimate"
+        return (
+            float(by_effect["late_weight_effect"][column])
+            + float(by_effect["upstream_context_effect"][column])
+        )
+
+    return _read
+
+
+def exp23_dense6_interaction_share(readout: str, scope: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_dense6_core/exp23_dense6_core_effects.csv",
+        )
+        by_effect = {
+            row["effect"]: row
+            for row in rows
+            if row["readout"] == readout
+        }
+        column = f"{scope}_estimate"
+        native = (
+            float(by_effect["late_weight_effect"][column])
+            + float(by_effect["upstream_context_effect"][column])
+        )
+        return float(by_effect["interaction"][column]) / native
+
+    return _read
+
+
+def exp23_dense6_family_interaction_stat(stat: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_dense6_core/exp23_dense6_family_effects.csv",
+        )
+        values = [
+            float(row["interaction"])
+            for row in rows
+            if row["readout"] == "common_it"
+        ]
+        if stat == "min":
+            return min(values)
+        if stat == "max":
+            return max(values)
+        if stat == "median":
+            ordered = sorted(values)
+            mid = len(ordered) // 2
+            return (ordered[mid - 1] + ordered[mid]) / 2.0
+        raise KeyError(stat)
+
+    return _read
+
+
+def exp23_dense6_family_share_stat(stat: str, *, exclude: set[str] | None = None) -> NumberFn:
+    def _read(repo: Path) -> float:
+        values: list[float] = []
+        sources = [
+            "results/exp23_midlate_interaction_suite/"
+            "exp23_dense5_full_h100x8_20260426_sh4_rw4/analysis/exp23_effects.csv",
+            "results/exp24_32b_external_validity/"
+            "exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/"
+            "exp23_midlate_interaction_suite/exp23_effects.csv",
+        ]
+        for source in sources:
+            rows = load_csv(repo, source)
+            family_names = sorted(
+                {
+                    row["scope"].split(":", 1)[1]
+                    for row in rows
+                    if row["readout"] == "common_it"
+                    and row["scope"].startswith("family:")
+                }
+            )
+            for model in family_names:
+                if exclude and model in exclude:
+                    continue
+                by_effect = {
+                    row["effect"]: row
+                    for row in rows
+                    if row["readout"] == "common_it"
+                    and row["scope"] == f"family:{model}"
+                }
+                native = (
+                    float(by_effect["late_weight_effect"]["estimate"])
+                    + float(by_effect["upstream_context_effect"]["estimate"])
+                )
+                values.append(float(by_effect["interaction"]["estimate"]) / native)
+        if stat == "min":
+            return min(values)
+        if stat == "max":
+            return max(values)
+        if stat == "median":
+            ordered = sorted(values)
+            mid = len(ordered) // 2
+            if len(ordered) % 2:
+                return ordered[mid]
+            return (ordered[mid - 1] + ordered[mid]) / 2.0
+        raise KeyError(stat)
+
+    return _read
+
+
 def exp23_dense6_position(stratum: str, column: str) -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
@@ -838,6 +952,17 @@ def exp38_qwen_final2_drop_share() -> NumberFn:
             if row.get("feature_set") == "causal_top" and int(row.get("k", -1)) == 200:
                 return float(row["interaction_drop_mean"]) / float(row["interaction_full_mean"])
         raise KeyError("qwen_final2 causal_top k=200")
+
+    return _read
+
+
+def crosscoder_effects_drop_share(path: str, k: int) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, path)
+        for row in rows:
+            if row.get("feature_set") == "causal_top" and int(float(row.get("k", -1))) == k:
+                return float(row["interaction_drop_mean"]) / float(row["interaction_full_mean"])
+        raise KeyError((path, k))
 
     return _read
 
@@ -1347,6 +1472,102 @@ CHECKS: list[ClaimCheck] = [
         "exp23_dense6_core_effects.csv",
         2.4211752822401453,
         exp23_dense6_effect("interaction", "common_pt", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 native diagonal margin shift",
+        "exp23_dense6_core_effects.csv",
+        5.7320336245728996,
+        exp23_dense6_native_shift("common_it", "dense6"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 interaction share of native diagonal shift",
+        "exp23_dense6_core_effects.csv",
+        0.4251598003754928,
+        exp23_dense6_interaction_share("common_it", "dense6"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 Gemma-removed native diagonal margin shift",
+        "exp23_dense6_core_effects.csv",
+        4.9419090994874795,
+        exp23_dense6_native_shift("common_it", "gemma_removed"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 Gemma-removed interaction share",
+        "exp23_dense6_core_effects.csv",
+        0.345789079985315,
+        exp23_dense6_interaction_share("common_it", "gemma_removed"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 common-PT native diagonal margin shift",
+        "exp23_dense6_core_effects.csv",
+        5.722973271427784,
+        exp23_dense6_native_shift("common_pt", "dense6"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 common-PT interaction share",
+        "exp23_dense6_core_effects.csv",
+        0.4230624829803029,
+        exp23_dense6_interaction_share("common_pt", "dense6"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 common-PT Gemma-removed native shift",
+        "exp23_dense6_core_effects.csv",
+        4.996099175713341,
+        exp23_dense6_native_shift("common_pt", "gemma_removed"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 common-PT Gemma-removed interaction share",
+        "exp23_dense6_core_effects.csv",
+        0.3476480822207691,
+        exp23_dense6_interaction_share("common_pt", "gemma_removed"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 family interaction minimum",
+        "exp23_dense6_family_effects.csv",
+        1.25331787109375,
+        exp23_dense6_family_interaction_stat("min"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 family interaction maximum",
+        "exp23_dense6_family_effects.csv",
+        6.077890625,
+        exp23_dense6_family_interaction_stat("max"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 family interaction median",
+        "exp23_dense6_family_effects.csv",
+        1.655386667783214,
+        exp23_dense6_family_interaction_stat("median"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 family interaction-share minimum",
+        "exp23_dense5/exp24 exp23_effects.csv",
+        0.23392797687327452,
+        exp23_dense6_family_share_stat("min"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 family interaction-share maximum",
+        "exp23_dense5/exp24 exp23_effects.csv",
+        0.6277090157982217,
+        exp23_dense6_family_share_stat("max"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 family interaction-share median",
+        "exp23_dense5/exp24 exp23_effects.csv",
+        0.3787078537526653,
+        exp23_dense6_family_share_stat("median"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 Gemma-removed family share range minimum",
+        "exp23_dense5/exp24 exp23_effects.csv",
+        0.23392797687327452,
+        exp23_dense6_family_share_stat("min", exclude={"gemma3_4b"}),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 Gemma-removed family share range maximum",
+        "exp23_dense5/exp24 exp23_effects.csv",
+        0.3936659862894504,
+        exp23_dense6_family_share_stat("max", exclude={"gemma3_4b"}),
     ),
     ClaimCheck(
         "Exp23 Dense-6 position >=1 interaction",
@@ -2787,6 +3008,17 @@ CHECKS: list[ClaimCheck] = [
         exp34_model_drop_share("gemma3_4b"),
     ),
     ClaimCheck(
+        "Exp34 Gemma terminal crosscoder top-500 drop share",
+        "exp34_gemma effects.csv",
+        0.28273724144795004,
+        crosscoder_effects_drop_share(
+            "results/exp34_dense5_final_readout_crosscoder/"
+            "exp34_gemma3_4b_full_20260502_2110_a100x8_bs16/gemma3_4b/"
+            "selected_d81920_k64/analysis/effects.csv",
+            500,
+        ),
+    ),
+    ClaimCheck(
         "Exp34 Llama terminal crosscoder top-200 drop",
         "exp34_dense5_crosscoder_summary.json",
         0.5987082741477273,
@@ -2803,6 +3035,17 @@ CHECKS: list[ClaimCheck] = [
         "exp34_dense5_crosscoder_summary.json",
         0.4845227156121652,
         exp34_model_drop_share("llama31_8b"),
+    ),
+    ClaimCheck(
+        "Exp30 Llama terminal crosscoder top-500 drop share",
+        "exp30 effects.csv",
+        0.5174794261042074,
+        crosscoder_effects_drop_share(
+            "results/exp30_final_readout_crosscoder_mediation/"
+            "exp30_l31_paperfaithful_runpod_20260502_012105_a100x8/"
+            "selected_d131072_k64/analysis/effects.csv",
+            500,
+        ),
     ),
     ClaimCheck(
         "Exp34 Mistral terminal crosscoder top-200 drop",
@@ -2823,6 +3066,17 @@ CHECKS: list[ClaimCheck] = [
         exp34_model_drop_share("mistral_7b"),
     ),
     ClaimCheck(
+        "Exp34 Mistral terminal crosscoder top-500 drop share",
+        "exp34_mistral effects.csv",
+        0.28873239436619713,
+        crosscoder_effects_drop_share(
+            "results/exp34_dense5_final_readout_crosscoder/"
+            "exp34_mistral_7b_full_20260502_1124/mistral_7b/"
+            "selected_d131072_k64/analysis/effects.csv",
+            500,
+        ),
+    ),
+    ClaimCheck(
         "Exp38 Qwen final-two crosscoder top-200 drop",
         "exp38_qwen_olmo_decision_summary.json",
         0.32359397194602274,
@@ -2839,6 +3093,17 @@ CHECKS: list[ClaimCheck] = [
         "exp38 qwen final-two summary.json",
         0.3746184402557093,
         exp38_qwen_final2_drop_share(),
+    ),
+    ClaimCheck(
+        "Exp38 Qwen final-two crosscoder top-500 drop share",
+        "exp38 qwen final-two effects.csv",
+        0.3816149869473165,
+        crosscoder_effects_drop_share(
+            "results/exp38_qwen_olmo_final_layer_crosscoder_hardening/"
+            "exp38_qwen3_4b_final2_d81920_k64_20260503_0451_a100x2/"
+            "selected_d81920_k64/analysis/effects.csv",
+            500,
+        ),
     ),
     ClaimCheck(
         "Exp38 Qwen layer-34 IT VE",
