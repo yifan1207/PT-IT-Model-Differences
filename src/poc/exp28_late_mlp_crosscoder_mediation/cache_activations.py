@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import random
 from collections import defaultdict
 from pathlib import Path
@@ -145,6 +146,32 @@ def _append_pt_greedy_tokens(
     finally:
         model.generation_config.eos_token_id = old_eos
         model.generation_config.forced_eos_token_id = old_forced_eos
+
+
+def _preselect_rows_for_token_budget(
+    rows: list[dict[str, Any]],
+    *,
+    n_tokens: int | None,
+    max_seq_len: int,
+    batch_size: int,
+) -> list[dict[str, Any]]:
+    """Bound greedy prefix generation to rows needed for the requested cache."""
+    if n_tokens is None or n_tokens <= 0 or max_seq_len <= 0:
+        return rows
+    # Leave slack for special-token filtering and shorter records. This keeps the
+    # exact token target intact while avoiding continuations for thousands of rows
+    # that will never enter the cache.
+    estimated_usable_tokens = max(1, int(max_seq_len * 0.80))
+    needed = int(math.ceil(n_tokens / estimated_usable_tokens)) + max(1, int(batch_size)) * 2
+    if needed >= len(rows):
+        return rows
+    log.info(
+        "[exp28-cache] preselecting %d/%d prompts before PT-greedy extension for token target=%d",
+        needed,
+        len(rows),
+        n_tokens,
+    )
+    return rows[:needed]
 
 
 def _make_batch(
@@ -375,6 +402,12 @@ def run(args: argparse.Namespace) -> None:
 
     rows = _tokenize_records(records, pt_tokenizer, max_seq_len=args.max_seq_len)
     if args.append_pt_greedy_tokens > 0:
+        rows = _preselect_rows_for_token_budget(
+            rows,
+            n_tokens=args.n_tokens,
+            max_seq_len=args.max_seq_len,
+            batch_size=args.batch_size,
+        )
         _append_pt_greedy_tokens(
             model=pt_model,
             tokenizer=pt_tokenizer,
