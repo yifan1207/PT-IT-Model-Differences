@@ -397,7 +397,16 @@ def run_worker(args: argparse.Namespace) -> None:
     )
     it_layers = steering_adapter.get_layers(it_model)
     pt_layers = steering_adapter.get_layers(pt_model)
-    boundary_layer = _late_boundary(args.model)
+    boundary_layer = (
+        int(args.boundary_layer_override)
+        if args.boundary_layer_override is not None
+        else _late_boundary(args.model)
+    )
+    if boundary_layer < 0 or boundary_layer >= min(len(pt_layers), len(it_layers)):
+        raise ValueError(
+            f"Boundary layer {boundary_layer} is outside {args.model} layer range "
+            f"0..{min(len(pt_layers), len(it_layers)) - 1}"
+        )
     dataset_by_id = _dataset_lookup(args.dataset)
     manifest_rows = _load_manifest_records_window(
         exp20_root=args.exp20_root,
@@ -419,10 +428,11 @@ def run_worker(args: argparse.Namespace) -> None:
     n_events = 0
     failures = 0
     log.info(
-        "[exp28-causal-rank] worker=%d/%d prompts=%d layers=%s",
+        "[exp28-causal-rank] worker=%d/%d prompts=%d boundary=%d layers=%s",
         args.worker_index,
         args.n_workers,
         len(manifest_rows),
+        boundary_layer,
         ",".join(str(layer) for layer in target_layers),
     )
     for row_idx, manifest_record in enumerate(manifest_rows):
@@ -532,6 +542,8 @@ def run_worker(args: argparse.Namespace) -> None:
             "skip_prompts": int(args.skip_prompts),
             "n_prompts": int(args.n_prompts),
             "layers": target_layers,
+            "boundary_layer": int(boundary_layer),
+            "boundary_source": "cli_override" if args.boundary_layer_override is not None else "depth_ablation_windows",
             "worker_index": int(args.worker_index),
             "n_workers": int(args.n_workers),
             "failures": int(failures),
@@ -552,6 +564,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-prompts", type=int, default=128)
     parser.add_argument("--skip-prompts", type=int, default=0)
     parser.add_argument("--layers", nargs="*", type=int, default=None)
+    parser.add_argument(
+        "--boundary-layer-override",
+        type=int,
+        default=None,
+        help=(
+            "Override the upstream/downstream factorial boundary. Required for "
+            "final-one/final-two mediation scopes; defaults to the model's full late boundary."
+        ),
+    )
     parser.add_argument("--crosscoder-dtype", choices=["float32", "bfloat16", "float16"], default="bfloat16")
     parser.add_argument("--no-threshold", action="store_true")
     parser.add_argument("--worker-index", type=int, default=0)

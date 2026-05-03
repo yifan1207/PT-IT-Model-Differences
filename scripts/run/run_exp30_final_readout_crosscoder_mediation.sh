@@ -69,6 +69,9 @@ FULL_PROMPTS="${FULL_PROMPTS:-440}"
 CAUSAL_K_LIST="${CAUSAL_K_LIST:-25 50 100 200 500}"
 RANDOM_SEEDS="${RANDOM_SEEDS:-0 1 2}"
 N_BOOT="${N_BOOT:-1000}"
+BOUNDARY_LAYER_OVERRIDE="${BOUNDARY_LAYER_OVERRIDE:-}"
+MATERIALIZE_CAUSAL_SLICES="${MATERIALIZE_CAUSAL_SLICES:-1}"
+CROSSCODER_DTYPE="${CROSSCODER_DTYPE:-bfloat16}"
 
 usage() {
   cat <<EOF
@@ -118,6 +121,7 @@ echo "[exp30] run_name ${RUN_NAME}"
 echo "[exp30] run_root ${RUN_ROOT}"
 echo "[exp30] model ${MODEL}"
 echo "[exp30] gpu_count ${gpu_count} gpu_list ${GPU_LIST:-<none>}"
+echo "[exp30] boundary_layer_override ${BOUNDARY_LAYER_OVERRIDE:-<late-default>}"
 echo "[exp30] train_datasets ${DATASETS_TRAIN}"
 echo "[exp30] exclude_datasets ${EXCLUDE_DATASETS:-<none>}"
 
@@ -133,6 +137,13 @@ sync_outputs() {
   else
     echo "[exp30] GCS_SYNC_DEST set but gsutil not found; skipping sync" >&2
   fi
+}
+
+boundary_args() {
+  if [[ -n "$BOUNDARY_LAYER_OVERRIDE" ]]; then
+    printf -- '--boundary-layer-override %s' "$BOUNDARY_LAYER_OVERRIDE"
+  fi
+  return 0
 }
 
 cache_complete() {
@@ -423,6 +434,8 @@ causal_rank_worker() {
     --n-prompts "$CAUSAL_RANK_PROMPTS" \
     --skip-prompts "$CAUSAL_RANK_SKIP_PROMPTS" \
     --layers ${CAUSAL_LAYERS} \
+    $(boundary_args) \
+    --crosscoder-dtype "$CROSSCODER_DTYPE" \
     --worker-index "$worker" \
     --n-workers "$n_workers" \
     --device cuda:0 \
@@ -478,6 +491,8 @@ mediate_worker() {
     --skip-prompts "$CAUSAL_MEDIATE_SKIP_PROMPTS" \
     --k-list ${CAUSAL_K_LIST} \
     --random-seeds ${RANDOM_SEEDS} \
+    $(boundary_args) \
+    --crosscoder-dtype "$CROSSCODER_DTYPE" \
     --selection-suite causal \
     --causal-feature-csv "${root}/feature_stats/causal_feature_scores.csv" \
     --worker-index "$worker" \
@@ -490,6 +505,16 @@ run_causal_mediate() {
   local prompts="$1"
   local tag="$2"
   local root="$RUN_ROOT"
+  if [[ "$MATERIALIZE_CAUSAL_SLICES" == "1" && -f "${root}/feature_stats/causal_feature_scores.csv" ]]; then
+    echo "[exp30] materialize causal slices root=${root} layers=${CAUSAL_LAYERS}"
+    $PY_RUNNER scripts/infra/materialize_exp30_causal_slices.py \
+      --run-root "$root" \
+      --layers ${CAUSAL_LAYERS} \
+      --k-list ${CAUSAL_K_LIST} \
+      --random-seeds ${RANDOM_SEEDS} \
+      --dtype "$CROSSCODER_DTYPE" \
+      >"${root}/logs/materialize_causal_slices_${tag}.log" 2>&1
+  fi
   local n_workers="${#GPUS[@]}"
   local -a pids=()
   for worker in $(seq 0 $((n_workers - 1))); do

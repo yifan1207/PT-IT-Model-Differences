@@ -470,7 +470,16 @@ def run_worker(args: argparse.Namespace) -> None:
     pt_layers = steering_adapter.get_layers(pt_model)
     it_layers = steering_adapter.get_layers(it_model)
     adapter = steering_adapter.adapter
-    boundary_layer = _late_boundary(args.model)
+    boundary_layer = (
+        int(args.boundary_layer_override)
+        if args.boundary_layer_override is not None
+        else _late_boundary(args.model)
+    )
+    if boundary_layer < 0 or boundary_layer >= min(len(pt_layers), len(it_layers)):
+        raise ValueError(
+            f"Boundary layer {boundary_layer} is outside {args.model} layer range "
+            f"0..{min(len(pt_layers), len(it_layers)) - 1}"
+        )
     dataset_by_id = _dataset_lookup(args.dataset)
     manifest_rows = _load_manifest_records_window(
         exp20_root=args.exp20_root,
@@ -511,10 +520,11 @@ def run_worker(args: argparse.Namespace) -> None:
     out_path = out_dir / f"records_w{args.worker_index}.jsonl.gz"
     done = _done_keys(out_path)
     log.info(
-        "[exp28-mediate] worker=%d/%d manifest_rows=%d selections=%d suite=%s",
+        "[exp28-mediate] worker=%d/%d manifest_rows=%d boundary=%d selections=%d suite=%s",
         args.worker_index,
         args.n_workers,
         len(manifest_rows),
+        boundary_layer,
         len(selections),
         args.selection_suite,
     )
@@ -661,6 +671,11 @@ def run_worker(args: argparse.Namespace) -> None:
                             "k": int(k),
                             "control_seed": control_seed,
                             "readout": args.readout_name,
+                            "boundary_layer": int(boundary_layer),
+                            "boundary_source": "cli_override"
+                            if args.boundary_layer_override is not None
+                            else "depth_ablation_windows",
+                            "downstream_stack": f"layers_{int(boundary_layer)}_{len(it_layers) - 1}_plus_readout",
                             "full_cells": full_cells,
                             "ablate_cells": ablate_cells,
                             "interaction_full": interaction_full,
@@ -747,6 +762,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prompt-mode", choices=["raw_shared", "native"], default="raw_shared")
     parser.add_argument("--event-kinds", nargs="*", choices=list(DEFAULT_EVENT_KINDS), default=["first_diff"])
     parser.add_argument("--readout-name", default="common_it")
+    parser.add_argument(
+        "--boundary-layer-override",
+        type=int,
+        default=None,
+        help=(
+            "Override the upstream/downstream factorial boundary. Required for "
+            "final-one/final-two mediation scopes; defaults to the model's full late boundary."
+        ),
+    )
     parser.add_argument("--n-prompts", type=int, default=200)
     parser.add_argument("--skip-prompts", type=int, default=0)
     parser.add_argument("--k-list", nargs="+", type=int, default=[50, 200, 1000])
