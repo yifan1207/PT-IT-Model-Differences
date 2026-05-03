@@ -779,6 +779,65 @@ def exp23_position_family(stratum: str, model: str, column: str) -> NumberFn:
     return _read
 
 
+def exp23_dense5_repro_snapshot(model: str, field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        path = (
+            repo
+            / "results/exp23_midlate_interaction_suite/"
+            / "exp23_dense5_full_h100x8_20260426_sh4_rw4/residual_factorial/raw_shared"
+            / model
+            / "records.jsonl.gz"
+        )
+        total = pos0 = ge3 = ge5 = 0
+        with gzip.open(path, "rt") as f:
+            for line in f:
+                row = json.loads(line)
+                event = (row.get("events") or {}).get("first_diff") or {}
+                if not event.get("valid"):
+                    continue
+                step = int(event["event"]["step"])
+                total += 1
+                pos0 += step == 0
+                ge3 += step >= 3
+                ge5 += step >= 5
+        if field == "events":
+            return float(total)
+        if field == "pos0_frac":
+            return pos0 / total
+        if field == "ge3_frac":
+            return ge3 / total
+        if field == "ge5_frac":
+            return ge5 / total
+        raise KeyError((model, field))
+
+    return _read
+
+
+def exp24_repro_snapshot(field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp24_32b_external_validity/"
+            "exp24_32b_position_sensitivity.csv",
+        )
+        counts: dict[str, float] = {}
+        for row in rows:
+            if row["metric"] == "interaction":
+                counts[row["position_filter"]] = float(row["n_records"])
+        total = counts["all"]
+        if field == "events":
+            return total
+        if field == "pos0_frac":
+            return counts["step_0"] / total
+        if field == "ge3_frac":
+            return counts["step_ge3"] / total
+        if field == "ge5_frac":
+            return counts["step_ge5"] / total
+        raise KeyError(field)
+
+    return _read
+
+
 def exp23_position_category_mix(position_filter: str, axis: str, category: str, column: str) -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
@@ -1891,6 +1950,50 @@ CHECKS: list[ClaimCheck] = [
         1.4799920390405037,
         exp23_dense6_position("position >=5", "dense6_estimate"),
     ),
+    *[
+        ClaimCheck(
+            f"Minimal reproducibility snapshot {model} {field}",
+            "exp23 dense5 raw_shared records",
+            expected,
+            exp23_dense5_repro_snapshot(model, field),
+        )
+        for model, field, expected in [
+            ("gemma3_4b", "events", 600.0),
+            ("gemma3_4b", "pos0_frac", 0.525),
+            ("gemma3_4b", "ge3_frac", 0.125),
+            ("gemma3_4b", "ge5_frac", 0.06),
+            ("llama31_8b", "events", 600.0),
+            ("llama31_8b", "pos0_frac", 0.5933333333333334),
+            ("llama31_8b", "ge3_frac", 0.28),
+            ("llama31_8b", "ge5_frac", 0.17333333333333334),
+            ("qwen3_4b", "events", 600.0),
+            ("qwen3_4b", "pos0_frac", 0.4866666666666667),
+            ("qwen3_4b", "ge3_frac", 0.3516666666666667),
+            ("qwen3_4b", "ge5_frac", 0.235),
+            ("mistral_7b", "events", 597.0),
+            ("mistral_7b", "pos0_frac", 0.3082077051926298),
+            ("mistral_7b", "ge3_frac", 0.3132328308207705),
+            ("mistral_7b", "ge5_frac", 0.20100502512562815),
+            ("olmo2_7b", "events", 586.0),
+            ("olmo2_7b", "pos0_frac", 0.6006825938566553),
+            ("olmo2_7b", "ge3_frac", 0.2713310580204778),
+            ("olmo2_7b", "ge5_frac", 0.16040955631399317),
+        ]
+    ],
+    *[
+        ClaimCheck(
+            f"Minimal reproducibility snapshot qwen25_32b {field}",
+            "exp24_32b_position_sensitivity.csv",
+            expected,
+            exp24_repro_snapshot(field),
+        )
+        for field, expected in [
+            ("events", 1397.0),
+            ("pos0_frac", 0.38797423049391555),
+            ("ge3_frac", 0.44953471725125266),
+            ("ge5_frac", 0.30565497494631355),
+        ]
+    ],
     ClaimCheck(
         "Exp23 primary late given PT upstream",
         "exp23 primary exp23_summary.json",
