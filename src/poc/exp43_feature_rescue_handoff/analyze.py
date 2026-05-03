@@ -94,13 +94,11 @@ def _cluster_bootstrap_ci(
     keys = sorted(key for key, vals in by_cluster.items() if vals)
     if len(keys) < 2 or n_boot <= 0:
         return None, None
-    cluster_means = {key: float(np.mean(by_cluster[key])) for key in keys}
+    cluster_means = np.asarray([float(np.mean(by_cluster[key])) for key in keys], dtype=np.float64)
     rng = np.random.default_rng(int(seed))
-    samples: list[float] = []
-    for _ in range(int(n_boot)):
-        draw = rng.choice(keys, size=len(keys), replace=True)
-        samples.append(float(np.mean([cluster_means[str(key)] for key in draw])))
-    return _percentile_ci(samples)
+    draw = rng.integers(0, len(cluster_means), size=(int(n_boot), len(cluster_means)))
+    samples = cluster_means[draw].mean(axis=1)
+    return float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5))
 
 
 def _family_balanced_bootstrap(
@@ -144,19 +142,21 @@ def _family_balanced_bootstrap(
         }
 
     estimate = float(np.mean(list(family_means.values())))
-    samples: list[float] = []
+    samples: np.ndarray | None = None
     if n_boot > 0 and all(len(clusters) >= 2 for clusters in cluster_means_by_model.values()):
         rng = np.random.default_rng(int(seed))
         models = sorted(cluster_means_by_model)
-        for _ in range(int(n_boot)):
-            family_draws: list[float] = []
-            for model in models:
-                clusters = cluster_means_by_model[model]
-                keys = sorted(clusters)
-                draw = rng.choice(keys, size=len(keys), replace=True)
-                family_draws.append(float(np.mean([clusters[str(key)] for key in draw])))
-            samples.append(float(np.mean(family_draws)))
-    lo, hi = _percentile_ci(samples)
+        family_samples: list[np.ndarray] = []
+        for model in models:
+            values = np.asarray([cluster_means_by_model[model][key] for key in sorted(cluster_means_by_model[model])])
+            draw = rng.integers(0, len(values), size=(int(n_boot), len(values)))
+            family_samples.append(values[draw].mean(axis=1))
+        samples = np.vstack(family_samples).mean(axis=0)
+    lo, hi = (
+        (float(np.percentile(samples, 2.5)), float(np.percentile(samples, 97.5)))
+        if samples is not None and len(samples) > 0
+        else (None, None)
+    )
     return {
         "estimate": estimate,
         "ci_low": lo,
@@ -236,25 +236,20 @@ def _summarize_group(
 def _rescue_control_differences(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     rescue = [row for row in rows if row.get("record_type") == "rescue"]
     causal: dict[tuple[Any, ...], dict[str, Any]] = {}
-    controls: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    controls: dict[tuple[tuple[Any, ...], str], list[dict[str, Any]]] = defaultdict(list)
     for row in rescue:
         base = (*_event_key(row), int(row.get("k", 0)), float(row.get("alpha", 0.0)))
         if row.get("feature_set") == "causal_top" and row.get("control_mode") == "feature_delta":
             causal[base] = row
         elif row.get("feature_set") in {"causal_matched_random", "causal_same_delta_random"}:
-            controls[(*base, str(row.get("feature_set")), str(row.get("control_mode")))].append(row)
+            controls[(base, str(row.get("feature_set")))].append(row)
 
     out: list[dict[str, Any]] = []
     for base, causal_row in causal.items():
         for control_name in ("causal_matched_random", "causal_same_delta_random"):
-            control_groups = [
-                group
-                for key, group in controls.items()
-                if key[:5] == base and key[5] == control_name
-            ]
-            if not control_groups:
+            flat_controls = controls.get((base, control_name), [])
+            if not flat_controls:
                 continue
-            flat_controls = [row for group in control_groups for row in group]
             payload = {
                 "model": causal_row.get("model"),
                 "prompt_id": causal_row.get("prompt_id"),

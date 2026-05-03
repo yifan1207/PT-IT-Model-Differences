@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import itertools
 import json
 import math
+import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 
 NumberFn = Callable[[Path], float]
+_EXP43_NONOUTLIER_CACHE: dict[tuple[str, str, str], float] = {}
 
 
 @dataclass(frozen=True)
@@ -1240,6 +1243,126 @@ def exp42_effect(feature_set: str, k: int, field: str, model: str | None = None)
         if not vals:
             raise KeyError((feature_set, k, field, model))
         return float(sum(vals) / len(vals))
+
+    return _read
+
+
+def exp43_family_balanced(effect: str, metric: str, field: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp43_feature_rescue_handoff/"
+            "exp43_full_h100x8_clean_20260503_182947/"
+            "analysis/primary_family_balanced_effects.csv",
+        )
+        for row in rows:
+            if row["effect"] == effect and row["metric"] == metric:
+                return float(row[field])
+        raise KeyError((effect, metric, field))
+
+    return _read
+
+
+def exp43_direct_rescue(model: str, metric: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp43_feature_rescue_handoff/"
+            "exp43_full_h100x8_clean_20260503_182947/"
+            "analysis/exp43_summary.json",
+        )
+        for row in data["primary_causal_rows"]:
+            if row["model"] == model:
+                return float(row[metric])
+        raise KeyError((model, metric))
+
+    return _read
+
+
+def _exp43_nonoutlier_values(repo: Path, effect: str, metric: str) -> dict[str, dict[str, list[float]]]:
+    models = {"llama31_8b", "mistral_7b", "qwen3_4b"}
+    run_root = repo / "results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947"
+    grouped: dict[str, dict[str, list[float]]] = {model: {} for model in models}
+    if effect == "causal_top":
+        for model in sorted(models):
+            path = run_root / "raw" / model / "records.jsonl.gz"
+            with gzip.open(path, "rt", encoding="utf-8") as handle:
+                for line in handle:
+                    row = json.loads(line)
+                    if row.get("record_type") != "rescue":
+                        continue
+                    if row.get("feature_set") != "causal_top" or row.get("control_mode") != "feature_delta":
+                        continue
+                    if int(row.get("k", 0)) != 200 or abs(float(row.get("alpha", 0.0)) - 1.0) > 1e-9:
+                        continue
+                    value = row.get(metric)
+                    if value is not None and math.isfinite(float(value)):
+                        grouped[model].setdefault(str(row["prompt_id"]), []).append(float(value))
+    else:
+        control = {
+            "causal_minus_causal_matched_random": "causal_matched_random",
+            "causal_minus_causal_same_delta_random": "causal_same_delta_random",
+        }[effect]
+        rows = load_csv(
+            repo,
+            "results/exp43_feature_rescue_handoff/"
+            "exp43_full_h100x8_clean_20260503_182947/"
+            "analysis/rescue_control_differences_event_rows.csv",
+        )
+        for row in rows:
+            model = row["model"]
+            if model not in models:
+                continue
+            if row["control"] != control:
+                continue
+            if int(float(row["k"])) != 200 or abs(float(row["alpha"]) - 1.0) > 1e-9:
+                continue
+            value = row.get(metric)
+            if value not in (None, "") and math.isfinite(float(value)):
+                grouped[model].setdefault(str(row["prompt_id"]), []).append(float(value))
+    return grouped
+
+
+def _exp43_nonoutlier_family_balanced(repo: Path, effect: str, metric: str, field: str) -> float:
+    key = (effect, metric, field)
+    if key in _EXP43_NONOUTLIER_CACHE:
+        return _EXP43_NONOUTLIER_CACHE[key]
+    grouped = _exp43_nonoutlier_values(repo, effect, metric)
+    family_means = []
+    for model in sorted(grouped):
+        by_prompt = grouped[model]
+        vals = [value for cluster in by_prompt.values() for value in cluster]
+        family_means.append(mean(vals))
+    estimate = mean(family_means)
+    if field == "estimate":
+        _EXP43_NONOUTLIER_CACHE[key] = estimate
+        return estimate
+
+    rng = random.Random(0)
+    boot = []
+    for _ in range(5000):
+        sampled_family_means = []
+        for model in sorted(grouped):
+            by_prompt = grouped[model]
+            clusters = list(by_prompt.values())
+            sampled = []
+            for _cluster in clusters:
+                sampled.extend(rng.choice(clusters))
+            sampled_family_means.append(mean(sampled))
+        boot.append(mean(sampled_family_means))
+    if field == "ci_low":
+        out = percentile(boot, 2.5)
+    elif field == "ci_high":
+        out = percentile(boot, 97.5)
+    else:
+        raise KeyError(field)
+    _EXP43_NONOUTLIER_CACHE[key] = out
+    return out
+
+
+def exp43_nonoutlier_family_balanced(effect: str, metric: str, field: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        return _exp43_nonoutlier_family_balanced(repo, effect, metric, field)
 
     return _read
 
@@ -3605,6 +3728,102 @@ CHECKS: list[ClaimCheck] = [
             "feature_causal_gate__causal_minus_causal_matched_random__k200",
             family="qwen3_4b",
         ),
+    ),
+    ClaimCheck(
+        "Exp43 three-family direct top-200 rescue",
+        "exp43 primary_family_balanced_effects.csv",
+        0.49437065972222216,
+        exp43_nonoutlier_family_balanced("causal_top", "rescue_gain"),
+    ),
+    ClaimCheck(
+        "Exp43 three-family direct top-200 rescue CI low",
+        "exp43 primary_family_balanced_effects.csv",
+        0.4507979343740185,
+        exp43_nonoutlier_family_balanced("causal_top", "rescue_gain", "ci_low"),
+        tolerance=2e-3,
+    ),
+    ClaimCheck(
+        "Exp43 three-family direct top-200 rescue CI high",
+        "exp43 primary_family_balanced_effects.csv",
+        0.5394371798636192,
+        exp43_nonoutlier_family_balanced("causal_top", "rescue_gain", "ci_high"),
+        tolerance=2e-3,
+    ),
+    ClaimCheck(
+        "Exp43 three-family direct rescue fraction",
+        "exp43 primary_family_balanced_effects.csv",
+        0.08055635817397248,
+        exp43_nonoutlier_family_balanced("causal_top", "rescue_fraction"),
+    ),
+    ClaimCheck(
+        "Exp43 three-family rescue minus matched-random",
+        "exp43 primary_family_balanced_effects.csv",
+        0.5605922725243696,
+        exp43_nonoutlier_family_balanced("causal_minus_causal_matched_random", "rescue_gain_causal_minus_control"),
+    ),
+    ClaimCheck(
+        "Exp43 three-family rescue minus matched-random CI low",
+        "exp43 primary_family_balanced_effects.csv",
+        0.5095765456287151,
+        exp43_nonoutlier_family_balanced("causal_minus_causal_matched_random", "rescue_gain_causal_minus_control", "ci_low"),
+        tolerance=2e-3,
+    ),
+    ClaimCheck(
+        "Exp43 three-family rescue minus matched-random CI high",
+        "exp43 primary_family_balanced_effects.csv",
+        0.6129771347514482,
+        exp43_nonoutlier_family_balanced("causal_minus_causal_matched_random", "rescue_gain_causal_minus_control", "ci_high"),
+        tolerance=2e-3,
+    ),
+    ClaimCheck(
+        "Exp43 three-family rescue minus matched-random fraction",
+        "exp43 primary_family_balanced_effects.csv",
+        0.10793944544225549,
+        exp43_nonoutlier_family_balanced("causal_minus_causal_matched_random", "rescue_fraction_causal_minus_control"),
+    ),
+    ClaimCheck(
+        "Exp43 three-family rescue minus same-delta-random",
+        "exp43 primary_family_balanced_effects.csv",
+        0.4706316619537938,
+        exp43_nonoutlier_family_balanced("causal_minus_causal_same_delta_random", "rescue_gain_causal_minus_control"),
+    ),
+    ClaimCheck(
+        "Exp43 three-family rescue minus same-delta-random CI low",
+        "exp43 primary_family_balanced_effects.csv",
+        0.42670571772754473,
+        exp43_nonoutlier_family_balanced("causal_minus_causal_same_delta_random", "rescue_gain_causal_minus_control", "ci_low"),
+        tolerance=2e-3,
+    ),
+    ClaimCheck(
+        "Exp43 three-family rescue minus same-delta-random CI high",
+        "exp43 primary_family_balanced_effects.csv",
+        0.5166974646566346,
+        exp43_nonoutlier_family_balanced("causal_minus_causal_same_delta_random", "rescue_gain_causal_minus_control", "ci_high"),
+        tolerance=2e-3,
+    ),
+    ClaimCheck(
+        "Exp43 three-family rescue minus same-delta-random fraction",
+        "exp43 primary_family_balanced_effects.csv",
+        0.08273564836912005,
+        exp43_nonoutlier_family_balanced("causal_minus_causal_same_delta_random", "rescue_fraction_causal_minus_control"),
+    ),
+    ClaimCheck(
+        "Exp43 Llama direct rescue",
+        "exp43 exp43_summary.json",
+        0.6273225911458333,
+        exp43_direct_rescue("llama31_8b", "rescue_gain_mean"),
+    ),
+    ClaimCheck(
+        "Exp43 Mistral direct rescue",
+        "exp43 exp43_summary.json",
+        0.7552083333333334,
+        exp43_direct_rescue("mistral_7b", "rescue_gain_mean"),
+    ),
+    ClaimCheck(
+        "Exp43 Qwen direct rescue",
+        "exp43 exp43_summary.json",
+        0.1005810546875,
+        exp43_direct_rescue("qwen3_4b", "rescue_gain_mean"),
     ),
     ClaimCheck(
         "LLM judge resolved G2: PT late graft over PT baseline",
