@@ -489,6 +489,26 @@ def exp23_dense6_interaction_share(readout: str, scope: str) -> NumberFn:
     return _read
 
 
+def exp23_dense6_late_effect_amplification(readout: str, scope: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/paper_synthesis/exp23_dense6_core/exp23_dense6_core_effects.csv",
+        )
+        by_effect = {
+            row["effect"]: row
+            for row in rows
+            if row["readout"] == readout
+        }
+        column = f"{scope}_estimate"
+        return (
+            float(by_effect["late_it_given_it_upstream"][column])
+            / float(by_effect["late_it_given_pt_upstream"][column])
+        )
+
+    return _read
+
+
 def exp23_dense6_family_interaction_stat(stat: str) -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
@@ -819,6 +839,23 @@ def exp24_residual_effect(readout: str, effect: str, column: str) -> NumberFn:
     return _read
 
 
+def exp24_late_effect_amplification(readout: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp24_32b_external_validity/"
+            "exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/"
+            "exp23_midlate_interaction_suite/exp23_summary.json",
+        )
+        effects = data["residual_factorial"]["effects"][readout]
+        return (
+            float(effects["late_it_given_it_upstream"]["estimate"])
+            / float(effects["late_it_given_pt_upstream"]["estimate"])
+        )
+
+    return _read
+
+
 def exp24_kl_effect(side: str, effect: str, column: str) -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
@@ -1083,6 +1120,45 @@ def exp39_taxonomy_category(category: str, field: str) -> NumberFn:
             if row["paper_category"] == category:
                 return float(row[field])
         raise KeyError((category, field))
+
+    return _read
+
+
+def exp41_structure_count() -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp41_causal_feature_bucket_steering/"
+            "exp41_terminal_bucket_logit_full_h100x8_20260503_1520/"
+            "bucket_manifest/strict_primary/bucket_features.csv",
+        )
+        return float(sum(1 for row in rows if row["bucket"] == "structure_readout" and row["include_primary"] == "True"))
+
+    return _read
+
+
+def exp41_structure_interaction_drop(alpha: float, condition_kind: str, model: str | None = None) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp41_causal_feature_bucket_steering/"
+            "exp41_terminal_bucket_logit_full_h100x8_20260503_1520/"
+            "analysis/bucket_effects_by_model.csv",
+        )
+        vals = []
+        for row in rows:
+            if row["source_bucket"] != "structure_readout":
+                continue
+            if row["condition_kind"] != condition_kind:
+                continue
+            if abs(float(row["alpha"]) - alpha) > 1e-9:
+                continue
+            if model is not None and row["model"] != model:
+                continue
+            vals.append(float(row["interaction_drop_mean"]))
+        if not vals:
+            raise KeyError((alpha, condition_kind, model))
+        return float(sum(vals) / len(vals))
 
     return _read
 
@@ -1472,6 +1548,30 @@ CHECKS: list[ClaimCheck] = [
         "exp23_dense6_core_effects.csv",
         2.4211752822401453,
         exp23_dense6_effect("interaction", "common_pt", "dense6_estimate"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 common-IT late-effect amplification",
+        "exp23_dense6_core_effects.csv",
+        4.811172994408784,
+        exp23_dense6_late_effect_amplification("common_it", "dense6"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 Gemma-removed common-IT late-effect amplification",
+        "exp23_dense6_core_effects.csv",
+        3.287918267084384,
+        exp23_dense6_late_effect_amplification("common_it", "gemma_removed"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 common-PT late-effect amplification",
+        "exp23_dense6_core_effects.csv",
+        4.657065006190824,
+        exp23_dense6_late_effect_amplification("common_pt", "dense6"),
+    ),
+    ClaimCheck(
+        "Exp23 Dense-6 Gemma-removed common-PT late-effect amplification",
+        "exp23_dense6_core_effects.csv",
+        3.2791219540280427,
+        exp23_dense6_late_effect_amplification("common_pt", "gemma_removed"),
     ),
     ClaimCheck(
         "Exp23 Dense-6 native diagonal margin shift",
@@ -2876,6 +2976,12 @@ CHECKS: list[ClaimCheck] = [
         exp24_residual_effect("common_it", "late_it_given_it_upstream", "estimate"),
     ),
     ClaimCheck(
+        "Qwen2.5-32B late-effect amplification",
+        "exp24 exp23_summary.json",
+        2.4808172427220043,
+        exp24_late_effect_amplification("common_it"),
+    ),
+    ClaimCheck(
         "Qwen2.5-32B common-PT residual-state interaction",
         "exp24 exp23_summary.json",
         1.478458303507516,
@@ -3168,6 +3274,78 @@ CHECKS: list[ClaimCheck] = [
         "exp39_causal_paper_taxonomy_summary_v3.json",
         41.0,
         exp39_taxonomy_group("artifact_or_unclear"),
+    ),
+    ClaimCheck(
+        "Exp41 structure-readout feature count",
+        "exp41 bucket_features.csv",
+        12.0,
+        exp41_structure_count(),
+    ),
+    ClaimCheck(
+        "Exp41 structure-readout alpha 0 mean interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.0,
+        exp41_structure_interaction_drop(0.0, "feature_bucket"),
+    ),
+    ClaimCheck(
+        "Exp41 structure-readout alpha 0.5 mean interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.03232858986910464,
+        exp41_structure_interaction_drop(0.5, "feature_bucket"),
+    ),
+    ClaimCheck(
+        "Exp41 structure-readout alpha 1.0 mean interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.0658083273218305,
+        exp41_structure_interaction_drop(1.0, "feature_bucket"),
+    ),
+    ClaimCheck(
+        "Exp41 structure-readout alpha 1.5 mean interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.10312832524029654,
+        exp41_structure_interaction_drop(1.5, "feature_bucket"),
+    ),
+    ClaimCheck(
+        "Exp41 structure-readout alpha 2.0 mean interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.14902497436932383,
+        exp41_structure_interaction_drop(2.0, "feature_bucket"),
+    ),
+    ClaimCheck(
+        "Exp41 structure-readout alpha 2.0 matched-random mean",
+        "exp41 bucket_effects_by_model.csv",
+        -0.04965972900390625,
+        exp41_structure_interaction_drop(2.0, "matched_random"),
+    ),
+    ClaimCheck(
+        "Exp41 structure-readout alpha 2.0 same-delta-random mean",
+        "exp41 bucket_effects_by_model.csv",
+        0.029755577841396107,
+        exp41_structure_interaction_drop(2.0, "same_delta_random"),
+    ),
+    ClaimCheck(
+        "Exp41 Gemma structure-readout alpha 2.0 interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.05625,
+        exp41_structure_interaction_drop(2.0, "feature_bucket", model="gemma3_4b"),
+    ),
+    ClaimCheck(
+        "Exp41 Llama structure-readout alpha 2.0 interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.09130757649739583,
+        exp41_structure_interaction_drop(2.0, "feature_bucket", model="llama31_8b"),
+    ),
+    ClaimCheck(
+        "Exp41 Mistral structure-readout alpha 2.0 interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.33867252931323283,
+        exp41_structure_interaction_drop(2.0, "feature_bucket", model="mistral_7b"),
+    ),
+    ClaimCheck(
+        "Exp41 Qwen structure-readout alpha 2.0 interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.10986979166666666,
+        exp41_structure_interaction_drop(2.0, "feature_bucket", model="qwen3_4b"),
     ),
     ClaimCheck(
         "LLM judge resolved G2: PT late graft over PT baseline",

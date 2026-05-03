@@ -83,7 +83,11 @@ class SelectionSpec:
     @property
     def selection(self) -> FeatureSelection:
         seed_suffix = "" if self.control_seed is None else f"_seed{self.control_seed}"
-        return _to_selection(f"{self.feature_set}_k{self.k}{seed_suffix}", list(self.rows))
+        # Exp42 evaluates matched-random and top-active controls, so it must
+        # force the full dictionary path.  Exp28's default ``mode='ablate'``
+        # may use optional causal-only sliced checkpoints that intentionally do
+        # not contain arbitrary random/control latents.
+        return _to_selection(f"{self.feature_set}_k{self.k}{seed_suffix}", list(self.rows), mode="ablate_full")
 
 
 def _json_rows(path: Path):
@@ -206,7 +210,7 @@ class FeatureActivationRecorder:
         branch: int,
         device: torch.device,
         margin_vector: torch.Tensor,
-        crosscoder_cache: dict[tuple[int, torch.dtype | None], BatchTopKCrossCoder],
+        crosscoder_cache: dict[int, Any],
         crosscoder_dtype: torch.dtype | None,
         use_threshold: bool = True,
         compute_diagnostics: bool = True,
@@ -291,7 +295,7 @@ class FeatureActivationRecorder:
         return self
 
     def _load_layer(self, layer_idx: int) -> BatchTopKCrossCoder:
-        key = (int(layer_idx), self.crosscoder_dtype)
+        key = int(layer_idx)
         if key not in self.crosscoder_cache:
             path = self.run_root / "dictionaries" / f"layer_{layer_idx}" / "crosscoder.pt"
             if not path.exists():
@@ -453,6 +457,23 @@ def _terminal_scope(boundary_layer: int, n_layers: int) -> str:
     return f"final{n}"
 
 
+def _crosscoder_layers(run_root: Path) -> list[int]:
+    layers = []
+    for path in (run_root / "dictionaries").glob("layer_*/crosscoder.pt"):
+        try:
+            layers.append(int(path.parent.name.split("_")[1]))
+        except (IndexError, ValueError):
+            continue
+    if layers:
+        return sorted(set(layers))
+    for path in (run_root / "dictionaries").glob("layer_*/config.json"):
+        try:
+            layers.append(int(path.parent.name.split("_")[1]))
+        except (IndexError, ValueError):
+            continue
+    return sorted(set(layers))
+
+
 def run_worker(args: argparse.Namespace) -> None:
     device = torch.device(args.device)
     spec = get_spec(args.model)
@@ -483,7 +504,14 @@ def run_worker(args: argparse.Namespace) -> None:
     pt_layers = steering_adapter.get_layers(pt_model)
     it_layers = steering_adapter.get_layers(it_model)
     adapter = steering_adapter.adapter
-    boundary_layer = int(args.boundary_layer_override) if args.boundary_layer_override is not None else _late_boundary(args.model)
+    dict_layers = _crosscoder_layers(args.crosscoder_root)
+    if not dict_layers:
+        raise FileNotFoundError(f"No crosscoder dictionary layers found under {args.crosscoder_root / 'dictionaries'}")
+    boundary_layer = (
+        int(args.boundary_layer_override)
+        if args.boundary_layer_override is not None
+        else int(min(dict_layers))
+    )
     if boundary_layer < 0 or boundary_layer >= min(len(pt_layers), len(it_layers)):
         raise ValueError(f"Boundary layer {boundary_layer} outside model layer range")
     terminal_scope = args.terminal_scope or _terminal_scope(boundary_layer, min(len(pt_layers), len(it_layers)))
@@ -519,8 +547,7 @@ def run_worker(args: argparse.Namespace) -> None:
         n_workers=args.n_workers,
     )
     crosscoder_dtype = _dtype_from_name(args.crosscoder_dtype)
-    crosscoder_cache: dict[tuple[int, torch.dtype | None], BatchTopKCrossCoder] = {}
-    ablation_crosscoder_cache: dict[int, Any] = {}
+    crosscoder_cache: dict[int, Any] = {}
     args.out_dir.mkdir(parents=True, exist_ok=True)
     out_path = args.out_dir / f"records_w{args.worker_index}.jsonl.gz"
     done = _done_event_keys(out_path)
@@ -702,7 +729,7 @@ def run_worker(args: argparse.Namespace) -> None:
                             run_root=args.crosscoder_root,
                             steering_adapter=steering_adapter,
                             selection=selection,
-                            crosscoder_cache=ablation_crosscoder_cache,
+                            crosscoder_cache=crosscoder_cache,
                             crosscoder_dtype=crosscoder_dtype,
                             coverage_margin_vector=margin_vector,
                         )
@@ -717,7 +744,7 @@ def run_worker(args: argparse.Namespace) -> None:
                             run_root=args.crosscoder_root,
                             steering_adapter=steering_adapter,
                             selection=selection,
-                            crosscoder_cache=ablation_crosscoder_cache,
+                            crosscoder_cache=crosscoder_cache,
                             crosscoder_dtype=crosscoder_dtype,
                             coverage_margin_vector=margin_vector,
                         )

@@ -24,7 +24,7 @@ The paper has three contributions.
 
 1. **A paired-checkpoint first-divergence factorial.** We introduce a local counterfactual estimand at the exact token where PT and IT first disagree. It asks whether the IT-minus-PT late-stack replacement effect is portable across upstream states or amplified by IT-shaped upstream state. This is the central contribution and the first result in the paper.
 2. **A validation ladder for the estimand.** The result is robust to readout choice, label orientation, first-token support, pre-late commitment, off-manifold hybrid diagnostics, random local disagreement controls, and family heterogeneity. The main text gives the ladder; the appendix gives the audit trail.
-3. **A depth and feature anatomy.** Middle-positioned MLP substitutions transfer divergent-token identity more often, while late and terminal MLPs dominate margin/readout. Terminal crosscoders add a feature-level bridge: causally ranked sparse features mediate a substantial but partial share of the terminal readout interaction, while matched-random features do not.
+3. **A depth and feature anatomy.** Middle-positioned MLP substitutions transfer divergent-token identity more often, while late and terminal MLPs dominate margin/readout. Terminal crosscoders add a feature-level bridge: causally ranked sparse features mediate a substantial but partial share of the terminal readout interaction, while matched-random features do not. A selective edit of response-structure/readout features gives a monotone dose response across all four clean crosscoder families, validating one readable subset of the mediated features.
 
 We use **IT** as shorthand for instruction-following post-trained descendants. The recipes are heterogeneous, so the empirical claim is about released dense base/instruct checkpoint contrasts, not one training algorithm. All causal language is readout-scoped: replacing an upstream state, late stack, or MLP component changes a specified next-token readout in a constructed forward pass. We do not claim a universal instruction-following circuit or full circuit reconstruction.
 
@@ -123,6 +123,8 @@ The feature-level bridge uses paired PT/IT BatchTopK crosscoders trained on term
 ![Figure 3: Terminal crosscoder mediation curves. Ablating causally ranked terminal features increasingly reduces the upstream x late interaction and saturates, while matched random features do not reproduce the effect.](../results/paper_synthesis/exp34_dense5_final_readout_crosscoder/combined_dense5_20260503_0018/exp34_dense5_crosscoder_mediation_curve.png)
 
 Held-out autointerp makes the mediated feature set readable but not load-bearing. Across `300` interpreted features, validation reaches mean AUROC `0.878`; the causal feature taxonomy includes instruction/format and answer-readout roles, surface/tokenization-adjacent roles, and artifact/unclear features. The causal claim comes from the ablation; labels describe what many mediated terminal features appear to track.
+
+As a targeted semantic validation, we edit only the predeclared `structure_readout` bucket: `12` causally selected features labeled as response structure or answer-readout features across Gemma, Llama, Mistral, and Qwen. The edit is applied only inside each model's terminal crosscoder window. As the edit strength increases from `0` to `2`, the clean-family mean interaction drop increases monotonically (`0.000 -> 0.032 -> 0.066 -> 0.103 -> 0.149`). At the strongest paper-facing edit, all four families are positive (`+0.056`, `+0.091`, `+0.339`, `+0.110`), while matched-random and same-delta random controls are much smaller on average (`-0.050` and `+0.030`). We use this selectively: it supports the interpretation that response-structure/readout labels correspond to functional terminal readout handles; broader bucket steering remains exploratory.
 
 ### 3.4 Supporting Context: Late Signatures and OLMo Case Study
 
@@ -227,7 +229,7 @@ The main text is written around stable claim names. Experiment IDs and artifact 
 | Dense-6 first-divergence interaction and reference scale | §3.1 | B | `results/paper_synthesis/exp23_dense6_core/`; `scripts/analysis/build_exp23_dense6_core_synthesis.py` |
 | Validation ladder | §3.2 | C | hybrid-state validation, random-disagreement baselines, token-support audit, pre-late commitment control |
 | Depth and terminal anatomy | §3.3 | D | identity/margin handoff, terminal-depth audit, terminal MLP audit |
-| Terminal crosscoder mediation | §3.3 | D | terminal crosscoder synthesis, hardening runs, autointerp taxonomy |
+| Terminal crosscoder mediation and structure-bucket validation | §3.3 | D | terminal crosscoder synthesis, hardening runs, autointerp taxonomy, Exp41 structure-readout edit |
 | Late refinement/readout signatures | §3.4 | E | endpoint-matched KL, late MLP random controls, residual-opposition natural-rollout ablation |
 | OLMo staged case study | §3.4 | F | fixed-support Base/SFT/DPO/RLVR stage decomposition |
 | Auxiliary evidence and omitted threads | Scope only | G | JS replay, behavior audit, residual-opposition mediation, older pilots, steering |
@@ -475,6 +477,24 @@ Across `300` features, mean validation AUROC is `0.878`. Among the `100` causall
 
 The fine-grained behavior/readout categories include instruction/format control (`10/100`), response structure/answer readout (`15/100`), evaluation/MCQ scaffold (`5/100`), code/tool syntax (`3/100`), assistant register (`1/100`), and safety/advice-adjacent examples (`8/100`). The feature-level causal claim remains the mediation result above; autointerp provides readable evidence about the content of the mediated feature set.
 
+**Structure-readout bucket validation.** Exp41 tests one readable subset from the taxonomy rather than every label bucket. The predeclared `structure_readout` bucket contains `12` causal features across the four clean crosscoder families, with labels such as paragraph breaks, list openings, answer boundaries, and field separators. Editing this bucket inside the same terminal crosscoder windows gives a monotone dose response in interaction drop; matched-random and same-delta random controls are much smaller.
+
+| Edit strength `alpha` | Structure bucket | Matched random | Same-delta random |
+|---|---:|---:|---:|
+| `0.0` | `0.000` | `0.000` | `0.000` |
+| `0.5` | `+0.032` | `-0.014` | `+0.005` |
+| `1.0` | `+0.066` | `-0.027` | `+0.012` |
+| `1.5` | `+0.103` | `-0.041` | `+0.022` |
+| `2.0` | `+0.149` | `-0.050` | `+0.030` |
+
+At `alpha=2.0`, per-family structure-bucket interaction drops are Gemma `+0.056`, Llama `+0.091`, Mistral `+0.339`, and Qwen `+0.110`. We use only this selective structure/readout result in the paper-facing feature-label validation. Other Exp41 buckets were run as diagnostics but are not part of the evidence spine because their feature support is smaller or more domain-specific.
+
+Exp41 artifacts:
+
+- `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/exp41_logit_replay_summary.json`
+- `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/bucket_effects_by_model.csv`
+- `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/bucket_manifest/strict_primary/bucket_features.csv`
+
 ---
 
 ## Appendix E: Late-Refinement Signatures and Residual-Opposition Ablation
@@ -582,6 +602,7 @@ The fixed-support label-swap null passes the same orientation test as the main f
 | Terminal MLP audit | `scripts/analysis/analyze_exp33_terminal_identity_margin.py` | `results/exp33_terminal_identity_margin/exp33_terminal_identity_margin_full_dense5_a100x8_overlap_20260502_0509/analysis/` |
 | Terminal crosscoder mediation | `scripts/analysis/analyze_exp34_dense5_final_readout_crosscoder.py`; Exp38 hardening analysis | `results/paper_synthesis/exp34_dense5_final_readout_crosscoder/combined_dense5_20260503_0018/`; `results/exp38_qwen_olmo_final_layer_crosscoder_hardening/exp38_qwen_olmo_final_summary_20260503/analysis/` |
 | Feature autointerp and taxonomy | `src/poc/exp39_causal_feature_interpretation/`; `scripts/analysis/exp39_causal_paper_taxonomy_llm.py` | `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/analysis/` |
+| Structure-readout bucket validation | `src/poc/exp41_causal_feature_bucket_steering/`; Exp41 analysis outputs | `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/` |
 | OLMo fixed-support stage case study | `scripts/analysis/analyze_exp35_olmo_base_anchored_stage_decomposition.py`; `scripts/analysis/build_exp35_stage_ratio_bootstrap.py` | `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/` |
 
 All full reruns use bf16 inference and deterministic greedy decoding unless a script states otherwise. The summary audit is CPU-only and reads committed JSON/CSV artifacts. Reproducing raw 4B-8B intervention records requires multiple 80GB A100/H100 jobs; reproducing Qwen2.5 32B additionally requires the multi-GPU run or the committed paper-facing synthesis artifacts.
