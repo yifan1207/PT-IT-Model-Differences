@@ -136,17 +136,30 @@ def _compatibility(alias: str, pt: dict[str, Any], it: dict[str, Any]) -> dict[s
         "num_hidden_layers",
         "num_attention_heads",
         "num_key_value_heads",
-        "vocab_size",
     }
     for key in CONFIG_KEYS:
         if pt["config"].get(key) != it["config"].get(key):
             mismatches.append({"field": key, "base": pt["config"].get(key), "descendant": it["config"].get(key)})
     fatal = [row for row in mismatches if row["field"] in fatal_fields]
-    tokenizer_ok = pt["tokenizer"]["vocab_size_len"] == it["tokenizer"]["vocab_size_len"]
+    pt_vocab = pt["config"].get("vocab_size")
+    it_vocab = it["config"].get("vocab_size")
+    pt_tok_vocab = pt["tokenizer"]["vocab_size_len"]
+    it_tok_vocab = it["tokenizer"]["vocab_size_len"]
+    exact_vocab_match = pt_vocab == it_vocab and pt_tok_vocab == it_tok_vocab
+    tail_vocab_extension = (
+        isinstance(pt_vocab, int)
+        and isinstance(it_vocab, int)
+        and isinstance(pt_tok_vocab, int)
+        and isinstance(it_tok_vocab, int)
+        and it_vocab >= pt_vocab
+        and it_tok_vocab >= pt_tok_vocab
+    )
+    tokenizer_ok = exact_vocab_match or tail_vocab_extension
     return {
         "alias": alias,
         "ok": not fatal and tokenizer_ok,
         "tokenizer_vocab_ok": tokenizer_ok,
+        "vocab_compatibility": "exact" if exact_vocab_match else ("tail_extension" if tail_vocab_extension else "incompatible"),
         "mismatches": mismatches,
         "fatal_mismatches": fatal,
     }
