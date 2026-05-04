@@ -22,7 +22,7 @@ DENSE5_RECORD_ROOT = (
 DATASET = REPO / "data/eval_dataset_v2_holdout_0600_1199.jsonl"
 
 EXAMPLES = [
-    ("gemma3_4b", "Gemma 3 4B", "v2_GOV-CONV_0832"),
+    ("mistral_7b", "Mistral 7B", "v2_GOV-CONV_0832"),
     ("olmo2_7b", "OLMo 2 7B", "v2_GOV-CONV_0792"),
     ("qwen3_4b", "Qwen 3 4B", "v2_GOV-FORMAT_0748"),
     ("llama31_8b", "Llama 3.1 8B", "v2_GOV-CONV_1033"),

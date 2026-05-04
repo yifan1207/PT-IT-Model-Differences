@@ -408,6 +408,10 @@ def run_worker(args: argparse.Namespace) -> None:
             if dataset_record is None:
                 log.warning("[exp45] missing dataset record prompt_id=%s", prompt_id)
                 continue
+            if args.category_filter and str(dataset_record.get("category", "")) not in args.category_filter:
+                continue
+            if args.source_filter and str(dataset_record.get("source", "")) not in args.source_filter:
+                continue
             raw_prompt = get_prompt_for_variant(dataset_record, variant="pt", tokenizer=pt_tokenizer, apply_chat_template=False)
             prompt_ids = pt_tokenizer.encode(raw_prompt, add_special_tokens=True)
             for event_kind, event in _unique_events(manifest_record, args.event_kinds):
@@ -524,11 +528,16 @@ def run_worker(args: argparse.Namespace) -> None:
     log.info("[exp45] done model=%s one_step=%d rollouts=%d failures=%d", args.model, one_count, rollout_count, failures)
 
 
-def merge_workers(out_dir: Path, n_workers: int) -> None:
-    for stem, key_fields in (
+def merge_workers(out_dir: Path, n_workers: int, *, merge_part: str = "both") -> None:
+    stems = (
         ("one_step_records", ("prompt_id", "event_kind")),
         ("rollout_records", ("prompt_id", "event_kind", "cell")),
-    ):
+    )
+    for stem, key_fields in stems:
+        if merge_part == "one_step" and stem != "one_step_records":
+            continue
+        if merge_part == "rollout" and stem != "rollout_records":
+            continue
         merged = out_dir / f"{stem}.jsonl.gz"
         seen: set[tuple[str, ...]] = set()
         with gzip.open(merged, "wt", encoding="utf-8") as fout:
@@ -563,13 +572,25 @@ def add_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--prompt-mode", choices=["raw_shared"], default="raw_shared")
     parser.add_argument("--event-kinds", nargs="*", choices=list(DEFAULT_EVENT_KINDS), default=["first_diff"])
     parser.add_argument("--part", choices=["one_step", "rollout", "both"], default="both")
+    parser.add_argument(
+        "--category-filter",
+        nargs="*",
+        default=None,
+        help="Optional dataset category whitelist, e.g. GOV-FORMAT CONTENT-REASON.",
+    )
+    parser.add_argument(
+        "--source-filter",
+        nargs="*",
+        default=None,
+        help="Optional dataset source whitelist.",
+    )
     parser.add_argument("--boundary-layer-override", type=int, default=None)
+    parser.add_argument("--merge-part", choices=["both", "one_step", "rollout"], default="both")
     parser.add_argument("--merge-only", action="store_true")
 
 
 def main(args: argparse.Namespace) -> None:
     if args.merge_only:
-        merge_workers(args.out_dir, args.n_workers)
+        merge_workers(args.out_dir, args.n_workers, merge_part=args.merge_part)
         return
     run_worker(args)
-

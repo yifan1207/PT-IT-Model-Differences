@@ -20,10 +20,18 @@ def _iter_jsonl(path: Path):
                 yield json.loads(line)
 
 
-def _done_ids(path: Path) -> set[str]:
+def _done_ids(path: Path, *, retry_errors: bool = False) -> set[str]:
     if not path.exists():
         return set()
-    return {str(row.get("request_id")) for row in _iter_jsonl(path)}
+    done: set[str] = set()
+    for row in _iter_jsonl(path):
+        request_id = str(row.get("request_id"))
+        result = row.get("result") or {}
+        if retry_errors and "error" in result:
+            done.discard(request_id)
+        else:
+            done.add(request_id)
+    return done
 
 
 def _call(client: Any, model: str, prompt: str, retries: int = 4) -> dict[str, Any]:
@@ -51,6 +59,7 @@ def main() -> None:
     parser.add_argument("--provider", default="auto", choices=["auto", "gemini", "openrouter", "openai"])
     parser.add_argument("--parallelism", type=int, default=16)
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--retry-errors", action="store_true", help="Retry request IDs whose existing output row contains result.error")
     args = parser.parse_args()
 
     client_info = build_openai_client(args.judge_model, provider=args.provider)
@@ -60,7 +69,7 @@ def main() -> None:
     rows = list(_iter_jsonl(args.requests))
     if args.limit:
         rows = rows[: int(args.limit)]
-    done = _done_ids(args.out)
+    done = _done_ids(args.out, retry_errors=args.retry_errors)
     rows = [row for row in rows if str(row.get("request_id")) not in done]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     print(f"[exp45-judge] provider={provider} model={model} remaining={len(rows)}", flush=True)
