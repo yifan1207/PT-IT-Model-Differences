@@ -40,6 +40,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 DEPTH_ABLATION_WINDOWS = {
     "gemma3_4b": {"early": (0, 14), "mid": (10, 24), "late": (20, 34)},
     "llama31_8b": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
+    "llama31_meta_instruct": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
+    "llama31_tulu3_sft": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
+    "llama31_tulu3_dpo": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
+    "llama31_tulu3_final": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
+    "llama31_openmath2": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
+    "llama31_hermes3": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},
     "qwen3_4b": {"early": (0, 14), "mid": (11, 25), "late": (22, 36)},
     "qwen25_32b": {"early": (0, 26), "mid": (19, 45), "late": (38, 64)},
     "mistral_7b": {"early": (0, 13), "mid": (9, 22), "late": (19, 32)},

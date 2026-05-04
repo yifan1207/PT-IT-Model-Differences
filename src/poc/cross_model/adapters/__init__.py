@@ -10,6 +10,12 @@ from .olmo2 import OLMo2Adapter
 _ADAPTER_MAP: dict[str, type[ModelAdapter]] = {
     "gemma3_4b":        Gemma3Adapter,
     "llama31_8b":       Llama31Adapter,
+    "llama31_meta_instruct": Llama31Adapter,
+    "llama31_tulu3_sft": Llama31Adapter,
+    "llama31_tulu3_dpo": Llama31Adapter,
+    "llama31_tulu3_final": Llama31Adapter,
+    "llama31_openmath2": Llama31Adapter,
+    "llama31_hermes3": Llama31Adapter,
     "qwen3_4b":         Qwen3Adapter,
     "qwen25_32b":       Qwen3Adapter,
     "mistral_7b":       MistralAdapter,
