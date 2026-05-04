@@ -10,7 +10,89 @@ import re
 from pathlib import Path
 from typing import Any
 
-from src.poc.exp06_corrective_direction_steering.benchmarks.governance_v2 import _check_compliance_v2
+_NUMBERED_LIST_RE = re.compile(r"^\s*\d+[\.\)]\s", re.MULTILINE)
+_BULLET_RE = re.compile(r"^\s*[-*•]\s+\S", re.MULTILINE)
+_MD_HEADER_RE = re.compile(r"^#{1,4}\s+\S", re.MULTILINE)
+_CODE_BLOCK_RE = re.compile(r"```")
+_BOLD_RE = re.compile(r"\*\*\S.*?\*\*", re.DOTALL)
+_SENTENCE_SPLIT_RE = re.compile(r"[.!?]+")
+
+
+def _count_sentences(text: str) -> int:
+    return len([p.strip() for p in _SENTENCE_SPLIT_RE.split(text) if p.strip()])
+
+
+def _check_compliance_v2(text: str, criteria: dict) -> float | None:
+    """Local copy of the eval_dataset_v2 criteria checker.
+
+    Importing the original scorer pulls in the steering runtime and ``nnsight``;
+    Exp48 scoring only needs this pure deterministic helper.
+    """
+    if not criteria:
+        return None
+    ctype = criteria.get("type", "other")
+    params = criteria.get("params", {})
+    t = text.strip()
+    if ctype == "other" or not t:
+        return None
+    if ctype == "bullet_list":
+        return 1.0 if len(_BULLET_RE.findall(t)) >= max(params.get("min_count", 1), 1) else 0.0
+    if ctype == "numbered_list":
+        return 1.0 if len(_NUMBERED_LIST_RE.findall(t)) >= max(params.get("min_count", 1), 1) else 0.0
+    if ctype == "json":
+        try:
+            json.loads(t)
+            return 1.0
+        except (json.JSONDecodeError, ValueError):
+            inner = re.sub(r"^```(?:json)?\s*|\s*```$", "", t, flags=re.DOTALL).strip()
+            try:
+                json.loads(inner)
+                return 1.0
+            except (json.JSONDecodeError, ValueError):
+                return 0.0
+    if ctype == "markdown_sections":
+        return 1.0 if len(_MD_HEADER_RE.findall(t)) >= params.get("min_count", 2) else 0.0
+    if ctype == "highlighted_sections":
+        return 1.0 if len(_BOLD_RE.findall(t)) >= params.get("min_count", 1) else 0.0
+    if ctype == "code_block":
+        return 1.0 if _CODE_BLOCK_RE.search(t) else 0.0
+    if ctype == "no_commas":
+        return 1.0 if "," not in t else 0.0
+    if ctype == "all_lowercase":
+        alpha = [c for c in t if c.isalpha()]
+        return None if not alpha else (1.0 if all(c.islower() for c in alpha) else 0.0)
+    if ctype == "all_uppercase":
+        alpha = [c for c in t if c.isalpha()]
+        return None if not alpha else (1.0 if all(c.isupper() for c in alpha) else 0.0)
+    if ctype == "word_count_min":
+        min_w = params.get("min", 50)
+        return None if min_w > 150 else (1.0 if len(t.split()) >= min_w else 0.0)
+    if ctype == "word_count_max":
+        return 1.0 if len(t.split()) <= params.get("max", 200) else 0.0
+    if ctype == "sentence_count_min":
+        return 1.0 if _count_sentences(t) >= params.get("min", 3) else 0.0
+    if ctype == "sentence_count_max":
+        return 1.0 if _count_sentences(t) <= params.get("max", 5) else 0.0
+    if ctype == "wrapped_in_quotes":
+        return 1.0 if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")) else 0.0
+    if ctype == "starts_with":
+        prefix = params.get("prefix", "").strip().lower()
+        return None if not prefix else (1.0 if t.lower().startswith(prefix) else 0.0)
+    if ctype == "ends_with":
+        suffix = params.get("suffix", "").strip().lower()
+        return None if not suffix else (1.0 if t.lower().endswith(suffix) else 0.0)
+    if ctype == "contains_all_keywords":
+        keywords = params.get("keywords", [])
+        if not keywords:
+            return None
+        lower = t.lower()
+        return 1.0 if all(str(kw).lower() in lower for kw in keywords) else 0.0
+    if ctype == "contains_phrase":
+        phrase = params.get("phrase", "").strip()
+        return None if not phrase else (1.0 if phrase.lower() in t.lower() else 0.0)
+    if ctype == "has_placeholders":
+        return 1.0 if len(re.findall(r"\[[^\[\]\n]{1,50}\]", t)) >= params.get("min_count", 1) else 0.0
+    return None
 
 
 def _json_rows(path: Path):
