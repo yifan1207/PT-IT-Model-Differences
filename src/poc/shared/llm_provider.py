@@ -42,7 +42,7 @@ def build_openai_client(
     load_dotenv_near_repo()
     wants_gemini = "gemini" in model.lower()
 
-    if provider not in {"auto", "gemini", "openrouter"}:
+    if provider not in {"auto", "gemini", "openrouter", "openai"}:
         raise ValueError(f"Unsupported provider '{provider}'")
 
     if provider in {"auto", "gemini"} and wants_gemini:
@@ -66,5 +66,16 @@ def build_openai_client(
             )
         if provider == "openrouter":
             raise RuntimeError("OPENROUTER_API_KEY is not set")
+
+    if provider in {"auto", "openai"} and not model.startswith("google/"):
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if api_key:
+            return (
+                OpenAI(api_key=api_key),
+                normalize_model_for_provider(model, "openai"),
+                "openai",
+            )
+        if provider == "openai":
+            raise RuntimeError("OPENAI_API_KEY is not set")
 
     return None
