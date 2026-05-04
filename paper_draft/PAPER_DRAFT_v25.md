@@ -1,4 +1,4 @@
-# First-Divergence Model Diffing Reveals Upstream-Conditioned Late Readout in Base-to-Instruct Language Models
+# First-Divergence Model Diffing Reveals State-Conditioned Late Readout in Base-to-Instruct Language Models
 
 **Anonymous authors** | NeurIPS 2026 Submission
 
@@ -6,7 +6,7 @@
 
 ## Abstract
 
-Late-layer patching can localize how an instruction-following checkpoint differs from its pretrained base, but it can conflate what the late stack writes with how much of that write is portable across upstream states. We introduce **first-divergence model diffing**. At the first shared-history prefix where a base/instruct pair prefers different next tokens, we cross PT/IT upstream state with PT/IT late stack and score the IT-vs-PT token margin. The estimand decomposes late readout into a portable component and an upstream-conditioned component. Across five dense core families, the IT late stack is partially portable (`30.4%` of its matched-context effect transfers to PT upstream) but mostly upstream-conditioned: the matched-context late-stack effect is `+1.71` logits (`3.3x`) larger from IT-shaped upstream state than from PT-shaped upstream state. Controls show the split is not explained by broken hybrids, selected-token support, or pre-late commitment. Two stage lineages show the interaction is partly present after SFT and largely present by DPO/final checkpoints. Depth and feature analyses then locate part of the effect in a candidate-to-margin handoff: middle windows are more identity-selective, late/terminal windows more margin-sensitive, and terminal crosscoder features partially mediate it. The result is a portable-vs-conditioned decomposition of late readout, not a fully portable late-only instruction module.
+Late-layer patching can localize base-to-instruct differences, but it can conflate late-stack writes with their portability across upstream states. We introduce **first-divergence model diffing**. At the first shared-history prefix where a base/instruct pair prefers different next tokens, we cross PT/IT upstream state with PT/IT late stack and score the IT-vs-PT token margin. The estimand decomposes late readout into portable and upstream-conditioned components. Across five dense core families, the IT late stack is partially portable (family-balanced `30.4%`; median `29.2%`, range `19.5-40.3%`) but mostly upstream-conditioned: the matched-context effect is `+1.71` logits (`3.3x`) larger from IT-shaped upstream state. Controls show the split is not explained by broken hybrids, selected-token support, or pre-late commitment. A same-base recipe control and two stage lineages show the interaction is not generic fine-tune compatibility and is partly present after SFT; a constrained-continuation bridge shows it persists beyond the selected token. Terminal crosscoders and boundary-state rescue provide the mechanistic bridge: a top causal feature subset mediates `26-48%`, is upstream-gated and partly driven by preterminal patches, while a rank-256 boundary projection rescues `0.71` of the missing margin. The result is a portable-vs-conditioned decomposition of late readout, not a fully portable late-only instruction module.
 
 ---
 
@@ -18,15 +18,15 @@ The tempting answer is "late layers." Late transformer computation is close to t
 
 We test portability directly with **first-divergence model diffing**. For each prompt, we find the earliest generated position where PT and IT prefer different next tokens under the same generated history. Let those tokens be `t_PT` and `t_IT`. At that prefix, we cross upstream residual state (`U_PT` or `U_IT`) with downstream late stack (`L_PT` or `L_IT`) and measure `logit(t_IT) - logit(t_PT)`. The key estimand is a difference-in-differences: how much larger is the IT-minus-PT late-stack replacement effect when the upstream state is IT-shaped rather than PT-shaped?
 
-The answer is a partially portable but mostly upstream-conditioned late readout. Across the five-family core set, the IT late stack has a positive effect even from PT upstream, but only `30.4%` of its matched-context effect transfers. The matched-context effect is `3.3x` larger, producing a `+1.71` logit interaction. The effect remains positive at generated positions `>=3`, under a common-PT readout, on a 32B family, under label-swap nulls, and under controls for pre-late token commitment, hybrid-state mismatch, and selected-token support.
+The answer is a partially portable but mostly upstream-conditioned late readout. Across the five-family core set, the IT late stack has a positive effect even from PT upstream, but the portable share is centered at `30.4%` family-balanced (`29.2%` median, `19.5-40.3%` range). The matched-context effect is `3.3x` larger, producing a `+1.71` logit interaction. The effect remains positive at generated positions `>=3`, under a common-PT readout, on a 32B family, under label-swap nulls, and under controls for pre-late token commitment, hybrid-state mismatch, and selected-token support.
 
 This matters for model diffing practice. A late patch should not be interpreted as a fully portable late-layer mechanism unless the late effect is tested under both native and foreign upstream states.
 
 The paper has three contributions.
 
 1. **A paired-checkpoint first-divergence factorial.** We introduce a local counterfactual estimand at the exact token where PT and IT first disagree. It decomposes the IT-minus-PT late-stack replacement effect into a portable component that transfers to PT upstream and an upstream-conditioned component that appears under IT-shaped upstream state.
-2. **A validation and specificity ladder for the estimand.** We test the practical artifact explanations: broken hybrids, arbitrary selected-token support, pre-late commitment, readout choice, label orientation, position support, family heterogeneity, and whether released stage lineages show a coherent profile. The main text gives the decisive checks; the appendices give provenance.
-3. **A depth and feature bridge.** Middle-positioned MLP substitutions are relatively more candidate/identity-selective, while late and terminal MLPs dominate margin/readout. Terminal crosscoders then connect the window-level result to sparse features that partially mediate the readout interaction, matter more under IT-shaped upstream state, partially rescue the weak hybrid, and respond to preterminal computation patches.
+2. **A validation and specificity ladder for the estimand.** We test the practical artifact explanations: broken hybrids, arbitrary selected-token support, pre-late commitment, readout choice, label orientation, position support, family heterogeneity, generic fine-tune compatibility, and whether released stage lineages show a coherent profile. The main text gives the decisive checks; the appendices give provenance.
+3. **A sparse terminal-feature and structured-state bridge.** Terminal crosscoders connect the window-level result to sparse MLP features that partially mediate the readout interaction, matter more under IT-shaped upstream state, partially rescue the weak hybrid, and respond to preterminal computation patches. Depth anatomy supports the candidate-to-margin handoff, and a separate boundary-state rescue shows that a train-fit medium-rank descendant-minus-base residual shift recovers much of the missing terminal margin. This is a partial bridge, not full circuit reconstruction.
 
 Scope is intentionally local. We use **IT** as shorthand for instruction-following post-trained descendants, but the recipes are heterogeneous; the empirical claim is about released dense base/instruct checkpoint contrasts, not one training algorithm. Causal language is readout-scoped: replacing an upstream state, late stack, or MLP component changes a specified next-token readout in a constructed forward pass. We do not claim a universal instruction-following circuit or full circuit reconstruction.
 
@@ -85,7 +85,7 @@ All raw-shared first-divergence and residual-state runs force both PT and IT bra
 
 Prior work leaves three hypotheses open. **H1: fully portable late module** -- the IT-minus-PT late-stack effect should be about the same from PT and IT upstream (`~1x` amplification). **H2: no portable component** -- the IT late stack should do little from PT upstream. **H3: partially portable, upstream-conditioned readout** -- both effects should be positive, but the matched-context effect should be much larger. The factorial distinguishes these hypotheses directly.
 
-At the first natural PT/IT disagreement, the Core-5 result supports H3. Replacing the PT late stack with the IT late stack shifts the IT-token margin by `+0.75` logits from PT upstream, but by `+2.46` logits from IT upstream. Thus `30.4%` of the matched-context late-stack effect transfers to PT upstream, while the remaining `69.6%` is exposed only under IT-shaped upstream state. The `+1.71` logit gap means the matched-context effect is `3.3x` larger.
+At the first natural PT/IT disagreement, the Core-5 result supports H3. Replacing the PT late stack with the IT late stack shifts the IT-token margin by `+0.75` logits from PT upstream, but by `+2.46` logits from IT upstream. Thus the family-balanced portable share is `30.4%`, with family values from `19.5%` to `40.3%`; most of the matched-context effect is exposed only under IT-shaped upstream state. The `+1.71` logit gap means the matched-context effect is `3.3x` larger.
 
 The sign pattern is consistent across families: every Core-5 interaction is positive, ranging from `+1.25` to `+2.53` logits. The amplification scale is the cleanest magnitude reference because it compares the same late-stack replacement under two upstream states; Appendix B reports native-shift shares and family-level ranges.
 
@@ -95,34 +95,45 @@ The interaction is also not confined to response openings: generated position `>
 
 | Scope/readout | Late effect from PT upstream | Late effect from IT upstream | Portable share | Interaction | Amplification |
 |---|---:|---:|---:|---:|---:|
-| Core-5, common-IT | `+0.75` `[+0.67, +0.82]` | `+2.46` `[+2.36, +2.55]` | `30.4%` | `+1.71` `[+1.64, +1.78]` | `3.3x` |
+| Core-5, common-IT | `+0.75` `[+0.67, +0.82]` | `+2.46` `[+2.36, +2.55]` | `30.4%` (`29.2%` median; `19.5-40.3%` range) | `+1.71` `[+1.64, +1.78]` | `3.3x` |
 | Core-5, common-PT | `+0.74` `[+0.67, +0.81]` | `+2.48` `[+2.38, +2.57]` | `29.9%` | `+1.74` `[+1.67, +1.81]` | `3.4x` |
 | Qwen2.5-32B only | `+0.98` `[+0.88, +1.08]` | `+2.42` `[+2.26, +2.59]` | `40.5%` | `+1.45` `[+1.32, +1.57]` | `2.5x` |
 
-On the local token-margin scale, `+1.71` logits is substantial: it multiplies the odds of `t_IT` over `t_PT` by about `5.5x` within the constructed contrast, and it is `34.6%` of the native PT->IT diagonal margin shift on the same support. This is still a token-level mechanistic quantity, not a deployment-level behavior estimate. §3.2 adds a behavioral bridge showing that the same hybrid readout pattern changes immediate token choice and short-continuation preferences.
+On the local token-margin scale, `+1.71` logits is substantial: it multiplies the odds of `t_IT` over `t_PT` by about `5.5x` within the constructed contrast, and it is `34.6%` of the native PT->IT diagonal margin shift on the same support. This is still a token-level mechanistic quantity, not a deployment-level behavior estimate.
 
 This is the paper's central claim: at natural base/instruct disagreement points, the IT late stack is not a self-contained module whose full effect ports to any upstream state. It has a measurable portable component, but most of its matched-context effect is upstream-conditioned. On a factual/reasoning stress test, for example, the late-only effect from PT upstream is negative (`-1.18`), while the interaction remains positive (`+1.81`).
 
 ### 3.2 Validation Ladder
 
-The first-divergence factorial intentionally selects a high-signal disagreement point and constructs hybrid forward passes. No patching experiment makes those hybrids literally natural trajectories. The validation question is narrower: do the main artifact explanations make the estimand uninformative? Four checks answer no; Appendix C gives the full audit trail.
+The first-divergence factorial intentionally selects a high-signal disagreement point and constructs hybrid forward passes. No patching experiment makes those hybrids literally natural trajectories. The validation question is narrower: do the main artifact explanations make the estimand uninformative? Three classes of checks answer no; Appendix C gives the full audit trail.
 
 | Concern | Main evidence | Takeaway |
 |---|---|---|
 | The hybrid state is broken or generically off-manifold. | Native diagonals reconstruct exactly; PT->IT boundary interpolation is smooth and positive; signed permutations recover only a minority of the effect. | The effect behaves like a structured PT->IT direction, not a patching cliff or generic hybrid perturbation. |
 | First divergence is an arbitrary selected token pair. | Random local disagreements from the same prompts retain only `56%` of the first-divergence interaction; pre-divergence prefixes scored on the future token pair are near zero (`3%`). | First divergence is a meaningful high-signal support, not just any PT/IT token contrast. |
 | The upstream state has already decided before the late stack. | The interaction remains positive when the IT boundary readout does not yet favor `t_IT` and in the lowest boundary-margin tercile. | The late stack still contributes after controlling for pre-late commitment. |
-| The logit margin does not affect generated behavior. | With the IT late stack fixed, IT-shaped upstream state raises `t_IT` top-1 selection from `24.5%` to `97.6%`; pairwise judging prefers the native IT-upstream continuation in `71.0%` of cases. | The readout interaction is visible in immediate token choice and short hybrid continuations, not only in two-token logit scores. |
 
 The selected-support control is important enough to visualize directly. First divergence is high-signal, but it is not a one-off cherry-picked token pair: random later PT/IT disagreements from the same rollouts show the same positive sign at reduced magnitude (`56%` in the source-balanced comparison), while scoring the future divergent token pair before the models actually diverge is near zero (`3%`). This is the pattern we would expect if first divergence is a principled support-selection device: it concentrates the interaction, but related local disagreements retain a weaker version of it.
 
 ![Figure 3: Selection baselines for first divergence. Random local disagreements from the same rollouts preserve the sign of the upstream x late interaction at reduced magnitude, while pre-divergence future-token scoring is near zero. Values are Core-small family-balanced means.](../results/paper_synthesis/exp37_core_small_selection_baseline/selection_baselines_core_small.png)
 
-Secondary checks agree: common-PT readout gives the same answer, later-position subsets remain positive, the label-swap null passes, and every core family has a positive interaction. Together, these controls make the practical artifact explanations unlikely. The exact logit magnitude remains intervention-scoped, and the short continuations are still constructed hybrid rollouts, but the upstream-conditioned late-readout pattern is robust under the tests that would otherwise explain it away.
+Secondary checks agree: common-PT readout gives the same answer, later-position subsets remain positive, the label-swap null passes, and every core family has a positive interaction. Together, these controls make the practical artifact explanations unlikely. The exact logit magnitude remains intervention-scoped, but the upstream-conditioned late-readout pattern is robust under the tests that would otherwise explain it away.
 
-### 3.3 Stage Specificity in Released Lineages
+### 3.3 Recipe and Stage Specificity
 
-The Core-5 result compares released base checkpoints to released instruction-following descendants. By itself, that final-pair contrast does not say whether the interaction appears all at once at the final checkpoint or is already visible along a released post-training path. We therefore apply the same fixed-support factorial to two multi-stage lineages: Tulu-3 on Llama-3.1-8B and OLMo-2. In each case, the support is the Base->Final first-divergence set, and intermediate checkpoints are scored on the same `t_Base`/`t_Final` token contrast. This is a stage diagnostic, not causal attribution to a training algorithm.
+The Core-5 result compares released base checkpoints to released instruction-following descendants. Two extra checks narrow the interpretation. First, a same-base recipe comparison asks whether upstream-conditioned late readout is merely generic fine-tune compatibility. On instruction/format supports from Llama-3.1-8B descendants, instruction-like checkpoints are positive while an OpenMath2 domain-specialized checkpoint is not; after matching on prompt category, generated-position bin, and token category, the instruction-like-minus-OpenMath contrast is `+1.335` logits. OpenMath also does not show a positive interaction on math-domain support (`-0.154` `[-0.450, +0.128]`), despite large late effects, while the instruction-like mean remains positive (`+1.670`). The instruction-like orientation passes a sign-flip null (`p=5e-5`).
+
+| Same Llama-3.1-8B base descendant, instruction/format support | Interaction | Read |
+|---|---:|---|
+| Meta Instruct | `+1.053` `[+0.920, +1.201]` | instruction-like, positive |
+| Tulu SFT | `+0.287` `[+0.239, +0.337]` | smaller but positive |
+| Tulu DPO | `+1.131` `[+1.028, +1.242]` | larger |
+| Tulu Final/RLVR | `+1.365` `[+1.236, +1.499]` | largest instruction-like checkpoint |
+| OpenMath2 | `-0.358` `[-0.534, -0.181]` | domain-specialized control does not reproduce it |
+
+A constrained-continuation bridge shows that the recipe-specific split is not confined to the first token. After forcing the descendant-preferred divergent token, we teacher-force short native descendant/base continuations through the same four cells. For instruction-like descendants, the common-IT interaction grows from `+1.50` at `N=0` to `+2.71` over `N=8`, with `+0.193` logits/token tail-only persistence. A same-forced-descendant-tail control remains positive (`+2.46` at `N=8`), while shuffled descendant tails are much smaller (`+0.87`). OpenMath again behaves differently and is readout-sensitive at longer horizons, so we use this bridge for the instruction-like persistence claim rather than as a universal sequence-level recipe taxonomy.
+
+Second, we ask whether the interaction appears all at once at the final checkpoint or is already visible along released post-training paths. We apply the same fixed-support factorial to two multi-stage lineages: Tulu-3 on Llama-3.1-8B and OLMo-2. In each case, the support is the Base->Final first-divergence set, and intermediate checkpoints are scored on the same `t_Base`/`t_Final` token contrast. This is a stage diagnostic, not causal attribution to a training algorithm.
 
 | Lineage, fixed Base->Final support | SFT interaction | DPO interaction | Final interaction | Read |
 |---|---:|---:|---:|---|
@@ -131,11 +142,11 @@ The Core-5 result compares released base checkpoints to released instruction-fol
 
 Tulu is the cleanest second-lineage check because it uses the same Llama-3.1-8B base architecture as one Core-5 family. Common and native readouts agree, and the final Tulu interaction passes the same label-swap orientation test as the main factorial (`+1.455` observed vs `+0.296` null 99.9th percentile). Base->SFT and Base->DPO support reruns give the same qualitative profile, with final interactions `+1.322` and `+1.436`. Together with OLMo, this suggests the upstream-conditioned readout is not a one-off final-checkpoint accident: it is already measurable after SFT and mostly present by the preference-trained checkpoints in two released lineages.
 
-We phrase this carefully. The percentages are fixed-support checkpoint scores: they do not imply that DPO causally contributes exactly `84-85%` of the mechanism, nor that every post-training recipe has this profile.
+We phrase this carefully. The recipe control is a token-factorial specificity check, not a behavior claim. The stage percentages are fixed-support checkpoint scores: they do not imply that DPO causally contributes exactly `84-85%` of the mechanism, nor that every post-training recipe has this profile.
 
-### 3.4 Depth Anatomy: Candidate-to-Margin Handoff
+### 3.4 From Depth Anatomy to Sparse Terminal Features
 
-The interaction has a consistent depth anatomy. Middle-positioned MLP substitutions transfer divergent-token identity more often than late substitutions, while late windows dominate margin/readout. Terminal-depth audits sharpen the same story: the last few blocks preserve a large readout subcomponent but transfer token identity poorly. The handoff is therefore operational rather than a complete circuit: middle windows are relatively more candidate/identity-selective, while late and terminal windows are more margin/readout-sensitive.
+**Window anatomy.** The interaction has a consistent depth anatomy, which motivates the terminal feature tests. Middle-positioned MLP substitutions transfer divergent-token identity more often than late substitutions, while late windows dominate margin/readout. Terminal-depth audits sharpen the same story: the last few blocks preserve a large readout subcomponent but transfer token identity poorly. The handoff is therefore operational rather than a complete circuit: middle windows are relatively more candidate/identity-selective, while late and terminal windows are more margin/readout-sensitive.
 
 | Evidence | Key result | Interpretation |
 |---|---:|---|
@@ -143,21 +154,30 @@ The interaction has a consistent depth anatomy. Middle-positioned MLP substituti
 | Native IT MLP margin support | late `+0.986`; middle `+0.136`; early `-0.085` | Native IT-token margin support is late-concentrated. |
 | PT-host late insertion | `+0.004` | Late MLP updates alone are near zero from PT upstream state. |
 | Terminal-depth audit | final-three blocks retain `52%`; final block retains `23%` | Terminal layers carry a substantial readout subcomponent. |
-| Terminal feature mediation, gating, rescue, and handoff | top causal features account for `26-48%`; causal gate beats matched random; direct feature rescue is `+0.49`; mid-to-preterminal patches rescue `+1.71`, with `+0.13` mediated by the same features | Sparse terminal features carry a concentrated, upstream-conditioned bridge. |
 
 ![Figure 4: Window-level identity/margin handoff. Middle substitutions transfer divergent-token identity more often, while late MLPs dominate native IT-token support.](../results/paper_synthesis/exp20_exp21_handoff_core_small.png)
 
-Terminal crosscoders make this handoff visible at feature level. We train paired PT/IT BatchTopK crosscoders with a shared latent dictionary and separate PT/IT decoder branches on terminal MLP outputs, rank features by held-out causal effect, and ablate their IT-branch decoder contribution inside the terminal IT stack. The fixed top-200 causal subset accounts for `26-48%` of the terminal readout interaction, while matched-random sets have the wrong sign or near-zero effect. Appendix E gives reconstruction, sparsity, and training details.
+**Sparse terminal mediation.** Terminal crosscoders make this handoff visible at feature level. We train paired PT/IT BatchTopK crosscoders with a shared latent dictionary and separate PT/IT decoder branches on terminal MLP outputs, rank features by held-out causal effect, and ablate their IT-branch decoder contribution inside the terminal IT stack. The fixed top-200 causal subset accounts for `26-48%` of the terminal readout interaction, while matched-random sets have the wrong sign or near-zero effect. Appendix E gives reconstruction, sparsity, and training details.
 
 ![Figure 5: Terminal crosscoder mediation. Ablating the top causally ranked terminal features reduces the upstream x late interaction in each clean terminal-crosscoder family, while matched random features do not reproduce the effect. Percent labels show the top-200 share of the family interaction.](../results/paper_synthesis/exp34_core_feature_mediation/terminal_crosscoder_core3_mediation.png)
 
-The same features inherit the upstream conditioning seen at window level. Ablating the top-200 causal terminal features hurts the `U_IT,L_IT` readout much more than the `U_PT,L_IT` readout, beating matched-random features in all three clean terminal-crosscoder families (family means `+1.25`, `+0.98`, `+0.43` logits). Conversely, patching their native `U_IT,L_IT` activations into the weak `U_PT,L_IT` hybrid rescues `+0.49` logits and beats both matched-random and same-delta random rescue. This rescue is deliberately harder than ablation and is not full reconstruction, but it shows that the upstream-conditioned terminal features recover a measurable slice of the missing IT-token margin.
+| Terminal feature bridge test | Result | Meaning |
+|---|---:|---|
+| Feature mediation | `26-48%` | Sparse terminal features carry a concentrated part. |
+| Upstream-conditioned ablation | causal gate beats matched random | Same features matter more under IT upstream. |
+| Feature rescue | `+0.49` | Selected features partially restore the weak hybrid. |
+| Upstream patch | `+1.71`, `+0.13` mediated | Preterminal computation drives these features. |
+| Reverse patch | `+3.57`, `+0.53` mediated | Removing IT preterminal state suppresses them. |
+
+**Upstream drives terminal features.** The same features inherit the upstream conditioning seen at window level. Ablating the top-200 causal terminal features hurts the `U_IT,L_IT` readout much more than the `U_PT,L_IT` readout, and patching their native `U_IT,L_IT` activations into the weak `U_PT,L_IT` hybrid rescues `+0.49` logits. Both effects beat matched-random controls. The rescue is deliberately harder than ablation and is not full reconstruction, but it shows that the upstream-conditioned terminal features recover a measurable slice of the missing IT-token margin.
 
 Finally, a direct handoff test perturbs upstream computation and re-measures the same terminal features. Injecting IT mid-to-preterminal computation into the weak `U_PT,L_IT` hybrid rescues `+1.71` logits of IT-token margin, with `+0.13` logits mediated by the selected terminal features. The reverse intervention, replacing the same preterminal computation in native IT with PT computation, causes a `+3.57` logit drop, with `+0.53` mediated. A terminal-entry patch gives the expected upper bound (`+5.15` total, `+0.71` mediated). Thus the feature bridge is not only terminal: preterminal state changes drive a measurable part of the terminal sparse-feature readout.
 
+**Structured boundary-state rescue.** A held-out boundary-state rescue gives the same conclusion without crosscoder features. On Llama-3.1 descendants, we fit PCA directions to train-split descendant-minus-base boundary-state shifts and inject held-out projections into the weak base-upstream/descendant-late hybrid. At terminal boundary 31, a rank-256 projection closes `0.71` of the missing IT-token margin; the full held-out delta gives the expected upper bound (`0.97`). Matched Gaussian and random full directions are near zero, and sign-flipped directions go negative. We use this as structured residual-state support for upstream-conditioned readout, not as recipe-specific or completion-level evidence.
+
 Held-out autointerp makes the mediated feature set readable but not load-bearing. Across `225` interpreted features from the clean terminal-crosscoder families, validation reaches mean AUROC `0.886`; we use these labels descriptively while the causal evidence comes from feature edits. As a targeted semantic check, a predeclared `structure_readout` bucket gives a monotone positive edit across clean crosscoder families; Appendix E reports the full dose response and controls.
 
-### 3.5 What the Factorial Separates
+### 3.5 What This Measures
 
 The first-divergence event is a distributional fact: the released PT and IT checkpoints prefer different next tokens at that prefix. The factorial asks a different question: once the token contrast is fixed, how much of the IT late-stack effect ports across upstream states? The answer is: some, but not most. The IT late stack can add IT-token margin from PT upstream, but most of its matched-context readout effect appears only when the upstream state is IT-shaped.
 
@@ -173,13 +193,13 @@ Contemporaneous token-level RLVR work reaches a complementary conclusion from th
 
 **Late refinement and FFN readout.** Feed-forward layers promote vocabulary-space concepts and progressively refine predictions (Geva et al., 2022a,b). Layerwise intervention studies describe late residual sharpening (Lad et al., 2025), calibration analyses find an upper-layer confidence-adjustment phase (Joshi et al., 2025), and tuned lenses operationalize layerwise prediction refinement (nostalgebraist, 2020; Belrose et al., 2023). These works establish late refinement as plausible. Our contribution is to measure how it differs across paired PT/IT checkpoints at natural first-divergence tokens.
 
-**Post-training model diffs.** Wu et al. (2024) study behavioral shifts from language modeling to instruction following. Du et al. (2025) compare base and post-trained checkpoints mechanistically across knowledge, truthfulness, refusal, and confidence. Zhao, Ziser, and Cohen (2024) show layer-structured task information in instruction-tuned models. Sparse but Critical analyzes RLVR as sparse token-level distribution shifts whose cross-sampled substitutions affect reasoning trajectories (Meng et al., 2026). We add an internal paired-checkpoint counterfactual: at the first token where PT and IT disagree, how much of the IT-token margin comes from a portable late-stack effect, and how much requires IT-shaped upstream state?
+**Post-training model diffs.** Wu et al. (2024) study behavioral shifts from language modeling to instruction following. Du et al. (2025) compare base and post-trained checkpoints mechanistically across knowledge, truthfulness, refusal, and confidence, finding both transferable and weakly transferable directions. Zhao, Ziser, and Cohen (2024) show layer-structured task information in instruction-tuned models. Chaudhury (2025) finds preference-tuning effects localized to a mid-layer subspace in Llama-3.2-1B. Sparse but Critical analyzes RLVR as sparse token-level distribution shifts whose cross-sampled substitutions affect reasoning trajectories (Meng et al., 2026). We add an internal paired-checkpoint counterfactual: at the first token where PT and IT disagree, how much of the IT-token margin comes from a portable late-stack effect, and how much requires IT-shaped upstream state? This complements mid-layer localization results: our late effect is a readout of IT-shaped upstream state, not a claim that alignment information lives only in late layers.
 
-**Activation patching and feature-level model diffing.** Activation patching requires care because metric choice, intervention direction, and off-manifold hybrids affect interpretation (Heimersheim and Nanda, 2024). We therefore report intervention-scoped readout effects and validate them with readout swaps, diagonal reconstruction, interpolation, low-anomaly filtering, label-swap nulls, signed-permutation controls, and random-disagreement baselines. Cross-model activation patching across base and fine-tuned variants is the closest methodological precedent (Prakash et al., 2024): their target is an entity-tracking mechanism and whether fine-tuning enhances it, while ours is the first natural PT/IT next-token disagreement and how much the late readout margin ports across upstream states. Sparse crosscoders provide a complementary route for model diffing (Lindsey et al., 2024), with known sparsity-artifact pitfalls (Minder et al., 2025). We use crosscoders after the factorial rather than as a standalone diff: causally ranked terminal features partially mediate the interaction, matter more under IT-shaped upstream state, and partially rescue the weak PT-upstream hybrid.
+**Activation patching and feature-level model diffing.** Activation patching requires care because metric choice, intervention direction, and off-manifold hybrids affect interpretation (Heimersheim and Nanda, 2024). We therefore report intervention-scoped readout effects and validate them with readout swaps, diagonal reconstruction, interpolation, low-anomaly filtering, label-swap nulls, signed-permutation controls, and random-disagreement baselines. Cross-model activation patching across base and fine-tuned variants is the closest methodological precedent (Prakash et al., 2024): their target is an entity-tracking mechanism and whether fine-tuning enhances an existing task circuit, while ours is the first natural PT/IT next-token disagreement and how much the IT late readout margin ports across upstream states. Sparse crosscoders provide a complementary route for model diffing (Lindsey et al., 2024), with known sparsity-artifact pitfalls (Minder et al., 2025). Unlike global sparse model-diff work, we use crosscoders after defining a paired-checkpoint causal estimand and ask which terminal features mediate that estimand: causally ranked terminal features partially mediate the interaction, matter more under IT-shaped upstream state, and partially rescue the weak PT-upstream hybrid.
 
 **Automated feature interpretation.** LLM-based neuron interpretation commonly follows a generate-and-score pattern: propose a natural-language feature hypothesis, then test it on held-out examples (Bills et al., 2023; Huang et al., 2023). We follow that pattern for terminal crosscoder features. Labels are descriptive evidence; feature ablations provide the causal evidence.
 
-**Novelty.** Several ingredients have precedents: late refinement, FFN vocabulary promotion, activation patching, global base/instruct diffing, and sparse model-diff features. The new object is the paired-checkpoint first-divergence factorial estimand. It measures the portability gap in the IT-minus-PT late-stack replacement effect at the natural token where PT and IT first disagree. The feature-level contribution is the bridge from this window-level interaction to terminal sparse features: the same causally ranked features mediate part of the readout interaction, are selectively necessary under IT-shaped upstream state, partially rescue the missing margin when inserted into the PT-upstream hybrid, and are partly driven by upstream/preterminal computation.
+**Novelty.** Several ingredients have precedents: late refinement, FFN vocabulary promotion, activation patching, global base/instruct diffing, and sparse model-diff features. The qualitative possibility of upstream/late co-adaptation is also not surprising given prior fine-tuning and transferability work. The new object is the paired-checkpoint first-divergence factorial estimand. It measures the portable-vs-conditioned split in the IT-minus-PT late-stack replacement effect at the natural token where PT and IT first disagree. The feature-level contribution is the bridge from this window-level interaction to terminal sparse features: the same causally ranked features mediate part of the readout interaction, are selectively necessary under IT-shaped upstream state, partially rescue the missing margin when inserted into the PT-upstream hybrid, and are partly driven by upstream/preterminal computation.
 
 ---
 
@@ -189,15 +209,19 @@ Contemporaneous token-level RLVR work reaches a complementary conclusion from th
 
 The interpretation suggested by these results is that released base-to-instruct transitions reshape how existing computation is read out, rather than adding a fully portable late instruction module. This is compatible with a broader view of post-training as selecting, amplifying, or consolidating reachable behaviors from the pretrained model, but our evidence is narrower: it concerns dense base/instruct checkpoint pairs at first-divergence token readouts. RLVR analyses such as Sparse but Critical are complementary context because they study token-level post-training shifts from outside the model; our factorial asks where the selected token preference becomes a logit inside paired checkpoints.
 
-The Tulu-3 and OLMo-2 lineages illustrate how the same estimand can be reused along released post-training paths. In both, the measured interaction is already partly present after SFT and largely present by the DPO/preference-trained checkpoint, with the final checkpoint strongest. These are fixed-support checkpoint comparisons, not universal stage attributions.
+The same-base recipe check is informative because OpenMath2 is not a weak descendant. It is a math-specialized SFT of the same Llama-3.1-8B base, trained on OpenMathInstruct-2, and was released because it improves strongly on math benchmarks (Toshniwal et al., 2024). On our math-domain support, its matched-context late effect is also large (`+3.275`), but the same late effect is already portable from base upstream (`+3.430`), leaving no positive upstream-conditioned interaction (`-0.154`). Instruction-like descendants remain upstream-conditioned on the same math support (`+1.670` mean).
+
+This makes OpenMath2 more than a foil. It suggests a recipe-structured distinction: a domain math SFT can create a mostly portable late computation for its token contrast, while instruction-following descendants more often require native upstream state to expose the same late readout. That pattern is compatible with task-specific skill-localization results, where fine-tuned skills can be grafted through small parameter subsets (Panigrahi et al., 2023), but our unit is activation-state portability rather than parameter sparsity. Within this same-base comparison, the factorial distinguishes portable task computation from co-adapted upstream-to-late readout.
+
+The Tulu-3 and OLMo-2 lineages illustrate how the same estimand can be reused beyond final base/instruct pairs. In both released lineages, the measured interaction is already partly present after SFT and largely present by the DPO/preference-trained checkpoint, with the final checkpoint strongest. These are token-factorial checkpoint comparisons, not universal stage attributions.
 
 ### 5.2 Scope
 
 The scope is narrow by design. First, the estimand is local to first-divergence next-token readouts: it targets the earliest point where a released PT/IT pair changes preference under shared history, not an average over all model behavior. Position-stratified and domain stress tests show that the interaction persists beyond the earliest generated positions, while its magnitude varies with prompt domain and generated position.
 
-Second, the interventions are window-level compatibility tests. Hybrid-state validation makes practical artifact explanations unlikely, and terminal crosscoders provide concentrated feature-level mediation, rescue, and upstream-handoff checks, but we do not recover a full circuit or prove an on-manifold natural-trajectory effect size. The headline logit margins are dimensionalized as odds and native-shift shares in §3.1; they should not be read as direct estimates of completion-level behavior.
+Second, the interventions are window-level compatibility tests. Hybrid-state validation makes practical artifact explanations unlikely, constrained continuation shows short-horizon likelihood persistence rather than free-running behavior, and terminal crosscoders expose a partial, terminal, quality-gated sparse-feature trace of the interaction. These checks provide concentrated feature-level mediation, rescue, and upstream-handoff evidence, but not the complete circuit or an on-manifold natural-trajectory effect size. The headline logit margins are dimensionalized as odds and native-shift shares in §3.1; they should not be read as direct estimates of completion-level behavior.
 
-Third, the empirical scope is five dense core PT/IT pairs plus two released dense stage lineages. DeepSeek-V2-Lite stays appendix-only because MoE routing and expert swaps require different controls. Architecture and MoE generalization are therefore next-step questions, not claims made by the core dense-family result. The stage-lineage results are fixed-support case studies, not universal stage attributions.
+Third, the empirical scope is five dense core PT/IT pairs, one same-base recipe control, and two released dense stage lineages. DeepSeek-V2-Lite stays appendix-only because MoE routing and expert swaps require different controls. Architecture and MoE generalization are therefore next-step questions, not claims made by the core dense-family result. The recipe and stage-lineage results are fixed-support token-factorial case studies, not universal training-stage attributions.
 
 ### 5.3 Practical Implications and Next Tests
 
@@ -209,7 +233,9 @@ The most direct next test is to make the upstream side sparse as well: train or 
 
 ## 6. Conclusion
 
-First-divergence model diffing turns a vague question -- "do late layers explain the base-to-instruct difference?" -- into a paired-checkpoint counterfactual. At the first token where released PT and IT checkpoints disagree, the IT-minus-PT late-stack replacement effect is partially portable but mostly upstream-conditioned: the IT late stack has a positive effect from PT upstream, yet its effect is much larger from IT-shaped upstream state. The result is positive across the five dense core families, appears coherently along two released stage lineages, and is robust to targeted checks for readout choice, selected-token support, pre-late commitment, label orientation, and hybrid-state failure. The depth anatomy is graded: middle windows are relatively more identity-selective, while late and terminal windows are more margin/readout-sensitive. Terminal sparse features carry a concentrated bridge: they are more causally important under IT-shaped upstream state, their native-IT activation pattern partially rescues the weak PT-upstream hybrid, and upstream/preterminal patches drive a measurable part of their mediated effect. The resulting picture is a portable-vs-conditioned late-readout decomposition in released dense base/instruct checkpoint contrasts, not a fully portable late-only update.
+First-divergence model diffing turns a vague question -- "do late layers explain the base-to-instruct difference?" -- into a paired-checkpoint counterfactual. At the first token where released PT and IT checkpoints disagree, the IT-minus-PT late-stack replacement effect is partially portable but mostly upstream-conditioned: the IT late stack has a positive effect from PT upstream, yet its effect is much larger from IT-shaped upstream state. The result is positive across the five dense core families, stronger for instruction-like descendants than a same-base domain fine-tune, coherent along two released stage lineages, and robust to targeted checks for readout choice, selected-token support, pre-late commitment, label orientation, and hybrid-state failure.
+
+The mechanistic bridge is also graded rather than all-or-nothing. Middle windows are relatively more identity-selective, late and terminal windows are more margin/readout-sensitive, and terminal sparse features carry a concentrated part of the readout interaction. Those features are more causally important under IT-shaped upstream state, their native-IT activation pattern partially rescues the weak PT-upstream hybrid, and upstream/preterminal patches drive a measurable part of their mediated effect. Together with structured boundary-state rescue, the picture is a portable-vs-conditioned late-readout decomposition in released dense base/instruct checkpoint contrasts, not a fully portable late-only update.
 
 ---
 
@@ -224,6 +250,8 @@ Belrose, N., et al. (2023). Eliciting Latent Predictions from Transformers with 
 Bills, S., Cammarata, N., Mossing, D., Tillman, H., Gao, L., Goh, G., Sutskever, I., Leike, J., Wu, J., & Saunders, W. (2023). Language Models Can Explain Neurons in Language Models. OpenAI.
 
 Chuang, Y., et al. (2024). DoLA: Decoding by Contrasting Layers Improves Factuality. *ICLR 2024*.
+
+Chaudhury, A. (2025). Alignment is Localized: A Causal Probe into Preference Layers. arXiv:2510.16167.
 
 Conmy, A., Mavor-Parker, A. N., Lynch, A., Heimersheim, S., & Garriga-Alonso, A. (2023). Towards Automated Circuit Discovery for Mechanistic Interpretability. *NeurIPS 2023*.
 
@@ -261,6 +289,8 @@ Prakash, N., Shaham, T. R., Haklay, T., Belinkov, Y., & Bau, D. (2024). Fine-Tun
 
 Team OLMo, Walsh, P., Soldaini, L., Groeneveld, D., Lo, K., Arora, S., et al. (2025). 2 OLMo 2 Furious. *COLM 2025*.
 
+Toshniwal, S., Du, W., Moshkov, I., Kisacanin, B., Ayrapetyan, A., & Gitman, I. (2024). OpenMathInstruct-2: Accelerating AI for Math with Massive Open-Source Instruction Data. arXiv:2410.01560.
+
 Wu, X., Yao, W., Chen, J., Pan, X., Wang, X., Liu, N., & Yu, D. (2024). From Language Modeling to Instruction Following: Understanding the Behavior Shift in LLMs after Instruction Tuning. *NAACL 2024*.
 
 Zhao, Z., Ziser, Y., & Cohen, S. B. (2024). Layer by Layer: Uncovering Where Multi-Task Learning Happens in Instruction-Tuned Large Language Models. *EMNLP 2024*.
@@ -276,10 +306,9 @@ The main text is written around stable claim names. For details, start with Appe
 | Minimal reproducibility snapshot | §2.1 | A, B, I | model registry, dataset manifests, raw first-divergence records |
 | Core-5 first-divergence interaction, amplification scale, and portable share | §3.1 | B | `results/paper_synthesis/exp23_core5/`; `scripts/analysis/build_exp23_core5_synthesis.py` |
 | Validation ladder | §3.2 | C | hybrid-state validation, random-disagreement baselines, token-support audit, pre-late commitment control |
-| Behavioral bridge from margin to output | §3.2 | C | one-step top-1/token-rank audit and short-hybrid-rollout pairwise judging |
-| Released stage-lineage checks | §3.3 | G | fixed-support Tulu-3 and OLMo-2 Base/SFT/DPO/Final stage sweeps |
+| Recipe, continuation, and released stage-lineage checks | §3.3 | G | same-base Llama recipe control; constrained continuation bridge; fixed-support Tulu-3 and OLMo-2 Base/SFT/DPO/Final stage sweeps |
 | Depth and terminal anatomy | §3.4 | D | identity/margin handoff, terminal-depth audit, terminal MLP audit |
-| Terminal feature mediation, upstream-conditioning, rescue, handoff, and structure-bucket validation | §3.4 | E | terminal crosscoder synthesis, hardening runs, upstream-conditioning audit, feature rescue, preterminal handoff, autointerp taxonomy, structure-readout edit |
+| Terminal feature mediation, upstream-conditioning, rescue, structured boundary-state rescue, handoff, and structure-bucket validation | §3.4 | E | terminal crosscoder synthesis, hardening runs, upstream-conditioning audit, feature rescue, structured boundary-state rescue, preterminal handoff, autointerp taxonomy, structure-readout edit |
 | Late refinement/readout signatures | §3.5 | F | endpoint-matched KL, late MLP random controls |
 | Architecture and MoE scope | §5 | H | dense/MoE scope note |
 
@@ -288,11 +317,11 @@ Prompt-bootstrap CIs in the main text are conditional precision estimates over s
 | Appendix | Supports | Does not prove |
 |---|---|---|
 | B | Core-5 interaction magnitude, amplification, portable share, family consistency, and readout robustness. | Population-level generalization over all dense or post-trained models. |
-| C | Main artifact explanations are unlikely: broken hybrids, arbitrary token support, pre-late commitment, and logit-only artifacts. | Hybrid passes are natural deployment trajectories. |
+| C | Main artifact explanations are unlikely: broken hybrids, arbitrary token support, and pre-late commitment. | Hybrid passes are natural deployment trajectories or completion-level behavior estimates. |
 | D | Depth anatomy: middle windows are relatively more identity-selective while late/terminal windows are more margin-sensitive. | A complete circuit or a unique layer boundary. |
-| E | Sparse terminal features partially mediate, gate, and rescue the terminal readout interaction. | Full mechanism recovery or feature monosemanticity. |
+| E | Sparse terminal features and structured boundary-state shifts partially mediate, gate, and rescue the terminal readout interaction. | Full mechanism recovery, recipe-unique boundary directions, or feature monosemanticity. |
 | F | Late/terminal windows were a motivated target. | The upstream-conditioned mechanism itself. |
-| G | Two released dense lineages show coherent fixed-support stage profiles. | Isolated causal attribution to SFT, DPO, or RLVR algorithms. |
+| G | Same-base recipe control, constrained continuation scoring, and two released dense lineages show specificity beyond generic fine-tune compatibility, a one-token artifact, or one final checkpoint accident. | Isolated causal attribution to SFT, DPO, or RLVR algorithms, or natural-rollout behavior for every recipe. |
 | H | Dense-family scope and MoE limitations are explicit. | MoE generalization. |
 | I | Reviewer-facing reproduction levels and artifact roots. | That full raw GPU reruns are cheap. |
 
@@ -363,6 +392,8 @@ Core-5 family-level common-IT interactions:
 
 The Core-5 family interaction range is `+1.253` to `+2.534` logits, with median `+1.464`. Interaction share ranges from `23.4%` to `39.4%`.
 
+The portable-share family range is similarly heterogeneous. Under common-IT readout, `late_it_given_pt_upstream / late_it_given_it_upstream` ranges from `19.5%` to `40.3%`, with median `29.2%`; the Core-5 family-balanced center is `30.4%`. We therefore use `30.4%` as a center-of-mass summary, not as a constant across families.
+
 The Core-small label-swap null is computed from the compatibility-permutation synthesis in Appendix I.2.
 
 On the content/reasoning stress-test support, the late-only PT-upstream term is `-1.176` and the upstream x late interaction is `+1.812` (`[+1.721, +1.901]`).
@@ -373,11 +404,11 @@ The Qwen2.5 32B scale-check artifacts are listed with the Core-5 synthesis roots
 
 ## Appendix C: Validation Controls
 
-**Claim supported.** The main upstream x late interaction is not made uninformative by broken hybrids, arbitrary selected-token support, pre-late commitment, or a purely logit-only artifact.
+**Claim supported.** The main upstream x late interaction is not made uninformative by broken hybrids, arbitrary selected-token support, or pre-late commitment.
 
-**Primary evidence.** Hybrid interpolation is smooth and positive, random local disagreements retain a reduced but same-sign interaction, pre-divergence future-token scoring is near zero, pre-late commitment restrictions preserve the interaction, and one-step token behavior changes in the predicted direction.
+**Primary evidence.** Hybrid interpolation is smooth and positive, random local disagreements retain a reduced but same-sign interaction, pre-divergence future-token scoring is near zero, and pre-late commitment restrictions preserve the interaction.
 
-**What this does not prove.** These controls do not make hybrid states natural deployment trajectories; they show that the main artifact explanations are unlikely to account for the estimand.
+**What this does not prove.** These controls do not make hybrid states natural deployment trajectories, nor do they estimate completion-level behavior; they show that the main artifact explanations are unlikely to account for the estimand.
 
 **Where to audit.** Full validation artifacts and scripts are listed in Appendix I.2.
 
@@ -388,7 +419,6 @@ The Qwen2.5 32B scale-check artifacts are listed with the Core-5 synthesis roots
 | Signed-permutation random/observed ratio | `0.31x` | Matched-magnitude random signed patches do not reproduce the effect. |
 | Random local disagreement | `+1.005` (`56%` of first divergence) | First divergence is high-signal, not the only same-sign support. |
 | Pre-divergence future token pair | `+0.059` (`3%`) | The token pair matters; arbitrary earlier prefixes do not carry the effect. |
-| Behavioral bridge | `24.5% -> 97.6%` top-1 `t_IT` under fixed IT late stack | Margin shifts correspond to token-choice shifts. |
 
 ### C.1 Hybrid-State Validation
 
@@ -420,22 +450,6 @@ Random local disagreements are later and more content-token-heavy than first div
 
 The support-run control restricts to events where the IT boundary readout does not yet favor `t_IT`, bins events by IT boundary margin, and fits boundary-margin controls. In all three views the interaction remains positive. This rules out the simplest "the late stack is irrelevant because the boundary already committed" reading without promoting these support-run magnitudes to Core-5 headline estimates.
 
-### C.4 Behavioral Bridge
-
-This support analysis asks whether the logit-margin interaction maps onto generated-token behavior. It uses the Core-small support families and the same first-divergence prefixes as the main factorial.
-
-One-step readout gives the cleanest bridge. With the IT late stack fixed, changing the upstream state from PT-shaped to IT-shaped raises `t_IT` top-1 selection from `24.5%` to `97.6%`; the corresponding pairwise `logit(t_IT) > logit(t_PT)` rate rises from `31.2%` to `98.7%`.
-
-| Metric | `U_PT,L_IT` | `U_IT,L_IT` | Gap |
-|---|---:|---:|---:|
-| `t_IT` top-1 rate | `24.5%` | `97.6%` | `+73.1%` |
-| `t_IT` top-5 rate | `70.9%` | `100.0%` | `+29.1%` |
-| `t_IT > t_PT` pairwise rate | `31.2%` | `98.7%` | `+67.5%` |
-
-Short hybrid rollouts give a complementary completion-level check. A blinded pairwise judge (`gpt-4.1-mini`) prefers `U_IT,L_IT` over `U_PT,L_IT` as more instruction-following / assistant-like in `71.0%` of cases when ties/unclear are counted as `0.5` (`[69.4%, 72.6%]`). The judge also finds a smaller positive late-stack effect under both upstream states: `58.5%` for `U_PT,L_IT` over `U_PT,L_PT`, and `57.8%` for `U_IT,L_IT` over `U_IT,L_PT`.
-
-We use this as a behavioral bridge only. The one-step result is closest to the factorial estimand; the judged continuations are constructed hybrid rollouts, not natural deployment trajectories.
-
 ---
 
 ## Appendix D: Depth and Terminal Anatomy
@@ -464,13 +478,13 @@ In the Core-small support set, the final-three stack retains `52%` of the same-p
 
 ## Appendix E: Sparse Terminal Feature Bridge
 
-**Claim supported.** A causally ranked subset of terminal crosscoder features carries a concentrated, partial bridge for the terminal readout interaction.
+**Claim supported.** Causally ranked terminal crosscoder features and structured boundary-state shifts carry concentrated, partial bridges for the terminal readout interaction.
 
-**Primary evidence.** Top-200 causal features mediate `26-48%` of the terminal interaction in three quality-gated families, matter more under IT-shaped upstream state, partially rescue the weak hybrid, and respond to upstream/preterminal patches.
+**Primary evidence.** Top-200 causal features mediate `26-48%` of the terminal interaction in three quality-gated families, matter more under IT-shaped upstream state, partially rescue the weak hybrid, and respond to upstream/preterminal patches. Separately, train-fit PCA components of the descendant-minus-base boundary-state shift rescue the missing margin at terminal boundaries.
 
-**What this does not prove.** This is not full circuit recovery, and it does not prove feature monosemanticity. OLMo is excluded from feature-level claims because its terminal crosscoder did not pass the reconstruction gate.
+**What this does not prove.** This is not full circuit recovery, and it does not prove feature monosemanticity. The boundary-state rescue is not recipe-unique and does not estimate completion-level behavior. OLMo is excluded from feature-level claims because its terminal crosscoder did not pass the reconstruction gate.
 
-**Where to audit.** Crosscoder training, mediation, gating, rescue, handoff, autointerp, and structure-readout artifacts are listed in Appendix I.2.
+**Where to audit.** Crosscoder training, mediation, gating, rescue, structured boundary-state rescue, handoff, autointerp, and structure-readout artifacts are listed in Appendix I.2.
 
 ### E.1 Terminal Crosscoder Mediation and Upstream-Conditioning
 
@@ -545,7 +559,20 @@ The middle-to-terminal handoff analysis tests whether upstream/preterminal compu
 
 The mid-to-preterminal mediated effect beats matched-random features (`+0.188` rescue; `+0.655` degradation), same-delta random directions (`+0.115` rescue; `+0.390` degradation), and top-active noncausal features (`+0.496` rescue; `+0.928` degradation). The terminal-entry rows are upper-bound sanity checks: they patch directly at the boundary into the terminal readout, so they should be larger than nonterminal windows. The late-preterminal-only window is weaker, especially in Qwen's event-permutation null, so the paper-facing claim is about mid-to-preterminal/preterminal handoff, not a late-preterminal-only mechanism.
 
-### E.3 Descriptive Autointerp and Structure-Readout Edit
+### E.3 Structured Boundary-State Rescue
+
+The feature-rescue analysis edits a selected sparse terminal feature set. As a complementary check, we ask whether the missing upstream state itself has a structured low-rank form. For five Llama-3.1-8B descendants, we fit PCA components to train-split descendant-minus-base boundary-state shifts and inject held-out projections into the weak base-upstream/descendant-late hybrid. The rank-256 rows are the main structured-rescue test; the full-delta rows are upper-bound sanity checks. Closure fraction is:
+
+`[rescued margin - floor margin] / [native descendant-upstream margin - floor margin]`.
+
+| Boundary | Train-fit PCA rank-256 | Full-delta upper bound | Gaussian full | Random full | Sign-flip full |
+|---|---:|---:|---:|---:|---:|
+| 29 | `0.634` | `0.929` | `-0.019` | `-0.036` | `-0.816` |
+| 31 | `0.707` | `0.966` | `-0.021` | `-0.058` | `-0.788` |
+
+The same-base wrong-descendant controls are nonzero in the artifact report, so we do not interpret these PCA directions as recipe-unique. The defensible claim is narrower: the missing upstream contribution at terminal boundaries is a structured descendant-minus-base residual-state shift, not generic perturbation magnitude.
+
+### E.4 Descriptive Autointerp and Structure-Readout Edit
 
 Across `225` interpreted features from the clean terminal-crosscoder families, mean validation AUROC is `0.886`. We use these labels descriptively, not as causal evidence: the causal claim remains the mediation, upstream-conditioning, and rescue results above. The paper-facing semantic check is the narrower `structure_readout` bucket below, where a predeclared readable subset is edited and tested against controls.
 
@@ -590,17 +617,49 @@ The dense-family true late random-control comparison is `+0.327` (`[+0.298, +0.3
 
 ---
 
-## Appendix G: Released Stage-Lineage Sweeps
+## Appendix G: Recipe, Continuation, and Released Stage-Lineage Checks
 
-**Claim supported.** The fixed-support interaction appears coherently along two released dense post-training lineages: Tulu-3 and OLMo-2.
+**Claim supported.** The interaction is not merely generic fine-tune compatibility or a one-token artifact, and fixed-support versions appear coherently along two released dense post-training lineages.
 
-**Primary evidence.** On Base->Final support, both lineages show partial SFT presence and near-final DPO/preference-checkpoint interaction.
+**Primary evidence.** On the same Llama-3.1-8B base, instruction-like descendants show positive interaction on instruction/format supports while OpenMath2 does not. A constrained continuation bridge shows the instruction-like interaction persists beyond the selected first token. On Base->Final support, Tulu-3 and OLMo-2 both show partial SFT presence and near-final DPO/preference-checkpoint interaction.
 
-**What this does not prove.** These are cumulative released checkpoint comparisons, not isolated causal attributions to training algorithms.
+**What this does not prove.** These are token-factorial recipe, constrained-likelihood, and cumulative checkpoint comparisons, not isolated causal attributions to training algorithms or natural-rollout guarantees for each recipe.
 
-**Where to audit.** Tulu and OLMo stage-sweep artifacts are listed in Appendix I.2.
+**Where to audit.** Recipe-specificity, constrained-continuation, and stage-sweep artifacts are listed in Appendix I.2.
 
-### G.1 Tulu-3 Fixed-Support Stage Sweep
+### G.1 Same-Base Recipe Specificity
+
+The recipe-specificity check compares descendants of the same Llama-3.1-8B base. On instruction/format support, instruction-like descendants are consistently upstream-conditioned, while the OpenMath2 domain-specialized descendant does not reproduce the same interaction.
+
+| Same-base descendant | Support | Interaction | Matched-context late effect | Portable late effect |
+|---|---|---:|---:|---:|
+| Meta Instruct | instruction/format | `+1.053` | `+2.070` | `+1.018` |
+| Tulu SFT | instruction/format | `+0.287` | `+0.895` | `+0.608` |
+| Tulu DPO | instruction/format | `+1.131` | `+2.196` | `+1.065` |
+| Tulu Final/RLVR | instruction/format | `+1.365` | `+2.407` | `+1.041` |
+| OpenMath2 | instruction/format | `-0.358` | `+1.052` | `+1.411` |
+
+The instruction-like mean interaction is `+0.959` `[+0.907, +1.017]`; the matched instruction-like-minus-OpenMath contrast is `+1.335` logits after controlling for prompt category, generated-position bin, and token category. On math-domain support, OpenMath2 still does not show a positive interaction (`-0.154` `[-0.450, +0.128]`), even though both its matched-context and portable late effects are large (`+3.275` and `+3.430`). The instruction-like mean on the same math-domain support is `+1.670` `[+1.540, +1.795]`. Thus the OpenMath control is not merely failing because instruction/format prompts are out of domain; in these supports, its late effect is mostly portable rather than upstream-conditioned. The sign-flip null for the instruction-like orientation is clean (`+0.968` observed vs `+0.108` null 99.9th percentile; `p=5e-5`). We use this as evidence that the readout interaction is recipe-structured, not as a claim that the same token-level interaction directly predicts natural behavior for every descendant.
+
+### G.2 Constrained Continuation Bridge
+
+The constrained continuation bridge extends the Exp47 token-factorial without switching to full free-running benchmarks. For each first-divergence event, we force the descendant-preferred token, construct short native descendant and base continuations, and teacher-force those fixed candidate sequences through the same four hybrid cells. The sequence margin is the log probability of the descendant candidate minus the base candidate; `N=0` recovers the one-token factorial, while `N>0` asks whether the interaction persists over short continuations.
+
+N=0 reproduction is close but not bit-exact because this run re-scores the cells in bf16/runtime conditions: median maximum drift is `0.125`, q99 is `0.375`, and `61/13664` comparisons exceed `0.5`. We therefore use aggregate horizon estimates rather than eventwise exact equality.
+
+| Instruction-like descendants, common-IT readout | `C_N` interaction | Tail-only `C_N` | Events |
+|---:|---:|---:|---:|
+| `N=0` | `+1.50` `[+1.45, +1.56]` | -- | `5432` |
+| `N=1` | `+1.97` `[+1.90, +2.04]` | `+0.43` `[+0.39, +0.46]` | `4801` |
+| `N=2` | `+1.74` `[+1.66, +1.81]` | `+0.56` `[+0.51, +0.60]` | `3607` |
+| `N=4` | `+2.06` `[+1.97, +2.16]` | `+0.89` `[+0.83, +0.96]` | `3471` |
+| `N=8` | `+2.71` `[+2.59, +2.84]` | `+1.54` `[+1.45, +1.64]` (`+0.193/token`) | `3422` |
+
+Controls keep the interpretation local. At `N=8`, the same-forced-descendant-tail control is also positive (`+2.46` `[+2.35, +2.59]`), showing that the effect persists after the forced first token; shuffled descendant tails are much smaller (`+0.87` `[+0.77, +0.97]`), showing that coherent native descendant tails carry substantially more interaction than arbitrary descendant tails. This is constrained likelihood evidence, not a natural-rollout behavior estimate.
+
+OpenMath2 again has a different profile. On math-domain support, the common-IT interaction is near zero at `N=0` and negative at `N=8` (`-4.67` `[-5.52, -3.82]`), while common-PT becomes positive by `N=8` (`+1.81` `[+0.98, +2.61]`). We use this as a readout-sensitive diagnostic for recipe specificity, not as a universal sequence-level taxonomy of fine-tunes.
+
+### G.3 Tulu-3 Fixed-Support Stage Sweep
 
 The primary Tulu analysis fixes the support to Base->Final first-divergence prefixes for the Llama-3.1-8B Base and Tulu-3 final checkpoint, then scores SFT, DPO, and Final on the same `t_Base`/`t_Final` contrast. The checkpoints share architecture; Tulu adds special tokens, so the preflight validates identical raw prompt token IDs and rejects target tokens outside the shared base vocabulary.
 
@@ -623,7 +682,7 @@ Two base-anchored support checks ask whether the Base->Final support is doing th
 | Base->SFT | `564/600` | `+0.401` | `+1.146` | `+1.322` |
 | Base->DPO | `583/600` | `+0.427` | `+1.241` | `+1.436` |
 
-### G.2 OLMo-2 Fixed-Support Stage Sweep
+### G.4 OLMo-2 Fixed-Support Stage Sweep
 
 The primary fixed-support sweep fixes the support to Base->RLVR first-divergence prefixes and scores every intermediate checkpoint against the same `t_Base`/`t_RLVR` contrast. This makes SFT, DPO, and RLVR cumulative estimates comparable on the same local support. The older adjacent-pair analysis is retained only as historical motivation because each adjacent contrast uses its own first-divergence support and token labels; those adjacent estimates are useful local contrasts, but they are not additive attributions to the final Base->RLVR contrast.
 
@@ -687,7 +746,6 @@ The Core-5 set covers dense transformer families only. It includes one Mistral f
 | Selection baselines and token-support control | `scripts/run/run_exp37_random_prefix_baseline_runpod.sh`; `scripts/analysis/analyze_exp37_random_prefix_baseline.py`; `scripts/analysis/analyze_exp37_token_support_control.py`; `scripts/plot/plot_exp37_selection_baselines_paper.py` | `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/summary.json`; `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/effects.csv`; `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/exp37_matched_prefix_baselines.png`; `results/paper_synthesis/exp37_core_small_selection_baseline/selection_baselines_core_small.png`; `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/token_support_control/summary.json` |
 | Selected-support audit | `scripts/analysis/analyze_first_divergence_token_support.py` | `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/summary.json`; `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/token_support_report.md` |
 | Pre-late commitment control | `scripts/analysis/analyze_exp40_prelate_commitment_control.py`; exact collector in `src/poc/exp40_prelate_commitment_control/collect.py` | `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/summary.json`; `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/effects.csv`; `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/exp40_prelate_commitment_report.md`; `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/prelate_commitment_bins.png` |
-| Behavioral bridge from margin to output | `src/poc/exp45_behavioral_bridge/`; `scripts/analysis/analyze_exp45_behavioral_bridge.py`; `scripts/scoring/score_exp45_llm_judge.py` | `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/report.md`; `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/one_step_effects.csv`; `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/behavioral_effects.csv`; `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/llm_judge_summary.json` |
 | Endpoint-matched convergence gap | `scripts/analysis/build_exp22_endpoint_deconfounded_synthesis.py` | `results/exp09_cross_model_observational_replication/data/exp9_summary.json`; `results/exp09_cross_model_observational_replication/data/convergence_gap_values.json`; `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv`; `results/exp09_cross_model_observational_replication/plots/L2_mean_kl_per_layer_tuned_dense5.png` |
 | Late MLP random control | late-random-control analysis scripts | `results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json`; `results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json`; `results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/exp19B_summary_light.json`; `results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_causal_main.png` |
 | Identity/margin handoff | `scripts/analysis/build_exp20_exp21_handoff_synthesis.py` | `results/paper_synthesis/exp20_exp21_handoff_table.csv`; `results/paper_synthesis/exp20_exp21_handoff_core_small.png`; `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/summary.json`; `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/summary.json`; `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/effects.csv` |
@@ -696,8 +754,11 @@ The Core-5 set covers dense transformer families only. It includes one Mistral f
 | Terminal feature upstream-conditioning | `src/poc/exp42_terminal_feature_upstream_conditioning/`; `scripts/analysis/analyze_exp42_terminal_feature_upstream_conditioning.py` | `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_gating_summary.json`; `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_gating_report.md`; `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_gating_by_family.png`; `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_ablation_saturation.png` |
 | Terminal feature rescue | `src/poc/exp43_feature_rescue_handoff/`; `scripts/plot/plot_exp43_feature_rescue_handoff.py` | `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/exp43_report.md`; `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/primary_family_balanced_effects.csv`; `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/exp43_family_balanced_rescue_gain.png` |
 | Middle-to-terminal feature handoff | `scripts/run/run_exp44_middle_terminal_feature_handoff_runpod.sh`; `src/poc/exp44_middle_terminal_feature_handoff/analyze.py` | `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/exp44_report.md`; `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/primary_family_balanced_effects.csv`; `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/handoff_control_differences.csv`; `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/exp44_primary_handoff_effects.png` |
+| Structured boundary-state rescue | `src/poc/exp48_static_chimera_sequence_validation/structured_rescue.py`; `src/poc/exp48_static_chimera_sequence_validation/analyze.py` | `results/exp48_static_chimera_sequence_validation/exp48_static_chimera_sequence_validation_20260504_1349_a100x16/analysis/structured_rescue_summary.csv`; `results/exp48_static_chimera_sequence_validation/exp48_static_chimera_sequence_validation_20260504_1349_a100x16/analysis/structured_rescue_closure_curves.png`; `results/exp48_static_chimera_sequence_validation/exp48_static_chimera_sequence_validation_20260504_1349_a100x16/analysis/summary.json` |
 | Feature autointerp and taxonomy | `src/poc/exp39_causal_feature_interpretation/`; `scripts/analysis/exp39_causal_paper_taxonomy_llm.py` | `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/autointerp/label_validation.json`; `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/autointerp/llm_feature_labels.jsonl`; `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/dashboards/feature_dashboards.jsonl`; `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/analysis/` |
 | Structure-readout bucket validation | `src/poc/exp41_causal_feature_bucket_steering/`; structure-readout analysis outputs | `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/exp41_logit_replay_summary.json`; `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/bucket_effects_by_model.csv`; `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/bucket_manifest/strict_primary/bucket_features.csv` |
+| Same-base recipe specificity | `src/poc/exp47_same_base_recipe_specificity/`; `scripts/analysis/analyze_exp47_same_base_recipe_specificity.py` | `results/exp47_same_base_recipe_specificity/exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/summary.json`; `results/exp47_same_base_recipe_specificity/exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/portable_coadapted_table.csv`; `results/exp47_same_base_recipe_specificity/exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/matched_support_effects.csv`; `results/exp47_same_base_recipe_specificity/exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/recipe_domain_two_panel.png` |
+| Constrained continuation bridge | `src/poc/exp49_constrained_continuation_bridge/`; Exp49 horizon analysis outputs | `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/summary.json`; `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/aggregate_effects.csv`; `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/sequence_effects.csv`; `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/plots/exp49_cumulative_interaction.png`; `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/plots/exp49_tail_interaction.png` |
 | Tulu fixed-support stage sweep | `src/poc/exp46_tulu_fixed_support_stage_sweep/`; Exp46 analysis outputs | `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/summary.json`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/effects.csv`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/stage_fraction_ratios.csv`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/exp46_stage_decomposition.png`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_base_to_S_a100x8_localdisk_20260504_104959/analysis/summary.json`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_base_to_D_a100x8_localdisk_20260504_105605/analysis/summary.json` |
 | OLMo fixed-support stage sweep | `scripts/analysis/analyze_exp35_olmo_base_anchored_stage_decomposition.py`; `scripts/analysis/build_exp35_stage_ratio_bootstrap.py` | `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/summary.json`; `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/effects.csv`; `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/stage_ratio_bootstrap.csv`; `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/exp35_stage_decomposition.png` |
 

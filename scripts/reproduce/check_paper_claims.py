@@ -585,6 +585,31 @@ def exp23_dense6_family_share_stat(stat: str, *, exclude: set[str] | None = None
     return _read
 
 
+def exp23_family_portable_share_stat(stat: str, readout: str = "common_it") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "results/paper_synthesis/exp23_core5/exp23_core5_family_effects.csv")
+        values = [
+            float(row["late_it_given_pt_upstream"]) / float(row["late_it_given_it_upstream"])
+            for row in rows
+            if row["readout"] == readout
+        ]
+        if not values:
+            raise KeyError(readout)
+        if stat == "min":
+            return min(values)
+        if stat == "max":
+            return max(values)
+        if stat == "median":
+            ordered = sorted(values)
+            mid = len(ordered) // 2
+            if len(ordered) % 2:
+                return ordered[mid]
+            return (ordered[mid - 1] + ordered[mid]) / 2.0
+        raise KeyError(stat)
+
+    return _read
+
+
 def exp23_dense6_position(stratum: str, column: str) -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
@@ -1070,6 +1095,145 @@ def exp46_tulu_null(column: str, readout: str = "common_r") -> NumberFn:
             "exp46_full_a100x8_localdisk_20260504_103624/analysis/summary.json",
         )
         return float(data["label_swap_null"][readout][column])
+
+    return _read
+
+
+def exp47_recipe_row(
+    model: str,
+    column: str,
+    *,
+    slice_name: str = "instruction_format",
+    readout: str = "common_it",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp47_same_base_recipe_specificity/"
+            "exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/"
+            "portable_coadapted_table.csv",
+        )
+        for row in rows:
+            if (
+                row["readout"] == readout
+                and row["slice"] == slice_name
+                and row["model"] == model
+            ):
+                return float(row[column])
+        raise KeyError((model, column, slice_name, readout))
+
+    return _read
+
+
+def exp47_matched_contrast(column: str = "estimate", readout: str = "common_it") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp47_same_base_recipe_specificity/"
+            "exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/"
+            "matched_support_effects.csv",
+        )
+        for row in rows:
+            if (
+                row["readout"] == readout
+                and row["contrast"]
+                == "instruction_like_minus_openmath_on_instruction_format"
+            ):
+                return float(row[column])
+        raise KeyError((column, readout))
+
+    return _read
+
+
+def exp47_label_swap(column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp47_same_base_recipe_specificity/"
+            "exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/"
+            "summary.json",
+        )
+        return float(data["label_swap_null"][column])
+
+    return _read
+
+
+def exp48_structured_rescue(
+    boundary: int,
+    condition: str,
+    k: str,
+    metric: str = "closure_fraction",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp48_static_chimera_sequence_validation/"
+            "exp48_static_chimera_sequence_validation_20260504_1349_a100x16/analysis/"
+            "structured_rescue_summary.csv",
+        )
+        vals: list[tuple[float, float]] = []
+        for row in rows:
+            if (
+                int(float(row["boundary"])) == boundary
+                and row["condition"] == condition
+                and row["metric"] == metric
+                and row["k"] == k
+                and row.get("alpha") not in (None, "")
+                and abs(float(row["alpha"]) - 1.0) <= 1e-9
+                and row.get("estimate") not in (None, "")
+            ):
+                vals.append((float(row["estimate"]), float(row["n_units"])))
+        if not vals:
+            raise KeyError((boundary, condition, k, metric))
+        total = sum(w for _, w in vals)
+        return sum(v * w for v, w in vals) / total
+
+    return _read
+
+
+def exp49_aggregate(
+    column: str,
+    *,
+    model: str = "ALL",
+    recipe_group: str = "instruction_like",
+    slice_name: str = "full_1400",
+    readout: str = "common_it",
+    comparison: str = "primary_desc_vs_base",
+    horizon: int = 8,
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp49_constrained_continuation_bridge/"
+            "exp49_full_20260504_223652_a100x8/analysis/"
+            "aggregate_effects.csv",
+        )
+        for row in rows:
+            if (
+                row["model"] == model
+                and row["recipe_group"] == recipe_group
+                and row["slice"] == slice_name
+                and row["readout"] == readout
+                and row["comparison"] == comparison
+                and int(float(row["horizon"])) == horizon
+            ):
+                return float(row[column])
+        raise KeyError((column, model, recipe_group, slice_name, readout, comparison, horizon))
+
+    return _read
+
+
+def exp49_summary(*keys: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp49_constrained_continuation_bridge/"
+            "exp49_full_20260504_223652_a100x8/analysis/summary.json",
+        )
+        value: Any = data
+        for key in keys:
+            value = value[key]
+        return float(value)
 
     return _read
 
@@ -2022,6 +2186,24 @@ CHECKS: list[ClaimCheck] = [
         "exp23_dense5/exp24 exp23_effects.csv",
         0.3936659862894504,
         exp23_dense6_family_share_stat("max", exclude={"gemma3_4b"}),
+    ),
+    ClaimCheck(
+        "Exp23 Core-5 family portable-share minimum",
+        "exp23_core5_family_effects.csv",
+        0.19488586753149556,
+        exp23_family_portable_share_stat("min"),
+    ),
+    ClaimCheck(
+        "Exp23 Core-5 family portable-share maximum",
+        "exp23_core5_family_effects.csv",
+        0.40309297387129545,
+        exp23_family_portable_share_stat("max"),
+    ),
+    ClaimCheck(
+        "Exp23 Core-5 family portable-share median",
+        "exp23_core5_family_effects.csv",
+        0.29213110774981893,
+        exp23_family_portable_share_stat("median"),
     ),
     ClaimCheck(
         "Exp23 Dense-6 position >=1 interaction",
@@ -3594,6 +3776,366 @@ CHECKS: list[ClaimCheck] = [
         exp46_tulu_stage(
             "exp46_full_base_to_D_a100x8_localdisk_20260504_105605", "R"
         ),
+    ),
+    ClaimCheck(
+        "Exp47 Meta Instruct instruction-format interaction",
+        "exp47 portable_coadapted_table.csv",
+        1.0527124865301725,
+        exp47_recipe_row("llama31_meta_instruct", "C"),
+    ),
+    ClaimCheck(
+        "Exp47 Meta Instruct instruction-format interaction CI low",
+        "exp47 portable_coadapted_table.csv",
+        0.9201878283270475,
+        exp47_recipe_row("llama31_meta_instruct", "C_ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp47 Tulu SFT instruction-format interaction",
+        "exp47 portable_coadapted_table.csv",
+        0.28701832706766917,
+        exp47_recipe_row("llama31_tulu3_sft", "C"),
+    ),
+    ClaimCheck(
+        "Exp47 Tulu DPO instruction-format interaction",
+        "exp47 portable_coadapted_table.csv",
+        1.1308705357142856,
+        exp47_recipe_row("llama31_tulu3_dpo", "C"),
+    ),
+    ClaimCheck(
+        "Exp47 Tulu Final instruction-format interaction",
+        "exp47 portable_coadapted_table.csv",
+        1.3653061196059202,
+        exp47_recipe_row("llama31_tulu3_final", "C"),
+    ),
+    ClaimCheck(
+        "Exp47 Tulu Final instruction-format interaction CI high",
+        "exp47 portable_coadapted_table.csv",
+        1.4991217032308757,
+        exp47_recipe_row("llama31_tulu3_final", "C_ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp47 OpenMath2 instruction-format interaction",
+        "exp47 portable_coadapted_table.csv",
+        -0.3582867010708513,
+        exp47_recipe_row("llama31_openmath2", "C"),
+    ),
+    ClaimCheck(
+        "Exp47 OpenMath2 instruction-format interaction CI low",
+        "exp47 portable_coadapted_table.csv",
+        -0.5340699941700903,
+        exp47_recipe_row("llama31_openmath2", "C_ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp47 Meta Instruct matched-context late effect",
+        "exp47 portable_coadapted_table.csv",
+        2.070487271012931,
+        exp47_recipe_row("llama31_meta_instruct", "M"),
+    ),
+    ClaimCheck(
+        "Exp47 Meta Instruct portable late effect",
+        "exp47 portable_coadapted_table.csv",
+        1.0177747844827587,
+        exp47_recipe_row("llama31_meta_instruct", "P"),
+    ),
+    ClaimCheck(
+        "Exp47 OpenMath2 matched-context late effect",
+        "exp47 portable_coadapted_table.csv",
+        1.0524750176791486,
+        exp47_recipe_row("llama31_openmath2", "M"),
+    ),
+    ClaimCheck(
+        "Exp47 OpenMath2 portable late effect",
+        "exp47 portable_coadapted_table.csv",
+        1.41076171875,
+        exp47_recipe_row("llama31_openmath2", "P"),
+    ),
+    ClaimCheck(
+        "Exp47 OpenMath2 math-domain interaction",
+        "exp47 portable_coadapted_table.csv",
+        -0.154453125,
+        exp47_recipe_row("llama31_openmath2", "C", slice_name="math_domain"),
+    ),
+    ClaimCheck(
+        "Exp47 OpenMath2 math-domain interaction CI low",
+        "exp47 portable_coadapted_table.csv",
+        -0.450392578125,
+        exp47_recipe_row("llama31_openmath2", "C_ci95_low", slice_name="math_domain"),
+    ),
+    ClaimCheck(
+        "Exp47 OpenMath2 math-domain matched-context late effect",
+        "exp47 portable_coadapted_table.csv",
+        3.27546875,
+        exp47_recipe_row("llama31_openmath2", "M", slice_name="math_domain"),
+    ),
+    ClaimCheck(
+        "Exp47 OpenMath2 math-domain portable late effect",
+        "exp47 portable_coadapted_table.csv",
+        3.429921875,
+        exp47_recipe_row("llama31_openmath2", "P", slice_name="math_domain"),
+    ),
+    ClaimCheck(
+        "Exp47 instruction-like mean interaction",
+        "exp47 portable_coadapted_table.csv",
+        0.9589768672295119,
+        exp47_recipe_row("instruction_like_mean", "C"),
+    ),
+    ClaimCheck(
+        "Exp47 math-domain instruction-like mean interaction",
+        "exp47 portable_coadapted_table.csv",
+        1.6704892181075834,
+        exp47_recipe_row("instruction_like_mean", "C", slice_name="math_domain"),
+    ),
+    ClaimCheck(
+        "Exp47 math-domain instruction-like mean interaction CI high",
+        "exp47 portable_coadapted_table.csv",
+        1.7950529121796641,
+        exp47_recipe_row("instruction_like_mean", "C_ci95_high", slice_name="math_domain"),
+    ),
+    ClaimCheck(
+        "Exp47 instruction-like mean interaction CI high",
+        "exp47 portable_coadapted_table.csv",
+        1.0174728563988782,
+        exp47_recipe_row("instruction_like_mean", "C_ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp47 matched instruction-like minus OpenMath contrast",
+        "exp47 matched_support_effects.csv",
+        1.3346696311661734,
+        exp47_matched_contrast(),
+    ),
+    ClaimCheck(
+        "Exp47 label-swap observed orientation",
+        "exp47 summary.json",
+        0.9683886438832408,
+        exp47_label_swap("observed"),
+    ),
+    ClaimCheck(
+        "Exp47 label-swap null q99.9",
+        "exp47 summary.json",
+        0.10841392149151358,
+        exp47_label_swap("q99_9"),
+    ),
+    ClaimCheck(
+        "Exp49 constrained continuation score rows",
+        "exp49 summary.json",
+        7000,
+        exp49_summary("n_score_rows"),
+    ),
+    ClaimCheck(
+        "Exp49 constrained continuation runtime/malformed failures",
+        "exp49 summary.json",
+        0.0,
+        exp49_summary("unscored_summary", "runtime_or_malformed_fraction"),
+    ),
+    ClaimCheck(
+        "Exp49 N=0 reproduction q99 drift",
+        "exp49 summary.json",
+        0.37500084680505097,
+        exp49_summary("n0_reproduction", "max_delta_q99"),
+    ),
+    ClaimCheck(
+        "Exp49 N=0 reproduction over-tolerance count",
+        "exp49 summary.json",
+        61,
+        exp49_summary("n0_reproduction", "n_over_tolerance"),
+    ),
+    ClaimCheck(
+        "Exp49 instruction-like C0",
+        "exp49 aggregate_effects.csv",
+        1.5002340596062569,
+        exp49_aggregate("C_mean", horizon=0),
+    ),
+    ClaimCheck(
+        "Exp49 instruction-like C8",
+        "exp49 aggregate_effects.csv",
+        2.710543868548214,
+        exp49_aggregate("C_mean", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 instruction-like C8 CI low",
+        "exp49 aggregate_effects.csv",
+        2.5875755264514972,
+        exp49_aggregate("C_lo", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 instruction-like C8 CI high",
+        "exp49 aggregate_effects.csv",
+        2.8394794851490555,
+        exp49_aggregate("C_hi", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 instruction-like C8 tail persistence",
+        "exp49 aggregate_effects.csv",
+        0.1928808919867476,
+        exp49_aggregate("Cbar_tail_mean", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 same-forced descendant tail C8",
+        "exp49 aggregate_effects.csv",
+        2.4642985732646556,
+        exp49_aggregate("C_mean", comparison="same_forced_desc_tail", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 same-forced descendant tail C8 CI low",
+        "exp49 aggregate_effects.csv",
+        2.3525247718688567,
+        exp49_aggregate("C_lo", comparison="same_forced_desc_tail", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 same-forced descendant tail C8 CI high",
+        "exp49 aggregate_effects.csv",
+        2.585025373501286,
+        exp49_aggregate("C_hi", comparison="same_forced_desc_tail", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 shuffled descendant tail C8",
+        "exp49 aggregate_effects.csv",
+        0.8678780597344538,
+        exp49_aggregate("C_mean", comparison="shuffled_desc_vs_base", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 shuffled descendant tail C8 CI low",
+        "exp49 aggregate_effects.csv",
+        0.7705610440378294,
+        exp49_aggregate("C_lo", comparison="shuffled_desc_vs_base", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 shuffled descendant tail C8 CI high",
+        "exp49 aggregate_effects.csv",
+        0.970933888403351,
+        exp49_aggregate("C_hi", comparison="shuffled_desc_vs_base", horizon=8),
+    ),
+    ClaimCheck(
+        "Exp49 OpenMath math common-IT C8",
+        "exp49 aggregate_effects.csv",
+        -4.66543788615266,
+        exp49_aggregate(
+            "C_mean",
+            recipe_group="math_domain",
+            slice_name="math_domain",
+            readout="common_it",
+            horizon=8,
+        ),
+    ),
+    ClaimCheck(
+        "Exp49 OpenMath math common-IT C8 CI low",
+        "exp49 aggregate_effects.csv",
+        -5.519782196277733,
+        exp49_aggregate(
+            "C_lo",
+            recipe_group="math_domain",
+            slice_name="math_domain",
+            readout="common_it",
+            horizon=8,
+        ),
+    ),
+    ClaimCheck(
+        "Exp49 OpenMath math common-IT C8 CI high",
+        "exp49 aggregate_effects.csv",
+        -3.815428649539552,
+        exp49_aggregate(
+            "C_hi",
+            recipe_group="math_domain",
+            slice_name="math_domain",
+            readout="common_it",
+            horizon=8,
+        ),
+    ),
+    ClaimCheck(
+        "Exp49 OpenMath math common-PT C8",
+        "exp49 aggregate_effects.csv",
+        1.8145703210120967,
+        exp49_aggregate(
+            "C_mean",
+            recipe_group="math_domain",
+            slice_name="math_domain",
+            readout="common_pt",
+            horizon=8,
+        ),
+    ),
+    ClaimCheck(
+        "Exp49 OpenMath math common-PT C8 CI low",
+        "exp49 aggregate_effects.csv",
+        0.9750762472805189,
+        exp49_aggregate(
+            "C_lo",
+            recipe_group="math_domain",
+            slice_name="math_domain",
+            readout="common_pt",
+            horizon=8,
+        ),
+    ),
+    ClaimCheck(
+        "Exp49 OpenMath math common-PT C8 CI high",
+        "exp49 aggregate_effects.csv",
+        2.6110907389398905,
+        exp49_aggregate(
+            "C_hi",
+            recipe_group="math_domain",
+            slice_name="math_domain",
+            readout="common_pt",
+            horizon=8,
+        ),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 29 paired PCA full closure",
+        "exp48 structured_rescue_summary.csv",
+        0.9291839585922697,
+        exp48_structured_rescue(29, "paired_pca", "full"),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 29 paired PCA rank-256 closure",
+        "exp48 structured_rescue_summary.csv",
+        0.6335100343925393,
+        exp48_structured_rescue(29, "paired_pca", "256"),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 29 Gaussian full closure",
+        "exp48 structured_rescue_summary.csv",
+        -0.018950277324048116,
+        exp48_structured_rescue(29, "gaussian", "full"),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 29 random full closure",
+        "exp48 structured_rescue_summary.csv",
+        -0.035610739664366016,
+        exp48_structured_rescue(29, "random_full", "full"),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 29 sign-flip full closure",
+        "exp48 structured_rescue_summary.csv",
+        -0.815622528693858,
+        exp48_structured_rescue(29, "sign_flip", "full"),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 31 paired PCA full closure",
+        "exp48 structured_rescue_summary.csv",
+        0.9655793148293962,
+        exp48_structured_rescue(31, "paired_pca", "full"),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 31 paired PCA rank-256 closure",
+        "exp48 structured_rescue_summary.csv",
+        0.7071896478022638,
+        exp48_structured_rescue(31, "paired_pca", "256"),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 31 Gaussian full closure",
+        "exp48 structured_rescue_summary.csv",
+        -0.021318920074316468,
+        exp48_structured_rescue(31, "gaussian", "full"),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 31 random full closure",
+        "exp48 structured_rescue_summary.csv",
+        -0.057973479620640596,
+        exp48_structured_rescue(31, "random_full", "full"),
+    ),
+    ClaimCheck(
+        "Exp48 structured rescue boundary 31 sign-flip full closure",
+        "exp48 structured_rescue_summary.csv",
+        -0.7882399257835851,
+        exp48_structured_rescue(31, "sign_flip", "full"),
     ),
     ClaimCheck(
         "Exp34 Gemma terminal crosscoder top-200 drop",
