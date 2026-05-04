@@ -41,6 +41,9 @@ from src.poc.exp48_static_chimera_sequence_validation.config import (
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+_PAIR_CACHE: dict[tuple[str, str], tuple[Any, Any, Any, Any, Any]] = {}
+_WRONG_CACHE: dict[tuple[str, str], tuple[Any, Any]] = {}
+
 
 class CommonVocabLogitsProcessor(LogitsProcessor):
     """Suppress ids that cannot be embedded by all participating models."""
@@ -298,9 +301,7 @@ def _teacher_forced_health(
 
 def run_worker(args: argparse.Namespace) -> None:
     device = torch.device(args.device)
-    spec = get_spec(args.model)
     wrong_model_name = args.wrong_model or wrong_descendant_for(args.model)
-    steering_adapter = get_steering_adapter(args.model)
 
     log.info(
         "[exp48-seq] load model=%s scenario=%s cell=%s component=%s boundary=%s wrong=%s",
@@ -311,15 +312,27 @@ def run_worker(args: argparse.Namespace) -> None:
         args.boundary,
         wrong_model_name,
     )
-    base_model, base_tok = load_model_and_tokenizer(model_id_for_variant(spec, "pt"), args.device, multi_gpu=spec.multi_gpu)
-    ft_model, ft_tok = load_model_and_tokenizer(model_id_for_variant(spec, "it"), args.device, multi_gpu=spec.multi_gpu)
+    pair_key = (args.model, args.device)
+    if pair_key not in _PAIR_CACHE:
+        spec = get_spec(args.model)
+        steering_adapter = get_steering_adapter(args.model)
+        base_model, base_tok = load_model_and_tokenizer(model_id_for_variant(spec, "pt"), args.device, multi_gpu=spec.multi_gpu)
+        ft_model, ft_tok = load_model_and_tokenizer(model_id_for_variant(spec, "it"), args.device, multi_gpu=spec.multi_gpu)
+        _PAIR_CACHE[pair_key] = (steering_adapter, base_model, base_tok, ft_model, ft_tok)
+    else:
+        steering_adapter, base_model, base_tok, ft_model, ft_tok = _PAIR_CACHE[pair_key]
     wrong_model = None
     wrong_tok = None
     if args.scenario == "wrong_descendant":
-        wrong_spec = get_spec(wrong_model_name)
-        wrong_model, wrong_tok = load_model_and_tokenizer(
-            model_id_for_variant(wrong_spec, "it"), args.device, multi_gpu=wrong_spec.multi_gpu
-        )
+        wrong_key = (wrong_model_name, args.device)
+        if wrong_key not in _WRONG_CACHE:
+            wrong_spec = get_spec(wrong_model_name)
+            wrong_model, wrong_tok = load_model_and_tokenizer(
+                model_id_for_variant(wrong_spec, "it"), args.device, multi_gpu=wrong_spec.multi_gpu
+            )
+            _WRONG_CACHE[wrong_key] = (wrong_model, wrong_tok)
+        else:
+            wrong_model, wrong_tok = _WRONG_CACHE[wrong_key]
 
     tokenizers = {"base": base_tok, "ft": ft_tok}
     if wrong_tok is not None:

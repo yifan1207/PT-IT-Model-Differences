@@ -195,40 +195,8 @@ sequence_jobs() {
   out_ref=()
   for model in ${MODELS}; do
     for boundary in ${BOUNDARIES}; do
-      for cell in BB BF FB FF; do
-        local stem="${model}__b${boundary}__boundary_sweep__blocks_plus_head__${cell}"
-        local out_dir="${SEQUENCE_ROOT}/${stem}"
-        out_ref+=("${stem}|$PY_RUNNER -m src.poc.exp48_static_chimera_sequence_validation sequence --model ${model} --dataset ${DATASET} --out-dir ${out_dir} --device cuda:0 --n-prompts ${N_SEQUENCE_PROMPTS} --prompt-split heldout --boundary ${boundary} --scenario boundary_sweep --component blocks_plus_head --cell ${cell} --batch-size ${SEQUENCE_BATCH_SIZE} --max-new-tokens ${MAX_NEW_TOKENS} --max-prompt-tokens ${MAX_PROMPT_TOKENS} --health-every ${HEALTH_EVERY} --stem ${stem}")
-      done
-    done
-    for boundary in ${COMPONENT_BOUNDARIES}; do
-      for component in blocks_only head_only; do
-        for cell in BB BF FB FF; do
-          local stem="${model}__b${boundary}__component_variant__${component}__${cell}"
-          local out_dir="${SEQUENCE_ROOT}/${stem}"
-          out_ref+=("${stem}|$PY_RUNNER -m src.poc.exp48_static_chimera_sequence_validation sequence --model ${model} --dataset ${DATASET} --out-dir ${out_dir} --device cuda:0 --n-prompts ${N_SEQUENCE_PROMPTS} --prompt-split heldout --boundary ${boundary} --scenario component_variant --component ${component} --cell ${cell} --batch-size ${SEQUENCE_BATCH_SIZE} --max-new-tokens ${MAX_NEW_TOKENS} --max-prompt-tokens ${MAX_PROMPT_TOKENS} --health-every ${HEALTH_EVERY} --stem ${stem}")
-        done
-      done
-      for component in mlp_only attn_only; do
-        for cell in BB BF FF; do
-          local stem="${model}__b${boundary}__decomposition__${component}__${cell}"
-          local out_dir="${SEQUENCE_ROOT}/${stem}"
-          out_ref+=("${stem}|$PY_RUNNER -m src.poc.exp48_static_chimera_sequence_validation sequence --model ${model} --dataset ${DATASET} --out-dir ${out_dir} --device cuda:0 --n-prompts ${N_SEQUENCE_PROMPTS} --prompt-split heldout --boundary ${boundary} --scenario decomposition --component ${component} --cell ${cell} --batch-size ${SEQUENCE_BATCH_SIZE} --max-new-tokens ${MAX_NEW_TOKENS} --max-prompt-tokens ${MAX_PROMPT_TOKENS} --health-every ${HEALTH_EVERY} --stem ${stem}")
-        done
-      done
-    done
-    for boundary in ${CONTROL_BOUNDARIES}; do
-      for scenario in wrong_descendant permuted_blocks; do
-        local stem="${model}__b${boundary}__${scenario}__blocks_plus_head__BF"
-        local out_dir="${SEQUENCE_ROOT}/${stem}"
-        out_ref+=("${stem}|$PY_RUNNER -m src.poc.exp48_static_chimera_sequence_validation sequence --model ${model} --dataset ${DATASET} --out-dir ${out_dir} --device cuda:0 --n-prompts ${N_SEQUENCE_PROMPTS} --prompt-split heldout --boundary ${boundary} --scenario ${scenario} --component blocks_plus_head --cell BF --batch-size ${SEQUENCE_BATCH_SIZE} --max-new-tokens ${MAX_NEW_TOKENS} --max-prompt-tokens ${MAX_PROMPT_TOKENS} --health-every ${HEALTH_EVERY} --stem ${stem}")
-      done
-      for alpha in ${INTERPOLATION_ALPHAS}; do
-        local alpha_stem="${alpha//./p}"
-        local stem="${model}__b${boundary}__interpolated_late__blocks_plus_head__BF__a${alpha_stem}"
-        local out_dir="${SEQUENCE_ROOT}/${stem}"
-        out_ref+=("${stem}|$PY_RUNNER -m src.poc.exp48_static_chimera_sequence_validation sequence --model ${model} --dataset ${DATASET} --out-dir ${out_dir} --device cuda:0 --n-prompts ${N_SEQUENCE_PROMPTS} --prompt-split heldout --boundary ${boundary} --scenario interpolated_late --component blocks_plus_head --cell BF --interpolation-alpha ${alpha} --batch-size ${SEQUENCE_BATCH_SIZE} --max-new-tokens ${MAX_NEW_TOKENS} --max-prompt-tokens ${MAX_PROMPT_TOKENS} --health-every ${HEALTH_EVERY} --stem ${stem}")
-      done
+      local stem="sequence_suite__${model}__b${boundary}"
+      out_ref+=("${stem}|$PY_RUNNER -m src.poc.exp48_static_chimera_sequence_validation sequence-suite --model ${model} --dataset ${DATASET} --out-root ${SEQUENCE_ROOT} --device cuda:0 --n-prompts ${N_SEQUENCE_PROMPTS} --prompt-split heldout --boundaries ${boundary} --component-boundaries ${COMPONENT_BOUNDARIES} --control-boundaries ${CONTROL_BOUNDARIES} --interpolation-alphas ${INTERPOLATION_ALPHAS} --batch-size ${SEQUENCE_BATCH_SIZE} --max-new-tokens ${MAX_NEW_TOKENS} --max-prompt-tokens ${MAX_PROMPT_TOKENS} --health-every ${HEALTH_EVERY}")
     done
   done
 }
