@@ -143,7 +143,8 @@ def _score_mc(record: dict[str, Any], text: str) -> float | None:
 def _score_governance(record: dict[str, Any], text: str) -> tuple[str | None, float | None]:
     category = record.get("category")
     if category == "GOV-FORMAT":
-        return "ifeval_format", float(_check_compliance_v2(text, record.get("compliance_criteria") or {}))
+        score = _check_compliance_v2(text, record.get("compliance_criteria") or {})
+        return ("ifeval_format", float(score)) if score is not None else (None, None)
     if category in {"GOV-CONV", "GOV-REGISTER"}:
         # Cheap deterministic proxy for structured assistant-style behavior.
         has_structure = bool(re.search(r"(?m)^\s*(?:[-*]|\d+[.)])\s+", text)) or "\n" in text
