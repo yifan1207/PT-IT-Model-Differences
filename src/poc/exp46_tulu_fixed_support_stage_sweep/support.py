@@ -151,7 +151,6 @@ def collect_support(args: argparse.Namespace) -> None:
     target_model, target_tokenizer = load_stage(target_stage, device)
     base_mask = real_token_mask_for(base_model, base_tokenizer, device)
     target_mask = real_token_mask_for(target_model, target_tokenizer, device)
-    shared_vocab_size = min(len(base_tokenizer), len(target_tokenizer))
     records = load_dataset(
         args.dataset,
         n_examples=args.n_examples,
@@ -200,8 +199,9 @@ def collect_support(args: argparse.Namespace) -> None:
                     prefix_generated_ids = [int(x) for x in base_run["generated_token_ids"][:step]]
                     t_base = int(event["pt_token"]["token_id"])
                     t_rlvr = int(event["it_token"]["token_id"])
-                    common_payload = {
+                    payload = {
                         "prompt_id": pid,
+                        "valid": True,
                         "event_kind": "first_diff",
                         "prompt_text": prompt,
                         "prompt_mode": args.prompt_mode,
@@ -212,28 +212,13 @@ def collect_support(args: argparse.Namespace) -> None:
                         "prompt_token_ids": [int(x) for x in prompt_ids],
                         "prefix_generated_ids": prefix_generated_ids,
                         "full_input_ids": [int(x) for x in prompt_ids + prefix_generated_ids],
+                        "t_base": token_payload(base_tokenizer, t_base),
+                        "t_rlvr": token_payload(base_tokenizer, t_rlvr),
+                        "t_final": token_payload(base_tokenizer, t_rlvr),
                         "base_run": base_run,
                         "rlvr_run": rlvr_run,
                         "final_run": rlvr_run,
                     }
-                    if t_base >= shared_vocab_size or t_rlvr >= shared_vocab_size:
-                        payload = {
-                            **common_payload,
-                            "valid": False,
-                            "reason": "non_shared_divergent_token",
-                            "shared_vocab_size": shared_vocab_size,
-                            "t_base_id": t_base,
-                            "t_rlvr_id": t_rlvr,
-                        }
-                    else:
-                        payload = {
-                            **common_payload,
-                            "valid": True,
-                            "shared_vocab_size": shared_vocab_size,
-                            "t_base": token_payload(base_tokenizer, t_base),
-                            "t_rlvr": token_payload(base_tokenizer, t_rlvr),
-                            "t_final": token_payload(base_tokenizer, t_rlvr),
-                        }
                 fout.write(json.dumps(payload, separators=(",", ":")) + "\n")
                 fout.flush()
             except Exception as exc:

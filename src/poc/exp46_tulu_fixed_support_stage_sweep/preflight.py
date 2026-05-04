@@ -92,27 +92,12 @@ def _config_payload() -> dict[str, Any]:
         "num_hidden_layers",
         "num_attention_heads",
         "num_key_value_heads",
+        "vocab_size",
     }
     fatal = [row for row in mismatches if row["field"] in fatal_fields]
     if fatal:
         raise RuntimeError(f"Architecture/token-vocab config mismatch across Tulu stages: {fatal[:5]}")
-    vocab_sizes = {
-        key: int(value["vocab_size"])
-        for key, value in configs.items()
-        if value.get("vocab_size") is not None
-    }
-    return {
-        "configs": configs,
-        "mismatches": mismatches,
-        "shared_vocab_size": min(vocab_sizes.values()) if vocab_sizes else None,
-        "max_vocab_size": max(vocab_sizes.values()) if vocab_sizes else None,
-        "vocab_size_note": (
-            "Tulu checkpoints may add special tokens beyond the Llama base vocab. "
-            "This is allowed only because Exp46 validates shared prompt token IDs and "
-            "the support collector rejects divergent target tokens outside the shared vocab."
-        ),
-        "ok": True,
-    }
+    return {"configs": configs, "mismatches": mismatches, "ok": True}
 
 
 def _tokenizer_payload(dataset: Path, n_examples: int, prompt_modes: list[str]) -> dict[str, Any]:
