@@ -1010,8 +1010,9 @@ def exp35_olmo_fixed_ratio(stage: str, column: str = "estimate") -> NumberFn:
             "exp35_full_olmo_stage_8a100_20260502_2300/analysis/"
             "stage_ratio_bootstrap.csv",
         )
+        ratio_metric = f"{stage}_share"
         for row in rows:
-            if row["readout"] == "common_r" and row["metric"] == stage:
+            if row["readout"] == "common_r" and row["metric"] == ratio_metric:
                 return float(row[column])
         raise KeyError((stage, column))
 
