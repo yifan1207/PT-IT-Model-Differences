@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 export PATH="${HOME}/.local/bin:${PATH}"
+export PYTHONPATH="${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
 PY_RUNNER="${PY_RUNNER:-uv run python}"
 
 MODE="${MODE:-smoke}"  # smoke|preflight|sequence-full|score-auto|rescue-fit|rescue-score|analyze-only|sync|full
