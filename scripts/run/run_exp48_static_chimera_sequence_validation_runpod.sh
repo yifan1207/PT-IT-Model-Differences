@@ -151,30 +151,60 @@ launch_scheduled() {
   local -n jobs_ref="$2"
   local idx=0
   local launched=0
-  local pids=()
+  local status=0
+  local free_gpus=("${GPUS[@]}")
+  declare -A pid_gpu=()
+
+  wait_one_dynamic() {
+    local done_pid=""
+    local rc=0
+    if wait -n -p done_pid; then
+      rc=0
+    else
+      rc=$?
+    fi
+    if [[ -n "${done_pid}" && -n "${pid_gpu[$done_pid]:-}" ]]; then
+      free_gpus+=("${pid_gpu[$done_pid]}")
+      unset "pid_gpu[$done_pid]"
+    fi
+    if [[ "$rc" -ne 0 ]]; then
+      status=1
+    fi
+  }
+
   for job in "${jobs_ref[@]}"; do
     if (( (idx % JOB_SHARD_COUNT) != JOB_SHARD_INDEX )); then
       idx=$((idx + 1))
       continue
     fi
-    local gpu="${GPUS[$((launched % ${#GPUS[@]}))]}"
+    while [[ "${#free_gpus[@]}" -lt 1 ]]; do
+      wait_one_dynamic
+      if [[ "$status" -ne 0 ]]; then
+        break
+      fi
+    done
+    if [[ "$status" -ne 0 ]]; then
+      break
+    fi
+    local gpu="${free_gpus[0]}"
+    free_gpus=("${free_gpus[@]:1}")
     IFS='|' read -r log_name cmd <<< "$job"
     echo "[exp48] launch ${phase} gpu=${gpu} log=${LOG_DIR}/${log_name}.log"
     (
       export CUDA_VISIBLE_DEVICES="$gpu"
       eval "$cmd"
     ) >"${LOG_DIR}/${log_name}.log" 2>&1 &
-    pids+=("$!")
+    pid_gpu[$!]="$gpu"
     launched=$((launched + 1))
     idx=$((idx + 1))
-    if [[ "${#pids[@]}" -ge "${#GPUS[@]}" ]]; then
-      wait_batch "$phase" "${pids[@]}"
-      sync_outputs || true
-      pids=()
-    fi
   done
-  if [[ "${#pids[@]}" -gt 0 ]]; then
-    wait_batch "$phase" "${pids[@]}"
+  while [[ "${#pid_gpu[@]}" -gt 0 ]]; do
+    wait_one_dynamic
+  done
+  if [[ "$status" -ne 0 ]]; then
+    echo "[exp48] phase ${phase} failed; see ${LOG_DIR}" >&2
+    sync_outputs || true
+    exit "$status"
   fi
   echo "[exp48] ${phase} launched_on_this_shard=${launched}"
 }
