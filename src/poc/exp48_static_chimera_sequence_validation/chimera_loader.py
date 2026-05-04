@@ -150,16 +150,23 @@ def interpolated_late_context(
                     donor_module.parameters(recurse=True),
                     strict=False,
                 ):
-                    if host_param.shape != donor_param.shape:
+                    saved.append((host_param, host_param.detach().clone()))
+                    donor = donor_param.to(host_param.device, dtype=host_param.dtype)
+                    if host_param.shape == donor.shape:
+                        host_param.copy_(host_param.mul(1.0 - float(alpha)) + donor.mul(float(alpha)))
+                    elif host_param.ndim == donor.ndim and tuple(host_param.shape[1:]) == tuple(donor.shape[1:]):
+                        # Some same-base descendants add a few tokenizer rows.
+                        # Interpolate the common rows and keep host-only rows as-is.
+                        n_common = min(int(host_param.shape[0]), int(donor.shape[0]))
+                        host_param[:n_common].copy_(
+                            host_param[:n_common].mul(1.0 - float(alpha))
+                            + donor[:n_common].mul(float(alpha))
+                        )
+                    else:
                         raise RuntimeError(
                             "Cannot interpolate mismatched parameters: "
                             f"{tuple(host_param.shape)} vs {tuple(donor_param.shape)}"
                         )
-                    saved.append((host_param, host_param.detach().clone()))
-                    host_param.copy_(
-                        host_param.mul(1.0 - float(alpha))
-                        + donor_param.to(host_param.device, dtype=host_param.dtype).mul(float(alpha))
-                    )
         yield
     finally:
         with torch.no_grad():
