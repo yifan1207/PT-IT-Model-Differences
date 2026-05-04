@@ -87,14 +87,16 @@ def _done_keys(path: Path) -> set[tuple[str, str, str, str, str, str]]:
         return set()
     out = set()
     for row in _json_rows(path):
+        scenario = str(row.get("scenario"))
+        alpha = row.get("interpolation_alpha") if scenario == "interpolated_late" else None
         out.add(
             (
                 str(row.get("prompt_id")),
                 str(row.get("cell")),
                 str(row.get("component")),
-                str(row.get("scenario")),
+                scenario,
                 str(row.get("boundary")),
-                str(row.get("interpolation_alpha")),
+                str(alpha),
             )
         )
     return out
@@ -393,7 +395,7 @@ def run_worker(args: argparse.Namespace) -> None:
                     component,
                     scenario,
                     str(args.boundary),
-                    str(args.interpolation_alpha),
+                    str(float(args.interpolation_alpha) if scenario == "interpolated_late" else None),
                 )
                 not in done
             ]
@@ -524,13 +526,15 @@ def merge_workers(out_dir: Path, n_workers: int) -> Path:
                 log.warning("[exp48-seq] missing worker file %s", path)
                 continue
             for row in _json_rows(path):
+                scenario = str(row.get("scenario"))
+                alpha = row.get("interpolation_alpha") if scenario == "interpolated_late" else None
                 key = (
                     str(row.get("prompt_id")),
                     str(row.get("cell")),
                     str(row.get("component")),
-                    str(row.get("scenario")),
+                    scenario,
                     str(row.get("boundary")),
-                    str(row.get("interpolation_alpha")),
+                    str(alpha),
                 )
                 if key in seen:
                     continue
