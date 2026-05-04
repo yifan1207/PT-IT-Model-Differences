@@ -50,7 +50,7 @@ Prompt-bootstrap intervals quantify conditional precision on the sampled prompts
 | OLMo 2 7B | `OLMo-2-1124-7B@7df9a82 -> Instruct@470b1fb` | holdout-600 | `600 -> 586` | `60.1% / 27.1% / 16.0%` | layers `19-31` |
 | Qwen2.5 32B | `Qwen2.5-32B@1818d35 -> Instruct@5ede1c9` | full-1400 | `1400 -> 1397` | `38.8% / 45.0% / 30.6%` | layers `38-63` |
 
-All rows use raw-shared prompts, greedy top-1 first-divergence search with a real-token mask, and at most `128` generated tokens. Bootstrap unit is the prompt cluster within family. Appendix A gives prompt mixes and full revision pins; Appendix B gives the main artifact roots.
+All rows use raw-shared prompts, greedy top-1 first-divergence search with a real-token mask, and at most `128` generated tokens. Bootstrap unit is the prompt cluster within family. Appendix A gives prompt mixes and full revision pins; Appendix B gives the main effect audit and Appendix I gives artifact roots.
 
 ### 2.2 First-Divergence Factorial
 
@@ -73,9 +73,6 @@ Equivalently: first measure the IT-minus-PT late-stack replacement effect under 
 
 All raw-shared first-divergence and residual-state runs force both PT and IT branches to raw text and validate identical raw prompt token IDs before comparing residual states. Position 0 is therefore the first generated token after the full raw prompt, not a chat-template artifact.
 
-![First-divergence schematic and token examples](../results/paper_synthesis/first_divergence_schematic_examples.png)
-
-**Figure 1: First-divergence schematic and token examples.** Panel A shows the four hybrid passes used to estimate the upstream x late interaction. Panel B gives illustrative divergent-token pairs; all quantitative claims use the full support in Table 1.
 ![First-divergence schematic and token examples](../results/paper_synthesis/first_divergence_schematic_examples.png)
 
 **Figure 1: First-divergence schematic and token examples.** Panel A shows the four hybrid passes used to estimate the upstream x late interaction. Panel B gives illustrative divergent-token pairs; all quantitative claims use the full support in Table 1.
@@ -103,13 +100,11 @@ The interaction is also not confined to response openings: generated position `>
 | Qwen2.5-32B only | `+0.98` `[+0.88, +1.08]` | `+2.42` `[+2.26, +2.59]` | `40.5%` | `+1.45` `[+1.32, +1.57]` | `2.5x` |
 
 On the local token-margin scale, `+1.71` logits is substantial: it multiplies the odds of `t_IT` over `t_PT` by about `5.5x` within the constructed contrast, and it is `34.6%` of the native PT->IT diagonal margin shift on the same support. This is still a token-level mechanistic quantity, not a deployment-level behavior estimate. §3.2 adds a behavioral bridge showing that the same hybrid readout pattern changes immediate token choice and short-continuation preferences.
-On the local token-margin scale, `+1.71` logits is substantial: it multiplies the odds of `t_IT` over `t_PT` by about `5.5x` within the constructed contrast, and it is `34.6%` of the native PT->IT diagonal margin shift on the same support. This is still a token-level mechanistic quantity, not a deployment-level behavior estimate. §3.2 adds a behavioral bridge showing that the same hybrid readout pattern changes immediate token choice and short-continuation preferences.
 
 This is the paper's central claim: at natural base/instruct disagreement points, the IT late stack is not a self-contained module whose full effect ports to any upstream state. It has a measurable portable component, but most of its matched-context effect is upstream-conditioned. On a factual/reasoning stress test, for example, the late-only effect from PT upstream is negative (`-1.18`), while the interaction remains positive (`+1.81`).
 
 ### 3.2 Validation Ladder
 
-The first-divergence factorial intentionally selects a high-signal disagreement point and constructs hybrid forward passes. No patching experiment makes those hybrids literally natural trajectories. The validation question is narrower: do the main artifact explanations make the estimand uninformative? Four checks answer no; Appendix C gives the full audit trail.
 The first-divergence factorial intentionally selects a high-signal disagreement point and constructs hybrid forward passes. No patching experiment makes those hybrids literally natural trajectories. The validation question is narrower: do the main artifact explanations make the estimand uninformative? Four checks answer no; Appendix C gives the full audit trail.
 
 | Concern | Main evidence | Takeaway |
@@ -151,19 +146,16 @@ The interaction has a consistent depth anatomy. Middle-positioned MLP substituti
 | Terminal feature mediation, gating, rescue, and handoff | top causal features account for `26-48%`; causal gate beats matched random; direct feature rescue is `+0.49`; mid-to-preterminal patches rescue `+1.71`, with `+0.13` mediated by the same features | Sparse terminal features carry a concentrated, upstream-conditioned bridge. |
 
 ![Figure 4: Window-level identity/margin handoff. Middle substitutions transfer divergent-token identity more often, while late MLPs dominate native IT-token support.](../results/paper_synthesis/exp20_exp21_handoff_core_small.png)
-![Figure 4: Window-level identity/margin handoff. Middle substitutions transfer divergent-token identity more often, while late MLPs dominate native IT-token support.](../results/paper_synthesis/exp20_exp21_handoff_core_small.png)
 
-Terminal crosscoders make this handoff visible at feature level. We train paired PT/IT BatchTopK crosscoders with a shared latent dictionary and separate PT/IT decoder branches on terminal MLP outputs, rank features by held-out causal effect, and ablate their IT-branch decoder contribution inside the terminal IT stack. The fixed top-200 causal subset accounts for `26-48%` of the terminal readout interaction, while matched-random sets have the wrong sign or near-zero effect. Appendix D gives reconstruction, sparsity, and training details.
-Terminal crosscoders make this handoff visible at feature level. We train paired PT/IT BatchTopK crosscoders with a shared latent dictionary and separate PT/IT decoder branches on terminal MLP outputs, rank features by held-out causal effect, and ablate their IT-branch decoder contribution inside the terminal IT stack. The fixed top-200 causal subset accounts for `26-48%` of the terminal readout interaction, while matched-random sets have the wrong sign or near-zero effect. Appendix D gives reconstruction, sparsity, and training details.
+Terminal crosscoders make this handoff visible at feature level. We train paired PT/IT BatchTopK crosscoders with a shared latent dictionary and separate PT/IT decoder branches on terminal MLP outputs, rank features by held-out causal effect, and ablate their IT-branch decoder contribution inside the terminal IT stack. The fixed top-200 causal subset accounts for `26-48%` of the terminal readout interaction, while matched-random sets have the wrong sign or near-zero effect. Appendix E gives reconstruction, sparsity, and training details.
 
-![Figure 5: Terminal crosscoder mediation. Ablating the top causally ranked terminal features reduces the upstream x late interaction in each clean terminal-crosscoder family, while matched random features do not reproduce the effect. Percent labels show the top-200 share of the family interaction.](../results/paper_synthesis/exp34_core_feature_mediation/terminal_crosscoder_core3_mediation.png)
 ![Figure 5: Terminal crosscoder mediation. Ablating the top causally ranked terminal features reduces the upstream x late interaction in each clean terminal-crosscoder family, while matched random features do not reproduce the effect. Percent labels show the top-200 share of the family interaction.](../results/paper_synthesis/exp34_core_feature_mediation/terminal_crosscoder_core3_mediation.png)
 
 The same features inherit the upstream conditioning seen at window level. Ablating the top-200 causal terminal features hurts the `U_IT,L_IT` readout much more than the `U_PT,L_IT` readout, beating matched-random features in all three clean terminal-crosscoder families (family means `+1.25`, `+0.98`, `+0.43` logits). Conversely, patching their native `U_IT,L_IT` activations into the weak `U_PT,L_IT` hybrid rescues `+0.49` logits and beats both matched-random and same-delta random rescue. This rescue is deliberately harder than ablation and is not full reconstruction, but it shows that the upstream-conditioned terminal features recover a measurable slice of the missing IT-token margin.
 
 Finally, a direct handoff test perturbs upstream computation and re-measures the same terminal features. Injecting IT mid-to-preterminal computation into the weak `U_PT,L_IT` hybrid rescues `+1.71` logits of IT-token margin, with `+0.13` logits mediated by the selected terminal features. The reverse intervention, replacing the same preterminal computation in native IT with PT computation, causes a `+3.57` logit drop, with `+0.53` mediated. A terminal-entry patch gives the expected upper bound (`+5.15` total, `+0.71` mediated). Thus the feature bridge is not only terminal: preterminal state changes drive a measurable part of the terminal sparse-feature readout.
 
-Held-out autointerp makes the mediated feature set readable but not load-bearing. Across `225` interpreted features from the clean terminal-crosscoder families, validation reaches mean AUROC `0.886`; we use these labels descriptively while the causal evidence comes from feature edits. As a targeted semantic check, a predeclared `structure_readout` bucket gives a monotone positive edit across clean crosscoder families; Appendix D reports the full dose response and controls.
+Held-out autointerp makes the mediated feature set readable but not load-bearing. Across `225` interpreted features from the clean terminal-crosscoder families, validation reaches mean AUROC `0.886`; we use these labels descriptively while the causal evidence comes from feature edits. As a targeted semantic check, a predeclared `structure_readout` bucket gives a monotone positive edit across clean crosscoder families; Appendix E reports the full dose response and controls.
 
 ### 3.5 What the Factorial Separates
 
@@ -171,7 +163,7 @@ The first-divergence event is a distributional fact: the released PT and IT chec
 
 This distinction is why the result is more than "PT and IT differ." Random local disagreements, pre-divergence future-token scoring, and pre-late commitment controls all reduce or preserve the interaction in the predicted directions. The feature bridge then shows that part of the window-level interaction is carried by terminal sparse features that are more causally important under IT-shaped upstream state, can partially rescue the weak PT-upstream hybrid, and respond when upstream/preterminal computation is patched.
 
-A supporting late-signature analysis stays in the appendix. Endpoint-matched late-refinement signatures explain why late/terminal windows were a good target: after matching on final entropy, confidence, and margin, IT late predictions remain farther from their own final readout than PT late predictions under both raw and tuned probes (`+0.425` and `+0.762` nats; Appendix E). This is a localization signature, not the mechanism itself.
+A supporting late-signature analysis stays in the appendix. Endpoint-matched late-refinement signatures explain why late/terminal windows were a good target: after matching on final entropy, confidence, and margin, IT late predictions remain farther from their own final readout than PT late predictions under both raw and tuned probes (`+0.425` and `+0.762` nats; Appendix F). This is a localization signature, not the mechanism itself.
 
 Contemporaneous token-level RLVR work reaches a complementary conclusion from the outside: Sparse but Critical shows that a small set of shifted token decisions can carry large downstream effects under cross-sampling interventions (Meng et al., 2026). Our question is internal and paired-checkpoint: at the selected token where behavior first changes, how does the IT-token preference become a logit inside the model?
 
@@ -277,25 +269,44 @@ Zhao, Z., Ziser, Y., & Cohen, S. B. (2024). Layer by Layer: Uncovering Where Mul
 
 ## Appendix Roadmap
 
-The main text is written around stable claim names. For details, start with Appendix B for the main four-cell factorial, Appendix C for validation controls, and Appendix D for depth/feature anatomy. Numeric run IDs appear only in file paths or script names; they are provenance labels, not concepts the reader needs to parse.
+The main text is written around stable claim names. For details, start with Appendix B for the main four-cell factorial, Appendix C for validation controls, Appendix D for depth anatomy, and Appendix E for sparse terminal features. Numeric run IDs appear only in file paths or script names; they are provenance labels, not concepts the reader needs to parse.
 
-| Claim | Main location | Appendix | Primary artifacts/scripts |
+| Claim | Main location | Appendix | Artifact/script pointer |
 |---|---|---|---|
-| Minimal reproducibility snapshot | §2.1 | A, B, H | model registry, dataset manifests, raw first-divergence records |
-| Core-5 first-divergence interaction and amplification scale | §3.1 | B | `results/paper_synthesis/exp23_core5/`; `scripts/analysis/build_exp23_core5_synthesis.py` |
+| Minimal reproducibility snapshot | §2.1 | A, B, I | model registry, dataset manifests, raw first-divergence records |
+| Core-5 first-divergence interaction, amplification scale, and portable share | §3.1 | B | `results/paper_synthesis/exp23_core5/`; `scripts/analysis/build_exp23_core5_synthesis.py` |
 | Validation ladder | §3.2 | C | hybrid-state validation, random-disagreement baselines, token-support audit, pre-late commitment control |
 | Behavioral bridge from margin to output | §3.2 | C | one-step top-1/token-rank audit and short-hybrid-rollout pairwise judging |
-| Released stage-lineage checks | §3.3 | F | fixed-support Tulu-3 and OLMo-2 Base/SFT/DPO/Final stage decompositions |
+| Released stage-lineage checks | §3.3 | G | fixed-support Tulu-3 and OLMo-2 Base/SFT/DPO/Final stage sweeps |
 | Depth and terminal anatomy | §3.4 | D | identity/margin handoff, terminal-depth audit, terminal MLP audit |
-| Terminal feature mediation, upstream-conditioning, rescue, handoff, and structure-bucket validation | §3.4 | D | terminal crosscoder synthesis, hardening runs, upstream-conditioning audit, feature rescue, preterminal handoff, autointerp taxonomy, structure-readout edit |
-| Late refinement/readout signatures | §3.5 | E | endpoint-matched KL, late MLP random controls |
-| Architecture and MoE scope | §5 | G | dense/MoE scope note |
+| Terminal feature mediation, upstream-conditioning, rescue, handoff, and structure-bucket validation | §3.4 | E | terminal crosscoder synthesis, hardening runs, upstream-conditioning audit, feature rescue, preterminal handoff, autointerp taxonomy, structure-readout edit |
+| Late refinement/readout signatures | §3.5 | F | endpoint-matched KL, late MLP random controls |
+| Architecture and MoE scope | §5 | H | dense/MoE scope note |
 
 Prompt-bootstrap CIs in the main text are conditional precision estimates over sampled prompts and released checkpoints. They are paired with family-level summaries or family ranges where a claim could otherwise be mistaken for a population-level model-family generalization.
+
+| Appendix | Supports | Does not prove |
+|---|---|---|
+| B | Core-5 interaction magnitude, amplification, portable share, family consistency, and readout robustness. | Population-level generalization over all dense or post-trained models. |
+| C | Main artifact explanations are unlikely: broken hybrids, arbitrary token support, pre-late commitment, and logit-only artifacts. | Hybrid passes are natural deployment trajectories. |
+| D | Depth anatomy: middle windows are relatively more identity-selective while late/terminal windows are more margin-sensitive. | A complete circuit or a unique layer boundary. |
+| E | Sparse terminal features partially mediate, gate, and rescue the terminal readout interaction. | Full mechanism recovery or feature monosemanticity. |
+| F | Late/terminal windows were a motivated target. | The upstream-conditioned mechanism itself. |
+| G | Two released dense lineages show coherent fixed-support stage profiles. | Isolated causal attribution to SFT, DPO, or RLVR algorithms. |
+| H | Dense-family scope and MoE limitations are explicit. | MoE generalization. |
+| I | Reviewer-facing reproduction levels and artifact roots. | That full raw GPU reruns are cheap. |
 
 ---
 
 ## Appendix A: Model Scope and Statistical Reporting
+
+**Claim supported.** The paper uses fixed released checkpoint pairs, fixed prompt supports, and a consistent statistical reporting convention.
+
+**Primary evidence.** Full checkpoint revisions, prompt mixes, and the exact scale definitions used in §3.1.
+
+**What this does not prove.** The released checkpoints are not controlled training-recipe ablations.
+
+**Where to audit.** Model registry, dataset manifests, and artifact roots are consolidated in Appendix I.
 
 **Core-5 set.** Llama 3.1 8B, Qwen 3 4B, Mistral 7B, OLMo 2 7B, and Qwen2.5 32B. Qwen2.5 32B is included as the scale check in the core first-divergence synthesis.
 
@@ -325,24 +336,20 @@ The reported interaction share is `interaction / native diagonal margin shift`. 
 
 ## Appendix B: Main First-Divergence Factorial Audit Trail
 
-Primary Core-5 artifacts:
+**Claim supported.** The Core-5 first-divergence interaction is positive across families, partially portable, and mostly upstream-conditioned under both common readouts.
 
-- `results/paper_synthesis/exp23_core5/exp23_core5_core_effects.csv`
-- `results/paper_synthesis/exp23_core5/exp23_core5_family_effects.csv`
-- `results/paper_synthesis/exp23_core5/exp23_core5_position_sensitivity.csv`
-- `results/paper_synthesis/exp23_core5/exp23_core5_interaction.png`
+**Primary evidence.** Core-5 common-IT/common-PT four-cell summaries, family-level interaction ranges, and the content/reasoning stress test.
 
-Raw first-divergence record mirrors:
+**What this does not prove.** The prompt-bootstrap intervals are conditional on sampled prompts and released checkpoints; they are not population-level uncertainty over all post-training recipes.
 
-- Core-small support: `gs://pt-vs-it-results/results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/`
-- Qwen2.5 32B support: `gs://pt-vs-it-results/results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/`
+**Where to audit.** Core synthesis artifacts, raw first-divergence mirrors, and Qwen2.5 32B support are listed in Appendix I.2.
 
 Main Core-5 effects:
 
-| Scope/readout | PT-up late effect | IT-up late effect | Interaction | Amplification | Native shift | Share |
-|---|---:|---:|---:|---:|---:|---:|
-| Core-5, common-IT | `+0.747` `[+0.673, +0.821]` | `+2.456` `[+2.364, +2.547]` | `+1.709` `[+1.637, +1.780]` | `3.3x` | `+4.942` | `34.6%` |
-| Core-5, common-PT | `+0.740` `[+0.673, +0.807]` | `+2.477` `[+2.384, +2.570]` | `+1.737` `[+1.667, +1.807]` | `3.4x` | `+4.996` | `34.8%` |
+| Scope/readout | PT-up late effect | IT-up late effect | Interaction | Amplification | Portable share | Native shift | Interaction share |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Core-5, common-IT | `+0.747` `[+0.673, +0.821]` | `+2.456` `[+2.364, +2.547]` | `+1.709` `[+1.637, +1.780]` | `3.3x` | `30.4%` | `+4.942` | `34.6%` |
+| Core-5, common-PT | `+0.740` `[+0.673, +0.807]` | `+2.477` `[+2.384, +2.570]` | `+1.737` `[+1.667, +1.807]` | `3.4x` | `29.9%` | `+4.996` | `34.8%` |
 
 Core-5 family-level common-IT interactions:
 
@@ -356,33 +363,36 @@ Core-5 family-level common-IT interactions:
 
 The Core-5 family interaction range is `+1.253` to `+2.534` logits, with median `+1.464`. Interaction share ranges from `23.4%` to `39.4%`.
 
-The Core-small label-swap null is computed from:
+The Core-small label-swap null is computed from the compatibility-permutation synthesis in Appendix I.2.
 
-- `results/paper_synthesis/exp23_core_small_compatibility_permutation/`
+On the content/reasoning stress-test support, the late-only PT-upstream term is `-1.176` and the upstream x late interaction is `+1.812` (`[+1.721, +1.901]`).
 
-The content/reasoning stress test is:
-
-- `results/exp23_midlate_interaction_suite/exp23_content_reasoning_residual_20260427_0930_h100x8/analysis/exp23_summary.json`
-
-On that support, the late-only PT-upstream term is `-1.176` and the upstream x late interaction is `+1.812` (`[+1.721, +1.901]`).
-
-Qwen2.5 32B artifacts:
-
-- `results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/`
-- `results/paper_synthesis/exp24_32b_external_validity/`
+The Qwen2.5 32B scale-check artifacts are listed with the Core-5 synthesis roots in Appendix I.2.
 
 ---
 
 ## Appendix C: Validation Controls
 
-**Hybrid-state validation.** Primary artifacts:
+**Claim supported.** The main upstream x late interaction is not made uninformative by broken hybrids, arbitrary selected-token support, pre-late commitment, or a purely logit-only artifact.
 
-- `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/summary.json`
-- `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/exp36_offmanifold_validation_report.md`
-- `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/interpolation_dose_response.png`
-- `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/low_anomaly_robustness.png`
+**Primary evidence.** Hybrid interpolation is smooth and positive, random local disagreements retain a reduced but same-sign interaction, pre-divergence future-token scoring is near zero, pre-late commitment restrictions preserve the interaction, and one-step token behavior changes in the predicted direction.
 
-Key checks, summarized over the Core-small support families:
+**What this does not prove.** These controls do not make hybrid states natural deployment trajectories; they show that the main artifact explanations are unlikely to account for the estimand.
+
+**Where to audit.** Full validation artifacts and scripts are listed in Appendix I.2.
+
+| Check | Result | Takeaway |
+|---|---:|---|
+| Hybrid endpoint interaction | `+1.794` | Constructed cells reproduce the expected endpoint effect. |
+| PT-to-IT interpolation slope | `+1.831` | The effect grows smoothly along the residual-state interpolation. |
+| Signed-permutation random/observed ratio | `0.31x` | Matched-magnitude random signed patches do not reproduce the effect. |
+| Random local disagreement | `+1.005` (`56%` of first divergence) | First divergence is high-signal, not the only same-sign support. |
+| Pre-divergence future token pair | `+0.059` (`3%`) | The token pair matters; arbitrary earlier prefixes do not carry the effect. |
+| Behavioral bridge | `24.5% -> 97.6%` top-1 `t_IT` under fixed IT late stack | Margin shifts correspond to token-choice shifts. |
+
+### C.1 Hybrid-State Validation
+
+Key checks are summarized over the Core-small support families:
 
 | Check | Result |
 |---|---:|
@@ -390,17 +400,11 @@ Key checks, summarized over the Core-small support families:
 | PT-to-IT interpolation slope | `+1.831` |
 | Signed-permutation random/observed ratio | `0.31x` |
 
-**Random-disagreement and pre-divergence controls.** Primary artifacts:
+These checks target the main off-manifold worry. A pathological hybrid artifact would more naturally appear as endpoint mismatch, non-smooth interpolation, or a matched-magnitude random intervention producing similar effects. We do not see that pattern.
 
-- `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/summary.json`
-- `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/effects.csv`
-- `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/exp37_matched_prefix_baselines.png`
-- `results/paper_synthesis/exp37_core_small_selection_baseline/selection_baselines_core_small.png`
+### C.2 Selection and Token-Support Controls
 
-The main-text figure and table below report Core-small family-balanced means computed from the per-family Exp37 summaries.
-- `results/paper_synthesis/exp37_core_small_selection_baseline/selection_baselines_core_small.png`
-
-The main-text figure and table below report Core-small family-balanced means computed from the per-family Exp37 summaries.
+The main-text figure and table below report Core-small family-balanced means computed from the per-family random-disagreement summaries.
 
 | Condition | Interaction | Share of first divergence |
 |---|---:|---:|
@@ -410,55 +414,15 @@ The main-text figure and table below report Core-small family-balanced means com
 | Random IT-rollout disagreement | `+1.190` | `66%` |
 | Pre-divergence prefix, future token pair | `+0.059` | `3%` |
 
-**Token-support control.** The no-GPU support control compares true first divergence to random local PT/IT disagreements from the same prompts and generated rollouts.
+Random local disagreements are later and more content-token-heavy than first divergences, yet their factorial interaction is smaller. The selected-support audit likewise finds that most judged first-divergence events fall in substantive instruction, safety, formatting, response-shaping, or semantic-content categories rather than pure surface formatting. We keep the full category table in the artifact report because it is a support audit, not part of the evidence spine.
 
-- `scripts/analysis/analyze_exp37_token_support_control.py`
-- `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/token_support_control/summary.json`
-
-Random local disagreements are later and more content-token-heavy than first divergences, yet their factorial interaction is smaller. This rules out the simple explanation that the first-divergence interaction is large only because of early-position or format-heavy support.
-
-**Selected-support audit.** Primary artifacts:
-
-- `scripts/analysis/analyze_first_divergence_token_support.py`
-- `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/summary.json`
-- `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/token_support_report.md`
-
-The audit supports the main-text scope statement: first divergence is a targeted high-signal disagreement support, and most judged events fall in substantive instruction, safety, formatting, response-shaping, or semantic-content categories rather than pure surface formatting. We keep the full category table in the artifact report rather than in the manuscript because it is a support audit, not part of the evidence spine.
-
-**Pre-late commitment control.** Primary artifacts:
-
-- `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/summary.json`
-- `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/effects.csv`
-- `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/exp40_prelate_commitment_report.md`
-- `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/prelate_commitment_bins.png`
+### C.3 Pre-Late Commitment Control
 
 The support-run control restricts to events where the IT boundary readout does not yet favor `t_IT`, bins events by IT boundary margin, and fits boundary-margin controls. In all three views the interaction remains positive. This rules out the simplest "the late stack is irrelevant because the boundary already committed" reading without promoting these support-run magnitudes to Core-5 headline estimates.
 
-**Behavioral bridge.** This support analysis asks whether the logit-margin interaction maps onto generated-token behavior. It uses the Core-small support families and the same first-divergence prefixes as the main factorial.
+### C.4 Behavioral Bridge
 
-- `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/report.md`
-- `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/one_step_effects.csv`
-- `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/behavioral_effects.csv`
-- `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/llm_judge_summary.json`
-
-One-step readout gives the cleanest bridge. With the IT late stack fixed, changing the upstream state from PT-shaped to IT-shaped raises `t_IT` top-1 selection from `24.5%` to `97.6%`; the corresponding pairwise `logit(t_IT) > logit(t_PT)` rate rises from `31.2%` to `98.7%`.
-
-| Metric | `U_PT,L_IT` | `U_IT,L_IT` | Gap |
-|---|---:|---:|---:|
-| `t_IT` top-1 rate | `24.5%` | `97.6%` | `+73.1%` |
-| `t_IT` top-5 rate | `70.9%` | `100.0%` | `+29.1%` |
-| `t_IT > t_PT` pairwise rate | `31.2%` | `98.7%` | `+67.5%` |
-
-Short hybrid rollouts give a complementary completion-level check. A blinded pairwise judge (`gpt-4.1-mini`) prefers `U_IT,L_IT` over `U_PT,L_IT` as more instruction-following / assistant-like in `71.0%` of cases when ties/unclear are counted as `0.5` (`[69.4%, 72.6%]`). The judge also finds a smaller positive late-stack effect under both upstream states: `58.5%` for `U_PT,L_IT` over `U_PT,L_PT`, and `57.8%` for `U_IT,L_IT` over `U_IT,L_PT`.
-
-We use this as a behavioral bridge only. The one-step result is closest to the factorial estimand; the judged continuations are constructed hybrid rollouts, not natural deployment trajectories.
-
-**Behavioral bridge.** This support analysis asks whether the logit-margin interaction maps onto generated-token behavior. It uses the Core-small support families and the same first-divergence prefixes as the main factorial.
-
-- `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/report.md`
-- `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/one_step_effects.csv`
-- `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/behavioral_effects.csv`
-- `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/llm_judge_summary.json`
+This support analysis asks whether the logit-margin interaction maps onto generated-token behavior. It uses the Core-small support families and the same first-divergence prefixes as the main factorial.
 
 One-step readout gives the cleanest bridge. With the IT late stack fixed, changing the upstream state from PT-shaped to IT-shaped raises `t_IT` top-1 selection from `24.5%` to `97.6%`; the corresponding pairwise `logit(t_IT) > logit(t_PT)` rate rises from `31.2%` to `98.7%`.
 
@@ -474,15 +438,15 @@ We use this as a behavioral bridge only. The one-step result is closest to the f
 
 ---
 
-## Appendix D: Depth, Terminal, and Crosscoder Details
+## Appendix D: Depth and Terminal Anatomy
 
-**Identity/margin handoff artifacts:**
+**Claim supported.** Middle windows are relatively more candidate/identity-selective, while late and terminal windows are more margin/readout-sensitive.
 
-- `results/paper_synthesis/exp20_exp21_handoff_table.csv`
-- `results/paper_synthesis/exp20_exp21_handoff_core_small.png`
-- `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/summary.json`
-- `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/summary.json`
-- `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/effects.csv`
+**Primary evidence.** Identity-transfer and margin-support tables, terminal-depth retention, and terminal-MLP margin interaction.
+
+**What this does not prove.** The depth windows are not modular circuits, and the boundary between "middle" and "late" is graded.
+
+**Where to audit.** Depth-anatomy artifacts are listed in Appendix I.2.
 
 Main depth-anatomy quantities:
 
@@ -494,21 +458,21 @@ Main depth-anatomy quantities:
 | PT-host late MLP margin gain | - | - | `+0.004` | Late MLP updates alone are near zero in PT upstream state. |
 | Source decomposition interaction | - | - | `+0.360` | MLP-level readout also shows context gating. |
 
-**Terminal-depth and terminal-MLP artifacts:**
-
-- `results/exp31_terminal_depth_factorial/exp31_terminal_depth_full_a100x4_localdisk_fixedsched_20260502_021238/analysis/terminal_depth_summary.json`
-- `results/exp31_terminal_depth_factorial/exp31_terminal_depth_full_a100x4_localdisk_fixedsched_20260502_021238/analysis/terminal_depth_effects.csv`
-- `results/exp32_terminal_mlp_writeout/exp32_terminal_mlp_full_dense5_a100x8_w2_20260502_043950/analysis/exp32_terminal_mlp_summary.json`
-- `results/exp33_terminal_identity_margin/exp33_terminal_identity_margin_full_dense5_a100x8_overlap_20260502_0509/analysis/exp33_terminal_identity_margin_summary.json`
-
 In the Core-small support set, the final-three stack retains `52%` of the same-prompt full-late interaction; the final block alone retains `23%`. Final-three MLP substitutions transfer IT-token identity `8.8%` of the time, with terminal MLP margin interaction `+0.524` (`[+0.491, +0.558]`). The final layer alone gives terminal MLP margin interaction `+0.146` (`[+0.128, +0.165]`).
 
-**Terminal crosscoder mediation.** Artifacts:
+---
 
-- `results/paper_synthesis/exp34_dense5_final_readout_crosscoder/combined_dense5_20260503_0018/exp34_dense5_crosscoder_summary.json`
-- `results/paper_synthesis/exp34_core_feature_mediation/terminal_crosscoder_core3_mediation.png`
-- `results/exp38_qwen_olmo_final_layer_crosscoder_hardening/exp38_qwen_olmo_final_summary_20260503/analysis/exp38_qwen_olmo_decision_summary.json`
-- `results/exp30_final_readout_crosscoder_mediation/exp30_l31_paperfaithful_runpod_20260502_012105_a100x8/selected_d131072_k64/analysis/mediation_curve.png`
+## Appendix E: Sparse Terminal Feature Bridge
+
+**Claim supported.** A causally ranked subset of terminal crosscoder features carries a concentrated, partial bridge for the terminal readout interaction.
+
+**Primary evidence.** Top-200 causal features mediate `26-48%` of the terminal interaction in three quality-gated families, matter more under IT-shaped upstream state, partially rescue the weak hybrid, and respond to upstream/preterminal patches.
+
+**What this does not prove.** This is not full circuit recovery, and it does not prove feature monosemanticity. OLMo is excluded from feature-level claims because its terminal crosscoder did not pass the reconstruction gate.
+
+**Where to audit.** Crosscoder training, mediation, gating, rescue, handoff, autointerp, and structure-readout artifacts are listed in Appendix I.2.
+
+### E.1 Terminal Crosscoder Mediation and Upstream-Conditioning
 
 | Family | Terminal scope | VE / density status | Top causal feature drop | Share of interaction | Matched random | Paper role |
 |---|---|---|---:|---:|---:|---|
@@ -526,12 +490,7 @@ The mediation curves sweep the number of ablated causally ranked features. The m
 | Mistral | `26%` | `29%` | modest additional distributed mass |
 | Qwen | `37%` | `38%` | mostly saturated by top-200 |
 
-**Terminal feature upstream-conditioning.** Artifacts:
-
-- `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_gating_summary.json`
-- `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_gating_report.md`
-- `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_gating_by_family.png`
-- `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_ablation_saturation.png`
+The same feature sets show upstream-conditioned causal importance.
 
 For the same causally ranked terminal features, we compare ablation effects in the `U_IT,L_IT` and `U_PT,L_IT` cells. The primary feature causal gate is:
 
@@ -556,7 +515,9 @@ Per-family gates:
 
 Raw decoder-weighted activation mass is not uniformly higher under IT-shaped upstream state across families. We therefore use the finite-difference causal gate as the primary upstream-conditioning result and the signed margin-weighted activation gate as supporting evidence.
 
-**Terminal feature rescue.** This analysis tests a partial-sufficiency version of the same feature-level story. It runs on the three clean rescue families with quality-gated terminal crosscoders (Llama, Mistral, Qwen). OLMo is excluded because its current terminal crosscoder does not pass the reconstruction-quality gate needed for faithful feature-space rescue edits.
+### E.2 Terminal Feature Rescue and Middle-to-Terminal Handoff
+
+The rescue analysis tests a partial-sufficiency version of the same feature-level story. It runs on the three clean rescue families with quality-gated terminal crosscoders (Llama, Mistral, Qwen). OLMo is excluded because its current terminal crosscoder does not pass the reconstruction-quality gate needed for faithful feature-space rescue edits.
 
 The edit takes the top-200 causal terminal feature activations from the native `U_IT,L_IT` pass and patches them into the `U_PT,L_IT` hybrid, decoded through the IT branch of the paired PT/IT crosscoder. The metric is rescued IT-token margin:
 
@@ -573,13 +534,7 @@ The edit takes the top-200 causal terminal feature activations from the native `
 
 Per-family direct rescue is Llama `+0.627`, Mistral `+0.755`, and Qwen `+0.101` logits. The alpha-zero no-edit sanity check is exact (`max |rescue_gain| = 0`). This is partial sufficiency rather than circuit recovery: the selected terminal features recover a measurable slice of the missing margin and beat both controls, but most of the `U_IT,L_IT` vs `U_PT,L_IT` gap remains.
 
-Feature-rescue artifacts:
-
-- `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/exp43_report.md`
-- `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/primary_family_balanced_effects.csv`
-- `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/exp43_family_balanced_rescue_gain.png`
-
-**Middle-to-terminal feature handoff.** This analysis tests whether upstream/preterminal computation drives the selected terminal features, rather than merely co-occurring with them. It uses the three quality-gated feature families (Llama, Mistral, Qwen) and the same top-200 terminal causal features. In the rescue direction, we start from the weak `U_PT,L_IT` hybrid and replace an upstream MLP window with IT computation before running the IT terminal stack. In the degrade direction, we start from native `U_IT,L_IT` and replace the same window with PT computation. The mediated effect is the part of the margin change that disappears when the selected terminal features are ablated in both the base and perturbed passes.
+The middle-to-terminal handoff analysis tests whether upstream/preterminal computation drives the selected terminal features, rather than merely co-occurring with them. It uses the same three quality-gated feature families and top-200 terminal causal features. In the rescue direction, we start from the weak `U_PT,L_IT` hybrid and replace an upstream MLP window with IT computation before running the IT terminal stack. In the degrade direction, we start from native `U_IT,L_IT` and replace the same window with PT computation. The mediated effect is the part of the margin change that disappears when the selected terminal features are ablated in both the base and perturbed passes.
 
 | Handoff window / direction | Total margin effect | Terminal-feature-mediated part | Mediated fraction |
 |---|---:|---:|---:|
@@ -590,22 +545,11 @@ Feature-rescue artifacts:
 
 The mid-to-preterminal mediated effect beats matched-random features (`+0.188` rescue; `+0.655` degradation), same-delta random directions (`+0.115` rescue; `+0.390` degradation), and top-active noncausal features (`+0.496` rescue; `+0.928` degradation). The terminal-entry rows are upper-bound sanity checks: they patch directly at the boundary into the terminal readout, so they should be larger than nonterminal windows. The late-preterminal-only window is weaker, especially in Qwen's event-permutation null, so the paper-facing claim is about mid-to-preterminal/preterminal handoff, not a late-preterminal-only mechanism.
 
-Handoff artifacts:
-
-- `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/exp44_report.md`
-- `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/primary_family_balanced_effects.csv`
-- `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/handoff_control_differences.csv`
-- `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/exp44_primary_handoff_effects.png`
-
-**Autointerp protocol.** Artifacts:
-
-- `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/autointerp/label_validation.json`
-- `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/autointerp/llm_feature_labels.jsonl`
-- `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/dashboards/feature_dashboards.jsonl`
+### E.3 Descriptive Autointerp and Structure-Readout Edit
 
 Across `225` interpreted features from the clean terminal-crosscoder families, mean validation AUROC is `0.886`. We use these labels descriptively, not as causal evidence: the causal claim remains the mediation, upstream-conditioning, and rescue results above. The paper-facing semantic check is the narrower `structure_readout` bucket below, where a predeclared readable subset is edited and tested against controls.
 
-**Structure-readout bucket validation.** The structure-readout edit tests one readable subset from the taxonomy rather than every label bucket. The predeclared `structure_readout` bucket contains `10` causal features across the three clean crosscoder families, with labels such as paragraph breaks, list openings, answer boundaries, and field separators. This is not an `N=10` statistical generalization claim: the features are the predeclared edit set, while the test is whether the edited terminal readout changes monotonically over prompts and families and beats matched controls. Editing this bucket inside the same terminal crosscoder windows gives a monotone dose response in interaction drop; matched-random and same-delta random controls are much smaller.
+The structure-readout edit tests one readable subset from the taxonomy rather than every label bucket. The predeclared `structure_readout` bucket contains `10` causal features across the three clean crosscoder families, with labels such as paragraph breaks, list openings, answer boundaries, and field separators. This is not an `N=10` statistical generalization claim: the features are the predeclared edit set, while the test is whether the edited terminal readout changes monotonically over prompts and families and beats matched controls. Editing this bucket inside the same terminal crosscoder windows gives a monotone dose response in interaction drop; matched-random and same-delta random controls are much smaller.
 
 | Edit strength `alpha` | Structure bucket | Matched random | Same-delta random |
 |---|---:|---:|---:|
@@ -617,21 +561,17 @@ Across `225` interpreted features from the clean terminal-crosscoder families, m
 
 At `alpha=2.0`, per-family structure-bucket interaction drops are Llama `+0.091`, Mistral `+0.339`, and Qwen `+0.110`. Magnitudes are heterogeneous, but all three signs are positive. We use only this selective structure/readout result in the paper-facing feature-label validation. Other bucket edits were run as diagnostics but are not part of the evidence spine because their feature support is smaller or more domain-specific.
 
-Structure-readout artifacts:
-
-- `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/exp41_logit_replay_summary.json`
-- `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/bucket_effects_by_model.csv`
-- `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/bucket_manifest/strict_primary/bucket_features.csv`
-
 ---
 
-## Appendix E: Late-Refinement Signatures
+## Appendix F: Motivating Late-Localization Signatures
 
-**Layerwise stabilization.** Primary artifacts:
+**Claim supported.** Late/terminal windows were a motivated target because IT checkpoints retain stronger late-stage distance from their own final readout and learned late MLP substitutions move that signature while matched random projections do not.
 
-- `results/exp09_cross_model_observational_replication/data/exp9_summary.json`
-- `results/exp09_cross_model_observational_replication/data/convergence_gap_values.json`
-- `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv`
+**Primary evidence.** Endpoint-matched late KL estimates and late MLP random-control comparisons.
+
+**What this does not prove.** These analyses motivated the late/terminal focus; they are not used to establish the upstream x late interaction and are not interpreted as the mechanism.
+
+**Where to audit.** Late-localization artifacts are listed in Appendix I.2.
 
 Endpoint-matched late KL estimates:
 
@@ -642,30 +582,25 @@ Endpoint-matched late KL estimates:
 | Remaining adjacent JS, IT - PT | `+0.052` `[+0.048, +0.057]` |
 | Future top-1 flips, IT - PT | `+0.203` `[+0.190, +0.215]` |
 
-![Appendix Figure E1: Layerwise stabilization profile. IT checkpoints remain farther from their own final distribution late in the stack.](../results/exp09_cross_model_observational_replication/plots/L2_mean_kl_per_layer_tuned_dense5.png)
-
-**Late MLP localization.** Primary artifacts:
-
-- `results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json`
-- `results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json`
-- `results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/exp19B_summary_light.json`
+![Appendix Figure F1: Layerwise stabilization profile. IT checkpoints remain farther from their own final distribution late in the stack.](../results/exp09_cross_model_observational_replication/plots/L2_mean_kl_per_layer_tuned_dense5.png)
 
 The dense-family true late random-control comparison is `+0.327` (`[+0.298, +0.359]`) for the learned late graft versus `+0.003` (`[-0.002, +0.008]`) for matched random residual projections.
 
-![Appendix Figure E2: Late MLP graft/swap localization. Learned late MLP substitutions move the delayed-stabilization metric in both directions, while matched random late projections do not reproduce the effect.](../results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_causal_main.png)
+![Appendix Figure F2: Late MLP graft/swap localization. Learned late MLP substitutions move the delayed-stabilization metric in both directions, while matched random late projections do not reproduce the effect.](../results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_causal_main.png)
 
 ---
 
-## Appendix F: Released Stage-Lineage Case Studies
+## Appendix G: Released Stage-Lineage Sweeps
 
-### F.1 Tulu-3 Fixed-Support Stage Sweep
+**Claim supported.** The fixed-support interaction appears coherently along two released dense post-training lineages: Tulu-3 and OLMo-2.
 
-Primary artifacts:
+**Primary evidence.** On Base->Final support, both lineages show partial SFT presence and near-final DPO/preference-checkpoint interaction.
 
-- `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/summary.json`
-- `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/effects.csv`
-- `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/stage_fraction_ratios.csv`
-- `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/exp46_stage_decomposition.png`
+**What this does not prove.** These are cumulative released checkpoint comparisons, not isolated causal attributions to training algorithms.
+
+**Where to audit.** Tulu and OLMo stage-sweep artifacts are listed in Appendix I.2.
+
+### G.1 Tulu-3 Fixed-Support Stage Sweep
 
 The primary Tulu analysis fixes the support to Base->Final first-divergence prefixes for the Llama-3.1-8B Base and Tulu-3 final checkpoint, then scores SFT, DPO, and Final on the same `t_Base`/`t_Final` contrast. The checkpoints share architecture; Tulu adds special tokens, so the preflight validates identical raw prompt token IDs and rejects target tokens outside the shared base vocabulary.
 
@@ -676,9 +611,11 @@ The primary Tulu analysis fixes the support to Base->Final first-divergence pref
 | DPO | `+1.216` `[+1.090, +1.341]` | `83.6%` `[81.5%, 85.7%]` | `90.4%` |
 | Final/RLVR | `+1.455` `[+1.316, +1.606]` | `100%` | `99.1%` |
 
+Base interaction is zero by definition because Base is the reference checkpoint; the nonzero native top-1 rate reflects rare cases where the Base native readout still selects the final-token label under the fixed token contrast.
+
 The fixed-support label-swap null passes the same orientation test as the main factorial: the observed final interaction is `+1.455`, while the null 99.9th percentile is `+0.296` (`p=5e-5`). Native readout is nearly identical (`+1.470` final interaction). Position `>=3` remains positive for all stages (`+0.172`, `+0.770`, `+0.770`).
 
-Two base-anchored support checks ask whether the Base->Final support is doing the work. On Base->SFT support, the final checkpoint interaction is `+1.322`; on Base->DPO support, it is `+1.436`. Both label-swap nulls pass at `p=5e-5`, and both show the same qualitative pattern: SFT is real but smaller, while DPO carries most of the final interaction.
+Two base-anchored support checks ask whether the Base->Final support is doing the work. On Base->SFT support, the final checkpoint interaction is `+1.322`; on Base->DPO support, it is `+1.436`. Both label-swap nulls pass at `p=5e-5`, and both show the same qualitative pattern: SFT is real but smaller, while the DPO checkpoint reaches most of the final-support interaction.
 
 | Tulu support | Valid events | SFT interaction | DPO interaction | Final interaction |
 |---|---:|---:|---:|---:|
@@ -686,21 +623,9 @@ Two base-anchored support checks ask whether the Base->Final support is doing th
 | Base->SFT | `564/600` | `+0.401` | `+1.146` | `+1.322` |
 | Base->DPO | `583/600` | `+0.427` | `+1.241` | `+1.436` |
 
-Support-check artifacts:
+### G.2 OLMo-2 Fixed-Support Stage Sweep
 
-- `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_base_to_S_a100x8_localdisk_20260504_104959/analysis/summary.json`
-- `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_base_to_D_a100x8_localdisk_20260504_105605/analysis/summary.json`
-
-### F.2 OLMo-2 Fixed-Support Stage Sweep
-
-Primary artifacts:
-
-- `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/summary.json`
-- `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/effects.csv`
-- `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/stage_ratio_bootstrap.csv`
-- `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/exp35_stage_decomposition.png`
-
-The primary stage analysis fixes the support to Base->RLVR first-divergence prefixes and scores every intermediate checkpoint against the same `t_Base`/`t_RLVR` contrast. This makes SFT, DPO, and RLVR cumulative estimates comparable on the same local support. The older adjacent-pair analysis is retained only as historical motivation because each adjacent contrast uses its own first-divergence support and token labels; those adjacent estimates are useful local contrasts, but they are not additive attributions to the final Base->RLVR contrast.
+The primary fixed-support sweep fixes the support to Base->RLVR first-divergence prefixes and scores every intermediate checkpoint against the same `t_Base`/`t_RLVR` contrast. This makes SFT, DPO, and RLVR cumulative estimates comparable on the same local support. The older adjacent-pair analysis is retained only as historical motivation because each adjacent contrast uses its own first-divergence support and token labels; those adjacent estimates are useful local contrasts, but they are not additive attributions to the final Base->RLVR contrast.
 
 | Stage on fixed Base->RLVR support | Upstream x late interaction | Relative to final contrast | Native top-1 picks `t_RLVR` |
 |---|---:|---:|---:|
@@ -709,43 +634,71 @@ The primary stage analysis fixes the support to Base->RLVR first-divergence pref
 | DPO | `+1.629` `[+1.473, +1.793]` | `84.7%` `[83.3%, 86.0%]` | `93.0%` |
 | RLVR/Instruct | `+1.924` `[+1.747, +2.104]` | `100%` | `99.7%` |
 
+Base interaction is zero by definition because Base is the reference checkpoint.
+
 The fixed-support label-swap null passes the same orientation test as the main factorial: the observed RLVR interaction is `+1.924`, while the null 99.9th percentile is `+0.382` (`p=5e-5`). Position `>=3` remains positive for all stages (`+0.283`, `+0.677`, `+0.813`). The result is a local lineage case study: in this released OLMo-2 path, the measured upstream-conditioned interaction is partly present in the SFT checkpoint, largely present in the DPO checkpoint, and strongest in the final RLVR/Instruct checkpoint.
 
 ---
 
-## Appendix G: Architecture and MoE Scope
+## Appendix H: Architecture and MoE Scope
 
-**Architecture heterogeneity and MoE.** The Core-5 set covers dense transformer families only. It includes one Mistral family with an attention variant and one 32B Qwen scale check, but it is not a controlled architecture sweep. MoE generalization remains open: DeepSeek-V2-Lite is artifact-only because expert routing, expert swaps, and sparse activation patterns require additional controls beyond the dense-stack factorial used here. The clean follow-up is to run the same first-divergence factorial across multiple MoE base/instruct pairs with expert-routing controls and to separate attention-pattern effects from post-training recipe effects.
+**Claim supported.** The current paper is a dense-family result, with architecture and MoE scope explicitly bounded.
+
+**Primary evidence.** Core-5 covers dense transformer families plus a 32B dense scale check; MoE is artifact-only.
+
+**What this does not prove.** The result may not transfer unchanged to MoE models, expert-routing interventions, or controlled attention-architecture comparisons.
+
+**Where to audit.** Dense/MoE scope and artifact roots are summarized in Appendix I.
+
+The Core-5 set covers dense transformer families only. It includes one Mistral family with an attention variant and one 32B Qwen scale check, but it is not a controlled architecture sweep. MoE generalization remains open: DeepSeek-V2-Lite is artifact-only because expert routing, expert swaps, and sparse activation patterns require additional controls beyond the dense-stack factorial used here. The clean follow-up is to run the same first-divergence factorial across multiple MoE base/instruct pairs with expert-routing controls and to separate attention-pattern effects from post-training recipe effects.
 
 ---
 
-## Appendix H: Reproducibility and Artifact Map
+## Appendix I: Reproducibility and Artifact Map
+
+**Claim supported.** The paper can be audited from committed summary artifacts, with raw rerun scope and hardware requirements made explicit.
+
+**Primary evidence.** CPU synthesis paths reproduce paper-facing tables/figures; raw intervention reruns are mapped separately.
+
+**What this does not prove.** Full raw GPU reproduction is cheap or necessary for every reviewer.
+
+**Where to audit.** This appendix is the audit map.
+
+### I.1 Reviewer-Facing Reproduction Path
+
+| Reproduction level | What it reproduces | Hardware |
+|---|---|---|
+| CPU synthesis | Paper tables and figures from committed JSON/CSV artifacts. | CPU |
+| Small raw rerun | One 4B/7B family first-divergence factorial and analysis. | 1-8 A100/H100 GPUs, depending on batching |
+| Full raw rerun | Core-small dense runs plus Qwen2.5 32B scale check and feature experiments. | Multi-GPU A100/H100 jobs |
+
+
+### I.2 Full Artifact Map
 
 | Claim | Command/script family | Primary artifact |
 |---|---|---|
-| Core-5 upstream x late interaction | `scripts/analysis/build_exp23_core5_synthesis.py`; Core-5 figure generated from `exp23_core5_family_effects.csv` | `results/paper_synthesis/exp23_core5/` |
-| Position sensitivity | same plus `scripts/analysis/analyze_first_divergence_position_sensitivity.py` | `results/paper_synthesis/exp23_core5/exp23_core5_position_sensitivity.csv` |
+| Core-5 upstream x late interaction | `scripts/analysis/build_exp23_core5_synthesis.py`; Core-5 figure generated from `exp23_core5_family_effects.csv` | `results/paper_synthesis/exp23_core5/exp23_core5_core_effects.csv`; `results/paper_synthesis/exp23_core5/exp23_core5_family_effects.csv`; `results/paper_synthesis/exp23_core5/exp23_core5_interaction.png` |
+| Core first-divergence raw mirrors | raw first-divergence collectors and analysis scripts | `gs://pt-vs-it-results/results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/`; `gs://pt-vs-it-results/results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/`; `results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/`; `results/paper_synthesis/exp24_32b_external_validity/` |
+| Position sensitivity | same plus `scripts/analysis/analyze_first_divergence_position_sensitivity.py` | `results/paper_synthesis/exp23_core5/exp23_core5_position_sensitivity.csv`; `results/paper_synthesis/exp23_position_sensitivity_table.csv` |
 | Label-swap null | `scripts/analysis/analyze_exp23_compatibility_permutation.py` | `results/paper_synthesis/exp23_core_small_compatibility_permutation/` |
 | Off-manifold sanity audit | `scripts/analysis/analyze_exp23_offmanifold_sanity.py` | `results/paper_synthesis/exp23_offmanifold_sanity/` |
-| Hybrid-state validation | `scripts/run/run_exp36_offmanifold_validation_runpod.sh`; `scripts/analysis/analyze_exp36_offmanifold_validation.py` | `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/` |
-| Selection baselines and token-support control | `scripts/run/run_exp37_random_prefix_baseline_runpod.sh`; `scripts/analysis/analyze_exp37_random_prefix_baseline.py`; `scripts/analysis/analyze_exp37_token_support_control.py`; `scripts/plot/plot_exp37_selection_baselines_paper.py` | `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/`; `results/paper_synthesis/exp37_core_small_selection_baseline/` |
-| Selection baselines and token-support control | `scripts/run/run_exp37_random_prefix_baseline_runpod.sh`; `scripts/analysis/analyze_exp37_random_prefix_baseline.py`; `scripts/analysis/analyze_exp37_token_support_control.py`; `scripts/plot/plot_exp37_selection_baselines_paper.py` | `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/`; `results/paper_synthesis/exp37_core_small_selection_baseline/` |
-| Selected-support audit | `scripts/analysis/analyze_first_divergence_token_support.py` | `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/` |
-| Pre-late commitment control | `scripts/analysis/analyze_exp40_prelate_commitment_control.py`; exact collector in `src/poc/exp40_prelate_commitment_control/collect.py` | `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/` |
-| Behavioral bridge from margin to output | `src/poc/exp45_behavioral_bridge/`; `scripts/analysis/analyze_exp45_behavioral_bridge.py`; `scripts/scoring/score_exp45_llm_judge.py` | `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/` |
-| Behavioral bridge from margin to output | `src/poc/exp45_behavioral_bridge/`; `scripts/analysis/analyze_exp45_behavioral_bridge.py`; `scripts/scoring/score_exp45_llm_judge.py` | `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/` |
-| Endpoint-matched convergence gap | `scripts/analysis/build_exp22_endpoint_deconfounded_synthesis.py` | `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv` |
-| Late MLP random control | late-random-control analysis scripts | `results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/` |
-| Identity/margin handoff | `scripts/analysis/build_exp20_exp21_handoff_synthesis.py` | `results/paper_synthesis/exp20_exp21_handoff_table.csv` |
-| Terminal-depth audit | `scripts/analysis/analyze_exp31_terminal_depth_factorial.py` | `results/exp31_terminal_depth_factorial/exp31_terminal_depth_full_a100x4_localdisk_fixedsched_20260502_021238/analysis/` |
-| Middle-to-terminal feature handoff | `scripts/run/run_exp44_middle_terminal_feature_handoff_runpod.sh`; `src/poc/exp44_middle_terminal_feature_handoff/analyze.py` | `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/` |
-| Terminal MLP audit | `scripts/analysis/analyze_exp33_terminal_identity_margin.py` | `results/exp33_terminal_identity_margin/exp33_terminal_identity_margin_full_dense5_a100x8_overlap_20260502_0509/analysis/` |
-| Terminal crosscoder mediation | `scripts/analysis/analyze_exp34_dense5_final_readout_crosscoder.py`; crosscoder hardening analysis | `results/paper_synthesis/exp34_dense5_final_readout_crosscoder/combined_dense5_20260503_0018/`; `results/exp38_qwen_olmo_final_layer_crosscoder_hardening/exp38_qwen_olmo_final_summary_20260503/analysis/` |
-| Terminal feature upstream-conditioning | `src/poc/exp42_terminal_feature_upstream_conditioning/`; `scripts/analysis/analyze_exp42_terminal_feature_upstream_conditioning.py` | `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/` |
-| Terminal feature rescue | `src/poc/exp43_feature_rescue_handoff/`; `scripts/plot/plot_exp43_feature_rescue_handoff.py` | `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/` |
-| Feature autointerp and taxonomy | `src/poc/exp39_causal_feature_interpretation/`; `scripts/analysis/exp39_causal_paper_taxonomy_llm.py` | `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/analysis/` |
-| Structure-readout bucket validation | `src/poc/exp41_causal_feature_bucket_steering/`; structure-readout analysis outputs | `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/` |
-| Tulu fixed-support stage sweep | `src/poc/exp46_tulu_fixed_support_stage_sweep/`; Exp46 analysis outputs | `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/` |
-| OLMo fixed-support stage case study | `scripts/analysis/analyze_exp35_olmo_base_anchored_stage_decomposition.py`; `scripts/analysis/build_exp35_stage_ratio_bootstrap.py` | `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/` |
+| Content/reasoning stress test | content/reasoning residual analysis | `results/exp23_midlate_interaction_suite/exp23_content_reasoning_residual_20260427_0930_h100x8/analysis/exp23_summary.json` |
+| Hybrid-state validation | `scripts/run/run_exp36_offmanifold_validation_runpod.sh`; `scripts/analysis/analyze_exp36_offmanifold_validation.py` | `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/summary.json`; `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/exp36_offmanifold_validation_report.md`; `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/interpolation_dose_response.png`; `results/exp36_offmanifold_validation/exp36_offmanifold_dense5_full_a100x8_20260502_233904/analysis/low_anomaly_robustness.png` |
+| Selection baselines and token-support control | `scripts/run/run_exp37_random_prefix_baseline_runpod.sh`; `scripts/analysis/analyze_exp37_random_prefix_baseline.py`; `scripts/analysis/analyze_exp37_token_support_control.py`; `scripts/plot/plot_exp37_selection_baselines_paper.py` | `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/summary.json`; `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/effects.csv`; `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/exp37_matched_prefix_baselines.png`; `results/paper_synthesis/exp37_core_small_selection_baseline/selection_baselines_core_small.png`; `results/exp37_random_prefix_baseline/exp37_full_dense5_auth_xetfast_h100x8_20260503_002609/analysis/token_support_control/summary.json` |
+| Selected-support audit | `scripts/analysis/analyze_first_divergence_token_support.py` | `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/summary.json`; `results/first_divergence_token_support/dense5_llm_gpt55_20260503_121500/token_support_report.md` |
+| Pre-late commitment control | `scripts/analysis/analyze_exp40_prelate_commitment_control.py`; exact collector in `src/poc/exp40_prelate_commitment_control/collect.py` | `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/summary.json`; `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/effects.csv`; `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/exp40_prelate_commitment_report.md`; `results/exp40_prelate_commitment_control/exp40_exp20_layerwise_proxy_20260503_110001/analysis/prelate_commitment_bins.png` |
+| Behavioral bridge from margin to output | `src/poc/exp45_behavioral_bridge/`; `scripts/analysis/analyze_exp45_behavioral_bridge.py`; `scripts/scoring/score_exp45_llm_judge.py` | `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/report.md`; `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/one_step_effects.csv`; `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/behavioral_effects.csv`; `results/exp45_behavioral_bridge/exp45_full_a100x8_20260504_0652/analysis/llm_judge_summary.json` |
+| Endpoint-matched convergence gap | `scripts/analysis/build_exp22_endpoint_deconfounded_synthesis.py` | `results/exp09_cross_model_observational_replication/data/exp9_summary.json`; `results/exp09_cross_model_observational_replication/data/convergence_gap_values.json`; `results/paper_synthesis/exp22_endpoint_deconfounded_table.csv`; `results/exp09_cross_model_observational_replication/plots/L2_mean_kl_per_layer_tuned_dense5.png` |
+| Late MLP random control | late-random-control analysis scripts | `results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json`; `results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json`; `results/exp19_late_mlp_specificity_controls/exp19B_core120_h100x8_20260424_050421_analysis/exp19B_summary_light.json`; `results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_causal_main.png` |
+| Identity/margin handoff | `scripts/analysis/build_exp20_exp21_handoff_synthesis.py` | `results/paper_synthesis/exp20_exp21_handoff_table.csv`; `results/paper_synthesis/exp20_exp21_handoff_core_small.png`; `results/exp20_divergence_token_counterfactual/factorial_validation_holdout_fast_20260425_2009_with_early/validation_analysis/summary.json`; `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/summary.json`; `results/exp21_productive_opposition/exp21_full_productive_opposition_clean_20260426_053736/analysis/effects.csv` |
+| Terminal-depth and terminal-MLP audit | `scripts/analysis/analyze_exp31_terminal_depth_factorial.py`; terminal MLP analysis scripts | `results/exp31_terminal_depth_factorial/exp31_terminal_depth_full_a100x4_localdisk_fixedsched_20260502_021238/analysis/terminal_depth_summary.json`; `results/exp31_terminal_depth_factorial/exp31_terminal_depth_full_a100x4_localdisk_fixedsched_20260502_021238/analysis/terminal_depth_effects.csv`; `results/exp32_terminal_mlp_writeout/exp32_terminal_mlp_full_dense5_a100x8_w2_20260502_043950/analysis/exp32_terminal_mlp_summary.json`; `results/exp33_terminal_identity_margin/exp33_terminal_identity_margin_full_dense5_a100x8_overlap_20260502_0509/analysis/exp33_terminal_identity_margin_summary.json` |
+| Terminal crosscoder mediation | `scripts/analysis/analyze_exp34_dense5_final_readout_crosscoder.py`; crosscoder hardening analysis | `results/paper_synthesis/exp34_dense5_final_readout_crosscoder/combined_dense5_20260503_0018/exp34_dense5_crosscoder_summary.json`; `results/paper_synthesis/exp34_core_feature_mediation/terminal_crosscoder_core3_mediation.png`; `results/exp38_qwen_olmo_final_layer_crosscoder_hardening/exp38_qwen_olmo_final_summary_20260503/analysis/exp38_qwen_olmo_decision_summary.json`; `results/exp30_final_readout_crosscoder_mediation/exp30_l31_paperfaithful_runpod_20260502_012105_a100x8/selected_d131072_k64/analysis/mediation_curve.png` |
+| Terminal feature upstream-conditioning | `src/poc/exp42_terminal_feature_upstream_conditioning/`; `scripts/analysis/analyze_exp42_terminal_feature_upstream_conditioning.py` | `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_gating_summary.json`; `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_gating_report.md`; `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_gating_by_family.png`; `results/exp42_terminal_feature_upstream_conditioning/exp42_full_4fam_h100x8_20260503_155212/analysis/feature_ablation_saturation.png` |
+| Terminal feature rescue | `src/poc/exp43_feature_rescue_handoff/`; `scripts/plot/plot_exp43_feature_rescue_handoff.py` | `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/exp43_report.md`; `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/primary_family_balanced_effects.csv`; `results/exp43_feature_rescue_handoff/exp43_full_h100x8_clean_20260503_182947/analysis/exp43_family_balanced_rescue_gain.png` |
+| Middle-to-terminal feature handoff | `scripts/run/run_exp44_middle_terminal_feature_handoff_runpod.sh`; `src/poc/exp44_middle_terminal_feature_handoff/analyze.py` | `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/exp44_report.md`; `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/primary_family_balanced_effects.csv`; `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/handoff_control_differences.csv`; `results/exp44_middle_terminal_feature_handoff/exp44_primary_lmq_a100_20260503_combined/analysis/exp44_primary_handoff_effects.png` |
+| Feature autointerp and taxonomy | `src/poc/exp39_causal_feature_interpretation/`; `scripts/analysis/exp39_causal_paper_taxonomy_llm.py` | `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/autointerp/label_validation.json`; `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/autointerp/llm_feature_labels.jsonl`; `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/dashboards/feature_dashboards.jsonl`; `results/exp39_causal_feature_interpretation/exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/analysis/` |
+| Structure-readout bucket validation | `src/poc/exp41_causal_feature_bucket_steering/`; structure-readout analysis outputs | `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/exp41_logit_replay_summary.json`; `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/bucket_effects_by_model.csv`; `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/bucket_manifest/strict_primary/bucket_features.csv` |
+| Tulu fixed-support stage sweep | `src/poc/exp46_tulu_fixed_support_stage_sweep/`; Exp46 analysis outputs | `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/summary.json`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/effects.csv`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/stage_fraction_ratios.csv`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/exp46_stage_decomposition.png`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_base_to_S_a100x8_localdisk_20260504_104959/analysis/summary.json`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_base_to_D_a100x8_localdisk_20260504_105605/analysis/summary.json` |
+| OLMo fixed-support stage sweep | `scripts/analysis/analyze_exp35_olmo_base_anchored_stage_decomposition.py`; `scripts/analysis/build_exp35_stage_ratio_bootstrap.py` | `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/summary.json`; `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/effects.csv`; `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/stage_ratio_bootstrap.csv`; `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/exp35_stage_decomposition.png` |
 
 All full reruns use bf16 inference and deterministic greedy decoding unless a script states otherwise. The summary audit is CPU-only and reads committed JSON/CSV artifacts. Reproducing raw 4B-8B intervention records requires multiple 80GB A100/H100 jobs; reproducing Qwen2.5 32B additionally requires the multi-GPU run or the committed paper-facing synthesis artifacts.
