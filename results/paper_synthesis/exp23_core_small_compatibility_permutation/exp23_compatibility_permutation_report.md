@@ -1,0 +1,26 @@
+# Exp23 Compatibility-Amplification Label Control
+
+Run root: `results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4`
+Prompt mode: `raw_shared`
+Readout: `common_it`
+
+The compatibility amplification is algebraically the Exp23 interaction, but is read as an own-token compatibility test: IT late stack gains more from IT upstream than PT late stack gains from PT upstream.
+
+| Model | Records | Prompt clusters | IT compatibility boost | PT compatibility boost | IT-over-PT amplification |
+|---|---:|---:|---:|---:|---:|
+| `qwen3_4b` | `600` | `600` | `+3.349` | `+1.884` | `+1.464` |
+| `llama31_8b` | `600` | `600` | `+4.564` | `+3.311` | `+1.253` |
+| `mistral_7b` | `597` | `597` | `+5.824` | `+3.290` | `+2.534` |
+| `olmo2_7b` | `586` | `586` | `+4.465` | `+2.618` | `+1.847` |
+| **Dense mean** | `2383` | `2383` | `+4.550` | `+2.776` | `+1.775` |
+
+## Label-Swap Null
+
+The null randomly swaps PT/IT label orientation within each model/prompt cluster. For prompts with multiple divergence-event records, the event-level amplification is averaged within prompt before the sign flip.
+
+- Observed amplification: `+1.775` logits
+- Null mean: `-0.0001` logits
+- Null std: `0.0572` logits
+- Null 99.9th percentile: `+0.172` logits
+- One-sided permutation p-value: `4.99975e-05`
+- Two-sided permutation p-value: `4.99975e-05`
