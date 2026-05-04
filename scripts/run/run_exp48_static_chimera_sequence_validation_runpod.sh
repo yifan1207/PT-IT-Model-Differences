@@ -213,18 +213,25 @@ run_sequence_full() {
 run_score_auto() {
   echo "[exp48] phase score-auto"
   local count=0
-  while IFS= read -r path; do
-    local out_dir
-    out_dir="$(dirname "$path")"
+  while IFS= read -r out_dir; do
+    local inputs=()
+    if [[ -f "${out_dir}/sequence_records.jsonl.gz" ]]; then
+      inputs=("${out_dir}/sequence_records.jsonl.gz")
+    else
+      mapfile -t inputs < <(find "$out_dir" -maxdepth 1 -name 'sequence_records_w*.jsonl.gz' | sort)
+    fi
+    if [[ "${#inputs[@]}" -eq 0 ]]; then
+      continue
+    fi
     local log_name="score_$(basename "$out_dir")"
-    echo "[exp48] score ${path}"
+    echo "[exp48] score ${out_dir} inputs=${#inputs[@]}"
     $PY_RUNNER -m src.poc.exp48_static_chimera_sequence_validation score-sequence \
       --dataset "$DATASET" \
       --out-dir "$out_dir" \
-      "$path" \
+      "${inputs[@]}" \
       >"${LOG_DIR}/${log_name}.log" 2>&1
     count=$((count + 1))
-  done < <(find "$SEQUENCE_ROOT" -name sequence_records.jsonl.gz | sort)
+  done < <(find "$SEQUENCE_ROOT" -type f \( -name sequence_records.jsonl.gz -o -name 'sequence_records_w*.jsonl.gz' \) -printf '%h\n' | sort -u)
   echo "[exp48] scored files=${count}"
   sync_outputs || true
 }

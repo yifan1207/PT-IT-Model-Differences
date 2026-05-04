@@ -6,7 +6,7 @@ import argparse
 from pathlib import Path
 
 from src.poc.exp48_static_chimera_sequence_validation.config import INTERPOLATION_ALPHAS
-from src.poc.exp48_static_chimera_sequence_validation.run_sequence_generation import run_worker
+from src.poc.exp48_static_chimera_sequence_validation.run_sequence_generation import merge_workers, run_worker
 
 
 def _run_one(args: argparse.Namespace, *, boundary: int, scenario: str, component: str, cell: str, alpha: float | None = None) -> None:
@@ -38,6 +38,7 @@ def _run_one(args: argparse.Namespace, *, boundary: int, scenario: str, componen
         merge_only=False,
     )
     run_worker(child)
+    merge_workers(out_dir, n_workers=1)
 
 
 def run_suite(args: argparse.Namespace) -> None:
@@ -93,4 +94,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
