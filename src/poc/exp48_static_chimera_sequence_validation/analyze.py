@@ -105,9 +105,10 @@ def summarize_sequence(rows: list[dict[str, Any]], *, n_boot: int) -> tuple[list
     recovery: list[dict[str, Any]] = []
     health: list[dict[str, Any]] = []
     group_fields = ("model", "boundary", "scenario", "component", "interpolation_alpha", "task")
-    groups = sorted({tuple(row.get(field) for field in group_fields) for row in rows})
-    for group in groups:
-        subset = [row for row in rows if tuple(row.get(field) for field in group_fields) == group]
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[tuple(row.get(field) for field in group_fields)].append(row)
+    for group, subset in sorted(grouped.items(), key=lambda item: tuple("" if value is None else str(value) for value in item[0])):
         if not subset:
             continue
         base = dict(zip(group_fields, group, strict=False))
@@ -164,9 +165,10 @@ def summarize_sequence(rows: list[dict[str, Any]], *, n_boot: int) -> tuple[list
 def summarize_rescue(rows: list[dict[str, Any]], *, n_boot: int) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     group_fields = ("model", "boundary", "condition", "k", "alpha")
-    groups = sorted({tuple(row.get(field) for field in group_fields) for row in rows})
-    for group in groups:
-        subset = [row for row in rows if tuple(row.get(field) for field in group_fields) == group]
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[tuple(row.get(field) for field in group_fields)].append(row)
+    for group, subset in sorted(grouped.items(), key=lambda item: tuple("" if value is None else str(value) for value in item[0])):
         if not subset:
             continue
         base = dict(zip(group_fields, group, strict=False))
