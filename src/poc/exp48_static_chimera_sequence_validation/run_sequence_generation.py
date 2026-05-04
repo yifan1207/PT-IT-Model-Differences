@@ -43,6 +43,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 _PAIR_CACHE: dict[tuple[str, str], tuple[Any, Any, Any, Any, Any]] = {}
 _WRONG_CACHE: dict[tuple[str, str], tuple[Any, Any]] = {}
+_SUPPRESSED_ID_CACHE: dict[tuple[str, int], set[int]] = {}
 
 
 class CommonVocabLogitsProcessor(LogitsProcessor):
@@ -111,14 +112,21 @@ def _reserved_ids(tokenizers: Iterable[Any]) -> set[int]:
         re.compile(r"^<\|reserved_special_token_\d+\|>$"),
     )
     for tokenizer in tokenizers:
-        vocab = len(tokenizer)
-        for token_id in range(vocab):
-            try:
-                tok = tokenizer.convert_ids_to_tokens(token_id)
-            except Exception:
-                continue
+        key = (getattr(tokenizer, "name_or_path", type(tokenizer).__name__), len(tokenizer))
+        cached = _SUPPRESSED_ID_CACHE.get(key)
+        if cached is not None:
+            suppressed.update(cached)
+            continue
+        local: set[int] = set()
+        try:
+            vocab_items = tokenizer.get_vocab().items()
+        except Exception:
+            vocab_items = []
+        for tok, token_id in vocab_items:
             if tok is None or any(pat.match(str(tok)) for pat in patterns):
-                suppressed.add(int(token_id))
+                local.add(int(token_id))
+        _SUPPRESSED_ID_CACHE[key] = local
+        suppressed.update(local)
     return suppressed
 
 
