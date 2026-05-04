@@ -106,17 +106,28 @@ pull_exp47_support() {
     if [[ ! -d "$EXP47_ANALYSIS_DIR" ]]; then
       gsutil -m rsync -r "${EXP47_GCS%/}/analysis" "$EXP47_ANALYSIS_DIR" || true
     fi
+  elif [[ -f scripts/infra/gcs_sync_adc.py ]]; then
+    mkdir -p "$EXP47_ROOT"
+    echo "[exp48] pulling Exp47 exp20 support with ADC helper from ${EXP47_GCS}/exp20"
+    $PY_RUNNER scripts/infra/gcs_sync_adc.py download "${EXP47_GCS%/}/exp20" "$EXP20_ROOT" --workers 24
+    if [[ ! -d "$EXP47_ANALYSIS_DIR" ]]; then
+      $PY_RUNNER scripts/infra/gcs_sync_adc.py download "${EXP47_GCS%/}/analysis" "$EXP47_ANALYSIS_DIR" --workers 12 || true
+    fi
   else
     echo "[exp48] Exp47 support not present and gsutil unavailable" >&2
   fi
 }
 
 pull_run_from_gcs() {
-  if [[ -z "$GCS_SYNC_DEST" || ! "$(command -v gsutil || true)" ]]; then
+  if [[ -z "$GCS_SYNC_DEST" ]]; then
     return
   fi
   mkdir -p "$RUN_ROOT"
-  gsutil -m rsync -r "${GCS_SYNC_DEST%/}/${RUN_NAME}" "$RUN_ROOT" || true
+  if command -v gsutil >/dev/null 2>&1; then
+    gsutil -m rsync -r "${GCS_SYNC_DEST%/}/${RUN_NAME}" "$RUN_ROOT" || true
+  elif [[ -f scripts/infra/gcs_sync_adc.py ]]; then
+    $PY_RUNNER scripts/infra/gcs_sync_adc.py download "${GCS_SYNC_DEST%/}/${RUN_NAME}" "$RUN_ROOT" --workers 24 || true
+  fi
 }
 
 wait_batch() {
