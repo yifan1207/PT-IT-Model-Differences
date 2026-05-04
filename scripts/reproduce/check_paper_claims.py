@@ -983,6 +983,96 @@ def exp25_olmo_stage(transition: str, column: str) -> NumberFn:
     return _read
 
 
+def exp35_olmo_fixed_stage(stage: str, column: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp35_olmo_base_anchored_stage_decomposition/"
+            "exp35_full_olmo_stage_8a100_20260502_2300/analysis/effects.csv",
+        )
+        for row in rows:
+            if (
+                row["readout"] == "common_r"
+                and row["stage"] == stage
+                and row["metric"] == "interaction"
+            ):
+                return float(row[column])
+        raise KeyError((stage, column))
+
+    return _read
+
+
+def exp35_olmo_fixed_ratio(stage: str, column: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp35_olmo_base_anchored_stage_decomposition/"
+            "exp35_full_olmo_stage_8a100_20260502_2300/analysis/"
+            "stage_ratio_bootstrap.csv",
+        )
+        for row in rows:
+            if row["readout"] == "common_r" and row["metric"] == stage:
+                return float(row[column])
+        raise KeyError((stage, column))
+
+    return _read
+
+
+def exp46_tulu_stage(
+    run_dir: str,
+    stage: str,
+    column: str = "estimate",
+    metric: str = "interaction",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            f"results/exp46_tulu_fixed_support_stage_sweep/{run_dir}/analysis/effects.csv",
+        )
+        for row in rows:
+            if (
+                row["readout"] == "common_r"
+                and row["stage"] == stage
+                and row["metric"] == metric
+            ):
+                return float(row[column])
+        raise KeyError((run_dir, stage, metric, column))
+
+    return _read
+
+
+def exp46_tulu_ratio(stage: str, column: str = "ratio_estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp46_tulu_fixed_support_stage_sweep/"
+            "exp46_full_a100x8_localdisk_20260504_103624/analysis/"
+            "stage_fraction_ratios.csv",
+        )
+        for row in rows:
+            if (
+                row["readout"] == "common_r"
+                and row["stage"] == stage
+                and row["metric"] == "interaction_fraction_of_final"
+            ):
+                return float(row[column])
+        raise KeyError((stage, column))
+
+    return _read
+
+
+def exp46_tulu_null(column: str, readout: str = "common_r") -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp46_tulu_fixed_support_stage_sweep/"
+            "exp46_full_a100x8_localdisk_20260504_103624/analysis/summary.json",
+        )
+        return float(data["label_swap_null"][readout][column])
+
+    return _read
+
+
 def exp27_primary(variant: str, field: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -3401,6 +3491,108 @@ CHECKS: list[ClaimCheck] = [
         "exp25 olmo_stage_progression_table.csv",
         551.0,
         exp25_olmo_stage("PT->SFT", "first_diff_events"),
+    ),
+    ClaimCheck(
+        "OLMo fixed-support SFT interaction",
+        "exp35 effects.csv",
+        0.7732764200213821,
+        exp35_olmo_fixed_stage("S"),
+    ),
+    ClaimCheck(
+        "OLMo fixed-support DPO interaction",
+        "exp35 effects.csv",
+        1.6290115619639929,
+        exp35_olmo_fixed_stage("D"),
+    ),
+    ClaimCheck(
+        "OLMo fixed-support RLVR interaction",
+        "exp35 effects.csv",
+        1.9238705561961185,
+        exp35_olmo_fixed_stage("R"),
+    ),
+    ClaimCheck(
+        "OLMo fixed-support SFT fraction",
+        "exp35 stage_ratio_bootstrap.csv",
+        0.40193786298715756,
+        exp35_olmo_fixed_ratio("S"),
+    ),
+    ClaimCheck(
+        "OLMo fixed-support DPO fraction",
+        "exp35 stage_ratio_bootstrap.csv",
+        0.846736573163674,
+        exp35_olmo_fixed_ratio("D"),
+    ),
+    ClaimCheck(
+        "Tulu fixed-support SFT interaction",
+        "exp46 effects.csv",
+        0.41898621127136754,
+        exp46_tulu_stage("exp46_full_a100x8_localdisk_20260504_103624", "S"),
+    ),
+    ClaimCheck(
+        "Tulu fixed-support SFT interaction CI low",
+        "exp46 effects.csv",
+        0.3486389264489851,
+        exp46_tulu_stage(
+            "exp46_full_a100x8_localdisk_20260504_103624",
+            "S",
+            "ci95_low",
+        ),
+    ),
+    ClaimCheck(
+        "Tulu fixed-support DPO interaction",
+        "exp46 effects.csv",
+        1.2158678886217948,
+        exp46_tulu_stage("exp46_full_a100x8_localdisk_20260504_103624", "D"),
+    ),
+    ClaimCheck(
+        "Tulu fixed-support Final interaction",
+        "exp46 effects.csv",
+        1.4551307091346153,
+        exp46_tulu_stage("exp46_full_a100x8_localdisk_20260504_103624", "R"),
+    ),
+    ClaimCheck(
+        "Tulu fixed-support Final interaction CI high",
+        "exp46 effects.csv",
+        1.6055092523036858,
+        exp46_tulu_stage(
+            "exp46_full_a100x8_localdisk_20260504_103624",
+            "R",
+            "ci95_high",
+        ),
+    ),
+    ClaimCheck(
+        "Tulu fixed-support SFT fraction",
+        "exp46 stage_fraction_ratios.csv",
+        0.28793716512281153,
+        exp46_tulu_ratio("S"),
+    ),
+    ClaimCheck(
+        "Tulu fixed-support DPO fraction",
+        "exp46 stage_fraction_ratios.csv",
+        0.8355729701731653,
+        exp46_tulu_ratio("D"),
+    ),
+    ClaimCheck(
+        "Tulu fixed-support label-swap null q99.9",
+        "exp46 summary.json",
+        0.29583620626335616,
+        exp46_tulu_null("null_p999"),
+    ),
+    ClaimCheck(
+        "Tulu Base->SFT support final interaction",
+        "exp46 Base->SFT effects.csv",
+        1.3222240691489362,
+        exp46_tulu_stage(
+            "exp46_full_base_to_S_a100x8_localdisk_20260504_104959", "R"
+        ),
+    ),
+    ClaimCheck(
+        "Tulu Base->DPO support final interaction",
+        "exp46 Base->DPO effects.csv",
+        1.4358517367066896,
+        exp46_tulu_stage(
+            "exp46_full_base_to_D_a100x8_localdisk_20260504_105605", "R"
+        ),
     ),
     ClaimCheck(
         "Exp34 Gemma terminal crosscoder top-200 drop",
