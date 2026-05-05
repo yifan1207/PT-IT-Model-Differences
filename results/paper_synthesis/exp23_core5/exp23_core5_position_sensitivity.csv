@@ -1,6 +1,6 @@
 position_stratum,core5_estimate,core5_ci95_low,core5_ci95_high,core5_n_models,core5_n_prompt_clusters,ci_method,models
-all positions,1.708858200882832,1.63676853978058,1.7809478619850838,5,3780,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b
-positions >=1,1.1587926301710425,1.0802079099559732,1.2373773503861119,5,2054,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b
-positions >=3,0.834491153268121,0.7548336097018165,0.9141486968344255,5,1353,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b
-position >=5,0.7978654468486045,0.7006830365207799,0.8950478571764291,5,886,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b
-position >=10,1.0137009718760734,0.8130862277587054,1.2143157159934415,5,344,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b
+all positions,1.6799684487547921,1.6031151618854327,1.7568217356241516,5,2982,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b
+positions >=1,1.0962754142340037,1.0139813293071216,1.1785694991608857,5,1520,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b
+positions >=3,0.8003162099452235,0.7160118891078447,0.8846205307826022,5,961,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b
+position >=5,0.8293368632366322,0.7206602973756521,0.9380134290976124,5,632,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b
+position >=10,1.0725732203037466,0.840990167057827,1.3041562735496661,5,207,family_bootstrap_normal_approx_from_stored_per_family_cis,qwen3_4b;llama31_8b;mistral_7b;olmo2_7b;qwen25_32b

@@ -1,0 +1,2 @@
+model,subset,n_first_divergence_records,pt_upstream_late_effect,pt_upstream_ci_low,pt_upstream_ci_high,it_upstream_late_effect,it_upstream_ci_low,it_upstream_ci_high,interaction,interaction_ci_low,interaction_ci_high,ratio_descriptive,portable_share
+qwen25_32b,holdout600_governance_safety,599,1.0358931552587647,0.8943538710350585,1.170337280884808,2.3376460767946576,2.1430404841402337,2.549853923205342,1.3017529215358932,1.1370682909015026,1.489260747078464,2.256647864625302,0.4431351544367078

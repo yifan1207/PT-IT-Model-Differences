@@ -2,8 +2,9 @@
 """Build the paper-facing Core-5 synthesis for the Exp23 factorial.
 
 Core-5 combines the four smaller dense support families from Exp23 with the
-Qwen2.5-32B Exp24 scale check. The script filters the stored support-family
-summary to the manuscript scope before combining prompt-bootstrap estimates.
+Qwen2.5-32B Exp24 scale check on the same holdout support. The script filters
+the stored support-family summary to the manuscript scope before combining
+prompt-bootstrap estimates.
 """
 
 from __future__ import annotations
@@ -37,6 +38,12 @@ from scripts.analysis.build_exp23_dense6_core_synthesis import (
 
 CORE_SMALL_MODELS = {"llama31_8b", "qwen3_4b", "mistral_7b", "olmo2_7b"}
 DEFAULT_OUT_DIR = Path("results/paper_synthesis/exp23_core5")
+DEFAULT_QWEN32_HOLDOUT_SUMMARY = Path(
+    "results/paper_synthesis/exp24_32b_external_validity/exp24_32b_holdout600_summary.json"
+)
+DEFAULT_QWEN32_HOLDOUT_POSITION = Path(
+    "results/paper_synthesis/exp24_32b_external_validity/exp24_32b_holdout600_position_sensitivity.csv"
+)
 
 
 def _core_family_effect_rows(dense_summary: dict[str, Any], qwen32_summary: dict[str, Any], effect: str, readout: str) -> list[dict[str, Any]]:
@@ -211,7 +218,7 @@ def _write_markdown(path: Path, effects: list[dict[str, Any]], positions: list[d
     lines = [
         "# Exp23 Core-5 Synthesis",
         "",
-        "Core-5 combines the four smaller dense support families with Qwen2.5-32B.",
+        "Core-5 combines the four smaller dense support families with Qwen2.5-32B on the same holdout support.",
         "CIs use an independent normal approximation to stored per-family prompt-bootstrap intervals.",
         "",
         f"- Late IT from PT upstream: `{by_effect['late_it_given_pt_upstream']['core5_estimate']:+.3f}`.",
@@ -235,9 +242,9 @@ def _write_markdown(path: Path, effects: list[dict[str, Any]], positions: list[d
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dense5-summary", type=Path, default=DEFAULT_DENSE5_SUMMARY)
-    parser.add_argument("--qwen32-summary", type=Path, default=DEFAULT_QWEN32_SUMMARY)
+    parser.add_argument("--qwen32-summary", type=Path, default=DEFAULT_QWEN32_HOLDOUT_SUMMARY)
     parser.add_argument("--dense5-position", type=Path, default=DEFAULT_DENSE5_POSITION)
-    parser.add_argument("--qwen32-position", type=Path, default=DEFAULT_QWEN32_POSITION)
+    parser.add_argument("--qwen32-position", type=Path, default=DEFAULT_QWEN32_HOLDOUT_POSITION)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR)
     return parser.parse_args()
 

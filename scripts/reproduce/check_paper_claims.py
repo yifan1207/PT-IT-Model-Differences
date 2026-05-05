@@ -843,7 +843,7 @@ def exp24_repro_snapshot(field: str) -> NumberFn:
         rows = load_csv(
             repo,
             "results/paper_synthesis/exp24_32b_external_validity/"
-            "exp24_32b_position_sensitivity.csv",
+            "exp24_32b_holdout600_position_sensitivity.csv",
         )
         counts: dict[str, float] = {}
         for row in rows:
@@ -917,9 +917,8 @@ def exp24_residual_effect(readout: str, effect: str, column: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
             repo,
-            "results/exp24_32b_external_validity/"
-            "exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/"
-            "exp23_midlate_interaction_suite/exp23_summary.json",
+            "results/paper_synthesis/exp24_32b_external_validity/"
+            "exp24_32b_holdout600_summary.json",
         )
         return float(data["residual_factorial"]["effects"][readout][effect][column])
 
@@ -930,9 +929,8 @@ def exp24_late_effect_amplification(readout: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
             repo,
-            "results/exp24_32b_external_validity/"
-            "exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/"
-            "exp23_midlate_interaction_suite/exp23_summary.json",
+            "results/paper_synthesis/exp24_32b_external_validity/"
+            "exp24_32b_holdout600_summary.json",
         )
         effects = data["residual_factorial"]["effects"][readout]
         return (
@@ -964,7 +962,7 @@ def exp24_position(position_filter: str, metric: str, column: str) -> NumberFn:
         rows = load_csv(
             repo,
             "results/paper_synthesis/exp24_32b_external_validity/"
-            "exp24_32b_position_sensitivity.csv",
+            "exp24_32b_holdout600_position_sensitivity.csv",
         )
         for row in rows:
             if row["position_filter"] == position_filter and row["metric"] == metric:
@@ -979,11 +977,11 @@ def exp24_position_prompt_category(position_filter: str, prompt_category: str, m
         rows = load_csv(
             repo,
             "results/paper_synthesis/exp24_32b_external_validity/"
-            "exp24_32b_position_prompt_category_effects.csv",
+            "exp24_32b_holdout600_prompt_category_effects.csv",
         )
         for row in rows:
             if (
-                row["position_filter"] == position_filter
+                (row.get("position_filter") in (None, "", position_filter))
                 and row["prompt_category"] == prompt_category
                 and row["metric"] == metric
             ):
@@ -2196,7 +2194,7 @@ CHECKS: list[ClaimCheck] = [
     ClaimCheck(
         "Exp23 Core-5 family portable-share maximum",
         "exp23_core5_family_effects.csv",
-        0.40309297387129545,
+        0.44313515443670787,
         exp23_family_portable_share_stat("max"),
     ),
     ClaimCheck(
@@ -2256,15 +2254,15 @@ CHECKS: list[ClaimCheck] = [
     *[
         ClaimCheck(
             f"Minimal reproducibility snapshot qwen25_32b {field}",
-            "exp24_32b_position_sensitivity.csv",
+            "exp24_32b_holdout600_position_sensitivity.csv",
             expected,
             exp24_repro_snapshot(field),
         )
         for field, expected in [
-            ("events", 1397.0),
-            ("pos0_frac", 0.38797423049391555),
-            ("ge3_frac", 0.44953471725125266),
-            ("ge5_frac", 0.30565497494631355),
+            ("events", 599.0),
+            ("pos0_frac", 0.46410684474123537),
+            ("ge3_frac", 0.39398998330550916),
+            ("ge5_frac", 0.2888146911519199),
         ]
     ],
     ClaimCheck(
@@ -3533,75 +3531,75 @@ CHECKS: list[ClaimCheck] = [
     ),
     ClaimCheck(
         "Qwen2.5-32B residual-state interaction",
-        "exp24 exp23_summary.json",
-        1.4462016821760917,
+        "exp24 holdout600 summary.json",
+        1.3017529215358932,
         exp24_residual_effect("common_it", "interaction", "estimate"),
     ),
     ClaimCheck(
         "Qwen2.5-32B residual-state interaction CI low",
-        "exp24 exp23_summary.json",
-        1.321259842519685,
+        "exp24 holdout600 summary.json",
+        1.1370682909015026,
         exp24_residual_effect("common_it", "interaction", "ci95_low"),
     ),
     ClaimCheck(
         "Qwen2.5-32B late IT given PT upstream",
-        "exp24 exp23_summary.json",
-        0.9766240157480315,
+        "exp24 holdout600 summary.json",
+        1.0358931552587647,
         exp24_residual_effect("common_it", "late_it_given_pt_upstream", "estimate"),
     ),
     ClaimCheck(
         "Qwen2.5-32B late IT given IT upstream",
-        "exp24 exp23_summary.json",
-        2.422825697924123,
+        "exp24 holdout600 summary.json",
+        2.3376460767946576,
         exp24_residual_effect("common_it", "late_it_given_it_upstream", "estimate"),
     ),
     ClaimCheck(
         "Qwen2.5-32B late-effect amplification",
-        "exp24 exp23_summary.json",
-        2.4808172427220043,
+        "exp24 holdout600 summary.json",
+        2.256647864625302,
         exp24_late_effect_amplification("common_it"),
     ),
     ClaimCheck(
         "Qwen2.5-32B common-PT residual-state interaction",
-        "exp24 exp23_summary.json",
-        1.478458303507516,
+        "exp24 holdout600 summary.json",
+        1.3147954924874792,
         exp24_residual_effect("common_pt", "interaction", "estimate"),
     ),
     ClaimCheck(
         "Qwen2.5-32B position >=3 interaction",
-        "exp24_32b_position_sensitivity.csv",
-        1.0200537420382165,
+        "exp24_32b_holdout600_position_sensitivity.csv",
+        0.8491790254237288,
         exp24_position("step_ge3", "interaction", "estimate"),
     ),
     ClaimCheck(
         "Qwen2.5-32B position >=3 interaction CI low",
-        "exp24_32b_position_sensitivity.csv",
-        0.8526062400477707,
+        "exp24_32b_holdout600_position_sensitivity.csv",
+        0.6342690677966102,
         exp24_position("step_ge3", "interaction", "ci95_low"),
     ),
     ClaimCheck(
         "Qwen2.5-32B position >=5 interaction",
-        "exp24_32b_position_sensitivity.csv",
-        0.68567037470726,
+        "exp24_32b_holdout600_position_sensitivity.csv",
+        0.8430274566473989,
         exp24_position("step_ge5", "interaction", "estimate"),
     ),
     ClaimCheck(
         "Qwen2.5-32B position >=10 interaction",
-        "exp24_32b_position_sensitivity.csv",
-        0.8860554245283019,
+        "exp24_32b_holdout600_position_sensitivity.csv",
+        1.1804166666666667,
         exp24_position("step_ge10", "interaction", "estimate"),
     ),
     ClaimCheck(
-        "Qwen2.5-32B position >=3 content-fact interaction",
-        "exp24_32b_position_prompt_category_effects.csv",
-        1.4680316091954022,
-        exp24_position_prompt_category("step_ge3", "CONTENT-FACT", "interaction", "estimate"),
+        "Qwen2.5-32B GOV-CONV interaction",
+        "exp24_32b_holdout600_prompt_category_effects.csv",
+        1.1097916666666667,
+        exp24_position_prompt_category("all", "GOV-CONV", "interaction", "estimate"),
     ),
     ClaimCheck(
-        "Qwen2.5-32B position >=3 content-reason interaction",
-        "exp24_32b_position_prompt_category_effects.csv",
-        1.580105633802817,
-        exp24_position_prompt_category("step_ge3", "CONTENT-REASON", "interaction", "estimate"),
+        "Qwen2.5-32B GOV-FORMAT interaction",
+        "exp24_32b_holdout600_prompt_category_effects.csv",
+        1.8485416666666667,
+        exp24_position_prompt_category("all", "GOV-FORMAT", "interaction", "estimate"),
     ),
     ClaimCheck(
         "Qwen2.5-32B raw-KL IT-side interaction",

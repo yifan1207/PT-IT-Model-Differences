@@ -1,4 +1,4 @@
-# First-Divergence Model Diffing Reveals State-Conditioned Late Readout in Base-to-Instruct Language Models
+# Late-Stack Patches Do Not Fully Port: First-Divergence Model Diffing of Base-to-Instruct Language Models
 
 **Anonymous authors** | NeurIPS 2026 Submission
 
@@ -6,19 +6,19 @@
 
 ## Abstract
 
-Late-layer patching can localize base-to-instruct differences, but it can conflate late-stack writes with their portability across upstream states. We introduce **first-divergence model diffing**. At the first shared-history prefix where a base/instruct pair prefers different next tokens, we cross PT/IT upstream state with PT/IT late stack and score the IT-vs-PT token margin. The estimand decomposes late readout into portable and upstream-conditioned components. Across five dense core families, the IT late stack is partially portable (family-balanced `30.4%`; median `29.2%`, range `19.5-40.3%`) but mostly upstream-conditioned: the matched-context effect is `+1.71` logits (`3.3x`) larger from IT-shaped upstream state. Controls show the split is not explained by broken hybrids, selected-token support, or pre-late commitment. A same-base recipe control and two stage lineages show the interaction is not generic fine-tune compatibility and is partly present after SFT; a constrained-continuation bridge shows it persists beyond the selected token. Terminal crosscoders and boundary-state rescue provide the mechanistic bridge: a top causal feature subset mediates `26-48%`, is upstream-gated and partly driven by preterminal patches, while a rank-256 boundary projection rescues `0.71` of the missing margin. The result is a portable-vs-conditioned decomposition of late readout, not a fully portable late-only instruction module.
+Late-layer patching is often read as localizing what a post-trained model changed. But a late stack can look causal simply because it is paired with the upstream residual state it was trained to read. We test this portability directly in paired base/instruct models. At the first generated token where the base and instruct checkpoints disagree, we cross the upstream state and late stack from each model, then measure the instruct-token over base-token logit margin. Across five dense families on matched holdout support, the instruct late stack is only partly portable: `31.1%` of its matched-context effect transfers to base upstream state, while the matched instruct-upstream effect is `3.2x` larger, giving a `+1.68` logit interaction. Controls rule out broken hybrids, arbitrary token selection, and pre-late commitment; same-base recipe and released-stage checks show the pattern is not generic fine-tune compatibility. Constrained continuation shows the split persists beyond the selected token, and terminal crosscoders connect it to sparse MLP features that partially mediate the interaction. The result is a methodological warning and a model-diffing tool: late patches should not be interpreted as portable late-only mechanisms unless portability across upstream states is tested.
 
 ---
 
 ## 1. Introduction
 
-When an instruction-following checkpoint first chooses a different next token from its pretrained base, where in the forward pass does that difference become a logit? Paired base/instruct checkpoints make this question unusually clean: architecture and tokenizer are shared, but the released descendants differ after instruction tuning, preference optimization, reinforcement-style training, or a mixture of post-training stages. The object of study is therefore a **paired-checkpoint model diff**.
+Late-layer patching can answer where a base-to-instruct difference is expressed, but not whether that late computation ports across upstream states. When an instruction-following checkpoint first chooses a different next token from its pretrained base, where in the forward pass does that difference become a logit? Paired base/instruct checkpoints make this question unusually clean: architecture and tokenizer are shared, but the released descendants differ after instruction tuning, preference optimization, reinforcement-style training, or a mixture of post-training stages. The object of study is therefore a **paired-checkpoint model diff**.
 
 The tempting answer is "late layers." Late transformer computation is close to the unembedding, and prior work already makes late-stage refinement plausible: feed-forward layers promote vocabulary-space concepts (Geva et al., 2022b), late layers sharpen or calibrate predictions (Lad et al., 2025; Joshi et al., 2025), and instruction-tuned models show layer-structured task information (Zhao, Ziser, and Cohen, 2024). But ordinary late-layer patching leaves a crucial ambiguity. A late stack can look causal partly because it is paired with the upstream residual state it was trained to read, not because its effect would transfer unchanged as a late-only update.
 
 We test portability directly with **first-divergence model diffing**. For each prompt, we find the earliest generated position where PT and IT prefer different next tokens under the same generated history. Let those tokens be `t_PT` and `t_IT`. At that prefix, we cross upstream residual state (`U_PT` or `U_IT`) with downstream late stack (`L_PT` or `L_IT`) and measure `logit(t_IT) - logit(t_PT)`. The key estimand is a difference-in-differences: how much larger is the IT-minus-PT late-stack replacement effect when the upstream state is IT-shaped rather than PT-shaped?
 
-The answer is a partially portable but mostly upstream-conditioned late readout. Across the five-family core set, the IT late stack has a positive effect even from PT upstream, but the portable share is centered at `30.4%` family-balanced (`29.2%` median, `19.5-40.3%` range). The matched-context effect is `3.3x` larger, producing a `+1.71` logit interaction. The effect remains positive at generated positions `>=3`, under a common-PT readout, on a 32B family, under label-swap nulls, and under controls for pre-late token commitment, hybrid-state mismatch, and selected-token support.
+The answer is a partially portable but mostly upstream-conditioned late readout. Across the five-family core set, the IT late stack has a positive effect even from PT upstream, but the portable share is centered at `31.1%` family-balanced (`29.2%` median, `19.5-44.3%` range). The matched-context effect is `3.2x` larger, producing a `+1.68` logit interaction. The effect remains positive at generated positions `>=3`, under a common-PT readout, on a 32B family, under label-swap nulls, and under controls for pre-late token commitment, hybrid-state mismatch, and selected-token support.
 
 This matters for model diffing practice. A late patch should not be interpreted as a fully portable late-layer mechanism unless the late effect is tested under both native and foreign upstream states.
 
@@ -48,7 +48,7 @@ Prompt-bootstrap intervals quantify conditional precision on the sampled prompts
 | Qwen 3 4B | `Qwen3-4B-Base@906bfd4 -> Qwen3-4B@1cfa9a7` | holdout-600 | `600 -> 600` | `48.7% / 35.2% / 23.5%` | layers `22-35` |
 | Mistral 7B | `Mistral-7B-v0.3@caa1feb -> Instruct@c170c70` | holdout-600 | `600 -> 597` | `30.8% / 31.3% / 20.1%` | layers `19-31` |
 | OLMo 2 7B | `OLMo-2-1124-7B@7df9a82 -> Instruct@470b1fb` | holdout-600 | `600 -> 586` | `60.1% / 27.1% / 16.0%` | layers `19-31` |
-| Qwen2.5 32B | `Qwen2.5-32B@1818d35 -> Instruct@5ede1c9` | full-1400 | `1400 -> 1397` | `38.8% / 45.0% / 30.6%` | layers `38-63` |
+| Qwen2.5 32B | `Qwen2.5-32B@1818d35 -> Instruct@5ede1c9` | holdout-600 | `600 -> 599` | `46.4% / 39.4% / 28.9%` | layers `38-63` |
 
 All rows use raw-shared prompts, greedy top-1 first-divergence search with a real-token mask, and at most `128` generated tokens. Bootstrap unit is the prompt cluster within family. Appendix A gives prompt mixes and full revision pins; Appendix B gives the main effect audit and Appendix I gives artifact roots.
 
@@ -83,9 +83,9 @@ All raw-shared first-divergence and residual-state runs force both PT and IT bra
 
 ### 3.1 Main First-Divergence Factorial
 
-Prior work leaves three hypotheses open. **H1: fully portable late module** -- the IT-minus-PT late-stack effect should be about the same from PT and IT upstream (`~1x` amplification). **H2: no portable component** -- the IT late stack should do little from PT upstream. **H3: partially portable, upstream-conditioned readout** -- both effects should be positive, but the matched-context effect should be much larger. The factorial distinguishes these hypotheses directly.
+Prior work leaves three hypotheses open. **H1: late-only transfer story** -- the IT-minus-PT late-stack effect should be about the same from PT and IT upstream (`~1x` amplification). **H2: no portable component** -- the IT late stack should do little from PT upstream. **H3: partially portable, upstream-conditioned readout** -- both effects should be positive, but the matched-context effect should be much larger. The factorial distinguishes these hypotheses directly.
 
-At the first natural PT/IT disagreement, the Core-5 result supports H3. Replacing the PT late stack with the IT late stack shifts the IT-token margin by `+0.75` logits from PT upstream, but by `+2.46` logits from IT upstream. Thus the family-balanced portable share is `30.4%`, with family values from `19.5%` to `40.3%`; most of the matched-context effect is exposed only under IT-shaped upstream state. The `+1.71` logit gap means the matched-context effect is `3.3x` larger.
+At the first natural PT/IT disagreement, the Core-5 result supports H3. Replacing the PT late stack with the IT late stack shifts the IT-token margin by `+0.76` logits from PT upstream, but by `+2.44` logits from IT upstream. Thus the family-balanced portable share is `31.1%`, with family values from `19.5%` to `44.3%`; most of the matched-context effect is exposed only under IT-shaped upstream state. The `+1.68` logit gap means the matched-context effect is `3.2x` larger.
 
 The sign pattern is consistent across families: every Core-5 interaction is positive, ranging from `+1.25` to `+2.53` logits. The amplification scale is the cleanest magnitude reference because it compares the same late-stack replacement under two upstream states; Appendix B reports native-shift shares and family-level ranges.
 
@@ -95,11 +95,11 @@ The interaction is also not confined to response openings: generated position `>
 
 | Scope/readout | Late effect from PT upstream | Late effect from IT upstream | Portable share | Interaction | Amplification |
 |---|---:|---:|---:|---:|---:|
-| Core-5, common-IT | `+0.75` `[+0.67, +0.82]` | `+2.46` `[+2.36, +2.55]` | `30.4%` (`29.2%` median; `19.5-40.3%` range) | `+1.71` `[+1.64, +1.78]` | `3.3x` |
-| Core-5, common-PT | `+0.74` `[+0.67, +0.81]` | `+2.48` `[+2.38, +2.57]` | `29.9%` | `+1.74` `[+1.67, +1.81]` | `3.4x` |
-| Qwen2.5-32B only | `+0.98` `[+0.88, +1.08]` | `+2.42` `[+2.26, +2.59]` | `40.5%` | `+1.45` `[+1.32, +1.57]` | `2.5x` |
+| Core-5, common-IT | `+0.76` `[+0.68, +0.84]` | `+2.44` `[+2.34, +2.53]` | `31.1%` (`29.2%` median; `19.5-44.3%` range) | `+1.68` `[+1.60, +1.76]` | `3.2x` |
+| Core-5, common-PT | `+0.78` `[+0.72, +0.85]` | `+2.49` `[+2.40, +2.58]` | `31.5%` | `+1.70` `[+1.63, +1.78]` | `3.2x` |
+| Qwen2.5-32B only | `+1.04` `[+0.89, +1.17]` | `+2.34` `[+2.14, +2.55]` | `44.3%` | `+1.30` `[+1.14, +1.49]` | `2.3x` |
 
-On the local token-margin scale, `+1.71` logits is substantial: it multiplies the odds of `t_IT` over `t_PT` by about `5.5x` within the constructed contrast, and it is `34.6%` of the native PT->IT diagonal margin shift on the same support. This is still a token-level mechanistic quantity, not a deployment-level behavior estimate.
+On the local token-margin scale, `+1.68` logits is substantial: it multiplies the odds of `t_IT` over `t_PT` by about `5.4x` within the constructed contrast, and it is `33.7%` of the native PT->IT diagonal margin shift on the same support. This is still a token-level mechanistic quantity, not a deployment-level behavior estimate.
 
 This is the paper's central claim: at natural base/instruct disagreement points, the IT late stack is not a self-contained module whose full effect ports to any upstream state. It has a measurable portable component, but most of its matched-context effect is upstream-conditioned. On a factual/reasoning stress test, for example, the late-only effect from PT upstream is negative (`-1.18`), while the interaction remains positive (`+1.81`).
 
@@ -341,7 +341,7 @@ Prompt-bootstrap CIs in the main text are conditional precision estimates over s
 
 **Core-small support set.** Llama 3.1 8B, Qwen 3 4B, Mistral 7B, and OLMo 2 7B. Supporting identity/margin, terminal MLP, crosscoder, and KL analyses use this smaller-family scope unless explicitly marked otherwise. The Qwen2.5 32B pair is included in the main factorial and omitted from these support analyses for compute.
 
-**Prompt sets.** The holdout-600 prompt mix is `GOV-CONV/GOV-FORMAT/SAFETY = 300/150/150`. The full-1400 mix adds factual, reasoning, register, and baseline-easy prompts: `CONTENT-FACT/CONTENT-REASON/GOV-FORMAT/GOV-CONV/SAFETY/GOV-REGISTER/BASELINE-EASY = 300/200/250/300/150/100/100`.
+**Prompt set.** The Core-5 factorial uses the holdout-600 prompt mix: `GOV-CONV/GOV-FORMAT/SAFETY = 300/150/150`. The Qwen2.5 32B raw run was collected on a larger support, but the Core-5 synthesis restricts it to the same holdout mix (`599` valid events because one safety prompt has no first divergence).
 
 | Family | PT checkpoint | PT revision | IT checkpoint | IT revision | Notes |
 |---|---|---|---|---|---|
@@ -377,28 +377,28 @@ Main Core-5 effects:
 
 | Scope/readout | PT-up late effect | IT-up late effect | Interaction | Amplification | Portable share | Native shift | Interaction share |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| Core-5, common-IT | `+0.747` `[+0.673, +0.821]` | `+2.456` `[+2.364, +2.547]` | `+1.709` `[+1.637, +1.780]` | `3.3x` | `30.4%` | `+4.942` | `34.6%` |
-| Core-5, common-PT | `+0.740` `[+0.673, +0.807]` | `+2.477` `[+2.384, +2.570]` | `+1.737` `[+1.667, +1.807]` | `3.4x` | `29.9%` | `+4.996` | `34.8%` |
+| Core-5, common-IT | `+0.759` `[+0.682, +0.835]` | `+2.439` `[+2.344, +2.533]` | `+1.680` `[+1.604, +1.756]` | `3.2x` | `31.1%` | `+4.991` | `33.7%` |
+| Core-5, common-PT | `+0.784` `[+0.717, +0.850]` | `+2.488` `[+2.397, +2.578]` | `+1.704` `[+1.628, +1.780]` | `3.2x` | `31.5%` | `+5.051` | `33.7%` |
 
 Core-5 family-level common-IT interactions:
 
 | Family | Interaction | Native diagonal shift | Interaction share |
 |---|---:|---:|---:|
 | Llama 3.1 8B | `+1.253` | `+5.358` | `23.4%` |
-| Qwen2.5 32B | `+1.446` | `+3.751` | `38.6%` |
+| Qwen2.5 32B | `+1.302` | `+3.995` | `32.6%` |
 | Qwen 3 4B | `+1.464` | `+3.938` | `37.2%` |
 | OLMo 2 7B | `+1.847` | `+5.227` | `35.3%` |
 | Mistral 7B | `+2.534` | `+6.437` | `39.4%` |
 
 The Core-5 family interaction range is `+1.253` to `+2.534` logits, with median `+1.464`. Interaction share ranges from `23.4%` to `39.4%`.
 
-The portable-share family range is similarly heterogeneous. Under common-IT readout, `late_it_given_pt_upstream / late_it_given_it_upstream` ranges from `19.5%` to `40.3%`, with median `29.2%`; the Core-5 family-balanced center is `30.4%`. We therefore use `30.4%` as a center-of-mass summary, not as a constant across families.
+The portable-share family range is similarly heterogeneous. Under common-IT readout, `late_it_given_pt_upstream / late_it_given_it_upstream` ranges from `19.5%` to `44.3%`, with median `29.2%`; the Core-5 family-balanced center is `31.1%`. We therefore use `31.1%` as a center-of-mass summary, not as a constant across families.
 
 The Core-small label-swap null is computed from the compatibility-permutation synthesis in Appendix I.2.
 
 On the content/reasoning stress-test support, the late-only PT-upstream term is `-1.176` and the upstream x late interaction is `+1.812` (`[+1.721, +1.901]`).
 
-The Qwen2.5 32B scale-check artifacts are listed with the Core-5 synthesis roots in Appendix I.2.
+The Qwen2.5 32B scale-check artifacts include both the larger raw run and the matched-support holdout synthesis; Appendix I.2 lists both audit paths.
 
 ---
 
@@ -737,7 +737,7 @@ The Core-5 set covers dense transformer families only. It includes one Mistral f
 | Claim | Command/script family | Primary artifact |
 |---|---|---|
 | Core-5 upstream x late interaction | `scripts/analysis/build_exp23_core5_synthesis.py`; Core-5 figure generated from `exp23_core5_family_effects.csv` | `results/paper_synthesis/exp23_core5/exp23_core5_core_effects.csv`; `results/paper_synthesis/exp23_core5/exp23_core5_family_effects.csv`; `results/paper_synthesis/exp23_core5/exp23_core5_interaction.png` |
-| Core first-divergence raw mirrors | raw first-divergence collectors and analysis scripts | `gs://pt-vs-it-results/results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/`; `gs://pt-vs-it-results/results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/`; `results/exp24_32b_external_validity/exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/`; `results/paper_synthesis/exp24_32b_external_validity/` |
+| Core first-divergence raw mirrors | raw first-divergence collectors and analysis scripts | `gs://pt-vs-it-results/results/exp23_midlate_interaction_suite/exp23_dense5_full_h100x8_20260426_sh4_rw4/`; `gs://pt-vs-it-results/results/exp24_32b_external_validity/exp24_qwen25_32b_yanda_all_raw_20260428_101125.tar.zst`; `results/paper_synthesis/exp24_32b_external_validity/exp24_32b_holdout600_summary.json`; `results/paper_synthesis/exp24_32b_external_validity/exp24_32b_holdout600_position_sensitivity.csv` |
 | Position sensitivity | same plus `scripts/analysis/analyze_first_divergence_position_sensitivity.py` | `results/paper_synthesis/exp23_core5/exp23_core5_position_sensitivity.csv`; `results/paper_synthesis/exp23_position_sensitivity_table.csv` |
 | Label-swap null | `scripts/analysis/analyze_exp23_compatibility_permutation.py` | `results/paper_synthesis/exp23_core_small_compatibility_permutation/` |
 | Off-manifold sanity audit | `scripts/analysis/analyze_exp23_offmanifold_sanity.py` | `results/paper_synthesis/exp23_offmanifold_sanity/` |
