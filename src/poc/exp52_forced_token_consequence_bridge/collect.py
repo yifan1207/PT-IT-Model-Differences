@@ -549,11 +549,21 @@ def run_worker(args: argparse.Namespace) -> None:
     tokenizer.padding_side = "left"
     pt_id = model_id_for_variant(spec, "pt")
     pt_revision = revision_for_model_id(pt_id)
-    pt_tokenizer = AutoTokenizer.from_pretrained(
-        pt_id,
-        revision=pt_revision,
-        trust_remote_code=True,
-    )
+    try:
+        pt_tokenizer = AutoTokenizer.from_pretrained(
+            pt_id,
+            revision=pt_revision,
+            trust_remote_code=True,
+        )
+        pt_tokenizer_audit_error = None
+    except Exception as exc:
+        # The paper-primary operation is exact forcing in the IT tokenizer
+        # space. Some base anchors are gated even when the descendant tokenizer
+        # is already loaded and tokenizer-compatible; do not let this audit-only
+        # fetch kill the run.
+        log.warning("[exp52] PT tokenizer audit failed for %s; using IT tokenizer audit fallback: %s", pt_id, exc)
+        pt_tokenizer = tokenizer
+        pt_tokenizer_audit_error = f"{type(exc).__name__}: {exc}"
     real_token_mask = steering_adapter.real_token_mask(tokenizer, device, model).detach().bool()
     dataset_by_id = _dataset_lookup(args.dataset)
     effects = _load_effect_lookup(args.exp47_root, args.event_kind)
@@ -590,6 +600,7 @@ def run_worker(args: argparse.Namespace) -> None:
         "pt_vocab_size": len(pt_tokenizer),
         "it_vocab_size": len(tokenizer),
         "same_vocab_size": len(pt_tokenizer) == len(tokenizer),
+        "pt_tokenizer_audit_error": pt_tokenizer_audit_error,
     }
     for start in range(0, len(prepared), int(args.batch_size)):
         batch = prepared[start : start + int(args.batch_size)]
@@ -668,4 +679,3 @@ def main(args: argparse.Namespace) -> None:
         merge_workers(args.out_dir, args.model, args.n_workers)
         return
     run_worker(args)
-
