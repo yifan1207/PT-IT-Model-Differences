@@ -1,4 +1,4 @@
-# Late-Stack Patches Do Not Fully Port: First-Divergence Model Diffing of Base-to-Instruct Language Models
+# First-Divergence Model Diffing Reveals Upstream-Dependent Late-Layer Effects in Base-to-Instruct Models
 
 **Anonymous authors** | NeurIPS 2026 Submission
 
