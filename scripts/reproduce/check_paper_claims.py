@@ -1236,6 +1236,80 @@ def exp49_summary(*keys: str) -> NumberFn:
     return _read
 
 
+def exp50_summary(*keys: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp50_llm_judge_behavior_bridge/"
+            "exp50_openai_judge_requests_20260504_233946/"
+            "analysis_gpt52_sync/judge_summary.json",
+        )
+        value: Any = data
+        for key in keys:
+            value = value[key]
+        return float(value)
+
+    return _read
+
+
+def exp50_interaction(group: str, column: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp50_llm_judge_behavior_bridge/"
+            "exp50_openai_judge_requests_20260504_233946/"
+            "analysis_gpt52_sync/behavioral_interactions.csv",
+        )
+        for row in rows:
+            if row["group"] == group and row["metric"] == "behavioral_interaction":
+                return float(row[column])
+        raise KeyError((group, column))
+
+    return _read
+
+
+def exp50_pairwise(
+    comparison: str,
+    column: str = "estimate",
+    *,
+    metric: str = "target_win_tie_half",
+    group: str = "comparison",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp50_llm_judge_behavior_bridge/"
+            "exp50_openai_judge_requests_20260504_233946/"
+            "analysis_gpt52_sync/pairwise_winrates.csv",
+        )
+        for row in rows:
+            if (
+                row["group"] == group
+                and row["comparison"] == comparison
+                and row["metric"] == metric
+            ):
+                return float(row[column])
+        raise KeyError((group, comparison, metric, column))
+
+    return _read
+
+
+def exp50_order(group: str, column: str, kind: str = "primary") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp50_llm_judge_behavior_bridge/"
+            "exp50_openai_judge_requests_20260504_233946/"
+            "analysis_gpt52_sync/order_bias_audit.csv",
+        )
+        for row in rows:
+            if row["group"] == group and row["kind"] == kind:
+                return float(row[column])
+        raise KeyError((group, kind, column))
+
+    return _read
+
+
 def exp27_primary(variant: str, field: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -4074,6 +4148,171 @@ CHECKS: list[ClaimCheck] = [
             readout="common_pt",
             horizon=8,
         ),
+    ),
+    ClaimCheck(
+        "Exp50 judge response rows",
+        "exp50 judge_summary.json",
+        30047,
+        exp50_summary("n_response_rows"),
+    ),
+    ClaimCheck(
+        "Exp50 judge score rows",
+        "exp50 judge_summary.json",
+        30047,
+        exp50_summary("n_score_rows"),
+    ),
+    ClaimCheck(
+        "Exp50 judge invalid structured outputs",
+        "exp50 judge_summary.json",
+        0,
+        exp50_summary("n_invalid"),
+    ),
+    ClaimCheck(
+        "Exp50 positive control full PT-to-IT judged win rate",
+        "exp50 pairwise_winrates.csv",
+        0.6934106112073507,
+        exp50_pairwise("positive_control_full_pt_to_it"),
+    ),
+    ClaimCheck(
+        "Exp50 positive control full PT-to-IT judged win rate CI low",
+        "exp50 pairwise_winrates.csv",
+        0.6823969076268082,
+        exp50_pairwise("positive_control_full_pt_to_it", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp50 positive control full PT-to-IT judged win rate CI high",
+        "exp50 pairwise_winrates.csv",
+        0.7035937482135389,
+        exp50_pairwise("positive_control_full_pt_to_it", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp50 upstream-vs-late diagnostic judged win rate",
+        "exp50 pairwise_winrates.csv",
+        0.6535111918510597,
+        exp50_pairwise("upstream_vs_late_diagnostic"),
+    ),
+    ClaimCheck(
+        "Exp50 upstream-vs-late diagnostic judged win rate CI low",
+        "exp50 pairwise_winrates.csv",
+        0.643430123510401,
+        exp50_pairwise("upstream_vs_late_diagnostic", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp50 upstream-vs-late diagnostic judged win rate CI high",
+        "exp50 pairwise_winrates.csv",
+        0.6641583085025315,
+        exp50_pairwise("upstream_vs_late_diagnostic", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp50 same-text tie control",
+        "exp50 pairwise_winrates.csv",
+        1.0,
+        exp50_pairwise(
+            "same_text_tie_control",
+            metric="tie_or_neutral",
+        ),
+    ),
+    ClaimCheck(
+        "Exp50 overall behavioral interaction",
+        "exp50 behavioral_interactions.csv",
+        0.004723073418182816,
+        exp50_interaction("all"),
+    ),
+    ClaimCheck(
+        "Exp50 overall behavioral interaction CI low",
+        "exp50 behavioral_interactions.csv",
+        -0.008820570773469823,
+        exp50_interaction("all", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp50 overall behavioral interaction CI high",
+        "exp50 behavioral_interactions.csv",
+        0.018097574989426775,
+        exp50_interaction("all", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp50 instruction-like behavioral interaction",
+        "exp50 behavioral_interactions.csv",
+        0.004774163897575209,
+        exp50_interaction("recipe_group=instruction_like"),
+    ),
+    ClaimCheck(
+        "Exp50 instruction-like behavioral interaction CI low",
+        "exp50 behavioral_interactions.csv",
+        -0.00978844135223985,
+        exp50_interaction("recipe_group=instruction_like", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp50 instruction-like behavioral interaction CI high",
+        "exp50 behavioral_interactions.csv",
+        0.01955791709007467,
+        exp50_interaction("recipe_group=instruction_like", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp50 safety behavioral interaction",
+        "exp50 behavioral_interactions.csv",
+        0.07628472222222223,
+        exp50_interaction("category=SAFETY"),
+    ),
+    ClaimCheck(
+        "Exp50 safety behavioral interaction CI low",
+        "exp50 behavioral_interactions.csv",
+        0.04185286458333334,
+        exp50_interaction("category=SAFETY", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp50 safety behavioral interaction CI high",
+        "exp50 behavioral_interactions.csv",
+        0.11019140624999998,
+        exp50_interaction("category=SAFETY", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp50 GOV-FORMAT behavioral interaction",
+        "exp50 behavioral_interactions.csv",
+        0.014625434922563891,
+        exp50_interaction("category=GOV-FORMAT"),
+    ),
+    ClaimCheck(
+        "Exp50 GOV-FORMAT behavioral interaction CI low",
+        "exp50 behavioral_interactions.csv",
+        -0.0010826407123688006,
+        exp50_interaction("category=GOV-FORMAT", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp50 GOV-FORMAT behavioral interaction CI high",
+        "exp50 behavioral_interactions.csv",
+        0.030034721468718113,
+        exp50_interaction("category=GOV-FORMAT", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp50 GOV-CONV behavioral interaction",
+        "exp50 behavioral_interactions.csv",
+        -0.05153619528619529,
+        exp50_interaction("category=GOV-CONV"),
+    ),
+    ClaimCheck(
+        "Exp50 GOV-CONV behavioral interaction CI low",
+        "exp50 behavioral_interactions.csv",
+        -0.07915393518518518,
+        exp50_interaction("category=GOV-CONV", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp50 GOV-CONV behavioral interaction CI high",
+        "exp50 behavioral_interactions.csv",
+        -0.023612742003367007,
+        exp50_interaction("category=GOV-CONV", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp50 overall order resolved flip rate",
+        "exp50 order_bias_audit.csv",
+        0.11873315363881401,
+        exp50_order("all", "order_resolved_flip_rate"),
+    ),
+    ClaimCheck(
+        "Exp50 GOV-CONV order resolved flip rate",
+        "exp50 order_bias_audit.csv",
+        0.24120603015075376,
+        exp50_order("category=GOV-CONV", "order_resolved_flip_rate"),
     ),
     ClaimCheck(
         "Exp48 structured rescue boundary 29 paired PCA full closure",

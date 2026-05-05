@@ -1,4 +1,4 @@
-# First-Divergence Diffing of Base vs Instruct Models: Instruct Late-Stack Effects Are Mostly Upstream Readout
+# First-Divergence Diffing of Base vs Instruct Models: Instruct Late-Stack Readout Is Mostly Upstream-Conditioned
 
 **Anonymous authors** | NeurIPS 2026 Submission
 
@@ -6,7 +6,7 @@
 
 ## Abstract
 
-Late transformer layers do significant readout work — feed-forward layers promote vocabulary-space concepts (Geva et al., 2022) and the last layers sharpen the next-token distribution (Lad et al., 2024; Belrose et al., 2023). When a base model and its instruction-tuned descendant first prefer different next tokens, this makes late layers a tempting place to look for what changed. We show this is misleading. At the first generated token where the two checkpoints disagree, we cut the forward pass at a late boundary and run a 2x2: each cell pairs the upstream residual state from one checkpoint with the late stack from the other. Across five dense families spanning 4B-32B, only 31% of the instruct late stack's effect transfers to base upstream; under matched instruct upstream the same swap is 3.2x larger (+1.68 logits, positive in every family). The instruct late stack is mostly reading out upstream state it was co-trained with, not carrying the base-vs-instruct difference itself. Controls rule out broken hybrids, arbitrary token selection, and pre-late commitment; same-base recipe checks (an OpenMath2 fine-tune does not reproduce it) and two released stage lineages (Tulu-3, OLMo-2) show the split is recipe-structured, not generic fine-tune compatibility. Sparse terminal crosscoder features mediate 26-48% of the effect and are themselves driven by mid-to-preterminal computation; a rank-256 boundary-state shift closes 0.71 of the missing margin. Late patches in paired-checkpoint model diffs should therefore be tested under foreign upstream — most of what they appear to do is readout of upstream state, not localized late-layer computation.
+Base-to-instruct differences often become visible near the end of the transformer, where late layers sharpen next-token predictions. But expression late does not imply a portable late-only mechanism: the instruct late stack may be reading upstream state shaped by post-training. We test this directly with first-divergence model diffing. At the first generated token where a base checkpoint and its instruct descendant prefer different next tokens, we cross the upstream residual state and late stack from each checkpoint and score the instruct-token over base-token margin. Across five dense families from 4B to 32B, the instruct late stack is only partly portable: `31%` of its matched-context effect transfers to base upstream, while the same late-stack swap is `3.2x` larger under instruct upstream (`+1.68` logits; positive in every family). Controls rule out broken hybrids, arbitrary token selection, and pre-late commitment. Same-base recipe checks and two released stage lineages show the split is recipe-structured rather than generic fine-tune compatibility. Constrained continuation shows it persists beyond the selected token. Terminal crosscoders and boundary-state rescue then connect the window-level effect to a mid-to-late handoff: sparse terminal MLP features mediate `26-48%` of the terminal interaction, and mid-to-preterminal patches drive part of those features' effect. Late patches in paired-checkpoint model diffs should therefore be tested under foreign upstream state before being interpreted as localized late-layer mechanisms.
 
 
 ---
@@ -133,6 +133,8 @@ The Core-5 result compares released base checkpoints to released instruction-fol
 | OpenMath2 | `-0.358` `[-0.534, -0.181]` | domain-specialized control does not reproduce it |
 
 A constrained-continuation bridge shows that the recipe-specific split is not confined to the first token. After forcing the descendant-preferred divergent token, we teacher-force short native descendant/base continuations through the same four cells. For instruction-like descendants, the common-IT interaction grows from `+1.50` at `N=0` to `+2.71` over `N=8`, with `+0.193` logits/token tail-only persistence. A same-forced-descendant-tail control remains positive (`+2.46` at `N=8`), while shuffled descendant tails are much smaller (`+0.87`). OpenMath again behaves differently and is readout-sensitive at longer horizons, so we use this bridge for the instruction-like persistence claim rather than as a universal sequence-level recipe taxonomy.
+
+A blind short-completion judge audit gives a more behavior-facing but noisier check. It confirms that key intervention contrasts are behaviorally detectable: full PT-to-IT completions are judged more descendant-like (`0.693` win rate), and IT-shaped upstream beats a portable-IT-late-only comparison (`0.654`). The broad behavioral interaction is near zero overall (`+0.0047`), with a safety-specific positive interaction (`+0.076`). We therefore use the judge audit descriptively and keep constrained likelihood as the primary sequence-level bridge.
 
 Second, we ask whether the interaction appears all at once at the final checkpoint or is already visible along released post-training paths. We apply the same fixed-support factorial to two multi-stage lineages: Tulu-3 on Llama-3.1-8B and OLMo-2. In each case, the support is the Base->Final first-divergence set, and intermediate checkpoints are scored on the same `t_Base`/`t_Final` token contrast. This is a stage diagnostic, not causal attribution to a training algorithm.
 
@@ -307,7 +309,7 @@ The main text is written around stable claim names. For details, start with Appe
 | Minimal reproducibility snapshot | §2.1 | A, B, I | model registry, dataset manifests, raw first-divergence records |
 | Core-5 first-divergence interaction, amplification scale, and portable share | §3.1 | B | `results/paper_synthesis/exp23_core5/`; `scripts/analysis/build_exp23_core5_synthesis.py` |
 | Validation ladder | §3.2 | C | hybrid-state validation, random-disagreement baselines, token-support audit, pre-late commitment control |
-| Recipe, continuation, and released stage-lineage checks | §3.3 | G | same-base Llama recipe control; constrained continuation bridge; fixed-support Tulu-3 and OLMo-2 Base/SFT/DPO/Final stage sweeps |
+| Recipe, continuation, behavior-audit, and released stage-lineage checks | §3.3 | G | same-base Llama recipe control; constrained continuation bridge; blind short-completion judge audit; fixed-support Tulu-3 and OLMo-2 Base/SFT/DPO/Final stage sweeps |
 | Depth and terminal anatomy | §3.4 | D | identity/margin handoff, terminal-depth audit, terminal MLP audit |
 | Terminal feature mediation, upstream-conditioning, rescue, structured boundary-state rescue, handoff, and structure-bucket validation | §3.4 | E | terminal crosscoder synthesis, hardening runs, upstream-conditioning audit, feature rescue, structured boundary-state rescue, preterminal handoff, autointerp taxonomy, structure-readout edit |
 | Late refinement/readout signatures | §3.5 | F | endpoint-matched KL, late MLP random controls |
@@ -322,7 +324,7 @@ Prompt-bootstrap CIs in the main text are conditional precision estimates over s
 | D | Depth anatomy: middle windows are relatively more identity-selective while late/terminal windows are more margin-sensitive. | A complete circuit or a unique layer boundary. |
 | E | Sparse terminal features and structured boundary-state shifts partially mediate, gate, and rescue the terminal readout interaction. | Full mechanism recovery, recipe-unique boundary directions, or feature monosemanticity. |
 | F | Late/terminal windows were a motivated target. | The upstream-conditioned mechanism itself. |
-| G | Same-base recipe control, constrained continuation scoring, and two released dense lineages show specificity beyond generic fine-tune compatibility, a one-token artifact, or one final checkpoint accident. | Isolated causal attribution to SFT, DPO, or RLVR algorithms, or natural-rollout behavior for every recipe. |
+| G | Same-base recipe control, constrained continuation scoring, a blind short-completion judge audit, and two released dense lineages show specificity beyond generic fine-tune compatibility, a one-token artifact, or one final checkpoint accident. | Isolated causal attribution to SFT, DPO, or RLVR algorithms, broad completion-level behavioral interaction, or natural-rollout behavior for every recipe. |
 | H | Dense-family scope and MoE limitations are explicit. | MoE generalization. |
 | I | Reviewer-facing reproduction levels and artifact roots. | That full raw GPU reruns are cheap. |
 
@@ -618,15 +620,15 @@ The dense-family true late random-control comparison is `+0.327` (`[+0.298, +0.3
 
 ---
 
-## Appendix G: Recipe, Continuation, and Released Stage-Lineage Checks
+## Appendix G: Recipe, Continuation, Behavior-Audit, and Released Stage-Lineage Checks
 
 **Claim supported.** The interaction is not merely generic fine-tune compatibility or a one-token artifact, and fixed-support versions appear coherently along two released dense post-training lineages.
 
-**Primary evidence.** On the same Llama-3.1-8B base, instruction-like descendants show positive interaction on instruction/format supports while OpenMath2 does not. A constrained continuation bridge shows the instruction-like interaction persists beyond the selected first token. On Base->Final support, Tulu-3 and OLMo-2 both show partial SFT presence and near-final DPO/preference-checkpoint interaction.
+**Primary evidence.** On the same Llama-3.1-8B base, instruction-like descendants show positive interaction on instruction/format supports while OpenMath2 does not. A constrained continuation bridge shows the instruction-like interaction persists beyond the selected first token. A blind short-completion judge audit detects key intervention contrasts while showing broad judged interaction is category-dependent. On Base->Final support, Tulu-3 and OLMo-2 both show partial SFT presence and near-final DPO/preference-checkpoint interaction.
 
-**What this does not prove.** These are token-factorial recipe, constrained-likelihood, and cumulative checkpoint comparisons, not isolated causal attributions to training algorithms or natural-rollout guarantees for each recipe.
+**What this does not prove.** These are token-factorial recipe, constrained-likelihood, blind-judge, and cumulative checkpoint comparisons, not isolated causal attributions to training algorithms, broad completion-level behavioral interaction, or natural-rollout guarantees for each recipe.
 
-**Where to audit.** Recipe-specificity, constrained-continuation, and stage-sweep artifacts are listed in Appendix I.2.
+**Where to audit.** Recipe-specificity, constrained-continuation, blind-judge, and stage-sweep artifacts are listed in Appendix I.2.
 
 ### G.1 Same-Base Recipe Specificity
 
@@ -660,7 +662,17 @@ Controls keep the interpretation local. At `N=8`, the same-forced-descendant-tai
 
 OpenMath2 again has a different profile. On math-domain support, the common-IT interaction is near zero at `N=0` and negative at `N=8` (`-4.67` `[-5.52, -3.82]`), while common-PT becomes positive by `N=8` (`+1.81` `[+0.98, +2.61]`). We use this as a readout-sensitive diagnostic for recipe specificity, not as a universal sequence-level taxonomy of fine-tunes.
 
-### G.3 Tulu-3 Fixed-Support Stage Sweep
+### G.3 Blind Short-Completion Judge Audit
+
+The blind judge audit is a deliberately weaker behavioral bridge than the constrained-likelihood analysis above. For short generated completions from the same intervention cells, a structured `gpt-5.2` pairwise judge chooses which completion is more descendant-like; ties or unclear judgments count as `0.5`, and all primary comparisons are order-balanced. This audit asks whether the hybrid cells are behaviorally distinguishable, not whether the logit interaction directly becomes a broad natural-rollout effect.
+
+The data-quality checks pass: `30,047/30,047` judge requests produced valid structured outputs after retry, and same-text controls are judged tie/neutral `100%` of the time. The full PT-to-IT positive control is strong (`0.693` `[0.682, 0.704]`), so the judge can detect the released checkpoint contrast. The upstream-vs-late diagnostic is also positive (`0.654` `[0.643, 0.664]`), meaning IT-shaped upstream state generally matters more for judged completions than a portable IT-late-stack-only comparison.
+
+The broad behavioral interaction itself is not a headline win. Overall it is `+0.0047` `[-0.0088, +0.0181]`; on the instruction-like slice it is `+0.0048` `[-0.0098, +0.0196]`. Category-level effects are mixed: safety is positive (`+0.076` `[+0.042, +0.110]`), GOV-FORMAT is small and marginal (`+0.0146` `[-0.0011, +0.0300]`), and GOV-CONV is negative (`-0.052` `[-0.079, -0.024]`). We therefore use this audit descriptively: it validates detectability and a safety-specific behavioral bridge, while the primary sequence-level claim remains the fixed-prefix and constrained-likelihood evidence.
+
+LLM judging remains prompt- and order-sensitive. The resolved order-flip rate is `11.9%` overall and `24.1%` for GOV-CONV. Order-balanced aggregation, same-text tie controls, and released judge prompts/manifests mitigate this concern, but do not turn the audit into primary causal evidence.
+
+### G.4 Tulu-3 Fixed-Support Stage Sweep
 
 The primary Tulu analysis fixes the support to Base->Final first-divergence prefixes for the Llama-3.1-8B Base and Tulu-3 final checkpoint, then scores SFT, DPO, and Final on the same `t_Base`/`t_Final` contrast. The checkpoints share architecture; Tulu adds special tokens, so the preflight validates identical raw prompt token IDs and rejects target tokens outside the shared base vocabulary.
 
@@ -683,7 +695,7 @@ Two base-anchored support checks ask whether the Base->Final support is doing th
 | Base->SFT | `564/600` | `+0.401` | `+1.146` | `+1.322` |
 | Base->DPO | `583/600` | `+0.427` | `+1.241` | `+1.436` |
 
-### G.4 OLMo-2 Fixed-Support Stage Sweep
+### G.5 OLMo-2 Fixed-Support Stage Sweep
 
 The primary fixed-support sweep fixes the support to Base->RLVR first-divergence prefixes and scores every intermediate checkpoint against the same `t_Base`/`t_RLVR` contrast. This makes SFT, DPO, and RLVR cumulative estimates comparable on the same local support. The older adjacent-pair analysis is retained only as historical motivation because each adjacent contrast uses its own first-divergence support and token labels; those adjacent estimates are useful local contrasts, but they are not additive attributions to the final Base->RLVR contrast.
 
@@ -760,6 +772,7 @@ The Core-5 set covers dense transformer families only. It includes one Mistral f
 | Structure-readout bucket validation | `src/poc/exp41_causal_feature_bucket_steering/`; structure-readout analysis outputs | `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/exp41_logit_replay_summary.json`; `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/analysis/bucket_effects_by_model.csv`; `results/exp41_causal_feature_bucket_steering/exp41_terminal_bucket_logit_full_h100x8_20260503_1520/bucket_manifest/strict_primary/bucket_features.csv` |
 | Same-base recipe specificity | `src/poc/exp47_same_base_recipe_specificity/`; `scripts/analysis/analyze_exp47_same_base_recipe_specificity.py` | `results/exp47_same_base_recipe_specificity/exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/summary.json`; `results/exp47_same_base_recipe_specificity/exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/portable_coadapted_table.csv`; `results/exp47_same_base_recipe_specificity/exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/matched_support_effects.csv`; `results/exp47_same_base_recipe_specificity/exp47_same_base_recipe_specificity_20260504_0959_a100x24/analysis/recipe_domain_two_panel.png` |
 | Constrained continuation bridge | `src/poc/exp49_constrained_continuation_bridge/`; Exp49 horizon analysis outputs | `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/summary.json`; `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/aggregate_effects.csv`; `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/sequence_effects.csv`; `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/plots/exp49_cumulative_interaction.png`; `results/exp49_constrained_continuation_bridge/exp49_full_20260504_223652_a100x8/analysis/plots/exp49_tail_interaction.png` |
+| Blind short-completion judge audit | Exp50 judge request/scoring outputs | `results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946/analysis_gpt52_sync/judge_summary.json`; `results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946/analysis_gpt52_sync/behavioral_interactions.csv`; `results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946/analysis_gpt52_sync/pairwise_winrates.csv`; `results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946/analysis_gpt52_sync/order_bias_audit.csv`; `results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946/openai_batch_input_gpt52_full.jsonl`; `results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946/judge_requests.jsonl` |
 | Tulu fixed-support stage sweep | `src/poc/exp46_tulu_fixed_support_stage_sweep/`; Exp46 analysis outputs | `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/summary.json`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/effects.csv`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/stage_fraction_ratios.csv`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_a100x8_localdisk_20260504_103624/analysis/exp46_stage_decomposition.png`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_base_to_S_a100x8_localdisk_20260504_104959/analysis/summary.json`; `results/exp46_tulu_fixed_support_stage_sweep/exp46_full_base_to_D_a100x8_localdisk_20260504_105605/analysis/summary.json` |
 | OLMo fixed-support stage sweep | `scripts/analysis/analyze_exp35_olmo_base_anchored_stage_decomposition.py`; `scripts/analysis/build_exp35_stage_ratio_bootstrap.py` | `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/summary.json`; `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/effects.csv`; `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/stage_ratio_bootstrap.csv`; `results/exp35_olmo_base_anchored_stage_decomposition/exp35_full_olmo_stage_8a100_20260502_2300/analysis/exp35_stage_decomposition.png` |
 
