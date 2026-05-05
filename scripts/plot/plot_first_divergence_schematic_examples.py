@@ -14,6 +14,7 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 
 REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "results/paper_synthesis/first_divergence_schematic_examples.png"
+OUT_PDF = REPO / "results/paper_synthesis/first_divergence_schematic_examples.pdf"
 DENSE5_RECORD_ROOT = (
     REPO
     / "results/exp23_midlate_interaction_suite/"
@@ -66,7 +67,18 @@ def load_example(model: str, label: str, prompt_id: str, dataset: dict[str, dict
     raise KeyError((model, prompt_id))
 
 
-def box(ax, xy, text, *, width=0.17, height=0.12, fc="#f7f7f4", ec="#333333", size=9):
+def box(
+    ax,
+    xy,
+    text,
+    *,
+    width=0.17,
+    height=0.12,
+    fc="#f7f7f4",
+    ec="#333333",
+    size=9,
+    weight="normal",
+):
     x, y = xy
     patch = FancyBboxPatch(
         (x, y),
@@ -78,7 +90,15 @@ def box(ax, xy, text, *, width=0.17, height=0.12, fc="#f7f7f4", ec="#333333", si
         facecolor=fc,
     )
     ax.add_patch(patch)
-    ax.text(x + width / 2, y + height / 2, text, ha="center", va="center", fontsize=size)
+    ax.text(
+        x + width / 2,
+        y + height / 2,
+        text,
+        ha="center",
+        va="center",
+        fontsize=size,
+        weight=weight,
+    )
 
 
 def arrow(ax, start, end):
@@ -102,44 +122,50 @@ def draw_schematic(ax):
     ax.text(
         0.0,
         0.88,
-        "Same raw prompt and generated prefix. The readout is Y = logit(t_IT) - logit(t_PT).",
+        r"Same raw prompt and generated prefix. Readout: $Y=\mathrm{logit}(t_{\mathrm{IT}})-\mathrm{logit}(t_{\mathrm{PT}})$.",
         fontsize=9,
         color="#444444",
     )
 
-    box(ax, (0.02, 0.54), "shared\nprefix", width=0.14, height=0.13, fc="#eef2f7")
-    box(ax, (0.25, 0.66), "U_PT", width=0.12, height=0.09, fc="#f5efe6")
-    box(ax, (0.25, 0.42), "U_IT", width=0.12, height=0.09, fc="#e8f2eb")
-    box(ax, (0.47, 0.72), "L_PT", width=0.12, height=0.08, fc="#f5efe6")
-    box(ax, (0.47, 0.58), "L_IT", width=0.12, height=0.08, fc="#e8f2eb")
-    box(ax, (0.47, 0.48), "L_PT", width=0.12, height=0.08, fc="#f5efe6")
-    box(ax, (0.47, 0.34), "L_IT", width=0.12, height=0.08, fc="#e8f2eb")
+    prefix_x, prefix_y, prefix_w, prefix_h = 0.02, 0.31, 0.14, 0.45
+    box(
+        ax,
+        (prefix_x, prefix_y),
+        "shared\nprefix",
+        width=prefix_w,
+        height=prefix_h,
+        fc="#eef2f7",
+        size=9,
+        weight="bold",
+    )
 
-    for y in [0.705, 0.61]:
-        arrow(ax, (0.16, 0.605), (0.25, y))
-    for y in [0.465, 0.38]:
-        arrow(ax, (0.16, 0.605), (0.25, y))
-    arrow(ax, (0.37, 0.705), (0.47, 0.76))
-    arrow(ax, (0.37, 0.705), (0.47, 0.62))
-    arrow(ax, (0.37, 0.465), (0.47, 0.52))
-    arrow(ax, (0.37, 0.465), (0.47, 0.38))
-
-    outputs = [
-        (0.70, 0.72, "Y(U_PT,L_PT)"),
-        (0.70, 0.58, "Y(U_PT,L_IT)"),
-        (0.70, 0.48, "Y(U_IT,L_PT)"),
-        (0.70, 0.34, "Y(U_IT,L_IT)"),
+    rows = [
+        (0.69, r"$U_{\mathrm{PT}}$", "#f5efe6", r"$L_{\mathrm{PT}}$", "#f5efe6", r"$Y(U_{\mathrm{PT}},L_{\mathrm{PT}})$"),
+        (0.56, r"$U_{\mathrm{PT}}$", "#f5efe6", r"$L_{\mathrm{IT}}$", "#e8f2eb", r"$Y(U_{\mathrm{PT}},L_{\mathrm{IT}})$"),
+        (0.43, r"$U_{\mathrm{IT}}$", "#e8f2eb", r"$L_{\mathrm{PT}}$", "#f5efe6", r"$Y(U_{\mathrm{IT}},L_{\mathrm{PT}})$"),
+        (0.30, r"$U_{\mathrm{IT}}$", "#e8f2eb", r"$L_{\mathrm{IT}}$", "#e8f2eb", r"$Y(U_{\mathrm{IT}},L_{\mathrm{IT}})$"),
     ]
-    for x, y, label in outputs:
-        box(ax, (x, y), label, width=0.19, height=0.08, fc="#ffffff", size=8)
-        arrow(ax, (0.59, y + 0.04), (x, y + 0.04))
+    u_x, l_x, y_x = 0.25, 0.45, 0.67
+    w_u, w_l, w_y, h = 0.13, 0.13, 0.26, 0.075
+    for y, u_label, u_fc, l_label, l_fc, out_label in rows:
+        center = y + h / 2
+        box(ax, (u_x, y), u_label, width=w_u, height=h, fc=u_fc, size=10)
+        box(ax, (l_x, y), l_label, width=w_l, height=h, fc=l_fc, size=10)
+        box(ax, (y_x, y), out_label, width=w_y, height=h, fc="#ffffff", size=8.4)
+        arrow(ax, (prefix_x + prefix_w, center), (u_x, center))
+        arrow(ax, (u_x + w_u, center), (l_x, center))
+        arrow(ax, (l_x + w_l, center), (y_x, center))
+
+    ax.text(0.255, 0.79, "upstream state", fontsize=8.5, color="#555555", ha="center")
+    ax.text(0.515, 0.79, "late stack", fontsize=8.5, color="#555555", ha="center")
+    ax.text(0.80, 0.79, "scored margin", fontsize=8.5, color="#555555", ha="center")
 
     ax.text(
         0.02,
         0.13,
-        "interaction = [Y(U_IT,L_IT) - Y(U_IT,L_PT)] - [Y(U_PT,L_IT) - Y(U_PT,L_PT)]",
-        fontsize=9,
-        family="monospace",
+        r"interaction = [$Y(U_{\mathrm{IT}},L_{\mathrm{IT}})-Y(U_{\mathrm{IT}},L_{\mathrm{PT}})$]"
+        r" - [$Y(U_{\mathrm{PT}},L_{\mathrm{IT}})-Y(U_{\mathrm{PT}},L_{\mathrm{PT}})$]",
+        fontsize=8.4,
         color="#222222",
     )
     ax.text(
@@ -193,7 +219,9 @@ def main() -> None:
     fig.patch.set_facecolor("white")
     fig.tight_layout(pad=1.4)
     fig.savefig(OUT, dpi=220, bbox_inches="tight")
+    fig.savefig(OUT_PDF, bbox_inches="tight")
     print(OUT)
+    print(OUT_PDF)
 
 
 if __name__ == "__main__":
