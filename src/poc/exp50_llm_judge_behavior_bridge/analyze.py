@@ -28,6 +28,18 @@ def _iter_jsonl(path: Path) -> Iterable[dict[str, Any]]:
                 yield json.loads(line)
 
 
+def _latest_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    rows_by_id: dict[str, dict[str, Any]] = {}
+    fallback_rows: list[dict[str, Any]] = []
+    for row in _iter_jsonl(path):
+        request_id = row.get("request_id")
+        if request_id is None:
+            fallback_rows.append(row)
+        else:
+            rows_by_id[str(request_id)] = row
+    return [*rows_by_id.values(), *fallback_rows]
+
+
 def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
@@ -345,7 +357,7 @@ def _plot_interactions(rows: list[dict[str, Any]], out_path: Path) -> None:
 
 
 def analyze(*, responses: Path, out_dir: Path, models: list[str], n_boot: int) -> dict[str, Any]:
-    raw_rows = list(_iter_jsonl(responses))
+    raw_rows = _latest_jsonl_rows(responses)
     score_rows = [_score_row(row) for row in raw_rows]
     aggregate_rows = _aggregate_orders(score_rows)
     effect_rows = _effect_rows(aggregate_rows, models=models, n_boot=n_boot)
@@ -448,4 +460,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
