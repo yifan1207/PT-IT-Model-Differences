@@ -78,7 +78,6 @@ SUPPLEMENT_JSON_KEY_EXCLUDE_SUBSTRINGS = (
 )
 
 STATIC_SUPPLEMENT_FILES = [
-    "paper_draft/PAPER_DRAFT_v25.md",
     "scripts/reproduce/check_paper_claims.py",
     "scripts/reproduce/reproduce_minimal.sh",
     "scripts/reproduce/check_minimal_shard.py",
@@ -664,8 +663,6 @@ here; they are part of the main PDF.
 
 ## Contents
 
-- `paper/`: generated LaTeX source, NeurIPS style file, filled checklist, and local figure assets.
-- `paper_draft/PAPER_DRAFT_v25.md`: source Markdown used to generate the PDF.
 - `results/`: compact JSON/CSV summaries and paper-facing plots.
 - `scripts/`: CPU claim checker plus analysis/plot scripts.
 - `src/poc/`: selected experiment packages for the feature/recipe/continuation analyses.
@@ -695,13 +692,6 @@ def stage_supplement(validation: dict[str, object]) -> None:
     if SUPP_STAGE.exists():
         shutil.rmtree(SUPP_STAGE)
     SUPP_STAGE.mkdir(parents=True)
-
-    for path in [BUILD_DIR / "main.tex", BUILD_DIR / "body.tex", BUILD_DIR / "body.md", BUILD_DIR / "checklist_filled.tex", BUILD_DIR / "neurips_2026.sty"]:
-        copy_sanitized(path, SUPP_STAGE, f"paper/{path.name}")
-    for figure in (BUILD_DIR / "figures").glob("*"):
-        if figure.is_file():
-            copy_sanitized(figure, SUPP_STAGE, f"paper/figures/{figure.name}")
-    copy_sanitized(PDF_OUT, SUPP_STAGE, "paper/neurips2026_main.pdf")
 
     for relpath in STATIC_SUPPLEMENT_FILES:
         copy_sanitized(REPO / relpath, SUPP_STAGE)

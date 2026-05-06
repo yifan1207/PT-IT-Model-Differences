@@ -481,18 +481,18 @@ Random local disagreements are later and more content-token-heavy than first div
 
 ### C.3 Pre-Late Logit-Commitment Control
 
-The support-run control restricts to events where the IT boundary readout does not yet favor `t_IT`, bins events by IT boundary margin, and fits boundary-margin controls. In all three views the interaction remains positive. This rules out the simplest "the late stack is irrelevant because the boundary already committed" reading without promoting these support-run magnitudes to Core-5 headline estimates.
+The support-run control restricts to events where the IT boundary readout does not yet favor $t_{\mathrm{IT}}$, bins events by IT boundary margin, and fits boundary-margin controls. In all three views the interaction remains positive. This rules out the simplest "the late stack is irrelevant because the boundary already committed" reading without promoting these support-run magnitudes to Core-5 headline estimates.
 
 ### C.4 Native-History Local-Disagreement Check
 
-This check drops the shared-history first-divergence support. For each prompt, we greedily generate a native PT or IT history, take fixed horizons `h in {4,8,16}`, keep horizons where the two checkpoints disagree on the next token at that native prefix, and run the same four-cell late-stack factorial. The run covers four smaller non-Gemma dense families (Llama, Qwen3, Mistral, OLMo); all `3000` prompt rows are valid and diagonal no-op patch deltas are `0.0`.
+This check drops the shared-history first-divergence support. For each prompt, we greedily generate a native PT or IT history, take fixed horizons $h\in\{4,8,16\}$, keep horizons where the two checkpoints disagree on the next token at that native prefix, and run the same four-cell late-stack factorial. The run covers four smaller non-Gemma dense families (Llama, Qwen3, Mistral, OLMo); all `3000` prompt rows are valid and diagonal no-op patch deltas are `0.0`.
 
 **Table C.4: Native-history local-disagreement check.**
 
 | Native-history support | Interaction | Events / prompt clusters | Family sign |
 |---|---:|---:|---:|
-| IT history, `h=4,8,16` | `+1.514` `[+1.418, +1.607]` | `2035 / 1466` | `4/4` |
-| PT history mirror, `h=4,8,16` | `+1.490` `[+1.334, +1.646]` | `551 / 355` | `4/4` |
+| IT history, $h=4,8,16$ | `+1.514` `[+1.418, +1.607]` | `2035 / 1466` | `4/4` |
+| PT history mirror, $h=4,8,16$ | `+1.490` `[+1.334, +1.646]` | `551 / 355` | `4/4` |
 
 Because the PT-history mirror is also strongly positive, the claim is native-history/local-disagreement generalization rather than IT-history specificity. This does not turn the estimand into a deployment-level behavior measure; it shows that the upstream-conditioned late-readout pattern is not confined to the first shared-history disagreement.
 
@@ -516,7 +516,7 @@ Main depth-anatomy quantities:
 |---|---:|---:|---:|---|
 | PT host: IT-token identity transfer | - | `25.6%` | `18.8%` | Middle substitutions transfer candidate identity more often. |
 | IT host: PT-token identity transfer | - | `28.2%` | `21.5%` | Mirror direction gives the same identity pattern. |
-| Pure IT MLP support for `t_IT` | `-0.085` | `+0.136` | `+0.986` | Native IT-token support is late-concentrated. |
+| Pure IT MLP support for $t_{\mathrm{IT}}$ | `-0.085` | `+0.136` | `+0.986` | Native IT-token support is late-concentrated. |
 | PT-host late MLP margin gain | - | - | `+0.004` | Late MLP updates alone are near zero in PT upstream state. |
 | Source decomposition interaction | - | - | `+0.360` | MLP-level readout also shows context gating. |
 
@@ -538,11 +538,11 @@ In the Core-small support set, the final-three stack retains `52%` of the same-p
 
 For a feature set `S`, the mediation table uses the same four-cell interaction as the main cross-patching result. Let
 
-`I_full = [Y(U_IT,L_IT) - Y(U_IT,L_PT)] - [Y(U_PT,L_IT) - Y(U_PT,L_PT)]`.
+$$I_{\mathrm{full}}=[Y(U_{\mathrm{IT}},L_{\mathrm{IT}})-Y(U_{\mathrm{IT}},L_{\mathrm{PT}})]-[Y(U_{\mathrm{PT}},L_{\mathrm{IT}})-Y(U_{\mathrm{PT}},L_{\mathrm{PT}})].$$
 
-We ablate `S` only in the two cells that use the IT terminal stack, `U_IT,L_IT` and `U_PT,L_IT`, leaving the two PT-late cells unchanged, and recompute the interaction as `I_ablate(S)`. The reported top-200 drop is therefore:
+We ablate $S$ only in the two cells that use the IT terminal stack, $(U_{\mathrm{IT}},L_{\mathrm{IT}})$ and $(U_{\mathrm{PT}},L_{\mathrm{IT}})$, leaving the two PT-late cells unchanged, and recompute the interaction as $I_{\mathrm{ablate}}(S)$. The reported top-200 drop is therefore:
 
-`interaction_drop(S) = I_full - I_ablate(S)`.
+$$\mathrm{interaction\_drop}(S)=I_{\mathrm{full}}-I_{\mathrm{ablate}}(S).$$
 
 The displayed share is `interaction_drop(S) / I_full`, computed from the family-level mean interaction and mean drop in this mediation replay. It is not a single-cell ablation divided by a difference-in-differences. The later causal-gate audit is a separate upstream-conditioning stress test and is not a replacement numerator for this mediated fraction.
 
@@ -570,9 +570,9 @@ The artifact report includes mediation curves that sweep the number of ablated c
 
 The same feature sets show upstream-conditioned causal importance in a separate hardening audit.
 
-For the same causally ranked terminal features, we compare ablation effects in the `U_IT,L_IT` and `U_PT,L_IT` cells. The primary feature causal gate is:
+For the same causally ranked terminal features, we compare ablation effects in the $(U_{\mathrm{IT}},L_{\mathrm{IT}})$ and $(U_{\mathrm{PT}},L_{\mathrm{IT}})$ cells. The primary feature causal gate is:
 
-`[drop when ablating features in U_IT,L_IT] - [drop when ablating features in U_PT,L_IT]`.
+$$\mathrm{drop}_{U_{\mathrm{IT}},L_{\mathrm{IT}}}-\mathrm{drop}_{U_{\mathrm{PT}},L_{\mathrm{IT}}}.$$
 
 Positive values mean the feature set matters more when the IT terminal stack receives IT-shaped upstream state. These gate values are not used as mediated-share numerators. They are recomputed in the Exp42 upstream-conditioning audit with its own event support and direct feature-ablation protocol, so their absolute magnitudes need not equal the Table E.1 interaction drops. The paper-facing use is the sign and the matched-control comparison. At top-200 features:
 
@@ -601,11 +601,11 @@ Raw decoder-weighted activation mass is not uniformly higher under IT-shaped ups
 
 The rescue analysis tests a partial-sufficiency version of the same feature-level story. It runs on the three clean rescue families with quality-gated terminal crosscoders (Llama, Mistral, Qwen). OLMo is excluded because its current terminal crosscoder does not pass the reconstruction-quality gate needed for faithful feature-space rescue edits.
 
-The edit takes the top-200 causal terminal feature activations from the native `U_IT,L_IT` pass and patches them into the `U_PT,L_IT` hybrid, decoded through the IT branch of the paired PT/IT crosscoder. The metric is rescued IT-token margin:
+The edit takes the top-200 causal terminal feature activations from the native $(U_{\mathrm{IT}},L_{\mathrm{IT}})$ pass and patches them into the $(U_{\mathrm{PT}},L_{\mathrm{IT}})$ hybrid, decoded through the IT branch of the paired PT/IT crosscoder. The metric is rescued IT-token margin:
 
-`Y(U_PT,L_IT + rescued features) - Y(U_PT,L_IT)`.
+$$Y(U_{\mathrm{PT}},L_{\mathrm{IT}}+\mathrm{rescued\ features})-Y(U_{\mathrm{PT}},L_{\mathrm{IT}}).$$
 
-These rescue rows are absolute logit gains. Rescue fractions divide the gain by the missing margin, `Y(U_IT,L_IT) - Y(U_PT,L_IT)`, so they are not the same unit as the logit-gain rows.
+These rescue rows are absolute logit gains. Rescue fractions divide the gain by the missing margin, $Y(U_{\mathrm{IT}},L_{\mathrm{IT}})-Y(U_{\mathrm{PT}},L_{\mathrm{IT}})$, so they are not the same unit as the logit-gain rows.
 
 **Table E.5: Terminal feature rescue.**
 
@@ -618,16 +618,16 @@ These rescue rows are absolute logit gains. Rescue fractions divide the gain by 
 | Causal minus same-delta-random rescue | `+0.471` | `[+0.427, +0.517]` |
 | Causal minus same-delta-random rescue fraction | `8.3%` | `[5.7%, 10.6%]` |
 
-Per-family direct rescue is Llama `+0.627`, Mistral `+0.755`, and Qwen `+0.101` logits. The `alpha=0` no-edit sanity check is exact (`max |rescue_gain| = 0`). This is partial sufficiency rather than circuit recovery: the selected terminal features recover a measurable slice of the missing margin and beat both controls, but most of the `U_IT,L_IT` vs `U_PT,L_IT` gap remains.
+Per-family direct rescue is Llama `+0.627`, Mistral `+0.755`, and Qwen `+0.101` logits. The $\alpha=0$ no-edit sanity check is exact (`max |rescue_gain| = 0`). This is partial sufficiency rather than circuit recovery: the selected terminal features recover a measurable slice of the missing margin and beat both controls, but most of the $(U_{\mathrm{IT}},L_{\mathrm{IT}})$ vs. $(U_{\mathrm{PT}},L_{\mathrm{IT}})$ gap remains.
 
-The middle-to-terminal handoff analysis tests whether upstream/preterminal computation drives the selected terminal features, rather than merely co-occurring with them. It uses the same three quality-gated feature families and top-200 terminal causal features. In the rescue direction, we start from the weak `U_PT,L_IT` hybrid and replace an upstream MLP window with IT computation before running the IT terminal stack. In the degrade direction, we start from native `U_IT,L_IT` and replace the same window with PT computation. The mediated effect is the part of the margin change that disappears when the selected terminal features are ablated in both the base and perturbed passes. The mediated fraction is estimated separately as a prompt-level fraction with finite-denominator filtering and then family-balanced; it is not the ratio of the two aggregate means shown in the neighboring columns.
+The middle-to-terminal handoff analysis tests whether upstream/preterminal computation drives the selected terminal features, rather than merely co-occurring with them. It uses the same three quality-gated feature families and top-200 terminal causal features. In the rescue direction, we start from the weak $(U_{\mathrm{PT}},L_{\mathrm{IT}})$ hybrid and replace an upstream MLP window with IT computation before running the IT terminal stack. In the degrade direction, we start from native $(U_{\mathrm{IT}},L_{\mathrm{IT}})$ and replace the same window with PT computation. The mediated effect is the part of the margin change that disappears when the selected terminal features are ablated in both the base and perturbed passes. The mediated fraction is estimated separately as a prompt-level fraction with finite-denominator filtering and then family-balanced; it is not the ratio of the two aggregate means shown in the neighboring columns.
 
 **Table E.6: Middle-to-terminal handoff.**
 
 | Handoff window / direction | Total margin effect | Terminal-feature-mediated part | Mediated fraction |
 |---|---:|---:|---:|
-| mid-to-preterminal rescue into `U_PT,L_IT` | `+1.714` `[+1.634, +1.791]` | `+0.132` `[+0.118, +0.147]` | `6.5%` |
-| mid-to-preterminal degradation of `U_IT,L_IT` | `+3.570` `[+3.427, +3.721]` | `+0.527` `[+0.478, +0.576]` | `10.8%` |
+| mid-to-preterminal rescue into $(U_{\mathrm{PT}},L_{\mathrm{IT}})$ | `+1.714` `[+1.634, +1.791]` | `+0.132` `[+0.118, +0.147]` | `6.5%` |
+| mid-to-preterminal degradation of $(U_{\mathrm{IT}},L_{\mathrm{IT}})$ | `+3.570` `[+3.427, +3.721]` | `+0.527` `[+0.478, +0.576]` | `10.8%` |
 | terminal-entry upper-bound rescue | `+5.147` `[+4.936, +5.351]` | `+0.705` `[+0.643, +0.767]` | `12.5%` |
 | terminal-entry upper-bound degradation | `+5.147` `[+4.953, +5.358]` | `+0.705` `[+0.644, +0.762]` | `12.5%` |
 
@@ -858,7 +858,7 @@ We provide a CPU-only reviewer artifact bundle that regenerates all paper tables
 |---|---|---|
 | Meta Llama 3.1 8B and Llama 3.1 8B Instruct | Core Llama PT/IT pair; Meta Instruct same-base descendant | Meta Llama 3.1 Community License (`llama3.1`) |
 | Tulu-3 Llama 3.1 descendants and OpenMath2-Llama3.1-8B | same-base recipe and Tulu stage checks | Meta Llama 3.1 Community License (`llama3.1`) |
-| Exp53 code and biomedical CPT foils | controlled non-instruction continuation fine-tunes on the Llama-3.1-8B base | Meta Llama 3.1 Community License for base weights; `codeparrot/codeparrot-clean` rows filtered to permissive licenses (`apache-2.0`, MIT, BSD, ISC, CC0, Unlicense); `common-pile/pubmed` rows filtered to Creative Commons/CC BY/CC0 metadata |
+| Exp53 code and biomedical CPT foils | controlled non-instruction continuation fine-tunes on the Llama-3.1-8B base | Meta Llama 3.1 Community License for base weights; code rows filtered to permissive licenses; biomedical rows filtered to Creative Commons/CC BY/CC0 metadata |
 | Qwen3 4B Base/Instruct and Qwen2.5 32B Base/Instruct | Core Qwen PT/IT pairs and 32B scale check | Apache-2.0 |
 | Mistral 7B v0.3 Base/Instruct | Core Mistral PT/IT pair | Apache-2.0 |
 | OLMo-2 1124 7B Base/SFT/DPO/Instruct | Core OLMo pair and OLMo stage-lineage check | Apache-2.0 |
