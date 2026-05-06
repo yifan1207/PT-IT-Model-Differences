@@ -1,4 +1,4 @@
-# Instruction Tuning Changes How Upstream State Prepares Late Readout: A Cross-Patching Diagnostic
+# Instruction Tuning Changes How Upstream State Conditions Late Readout: A Cross-Patching Diagnostic
 
 **Anonymous authors** | NeurIPS 2026 Submission
 
