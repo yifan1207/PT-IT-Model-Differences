@@ -16,6 +16,7 @@ GPU_LIST="${GPU_LIST:-}"
 VARIANT_CELLS="${CELLS:-pt_raw it_native it_raw}"
 TEACHER_SOURCE="${TEACHER_SOURCE:-it_native}"
 WORKERS_PER_MODEL="${WORKERS_PER_MODEL:-1}"
+PROCS_PER_GPU="${PROCS_PER_GPU:-1}"
 N_EXAMPLES="${N_EXAMPLES:-600}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-128}"
 PROBE_FAMILIES="${PROBE_FAMILIES:-raw tuned}"
@@ -78,6 +79,7 @@ echo "[exp22-fixed] run_root ${RUN_ROOT}"
 echo "[exp22-fixed] models ${MODELS}"
 echo "[exp22-fixed] gpus ${GPU_LIST:-<none>}"
 echo "[exp22-fixed] workers_per_model ${WORKERS_PER_MODEL}"
+echo "[exp22-fixed] procs_per_gpu ${PROCS_PER_GPU}"
 echo "[exp22-fixed] n_examples ${N_EXAMPLES} max_new_tokens ${MAX_NEW_TOKENS}"
 echo "[exp22-fixed] probe_families ${PROBE_FAMILIES}"
 echo "[exp22-fixed] cells ${VARIANT_CELLS}"
@@ -113,6 +115,10 @@ run_collect_phase() {
   local pids=()
   local idx=0
   local status=0
+  local max_inflight=$((${#GPUS[@]} * PROCS_PER_GPU))
+  if [[ "$max_inflight" -lt 1 ]]; then
+    max_inflight=1
+  fi
   wait_for_batch() {
     local pid
     for pid in "${pids[@]}"; do
@@ -149,7 +155,7 @@ run_collect_phase() {
         >"$log_path" 2>&1 &
       pids+=("$!")
       idx=$((idx + 1))
-      if [[ "${#pids[@]}" -ge "${#GPUS[@]}" ]]; then
+      if [[ "${#pids[@]}" -ge "$max_inflight" ]]; then
         wait_for_batch
       fi
     done
