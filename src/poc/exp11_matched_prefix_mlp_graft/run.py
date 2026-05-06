@@ -140,6 +140,14 @@ CAUSAL_MECHANISM_CORE_PIPELINES = {"A_prime_raw", "B_late_raw", "C_it_chat", "D_
 SPECIFICITY_RANDOM_SEEDS_DEFAULT = [0, 1, 2]
 SPECIFICITY_BASE_PIPELINES = ["C_it_chat", "A_prime_raw"]
 CAUSAL_MECHANISM_AXES = ["anti_top1", "support_teacher", "anti_kl_final"]
+LATE_WINDOW_SWEEP_DEFAULT_SPECS = [
+    "prelate_half",
+    "late_full",
+    "late_front_half",
+    "late_center_half",
+    "late_terminal_half",
+    "terminal_quarter",
+]
 JS_TARGET_PAIR_NAME = {
     "A_prime_raw": "JS_AC",
     "B_early_raw": "JS_Bearly_C",
@@ -513,6 +521,25 @@ def parse_args() -> argparse.Namespace:
         help=(
             "When used with --causal-combined, add Exp23 mid+late factorial "
             "branches B_midlate_raw and D_midlate_ptswap."
+        ),
+    )
+    parser.add_argument(
+        "--late-window-sweep",
+        action="store_true",
+        help=(
+            "Teacher-forced convergence-paper robustness sweep: run symmetric PT-side "
+            "grafts and IT-side swaps over late-window width/center variants."
+        ),
+    )
+    parser.add_argument(
+        "--late-window-specs",
+        nargs="*",
+        default=LATE_WINDOW_SWEEP_DEFAULT_SPECS,
+        help=(
+            "Late-window sweep specs. Defaults to prelate_half, late_full, "
+            "late_front_half, late_center_half, late_terminal_half, terminal_quarter. "
+            "Custom specs may use name:start-end with end exclusive, e.g. "
+            "tiny_terminal:29-32."
         ),
     )
     parser.add_argument(
@@ -945,6 +972,88 @@ def _specificity_windows_for_model(model: str, spec) -> dict[str, tuple[int, int
         "mid": depth_windows["B_mid_raw"],
         "late": depth_windows["B_late_raw"],
     }
+
+
+def _bounded_window(start: int, end: int, n_layers: int) -> tuple[int, int]:
+    start = max(0, int(start))
+    end = min(int(end), int(n_layers))
+    if start >= end:
+        raise ValueError(f"invalid window [{start}, {end}) for n_layers={n_layers}")
+    return start, end
+
+
+def _default_late_window_sweep_windows_for_model(model: str, spec) -> dict[str, tuple[int, int]]:
+    late_start, late_end = _depth_windows_for_model(model, spec)["B_late_raw"]
+    width = late_end - late_start
+    half = max(1, math.ceil(width * 0.5))
+    quarter = max(1, math.ceil(width * 0.25))
+    center = (late_start + late_end) // 2
+    return {
+        "prelate_half": _bounded_window(late_start - half, late_start, spec.n_layers),
+        "late_full": _bounded_window(late_start, late_end, spec.n_layers),
+        "late_front_half": _bounded_window(late_start, late_start + half, spec.n_layers),
+        "late_center_half": _bounded_window(center - half // 2, center - half // 2 + half, spec.n_layers),
+        "late_terminal_half": _bounded_window(late_end - half, late_end, spec.n_layers),
+        "terminal_quarter": _bounded_window(late_end - quarter, late_end, spec.n_layers),
+    }
+
+
+def _parse_late_window_sweep_specs(model: str, spec, specs: list[str]) -> dict[str, tuple[int, int]]:
+    defaults = _default_late_window_sweep_windows_for_model(model, spec)
+    out: dict[str, tuple[int, int]] = {}
+    for item in specs:
+        if item in defaults:
+            out[item] = defaults[item]
+            continue
+        if ":" not in item or "-" not in item:
+            raise ValueError(
+                f"unknown late-window sweep spec {item!r}; use one of {sorted(defaults)} "
+                "or name:start-end with end exclusive"
+            )
+        name, span = item.split(":", 1)
+        start_raw, end_raw = span.split("-", 1)
+        name = name.strip()
+        if not name or not re.match(r"^[A-Za-z0-9_]+$", name):
+            raise ValueError(f"invalid late-window sweep name {name!r}; use letters, numbers, and underscores")
+        out[name] = _bounded_window(int(start_raw), int(end_raw), spec.n_layers)
+    if not out:
+        raise ValueError("late-window sweep requires at least one window spec")
+    return out
+
+
+def _late_window_sweep_pipeline_specs(
+    *,
+    model: str,
+    spec,
+    window_specs: list[str],
+) -> dict[str, dict[str, Any]]:
+    specs: dict[str, dict[str, Any]] = {}
+    for window_name, (start, end) in _parse_late_window_sweep_specs(model, spec, window_specs).items():
+        specs[f"B_lws_{window_name}_raw"] = {
+            "side": "pt",
+            "prompt_mode": "raw_format_b",
+            "host_variant": "pt",
+            "donor_variant": "it",
+            "control_mode": CONTROL_MODE_TRUE,
+            "layer_map": None,
+            "seed": None,
+            "graft_start_layer": start,
+            "graft_end_layer_exclusive": end,
+            "window_name": window_name,
+        }
+        specs[f"D_lws_{window_name}_ptswap"] = {
+            "side": "it",
+            "prompt_mode": "it_chat_template",
+            "host_variant": "it",
+            "donor_variant": "pt",
+            "control_mode": CONTROL_MODE_TRUE,
+            "layer_map": None,
+            "seed": None,
+            "graft_start_layer": start,
+            "graft_end_layer_exclusive": end,
+            "window_name": window_name,
+        }
+    return specs
 
 
 def _parse_seed_plan(seed_specs: list[str] | None) -> dict[str, list[int]] | None:
@@ -2323,13 +2432,21 @@ def main() -> None:
         raise ValueError("--include-midlate-factorial requires --causal-combined")
     if args.specificity_controls and not args.teacher_forced:
         raise ValueError("--specificity-controls requires --teacher-forced")
+    if args.late_window_sweep and not args.teacher_forced:
+        raise ValueError("--late-window-sweep requires --teacher-forced")
+    if args.late_window_sweep and args.js_only:
+        raise ValueError("--late-window-sweep does not support --js-only")
     selected_special_modes = [
         bool(args.depth_ablation),
         bool(args.causal_combined),
         bool(args.specificity_controls),
+        bool(args.late_window_sweep),
     ]
     if sum(selected_special_modes) > 1:
-        raise ValueError("--depth-ablation, --causal-combined, and --specificity-controls are mutually exclusive")
+        raise ValueError(
+            "--depth-ablation, --causal-combined, --specificity-controls, and "
+            "--late-window-sweep are mutually exclusive"
+        )
     if args.num_shards < 1:
         raise ValueError("--num-shards must be >= 1")
     if not 0 <= args.shard_index < args.num_shards:
@@ -2340,6 +2457,7 @@ def main() -> None:
     causal_combined = _is_causal_combined(args)
     include_midlate_factorial = bool(args.include_midlate_factorial)
     specificity_controls = _is_specificity_controls(args)
+    late_window_sweep = bool(args.teacher_forced and args.late_window_sweep)
     js_only = bool(args.js_only)
     depth_windows = _depth_windows_for_model(args.model, spec) if depth_ablation else {}
     causal_windows = (
@@ -2365,6 +2483,17 @@ def main() -> None:
         if specificity_controls
         else {}
     )
+    late_window_sweep_specs = (
+        _late_window_sweep_pipeline_specs(
+            model=args.model,
+            spec=spec,
+            window_specs=list(args.late_window_specs),
+        )
+        if late_window_sweep
+        else {}
+    )
+    dynamic_branch_specs = late_window_sweep_specs if late_window_sweep else specificity_specs
+    dynamic_branch_mode = specificity_controls or late_window_sweep
     final_region_layers = _layer_range_for_final_region(spec)
     capture_mechanism = (causal_combined or specificity_controls) and not js_only and not args.disable_mechanism_capture
     late_mechanism_layers = final_region_layers if capture_mechanism else []
@@ -2546,7 +2675,7 @@ def main() -> None:
             teacher_tokens_to_run,
             context="teacher-token manifest on PT backbone",
         )
-    if args.teacher_forced and not depth_ablation and not causal_combined and not specificity_controls:
+    if args.teacher_forced and not depth_ablation and not causal_combined and not dynamic_branch_mode:
         _assert_used_token_ids_compatible(
             tokenizer_it,
             tokenizer_pt,
@@ -2556,7 +2685,7 @@ def main() -> None:
 
     chunk_size = args.chunk_size if args.chunk_size else len(prompts_to_run) or 1
     secondary_accumulator = None
-    if args.readout_mode == "both" and not causal_combined and not specificity_controls and not js_only:
+    if args.readout_mode == "both" and not causal_combined and not dynamic_branch_mode and not js_only:
         secondary_accumulator = TrajectoryAccumulator(metric_names=TRAJECTORY_METRICS, n_layers=spec.n_layers)
     mechanism_accumulators: dict[str, GradientDirectionAccumulator] = {}
     if capture_mechanism:
@@ -2588,14 +2717,14 @@ def main() -> None:
     batch_size_by_pipeline: dict[str, int] = {}
     pipeline_primary_readouts: dict[str, str] = {}
     pipeline_raw_readouts: dict[str, str] = {}
-    if specificity_controls:
-        pipelines = ["C_it_chat", "A_prime_raw", *specificity_specs.keys()]
+    if dynamic_branch_mode:
+        pipelines = ["C_it_chat", "A_prime_raw", *dynamic_branch_specs.keys()]
         pipeline_prompt_modes = {
             "C_it_chat": "it_chat_template",
             "A_prime_raw": "raw_format_b",
             **{
                 name: str(spec_payload["prompt_mode"])
-                for name, spec_payload in specificity_specs.items()
+                for name, spec_payload in dynamic_branch_specs.items()
             },
         }
         for name in pipelines:
@@ -2750,7 +2879,7 @@ def main() -> None:
         "n_prompts_sampled_after_sharding": len(prompts),
         "readout_mode": args.readout_mode,
         "js_only": js_only,
-        "primary_readout_name": None if (causal_combined or specificity_controls) else tuned_readout_pt.name,
+        "primary_readout_name": None if (causal_combined or dynamic_branch_mode) else tuned_readout_pt.name,
         "secondary_readout_name": "mixed_by_pipeline" if secondary_names is not None else None,
         "secondary_readout_names_by_pipeline": secondary_names,
         "primary_readout_names_by_pipeline": pipeline_primary_readouts,
@@ -2776,6 +2905,8 @@ def main() -> None:
             else None
         ),
         "specificity_include_rand_norm": bool(args.specificity_include_rand_norm) if specificity_controls else None,
+        "late_window_sweep": late_window_sweep,
+        "late_window_specs": list(args.late_window_specs) if late_window_sweep else None,
         "pipelines": pipelines,
         "pipeline_prompt_modes": pipeline_prompt_modes,
         "pipeline_aliases": pipeline_aliases,
@@ -2811,10 +2942,11 @@ def main() -> None:
                     "donor_variant": str(spec_payload["donor_variant"]),
                     "seed": spec_payload["seed"],
                     "layer_map": spec_payload["layer_map"],
+                    "window_name": spec_payload.get("window_name"),
                 }
-                for name, spec_payload in specificity_specs.items()
+                for name, spec_payload in dynamic_branch_specs.items()
             }
-            if specificity_controls
+            if dynamic_branch_mode
             else None
         ),
         "final_region_layers": final_region_layers,
@@ -2926,7 +3058,7 @@ def main() -> None:
                 prompt_token_ids_by_id=it_chat_prompt_token_ids_it_by_id,
             )
             runs_c, batch_size_c = _run_pipeline_with_batch_fallback(
-                pipeline_name="C_it_chat" if (depth_ablation or causal_combined) else "C",
+                pipeline_name="C_it_chat" if (depth_ablation or causal_combined or dynamic_branch_mode) else "C",
                 requests=requests_c,
                 model_raw=model_raw_it,
                 capture_factory=lambda: PipelineCapture(
@@ -2946,8 +3078,8 @@ def main() -> None:
                 batch_size=requested_batch_size,
                 store_baseline=True,
                 baseline_lookup=None,
-                primary_readout=raw_readout_it if js_only else (tuned_readout_it if causal_combined else tuned_readout_pt),
-                secondary_readout=None if causal_combined else (tuned_readout_it if args.readout_mode == "both" else None),
+                primary_readout=raw_readout_it if js_only else (tuned_readout_it if (causal_combined or dynamic_branch_mode) else tuned_readout_pt),
+                secondary_readout=None if (causal_combined or dynamic_branch_mode) else (tuned_readout_it if args.readout_mode == "both" else None),
                 baseline_primary_readout=None,
                 baseline_secondary_readout=None,
                 secondary_accumulator=secondary_accumulator,
@@ -2967,7 +3099,7 @@ def main() -> None:
                 ),
             )
             batch_size_by_pipeline[
-                "C_it_chat" if (depth_ablation or causal_combined) else "C"
+                "C_it_chat" if (depth_ablation or causal_combined or dynamic_branch_mode) else "C"
             ] = batch_size_c
             c_baseline_lookup = {pid: run.baseline_cache for pid, run in runs_c.items()}
             if js_only and teacher_tokens_manifest_by_prompt is None:
@@ -2992,7 +3124,7 @@ def main() -> None:
                 prompt_token_ids_by_id=raw_prompt_token_ids_pt_by_id,
             )
             runs_a_prime, batch_size_a_prime = _run_pipeline_with_batch_fallback(
-                pipeline_name="A_prime_raw" if (depth_ablation or causal_combined) else "A_prime",
+                pipeline_name="A_prime_raw" if (depth_ablation or causal_combined or dynamic_branch_mode) else "A_prime",
                 requests=requests_a_prime,
                 model_raw=model_raw_pt,
                 capture_factory=lambda: PipelineCapture(
@@ -3010,12 +3142,12 @@ def main() -> None:
                 max_new_tokens=args.max_new_tokens,
                 inactive_token_id=inactive_token_id_pt,
                 batch_size=batch_size_a,
-                store_baseline=(causal_combined or specificity_controls),
+                store_baseline=(causal_combined or dynamic_branch_mode),
                 baseline_lookup=c_baseline_lookup,
                 primary_readout=raw_readout_pt if js_only else tuned_readout_pt,
-                secondary_readout=None if causal_combined else (tuned_readout_pt if args.readout_mode == "both" else None),
+                secondary_readout=None if (causal_combined or dynamic_branch_mode) else (tuned_readout_pt if args.readout_mode == "both" else None),
                 baseline_primary_readout=tuned_readout_pt,
-                baseline_secondary_readout=tuned_readout_it if args.readout_mode == "both" and not causal_combined else None,
+                baseline_secondary_readout=tuned_readout_it if args.readout_mode == "both" and not causal_combined and not dynamic_branch_mode else None,
                 secondary_accumulator=secondary_accumulator,
                 record_step_metrics=not js_only,
                 mechanism_readout=raw_readout_pt if (causal_combined or specificity_controls) and "A_prime_raw" in mechanism_accumulators else None,
@@ -3043,13 +3175,13 @@ def main() -> None:
                 js_accumulator=js_accumulator if js_only else None,
             )
             batch_size_by_pipeline[
-                "A_prime_raw" if (depth_ablation or causal_combined) else "A_prime"
+                "A_prime_raw" if (depth_ablation or causal_combined or dynamic_branch_mode) else "A_prime"
             ] = batch_size_a_prime
-            if causal_combined or specificity_controls:
+            if causal_combined or dynamic_branch_mode:
                 a_prime_baseline_lookup = {pid: run.baseline_cache for pid, run in runs_a_prime.items()}
 
-            if specificity_controls:
-                for pipeline_name, spec_payload in specificity_specs.items():
+            if dynamic_branch_mode:
+                for pipeline_name, spec_payload in dynamic_branch_specs.items():
                     host_variant = str(spec_payload["host_variant"])
                     donor_variant = str(spec_payload["donor_variant"])
                     tokenizer_branch = tokenizer_pt if host_variant == "pt" else tokenizer_it
@@ -3525,7 +3657,7 @@ def main() -> None:
                 summary_row["divergence_step"] = divergence_step
                 summary_row["pipeline_a"] = _summarize_pipeline(run_a)
                 summary_row["pipeline_b"] = _summarize_pipeline(run_b)
-            if specificity_controls and run_c is not None and run_a_prime is not None:
+            if dynamic_branch_mode and run_c is not None and run_a_prime is not None:
                 c_tokens = list(run_c.generated_token_ids)
                 summary_row["pipeline_c_it_chat"] = _summarize_pipeline(run_c)
                 summary_row["pipeline_a_prime_raw"] = _summarize_pipeline(run_a_prime)
@@ -3655,7 +3787,7 @@ def main() -> None:
                         "prompt_mode": "raw_format_b",
                     }
                 )
-            if specificity_controls and run_c is not None and run_a_prime is not None:
+            if dynamic_branch_mode and run_c is not None and run_a_prime is not None:
                 for pipeline_name, run_branch, prompt_mode in (
                     ("C_it_chat", run_c, "it_chat_template"),
                     ("A_prime_raw", run_a_prime, "raw_format_b"),
@@ -3779,7 +3911,7 @@ def main() -> None:
             pipelines_to_log: list[tuple[str, PipelineRun]] = []
             if run_a is not None:
                 pipelines_to_log.append(("A", run_a))
-            if specificity_controls and run_c is not None and run_a_prime is not None:
+            if dynamic_branch_mode and run_c is not None and run_a_prime is not None:
                 pipelines_to_log.extend(
                     [
                         ("C_it_chat", run_c),
@@ -3920,7 +4052,7 @@ def main() -> None:
         if not args.teacher_forced:
             del runs_b, requests_b
             del runs_a, requests_a
-        elif specificity_controls:
+        elif dynamic_branch_mode:
             del runs_c, runs_a_prime, specificity_runs
             del requests_c, requests_a_prime, specificity_requests
             if c_baseline_lookup is not None:

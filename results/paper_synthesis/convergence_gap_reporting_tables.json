@@ -1,0 +1,243 @@
+{
+  "description": "Generated convergence-gap reporting tables.",
+  "source_artifacts": [
+    "results/paper_synthesis/exp22_endpoint_deconfounded_table.csv",
+    "results/paper_synthesis/exp22_fixed_history_template_audit.json",
+    "results/paper_synthesis/exp22_fixed_history_template_audit_effects.csv",
+    "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit.json",
+    "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_effects.csv",
+    "results/exp09_cross_model_observational_replication/data/exp9_summary.json",
+    "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json",
+    "results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json"
+  ],
+  "tables": {
+    "discovery_counts": {
+      "align": [
+        "---",
+        "---:",
+        "---:",
+        "---:"
+      ],
+      "headers": [
+        "Family",
+        "PT token steps",
+        "IT token steps",
+        "Layers"
+      ],
+      "markdown": "| Family | PT token steps | IT token steps | Layers |\n| --- | ---: | ---: | ---: |\n| Gemma 3 4B | `1,273,606` | `810,347` | `34` |\n| Llama 3.1 8B | `517,579` | `499,240` | `32` |\n| Qwen 3 4B | `482,319` | `636,979` | `36` |\n| Mistral 7B v0.3 | `1,380,081` | `501,093` | `32` |\n| OLMo 2 7B | `370,171` | `166,698` | `32` |\n| DeepSeek-V2-Lite | `184,658` | `163,877` | `27` |",
+      "rows": [
+        [
+          "Gemma 3 4B",
+          "`1,273,606`",
+          "`810,347`",
+          "`34`"
+        ],
+        [
+          "Llama 3.1 8B",
+          "`517,579`",
+          "`499,240`",
+          "`32`"
+        ],
+        [
+          "Qwen 3 4B",
+          "`482,319`",
+          "`636,979`",
+          "`36`"
+        ],
+        [
+          "Mistral 7B v0.3",
+          "`1,380,081`",
+          "`501,093`",
+          "`32`"
+        ],
+        [
+          "OLMo 2 7B",
+          "`370,171`",
+          "`166,698`",
+          "`32`"
+        ],
+        [
+          "DeepSeek-V2-Lite",
+          "`184,658`",
+          "`163,877`",
+          "`27`"
+        ]
+      ],
+      "title": "Discovery-curve token-step counts"
+    },
+    "endpoint_controls": {
+      "align": [
+        "---",
+        "---:",
+        "---"
+      ],
+      "headers": [
+        "Check",
+        "Estimate",
+        "Interpretation"
+      ],
+      "markdown": "| Check | Estimate | Interpretation |\n| --- | ---: | --- |\n| Endpoint-matched raw late KL | `+0.425` nats `[+0.356, +0.493]` | raw-lens gap remains |\n| Endpoint-matched tuned late KL | `+0.762` nats `[+0.709, +0.814]` | tuned-lens gap remains |\n| Endpoint-free adjacent JS | `+0.052` JS `[+0.048, +0.057]` | IT has more remaining layer-to-layer movement |\n| Endpoint-free future top-1 flips | `+0.203` flips `[+0.190, +0.215]` | IT changes top-1 later |",
+      "rows": [
+        [
+          "Endpoint-matched raw late KL",
+          "`+0.425` nats `[+0.356, +0.493]`",
+          "raw-lens gap remains"
+        ],
+        [
+          "Endpoint-matched tuned late KL",
+          "`+0.762` nats `[+0.709, +0.814]`",
+          "tuned-lens gap remains"
+        ],
+        [
+          "Endpoint-free adjacent JS",
+          "`+0.052` JS `[+0.048, +0.057]`",
+          "IT has more remaining layer-to-layer movement"
+        ],
+        [
+          "Endpoint-free future top-1 flips",
+          "`+0.203` flips `[+0.190, +0.215]`",
+          "IT changes top-1 later"
+        ]
+      ],
+      "title": "Endpoint and history controls"
+    },
+    "fixed_history_replay": {
+      "align": [
+        "---",
+        "---",
+        "---:",
+        "---:",
+        "---:",
+        "---"
+      ],
+      "headers": [
+        "Teacher history",
+        "Estimator",
+        "IT native - PT raw",
+        "IT raw - PT raw",
+        "IT native - IT raw",
+        "Use/quality"
+      ],
+      "markdown": "| Teacher history | Estimator | IT native - PT raw | IT raw - PT raw | IT native - IT raw | Use/quality |\n| --- | --- | ---: | ---: | ---: | --- |\n| IT-native continuation | paired same prompt/step | `+1.354` `[+1.334, +1.390]` | `+0.656` `[+0.632, +0.670]` | `+0.698` `[+0.693, +0.730]` | primary fixed-history replay |\n| IT-native continuation | endpoint-matched CEM | `+0.754` `[+0.702, +0.806]` | `+0.246` `[+0.202, +0.289]` | `+0.338` `[+0.284, +0.394]` | retention `0.797`; max SMD `0.079` |\n| PT-raw continuation | paired same prompt/step | `+0.610` `[+0.135, +1.079]` | `+0.429` `[+0.155, +0.639]` | `+0.181` `[-0.105, +0.467]` | same-sign reverse stress test |\n| PT-raw continuation | endpoint-matched CEM | `+0.025` `[-0.183, +0.233]` | `+0.012` `[-0.040, +0.064]` | `-0.106` `[-0.274, +0.111]` | balance caveat: retention `0.991`; max SMD `0.155` |",
+      "rows": [
+        [
+          "IT-native continuation",
+          "paired same prompt/step",
+          "`+1.354` `[+1.334, +1.390]`",
+          "`+0.656` `[+0.632, +0.670]`",
+          "`+0.698` `[+0.693, +0.730]`",
+          "primary fixed-history replay"
+        ],
+        [
+          "IT-native continuation",
+          "endpoint-matched CEM",
+          "`+0.754` `[+0.702, +0.806]`",
+          "`+0.246` `[+0.202, +0.289]`",
+          "`+0.338` `[+0.284, +0.394]`",
+          "retention `0.797`; max SMD `0.079`"
+        ],
+        [
+          "PT-raw continuation",
+          "paired same prompt/step",
+          "`+0.610` `[+0.135, +1.079]`",
+          "`+0.429` `[+0.155, +0.639]`",
+          "`+0.181` `[-0.105, +0.467]`",
+          "same-sign reverse stress test"
+        ],
+        [
+          "PT-raw continuation",
+          "endpoint-matched CEM",
+          "`+0.025` `[-0.183, +0.233]`",
+          "`+0.012` `[-0.040, +0.064]`",
+          "`-0.106` `[-0.274, +0.111]`",
+          "balance caveat: retention `0.991`; max SMD `0.155`"
+        ]
+      ],
+      "title": "Fixed-history replay audit"
+    },
+    "intervention_windows": {
+      "align": [
+        "---",
+        "---:",
+        "---:",
+        "---:"
+      ],
+      "headers": [
+        "Intervention",
+        "Early",
+        "Middle",
+        "Late"
+      ],
+      "markdown": "| Intervention | Early | Middle | Late |\n| --- | ---: | ---: | ---: |\n| IT MLP graft into PT host | `-0.03` | `-0.05` | `+0.34` |\n| PT MLP swap into IT host | `-0.10` | `-0.23` | `-0.51` |",
+      "rows": [
+        [
+          "IT MLP graft into PT host",
+          "`-0.03`",
+          "`-0.05`",
+          "`+0.34`"
+        ],
+        [
+          "PT MLP swap into IT host",
+          "`-0.10`",
+          "`-0.23`",
+          "`-0.51`"
+        ]
+      ],
+      "title": "Dense-family matched-prefix intervention summary"
+    },
+    "late_window_family": {
+      "align": [
+        "---",
+        "---:",
+        "---:",
+        "---"
+      ],
+      "headers": [
+        "Family",
+        "Late IT graft into PT host",
+        "Late PT swap into IT host",
+        "Late window"
+      ],
+      "markdown": "| Family | Late IT graft into PT host | Late PT swap into IT host | Late window |\n| --- | ---: | ---: | --- |\n| Gemma 3 4B | `+0.609` | `-0.822` | `20-33` |\n| Qwen 3 4B | `+0.491` | `-1.015` | `22-35` |\n| Llama 3.1 8B | `+0.310` | `-0.291` | `19-31` |\n| Mistral 7B v0.3 | `+0.115` | `-0.273` | `19-31` |\n| OLMo 2 7B | `+0.181` | `-0.142` | `19-31` |\n| Dense mean | `+0.341` | `-0.509` | - |",
+      "rows": [
+        [
+          "Gemma 3 4B",
+          "`+0.609`",
+          "`-0.822`",
+          "`20-33`"
+        ],
+        [
+          "Qwen 3 4B",
+          "`+0.491`",
+          "`-1.015`",
+          "`22-35`"
+        ],
+        [
+          "Llama 3.1 8B",
+          "`+0.310`",
+          "`-0.291`",
+          "`19-31`"
+        ],
+        [
+          "Mistral 7B v0.3",
+          "`+0.115`",
+          "`-0.273`",
+          "`19-31`"
+        ],
+        [
+          "OLMo 2 7B",
+          "`+0.181`",
+          "`-0.142`",
+          "`19-31`"
+        ],
+        [
+          "Dense mean",
+          "`+0.341`",
+          "`-0.509`",
+          "-"
+        ]
+      ],
+      "title": "Per-family late-window effects"
+    }
+  }
+}

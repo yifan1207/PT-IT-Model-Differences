@@ -88,7 +88,7 @@ echo "[exp22-fixed] tuned_lens_dir ${TUNED_LENS_DIR}"
 echo "[exp22-fixed] hf_home ${HF_HOME}"
 
 sync_outputs() {
-  if [[ -z "$GCS_SYNC_DEST" ]]; then
+  if [[ -z "$GCS_SYNC_DEST" || "$GCS_SYNC_DEST" == "none" || "$GCS_SYNC_DEST" == "NONE" ]]; then
     return
   fi
   if command -v gsutil >/dev/null 2>&1; then

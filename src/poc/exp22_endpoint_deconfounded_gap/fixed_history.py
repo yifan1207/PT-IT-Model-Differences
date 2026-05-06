@@ -14,6 +14,7 @@ import gzip
 import json
 import logging
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -229,6 +230,29 @@ def replay_forced_continuation(
     attention_mask = encoded.get("attention_mask", torch.ones_like(input_ids)).to(device)
     if input_ids.shape[1] < 1:
         raise ValueError(f"empty replay prompt after tokenization for {prompt_id}/{cell}")
+    if not forced_ids:
+        raise ValueError(f"empty forced continuation for {prompt_id}/{cell}")
+
+    forced_tensor = torch.tensor([int(x) for x in forced_ids], dtype=torch.long, device=device)
+    if forced_tensor.numel() > 1:
+        replay_input_ids = torch.cat([input_ids, forced_tensor[:-1].view(1, -1)], dim=1)
+        replay_attention_mask = torch.cat(
+            [
+                attention_mask,
+                torch.ones((attention_mask.shape[0], forced_tensor.numel() - 1), dtype=attention_mask.dtype, device=device),
+            ],
+            dim=1,
+        )
+    else:
+        replay_input_ids = input_ids
+        replay_attention_mask = attention_mask
+    prompt_len = int(input_ids.shape[1])
+    step_positions = torch.arange(
+        prompt_len - 1,
+        prompt_len - 1 + int(forced_tensor.numel()),
+        dtype=torch.long,
+        device=device,
+    )
 
     layers = adapter.layers(model)
     captured: dict[int, torch.Tensor] = {}
@@ -236,7 +260,7 @@ def replay_forced_continuation(
     def make_hook(layer_idx: int):
         def hook(_module, _inp, output):
             h = adapter.residual_from_output(output)
-            captured[layer_idx] = h[0, -1, :].detach()
+            captured[layer_idx] = h[0, step_positions, :].detach()
 
         return hook
 
@@ -263,20 +287,21 @@ def replay_forced_continuation(
     top1_matches_forced: list[bool] = []
     final_top1_ids: list[int] = []
 
-    past_key_values = None
-    next_input_ids = input_ids
     try:
-        for token_id in forced_ids:
-            captured.clear()
-            outputs = model(
-                input_ids=next_input_ids,
-                attention_mask=attention_mask,
-                past_key_values=past_key_values,
-                use_cache=True,
-            )
-            past_key_values = outputs.past_key_values
-            residuals = [captured[i] for i in range(len(layers))]
-            masked_final_logits = outputs.logits[0, -1, :].float().clone()
+        outputs = model(
+            input_ids=replay_input_ids,
+            attention_mask=replay_attention_mask,
+            use_cache=False,
+        )
+        if len(captured) != len(layers):
+            missing = sorted(set(range(len(layers))) - set(captured))
+            raise RuntimeError(f"missing residual captures for layers {missing[:10]}")
+        final_logits = outputs.logits[0, step_positions, :].float()
+        masked_final_logits_by_step = final_logits.clone()
+        masked_final_logits_by_step[:, ~real_token_mask.to(final_logits.device)] = float("-inf")
+
+        for step_idx, token_id in enumerate(forced_ids):
+            masked_final_logits = masked_final_logits_by_step[step_idx]
             masked_final_logits[~real_token_mask.to(masked_final_logits.device)] = float("-inf")
             stats = _target_stats(masked_final_logits, int(token_id))
             target_logprob.append(stats["target_logprob"])
@@ -284,23 +309,42 @@ def replay_forced_continuation(
             top1_matches_forced.append(bool(stats["top1_matches_forced"]))
             final_top1_ids.append(int(stats["final_top1_id"]))
 
-            for family, readout in readouts.items():
-                logits = _logits_by_layer(
-                    residuals=residuals,
-                    final_norm=final_norm,
-                    lm_head=lm_head,
-                    real_token_mask=real_token_mask,
-                    readout=readout,
+        n_steps = int(forced_tensor.numel())
+        for family, readout in readouts.items():
+            if readout.probes is None:
+                hidden_by_step = torch.stack(
+                    [captured[layer_idx].to(device=device) for layer_idx in range(len(layers))],
+                    dim=1,
                 )
-                arrays = distribution_arrays_from_logits(logits, top_k=top_k)
-                for key, value in arrays.items():
-                    probe_payloads[family][key].append(value)
+            else:
+                probed: list[torch.Tensor] = []
+                for layer_idx in range(len(layers)):
+                    if layer_idx not in readout.probes:
+                        raise KeyError(f"missing tuned probe for layer {layer_idx}")
+                    probe = readout.probes[layer_idx]
+                    probe_dtype = next(probe.parameters()).dtype
+                    probed.append(probe(captured[layer_idx].to(device=device, dtype=probe_dtype)))
+                hidden_by_step = torch.stack(probed, dim=1)
 
-            next_input_ids = torch.tensor([[int(token_id)]], dtype=torch.long, device=device)
-            attention_mask = torch.cat(
-                [attention_mask, torch.ones((attention_mask.shape[0], 1), dtype=attention_mask.dtype, device=device)],
-                dim=1,
-            )
+            norm_dtype = next(final_norm.parameters(), torch.empty((), device=device)).dtype
+            head_dtype = next(lm_head.parameters(), torch.empty((), device=device)).dtype
+            # Chunk over generated positions so the LM-head matmul is large
+            # enough to use the GPU well without materializing all steps at once.
+            chunk_steps = max(1, int(os.environ.get("EXP22_REPLAY_CHUNK_STEPS", "4")))
+            for chunk_start in range(0, n_steps, chunk_steps):
+                chunk = hidden_by_step[chunk_start : chunk_start + chunk_steps]
+                chunk_n = int(chunk.shape[0])
+                normed = final_norm(
+                    chunk.to(dtype=norm_dtype).reshape(chunk_n * len(layers), 1, -1)
+                ).reshape(chunk_n * len(layers), -1)
+                logits = lm_head(normed.to(dtype=head_dtype)).float().reshape(chunk_n, len(layers), -1)
+                logits[:, :, ~real_token_mask.to(logits.device)] = float("-inf")
+                for local_idx in range(chunk_n):
+                    arrays = distribution_arrays_from_logits(logits[local_idx], top_k=top_k)
+                    for key, value in arrays.items():
+                        probe_payloads[family][key].append(value)
+                del logits, normed
+            del hidden_by_step
     finally:
         for handle in handles:
             handle.remove()

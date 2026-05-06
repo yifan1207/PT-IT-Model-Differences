@@ -1,0 +1,93 @@
+table,row_index,row_label,column,value
+endpoint_controls,0,Endpoint-matched raw late KL,Check,Endpoint-matched raw late KL
+endpoint_controls,0,Endpoint-matched raw late KL,Estimate,"`+0.425` nats `[+0.356, +0.493]`"
+endpoint_controls,0,Endpoint-matched raw late KL,Interpretation,raw-lens gap remains
+endpoint_controls,1,Endpoint-matched tuned late KL,Check,Endpoint-matched tuned late KL
+endpoint_controls,1,Endpoint-matched tuned late KL,Estimate,"`+0.762` nats `[+0.709, +0.814]`"
+endpoint_controls,1,Endpoint-matched tuned late KL,Interpretation,tuned-lens gap remains
+endpoint_controls,2,Endpoint-free adjacent JS,Check,Endpoint-free adjacent JS
+endpoint_controls,2,Endpoint-free adjacent JS,Estimate,"`+0.052` JS `[+0.048, +0.057]`"
+endpoint_controls,2,Endpoint-free adjacent JS,Interpretation,IT has more remaining layer-to-layer movement
+endpoint_controls,3,Endpoint-free future top-1 flips,Check,Endpoint-free future top-1 flips
+endpoint_controls,3,Endpoint-free future top-1 flips,Estimate,"`+0.203` flips `[+0.190, +0.215]`"
+endpoint_controls,3,Endpoint-free future top-1 flips,Interpretation,IT changes top-1 later
+intervention_windows,0,IT MLP graft into PT host,Intervention,IT MLP graft into PT host
+intervention_windows,0,IT MLP graft into PT host,Early,`-0.03`
+intervention_windows,0,IT MLP graft into PT host,Middle,`-0.05`
+intervention_windows,0,IT MLP graft into PT host,Late,`+0.34`
+intervention_windows,1,PT MLP swap into IT host,Intervention,PT MLP swap into IT host
+intervention_windows,1,PT MLP swap into IT host,Early,`-0.10`
+intervention_windows,1,PT MLP swap into IT host,Middle,`-0.23`
+intervention_windows,1,PT MLP swap into IT host,Late,`-0.51`
+fixed_history_replay,0,IT-native continuation,Teacher history,IT-native continuation
+fixed_history_replay,0,IT-native continuation,Estimator,paired same prompt/step
+fixed_history_replay,0,IT-native continuation,IT native - PT raw,"`+1.354` `[+1.334, +1.390]`"
+fixed_history_replay,0,IT-native continuation,IT raw - PT raw,"`+0.656` `[+0.632, +0.670]`"
+fixed_history_replay,0,IT-native continuation,IT native - IT raw,"`+0.698` `[+0.693, +0.730]`"
+fixed_history_replay,0,IT-native continuation,Use/quality,primary fixed-history replay
+fixed_history_replay,1,IT-native continuation,Teacher history,IT-native continuation
+fixed_history_replay,1,IT-native continuation,Estimator,endpoint-matched CEM
+fixed_history_replay,1,IT-native continuation,IT native - PT raw,"`+0.754` `[+0.702, +0.806]`"
+fixed_history_replay,1,IT-native continuation,IT raw - PT raw,"`+0.246` `[+0.202, +0.289]`"
+fixed_history_replay,1,IT-native continuation,IT native - IT raw,"`+0.338` `[+0.284, +0.394]`"
+fixed_history_replay,1,IT-native continuation,Use/quality,retention `0.797`; max SMD `0.079`
+fixed_history_replay,2,PT-raw continuation,Teacher history,PT-raw continuation
+fixed_history_replay,2,PT-raw continuation,Estimator,paired same prompt/step
+fixed_history_replay,2,PT-raw continuation,IT native - PT raw,"`+0.610` `[+0.135, +1.079]`"
+fixed_history_replay,2,PT-raw continuation,IT raw - PT raw,"`+0.429` `[+0.155, +0.639]`"
+fixed_history_replay,2,PT-raw continuation,IT native - IT raw,"`+0.181` `[-0.105, +0.467]`"
+fixed_history_replay,2,PT-raw continuation,Use/quality,same-sign reverse stress test
+fixed_history_replay,3,PT-raw continuation,Teacher history,PT-raw continuation
+fixed_history_replay,3,PT-raw continuation,Estimator,endpoint-matched CEM
+fixed_history_replay,3,PT-raw continuation,IT native - PT raw,"`+0.025` `[-0.183, +0.233]`"
+fixed_history_replay,3,PT-raw continuation,IT raw - PT raw,"`+0.012` `[-0.040, +0.064]`"
+fixed_history_replay,3,PT-raw continuation,IT native - IT raw,"`-0.106` `[-0.274, +0.111]`"
+fixed_history_replay,3,PT-raw continuation,Use/quality,balance caveat: retention `0.991`; max SMD `0.155`
+discovery_counts,0,Gemma 3 4B,Family,Gemma 3 4B
+discovery_counts,0,Gemma 3 4B,PT token steps,"`1,273,606`"
+discovery_counts,0,Gemma 3 4B,IT token steps,"`810,347`"
+discovery_counts,0,Gemma 3 4B,Layers,`34`
+discovery_counts,1,Llama 3.1 8B,Family,Llama 3.1 8B
+discovery_counts,1,Llama 3.1 8B,PT token steps,"`517,579`"
+discovery_counts,1,Llama 3.1 8B,IT token steps,"`499,240`"
+discovery_counts,1,Llama 3.1 8B,Layers,`32`
+discovery_counts,2,Qwen 3 4B,Family,Qwen 3 4B
+discovery_counts,2,Qwen 3 4B,PT token steps,"`482,319`"
+discovery_counts,2,Qwen 3 4B,IT token steps,"`636,979`"
+discovery_counts,2,Qwen 3 4B,Layers,`36`
+discovery_counts,3,Mistral 7B v0.3,Family,Mistral 7B v0.3
+discovery_counts,3,Mistral 7B v0.3,PT token steps,"`1,380,081`"
+discovery_counts,3,Mistral 7B v0.3,IT token steps,"`501,093`"
+discovery_counts,3,Mistral 7B v0.3,Layers,`32`
+discovery_counts,4,OLMo 2 7B,Family,OLMo 2 7B
+discovery_counts,4,OLMo 2 7B,PT token steps,"`370,171`"
+discovery_counts,4,OLMo 2 7B,IT token steps,"`166,698`"
+discovery_counts,4,OLMo 2 7B,Layers,`32`
+discovery_counts,5,DeepSeek-V2-Lite,Family,DeepSeek-V2-Lite
+discovery_counts,5,DeepSeek-V2-Lite,PT token steps,"`184,658`"
+discovery_counts,5,DeepSeek-V2-Lite,IT token steps,"`163,877`"
+discovery_counts,5,DeepSeek-V2-Lite,Layers,`27`
+late_window_family,0,Gemma 3 4B,Family,Gemma 3 4B
+late_window_family,0,Gemma 3 4B,Late IT graft into PT host,`+0.609`
+late_window_family,0,Gemma 3 4B,Late PT swap into IT host,`-0.822`
+late_window_family,0,Gemma 3 4B,Late window,`20-33`
+late_window_family,1,Qwen 3 4B,Family,Qwen 3 4B
+late_window_family,1,Qwen 3 4B,Late IT graft into PT host,`+0.491`
+late_window_family,1,Qwen 3 4B,Late PT swap into IT host,`-1.015`
+late_window_family,1,Qwen 3 4B,Late window,`22-35`
+late_window_family,2,Llama 3.1 8B,Family,Llama 3.1 8B
+late_window_family,2,Llama 3.1 8B,Late IT graft into PT host,`+0.310`
+late_window_family,2,Llama 3.1 8B,Late PT swap into IT host,`-0.291`
+late_window_family,2,Llama 3.1 8B,Late window,`19-31`
+late_window_family,3,Mistral 7B v0.3,Family,Mistral 7B v0.3
+late_window_family,3,Mistral 7B v0.3,Late IT graft into PT host,`+0.115`
+late_window_family,3,Mistral 7B v0.3,Late PT swap into IT host,`-0.273`
+late_window_family,3,Mistral 7B v0.3,Late window,`19-31`
+late_window_family,4,OLMo 2 7B,Family,OLMo 2 7B
+late_window_family,4,OLMo 2 7B,Late IT graft into PT host,`+0.181`
+late_window_family,4,OLMo 2 7B,Late PT swap into IT host,`-0.142`
+late_window_family,4,OLMo 2 7B,Late window,`19-31`
+late_window_family,5,Dense mean,Family,Dense mean
+late_window_family,5,Dense mean,Late IT graft into PT host,`+0.341`
+late_window_family,5,Dense mean,Late PT swap into IT host,`-0.509`
+late_window_family,5,Dense mean,Late window,-

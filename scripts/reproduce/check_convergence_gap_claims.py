@@ -11,6 +11,8 @@ import argparse
 import csv
 import json
 import math
+import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -97,6 +99,25 @@ def exp22_fixed_history_quality(key: str) -> NumberFn:
     return _read
 
 
+def exp22_fixed_history_pt_teacher(key: str, column: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_effects.csv")
+        for row in rows:
+            if row["key"] == key:
+                return float(row[column])
+        raise KeyError(key)
+
+    return _read
+
+
+def exp22_fixed_history_pt_teacher_quality(key: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(repo, "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit.json")
+        return float(data["quality"][key])
+
+    return _read
+
+
 def exp9_nsteps(model: str, branch: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(repo, "results/exp09_cross_model_observational_replication/data/exp9_summary.json")
@@ -173,6 +194,17 @@ def exp19(window: str, metric: str) -> NumberFn:
     return _read
 
 
+def check_generated_reporting_tables(repo: Path) -> None:
+    script = repo / "scripts/analysis/build_convergence_gap_reporting_tables.py"
+    if not script.exists():
+        raise FileNotFoundError(script)
+    subprocess.run(
+        [sys.executable, str(script), "--repo", str(repo), "--check"],
+        cwd=repo,
+        check=True,
+    )
+
+
 CLAIMS = [
     Claim("Exp22 endpoint-matched raw late KL", 0.425078139, exp22("endpoint_matched_raw_late_kl")),
     Claim("Exp22 endpoint-matched tuned late KL", 0.762124300, exp22("endpoint_matched_tuned_late_kl")),
@@ -202,6 +234,19 @@ CLAIMS = [
     Claim("Exp22 fixed-history max SMD", 0.079020321, exp22_fixed_history_quality("max_smd_after")),
     Claim("Exp22 fixed-history malformed rate", 0.0, exp22_fixed_history_quality("max_malformed_rate")),
     Claim("Exp22 fixed-history missing aligned rows", 0.0, exp22_fixed_history_quality("missing_aligned_step_rows"), tolerance=0.5),
+    Claim("Exp54 PT-teacher native paired raw late KL", 0.609906464, exp22_fixed_history_pt_teacher("pt_raw_native_fixed_raw_late_kl")),
+    Claim("Exp54 PT-teacher native paired raw late KL CI low", 0.134735569, exp22_fixed_history_pt_teacher("pt_raw_native_fixed_raw_late_kl", "ci95_low")),
+    Claim("Exp54 PT-teacher native paired raw late KL CI high", 1.079030946, exp22_fixed_history_pt_teacher("pt_raw_native_fixed_raw_late_kl", "ci95_high")),
+    Claim("Exp54 PT-teacher raw paired raw late KL", 0.428647668, exp22_fixed_history_pt_teacher("pt_raw_raw_fixed_raw_late_kl")),
+    Claim("Exp54 PT-teacher raw paired raw late KL CI low", 0.154965367, exp22_fixed_history_pt_teacher("pt_raw_raw_fixed_raw_late_kl", "ci95_low")),
+    Claim("Exp54 PT-teacher raw paired raw late KL CI high", 0.638592198, exp22_fixed_history_pt_teacher("pt_raw_raw_fixed_raw_late_kl", "ci95_high")),
+    Claim("Exp54 PT-teacher template-delta paired raw late KL", 0.181258796, exp22_fixed_history_pt_teacher("pt_raw_template_delta_raw_late_kl")),
+    Claim("Exp54 PT-teacher template-delta paired raw late KL CI low", -0.104763423, exp22_fixed_history_pt_teacher("pt_raw_template_delta_raw_late_kl", "ci95_low")),
+    Claim("Exp54 PT-teacher template-delta paired raw late KL CI high", 0.467281015, exp22_fixed_history_pt_teacher("pt_raw_template_delta_raw_late_kl", "ci95_high")),
+    Claim("Exp54 PT-teacher min CEM retention", 0.991434541, exp22_fixed_history_pt_teacher_quality("min_retained_fraction")),
+    Claim("Exp54 PT-teacher max SMD", 0.154679129, exp22_fixed_history_pt_teacher_quality("max_smd_after")),
+    Claim("Exp54 PT-teacher malformed rate", 0.0, exp22_fixed_history_pt_teacher_quality("max_malformed_rate")),
+    Claim("Exp54 PT-teacher missing aligned rows", 0.0, exp22_fixed_history_pt_teacher_quality("missing_aligned_step_rows"), tolerance=0.5),
     Claim("Exp9 Gemma PT token steps", 1273606, exp9_nsteps("gemma3_4b", "pt"), tolerance=0.5),
     Claim("Exp9 Gemma IT token steps", 810347, exp9_nsteps("gemma3_4b", "it"), tolerance=0.5),
     Claim("Exp9 Llama PT token steps", 517579, exp9_nsteps("llama31_8b", "pt"), tolerance=0.5),
@@ -240,6 +285,7 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     args = parser.parse_args()
     repo = args.repo.resolve()
+    check_generated_reporting_tables(repo)
     failures: list[str] = []
     for claim in CLAIMS:
         observed = claim.read(repo)

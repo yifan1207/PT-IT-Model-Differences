@@ -32,6 +32,7 @@ STATIC_FILES = [
     "paper_draft/PAPER_DRAFT_convergence_gap_v3.md",
     "scripts/reproduce/check_convergence_gap_claims.py",
     "scripts/reproduce/reproduce_convergence_gap_minimal.sh",
+    "scripts/analysis/build_convergence_gap_reporting_tables.py",
     "scripts/analysis/build_exp22_endpoint_deconfounded_synthesis.py",
     "scripts/analysis/build_exp22_template_regime_audit.py",
     "scripts/analysis/analyze_exp22_fixed_history_template_audit.py",
@@ -45,6 +46,9 @@ RESULT_FILES = [
     "results/exp09_cross_model_observational_replication/plots/L2_mean_kl_per_layer_tuned.png",
     "results/exp09_cross_model_observational_replication/plots/L2_commitment_tuned_top1.png",
     "results/exp09_cross_model_observational_replication/plots/L1_delta_cosine_6panel.png",
+    "results/paper_synthesis/convergence_gap_reporting_tables.md",
+    "results/paper_synthesis/convergence_gap_reporting_tables.json",
+    "results/paper_synthesis/convergence_gap_reporting_tables.csv",
     "results/paper_synthesis/exp22_endpoint_deconfounded_table.csv",
     "results/paper_synthesis/exp22_endpoint_deconfounded_summary.png",
     "results/paper_synthesis/exp22_template_raw_public600_audit.json",
@@ -56,6 +60,11 @@ RESULT_FILES = [
     "results/paper_synthesis/exp22_fixed_history_template_audit_support.csv",
     "results/paper_synthesis/exp22_fixed_history_template_audit_note.md",
     "results/paper_synthesis/exp22_fixed_history_template_audit.png",
+    "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit.json",
+    "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_effects.csv",
+    "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_support.csv",
+    "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_note.md",
+    "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit.png",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_paper_main.png",
     "results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json",
@@ -91,6 +100,8 @@ def sanitize_text(text: str) -> str:
         "gs://": "anonymous-object-store://",
         "RunPod": "RemoteJob",
         "runpod": "remotejob",
+        "Yanda": "InternalServer",
+        "yanda": "internal-server",
     }
     for src, dst in replacements.items():
         text = text.replace(src, dst)
@@ -148,6 +159,36 @@ def split_markdown(md: str) -> tuple[str, str, str]:
     abstract = " ".join(line.strip() for line in lines[start:end] if line.strip())
     body = "\n".join(lines[end + 1 :]).strip() + "\n"
     return tex_safe_unicode(title), tex_safe_unicode(abstract), body
+
+
+def refresh_reporting_tables() -> None:
+    run(["python", "scripts/analysis/build_convergence_gap_reporting_tables.py"])
+
+
+def apply_reporting_tables(md: str) -> str:
+    path = REPO / "results/paper_synthesis/convergence_gap_reporting_tables.json"
+    data = json.loads(path.read_text())
+    tables = data["tables"]
+    pattern = re.compile(
+        r"<!-- REPORT_TABLE: ([A-Za-z0-9_]+) -->.*?<!-- /REPORT_TABLE -->",
+        re.DOTALL,
+    )
+
+    used: set[str] = set()
+
+    def repl(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in tables:
+            raise KeyError(f"unknown generated reporting table {key!r}")
+        used.add(key)
+        table = tables[key]["markdown"].rstrip()
+        return f"<!-- REPORT_TABLE: {key} -->\n{table}\n<!-- /REPORT_TABLE -->"
+
+    out = pattern.sub(repl, md)
+    missing = set(tables) - used
+    if missing:
+        raise RuntimeError(f"generated reporting tables not used in paper: {sorted(missing)}")
+    return out
 
 
 def strip_heading_number(text: str) -> str:
@@ -363,7 +404,7 @@ def build_pdf(neurips_zip: Path) -> None:
         shutil.rmtree(BUILD_DIR)
     (BUILD_DIR / "figures").mkdir(parents=True)
     extract_template(neurips_zip)
-    title, abstract, body = split_markdown(PAPER_MD.read_text())
+    title, abstract, body = split_markdown(apply_reporting_tables(PAPER_MD.read_text()))
     (BUILD_DIR / "body.md").write_text(preprocess_body(body))
     convert_body_to_latex()
     write_checklist()
@@ -511,8 +552,10 @@ Full raw intervention reruns require multi-GPU hardware and are optional for aud
                 "claim_groups": {
                     "convergence_gap": [
                         "results/exp09_cross_model_observational_replication",
+                        "results/paper_synthesis/convergence_gap_reporting_tables.json",
                         "results/paper_synthesis/exp22_endpoint_deconfounded_table.csv",
                         "results/paper_synthesis/exp22_fixed_history_template_audit.json",
+                        "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit.json",
                     ],
                     "matched_prefix_localization": [
                         "results/exp11_matched_prefix_mlp_graft",
@@ -552,6 +595,7 @@ def main() -> int:
     if not args.neurips_template_zip.exists():
         raise FileNotFoundError(args.neurips_template_zip)
     SUBMISSION_DIR.mkdir(parents=True, exist_ok=True)
+    refresh_reporting_tables()
     build_pdf(args.neurips_template_zip)
     scan_for_leaks(BUILD_DIR)
     validation = validate_pdf()
