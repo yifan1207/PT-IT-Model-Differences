@@ -157,6 +157,11 @@ run_collect_phase() {
       idx=$((idx + 1))
       if [[ "${#pids[@]}" -ge "$max_inflight" ]]; then
         wait_for_batch
+        if [[ "$status" -ne 0 ]]; then
+          echo "[exp22-fixed] at least one collect worker failed; syncing partial outputs" >&2
+          sync_outputs || true
+          exit 1
+        fi
       fi
     done
   done
