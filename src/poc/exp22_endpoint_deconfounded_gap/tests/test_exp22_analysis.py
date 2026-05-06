@@ -24,8 +24,7 @@ from scripts.analysis.analyze_exp22_fixed_history_template_audit import (
     flatten_records as flatten_fixed_records,
     paired_effects as fixed_paired_effects,
 )
-from src.poc.exp22_endpoint_deconfounded_gap.collect import _prompt_for_regime
-from src.poc.exp22_endpoint_deconfounded_gap.fixed_history import _cell_prompt, _target_stats
+from src.poc.exp22_endpoint_deconfounded_gap.fixed_history import _cell_prompt, _prompt_for_regime, _target_stats
 
 
 class _FakeTokenizer:

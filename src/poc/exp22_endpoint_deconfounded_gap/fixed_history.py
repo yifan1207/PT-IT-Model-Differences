@@ -20,13 +20,12 @@ from typing import Any
 import torch
 
 from src.poc.cross_model.config import get_spec, model_id_for_variant
-from src.poc.cross_model.utils import load_dataset, load_model_and_tokenizer
+from src.poc.cross_model.utils import get_prompt_for_variant, load_dataset, load_model_and_tokenizer
 from src.poc.exp06_corrective_direction_steering.model_adapter import get_steering_adapter
 from src.poc.exp22_endpoint_deconfounded_gap.collect import (
     DENSE5_MODELS,
     _load_readouts,
     _logits_by_layer,
-    _prompt_for_regime,
     _read_done_ids,
     _record_id,
     merge_worker_outputs,
@@ -68,6 +67,29 @@ def _cell_prompt(
         tokenizer=tokenizer,
         prompt_regime=CELL_TO_PROMPT_REGIME[cell],
     )
+
+
+def _prompt_for_regime(
+    record: dict[str, Any],
+    *,
+    variant: str,
+    tokenizer,
+    prompt_regime: str,
+) -> tuple[str, str]:
+    if prompt_regime not in {"native", "raw"}:
+        raise ValueError(f"unknown prompt_regime={prompt_regime!r}; choices=('native', 'raw')")
+    use_chat_template = prompt_regime == "native" and variant == "it"
+    prompt = get_prompt_for_variant(
+        record,
+        variant=variant,
+        tokenizer=tokenizer,
+        apply_chat_template=use_chat_template,
+    )
+    if variant == "it" and use_chat_template:
+        return prompt, "native_chat"
+    if variant == "it":
+        return prompt, "raw_no_template"
+    return prompt, "raw"
 
 
 def _rank_from_logits(logits: torch.Tensor, token_id: int) -> int | None:
