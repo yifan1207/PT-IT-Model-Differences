@@ -8,6 +8,16 @@ import json
 import textwrap
 from pathlib import Path
 
+import matplotlib as mpl
+
+mpl.rcParams.update(
+    {
+        # NeurIPS explicitly disallows Type 3 fonts. Matplotlib's PDF backend
+        # defaults to Type 3 unless told to embed TrueType fonts.
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
+    }
+)
 import matplotlib.pyplot as plt
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 

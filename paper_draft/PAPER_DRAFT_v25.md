@@ -116,7 +116,7 @@ The $+1.68$ interaction multiplies the odds of $t_{\mathrm{IT}}$ over $t_{\mathr
 
 ### 3.2 Recipe Discrimination: Instruction-Following Descendants Are More Upstream-Conditioned
 
-The same coupling diagnostic separates instruction-following descendants from same-base domain/task foils. This is the worked example of why foreign-upstream reporting matters: a native late effect can look strong in two descendants of the same base, while the four-cell diagnostic shows different pathways. OpenMath2 shares the Llama-3.1-8B base and architecture with the instruction descendants; on math-domain support its matched-context late effect is large, but base upstream already exposes it. Instruction-following descendants remain upstream-conditioned.
+The same coupling diagnostic separates instruction-following descendants from same-base domain/task foils. This is the worked example of why foreign-upstream reporting matters: a native late effect can look strong in two descendants of the same base, while the four-cell diagnostic shows different pathways. OpenMath2 shares the Llama-3.1-8B base and architecture with the instruction descendants (Toshniwal et al., 2024); on math-domain support its matched-context late effect is large, but base upstream already exposes it. Instruction-following descendants remain upstream-conditioned.
 
 **Table 3: Same-base recipe discrimination.**
 
@@ -130,7 +130,7 @@ This is the main empirical payoff of the diagnostic: upstream-conditioned late e
 
 Controlled CPT foils sharpen the same point. Code and biomedical continuation adapters improve held-out domain NLL and pass merge/generation-health checks, but they do not reproduce the large instruction/governance-support interaction on the main support. The biomedical adapter does show a domain-local interaction, so the claim is recipe/support structure.
 
-Consequence and persistence checks support the interpretation without replacing the token-level estimand. On CONTENT-REASON exact-answer prompts, forcing the descendant-preferred divergent token improves suffix-only objective success by `+0.157` `[+0.120,+0.192]`; the forced token itself is excluded from scoring. Constrained continuation stays positive through `N=8`, coherent descendant tails carry more interaction than shuffled tails, and OpenMath again behaves differently. Released Tulu-3 and OLMo-2 sweeps show partial SFT presence and DPO/preference checkpoints near the final fixed-support score; these are cumulative checkpoint comparisons, not causal stage attributions.
+Consequence and persistence checks support the interpretation without replacing the token-level estimand. On CONTENT-REASON exact-answer prompts, forcing the descendant-preferred divergent token improves suffix-only objective success by `+0.157` `[+0.120,+0.192]`; the forced token itself is excluded from scoring. Constrained continuation stays positive through `N=8`, coherent descendant tails carry more interaction than shuffled tails, and OpenMath again behaves differently. Released Tulu-3 and OLMo-2 sweeps (Lambert et al., 2025; Team OLMo et al., 2025) show partial SFT presence and DPO/preference checkpoints near the final fixed-support score; these are cumulative checkpoint comparisons, not causal stage attributions.
 
 ### 3.3 Validation Against Hybrid and Selection Artifacts
 
@@ -181,9 +181,9 @@ This is an independent state-space check, not a crosscoder result. On Llama-3.1 
 
 ## 4. Related Work
 
-**Late refinement and post-training diffs.** Feed-forward layers promote vocabulary-space concepts and refine predictions (Geva et al., 2021, 2022), and layerwise/tuned-lens analyses describe late residual sharpening and confidence adjustment (nostalgebraist, 2020; Belrose et al., 2023; Lad et al., 2025; Joshi et al., 2025). Post-training diff work studies base-to-aligned or base-to-instruct shifts (Wu et al., 2024; Zhao, Ziser, and Cohen, 2024; Du et al., 2025; Chaudhury, 2025). Instruction Vectors find complementary early-to-late conditionality (Bigoulaeva et al., 2026), while Sparse but Critical analyzes RLVR token substitutions during sampling (Meng et al., 2026); our question is internal to paired checkpoints at the selected disagreement token.
+**Late refinement and post-training diffs.** Feed-forward layers promote vocabulary-space concepts and refine predictions (Geva et al., 2021, 2022), and layerwise/tuned-lens or layer-contrast analyses describe late residual sharpening and confidence adjustment (nostalgebraist, 2020; Belrose et al., 2023; Chuang et al., 2024; Lad et al., 2025; Joshi et al., 2025). Fine-tuning and post-training studies report low-dimensional, localized, or layerwise shifts in trained models (Aghajanyan et al., 2021; Panigrahi et al., 2023; Lin et al., 2024; Wu et al., 2024; Zhao, Ziser, and Cohen, 2024; Du et al., 2025; Chaudhury, 2025). Instruction Vectors find complementary early-to-late conditionality (Bigoulaeva et al., 2026), while Sparse but Critical analyzes RLVR token substitutions during sampling (Meng et al., 2026). Divergent-token metrics also use token-level changes as degradation signals (Deiseroth et al., 2024); our question is internal to paired checkpoints at the selected disagreement token.
 
-**Activation patching, steering axes, and sparse model diffs.** Activation patching requires care because metric choice, intervention direction, and off-manifold hybrids affect interpretation (Heimersheim and Nanda, 2024). Representation-engineering and activation-steering work identifies native-checkpoint handles on sentiment, refusal, harmfulness, assistant persona, and instruction-following directions (Zou et al., 2023; Turner et al., 2024; Panickssery et al., 2024; Arditi et al., 2024; Stolfo et al., 2025; Zhao et al., 2025; Lu et al., 2026). Our contribution is to make upstream dependence of a localized late effect measurable by scoring the same late-stack replacement under native and foreign upstream state. Cross-model activation patching is the closest methodological precedent (Prakash et al., 2024), but asks whether fine-tuning enhances an existing task circuit; ours asks how the IT late-stack replacement depends on upstream state at a natural PT/IT disagreement. Unlike global sparse model-diff work (Lindsey et al., 2024; Minder et al., 2025), we apply crosscoders after defining the causal estimand and ask which terminal features mediate it.
+**Activation patching, steering axes, and sparse model diffs.** Activation patching requires care because metric choice, intervention direction, and off-manifold hybrids affect interpretation (Heimersheim and Nanda, 2024). Representation-engineering and activation-steering work identifies native-checkpoint handles on sentiment, refusal, harmfulness, assistant persona, and instruction-following directions (Zou et al., 2023; Turner et al., 2023; Rimsky et al., 2024; Arditi et al., 2024; Stolfo et al., 2025; Zhao et al., 2025; Lu et al., 2026). Our contribution is to make upstream dependence of a localized late effect measurable by scoring the same late-stack replacement under native and foreign upstream state. Cross-model activation patching is the closest methodological precedent (Prakash et al., 2024), but asks whether fine-tuning enhances an existing task circuit; ours asks how the IT late-stack replacement depends on upstream state at a natural PT/IT disagreement. Unlike global sparse model-diff work (Lindsey et al., 2024; Minder et al., 2025), and complementary to sparse-autoencoder evaluation work (Makelov et al., 2024), we apply crosscoders after defining the causal estimand and ask which terminal features mediate it. Full circuit discovery is a separate goal (Conmy et al., 2023).
 
 **Novelty.** Prior work localizes fine-tuning effects, steering directions, or chat-specific features; here upstream-late coupling is the estimand. We score the same late-stack replacement under PT-shaped and IT-shaped upstream state at a natural PT/IT disagreement, decomposing one late-stack effect into direct and upstream-conditioned components. Instruction Vectors give convergent qualitative evidence; our contribution is the paired-checkpoint causal decomposition and sparse-feature bridge for the PT/IT readout margin.
 
@@ -229,9 +229,9 @@ Belrose, N., et al. (2023). Eliciting Latent Predictions from Transformers with 
 
 Bigoulaeva, I., Rohweder, J., Dutta, S., & Gurevych, I. (2026). Patches of Nonlinearity: Instruction Vectors in Large Language Models. arXiv:2602.07930.
 
-Bills, S., et al. (2023). Language Models Can Explain Neurons in Language Models. OpenAI.
+Bills, S., et al. (2023). Language Models Can Explain Neurons in Language Models. OpenAI. https://openai.com/index/language-models-can-explain-neurons-in-language-models/.
 
-Chuang, Y., et al. (2024). DoLA: Decoding by Contrasting Layers Improves Factuality. *ICLR 2024*.
+Chuang, Y., et al. (2024). DoLa: Decoding by Contrasting Layers Improves Factuality in Large Language Models. *ICLR 2024*.
 
 Chaudhury, A. (2025). Alignment is Localized: A Causal Probe into Preference Layers. arXiv:2510.16167.
 
@@ -239,7 +239,7 @@ Conmy, A., et al. (2023). Towards Automated Circuit Discovery for Mechanistic In
 
 Deiseroth, B., et al. (2024). Divergent Token Metrics: Measuring Degradation to Prune Away LLM Components -- and Optimize Quantization. *NAACL 2024*.
 
-Du, H., et al. (2025). How Post-Training Reshapes LLMs: A Mechanistic View on Knowledge, Truthfulness, Refusal, and Confidence. *COLM 2025*.
+Du, H., et al. (2025). How Post-Training Reshapes LLMs: A Mechanistic View on Knowledge, Truthfulness, Refusal, and Confidence. *COLM 2025*. arXiv:2504.02904.
 
 Geva, M., Schuster, R., Berant, J., & Levy, O. (2021). Transformer Feed-Forward Layers Are Key-Value Memories. *EMNLP 2021*.
 
@@ -257,7 +257,7 @@ Lambert, N., et al. (2025). Tulu 3: Pushing Frontiers in Open Language Model Pos
 
 Lin, B. Y., et al. (2024). The Unlocking Spell on Base LLMs: Rethinking Alignment via In-Context Learning. *ICLR 2024*.
 
-Lindsey, J., et al. (2024). Sparse Crosscoders for Cross-Layer Features and Model Diffing. *Transformer Circuits Thread*.
+Lindsey, J., et al. (2024). Sparse Crosscoders for Cross-Layer Features and Model Diffing. *Transformer Circuits Thread*. https://transformer-circuits.pub/2024/crosscoders/.
 
 Lu, C., Gallagher, J., Michala, J., Fish, K., & Lindsey, J. (2026). The Assistant Axis: Situating and Stabilizing the Default Persona of Language Models. arXiv:2601.10387.
 
@@ -265,23 +265,23 @@ Makelov, A., Lange, G., & Nanda, N. (2024). Towards Principled Evaluations of Sp
 
 Meng, H., et al. (2026). Sparse but Critical: A Token-Level Analysis of Distributional Shifts in RLVR Fine-Tuning of LLMs. arXiv:2603.22446.
 
-Minder, J., et al. (2025). Overcoming Sparsity Artifacts in Crosscoders to Interpret Chat-Tuning. *NeurIPS 2025*.
+Minder, J., et al. (2025). Overcoming Sparsity Artifacts in Crosscoders to Interpret Chat-Tuning. *NeurIPS 2025*. arXiv:2504.02922.
 
 nostalgebraist. (2020). Interpreting GPT: The Logit Lens. LessWrong. https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens.
 
 Panigrahi, A., et al. (2023). Task-Specific Skill Localization in Fine-tuned Language Models. *ICML 2023*.
 
-Panickssery, N., Gabrieli, N., Schulz, J., Tong, M., Hubinger, E., & Turner, A. M. (2024). Steering Llama 2 via Contrastive Activation Addition. arXiv:2312.06681.
-
 Prakash, N., et al. (2024). Fine-Tuning Enhances Existing Mechanisms: A Case Study on Entity Tracking. *ICLR 2024*.
+
+Rimsky, N., Gabrieli, N., Schulz, J., Tong, M., Hubinger, E., & Turner, A. (2024). Steering Llama 2 via Contrastive Activation Addition. *ACL 2024*. arXiv:2312.06681.
 
 Stolfo, A., Balachandran, V., Yousefi, S., Horvitz, E., & Nushi, B. (2025). Improving Instruction-Following in Language Models through Activation Steering. *ICLR 2025*. arXiv:2410.12877.
 
-Team OLMo et al. (2025). 2 OLMo 2 Furious. *COLM 2025*.
+Team OLMo et al. (2025). 2 OLMo 2 Furious (COLM's Version). *COLM 2025*.
 
 Toshniwal, S., et al. (2024). OpenMathInstruct-2: Accelerating AI for Math with Massive Open-Source Instruction Data. arXiv:2410.01560.
 
-Turner, A. M., et al. (2024). Steering Language Models with Activation Engineering. arXiv:2308.10248.
+Turner, A. M., et al. (2023). Steering Language Models With Activation Engineering. arXiv:2308.10248.
 
 Wu, X., et al. (2024). From Language Modeling to Instruction Following: Understanding the Behavior Shift in LLMs after Instruction Tuning. *NAACL 2024*.
 
@@ -662,7 +662,7 @@ The same-base wrong-descendant controls are nonzero in the artifact report, so w
 
 Across `225` interpreted features from the clean terminal-crosscoder families, mean validation AUROC is `0.886`. We use these labels descriptively, not as causal evidence: the causal claim remains the mediation, upstream-conditioning, and rescue results above. The paper-facing semantic check is the narrower `structure_readout` bucket below, where a predeclared readable subset is edited and tested against controls.
 
-The structure-readout edit tests one readable subset from the taxonomy rather than every label bucket. The predeclared `structure_readout` bucket contains `10` causal features across the three clean crosscoder families, with labels such as paragraph breaks, list openings, answer boundaries, and field separators. This is not an `N=10` statistical generalization claim: the features are the predeclared edit set, while the test is whether the edited terminal readout changes monotonically over prompts and families and beats matched controls. Editing this bucket inside the same terminal crosscoder windows gives a monotone dose response in interaction drop; matched-random and same-delta random controls are much smaller.
+The structure-readout edit tests one readable subset from the taxonomy rather than every label bucket. The predeclared `structure_readout` bucket contains `10` causal features across the three clean crosscoder families, with labels such as paragraph breaks, list openings, answer boundaries, and field separators. Automated labels are used as audit aids in the spirit of prior neuron-explanation work (Bills et al., 2023; Huang et al., 2023), not as proof of feature monosemanticity. This is not an `N=10` statistical generalization claim: the features are the predeclared edit set, while the test is whether the edited terminal readout changes monotonically over prompts and families and beats matched controls. Editing this bucket inside the same terminal crosscoder windows gives a monotone dose response in interaction drop; matched-random and same-delta random controls are much smaller.
 
 **Table E.8: Structure-readout bucket edit.**
 
