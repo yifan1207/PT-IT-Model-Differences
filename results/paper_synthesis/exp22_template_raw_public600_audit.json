@@ -1,0 +1,108 @@
+{
+  "artifacts": {
+    "effects_csv": "/Users/Yifan/Research/structral-semantic-features/results/paper_synthesis/exp22_template_raw_public600_effects.csv",
+    "lengths_csv": "/Users/Yifan/Research/structral-semantic-features/results/paper_synthesis/exp22_template_raw_public600_lengths.csv",
+    "note": "/Users/Yifan/Research/structral-semantic-features/results/paper_synthesis/exp22_template_raw_public600_note.md"
+  },
+  "effects": [
+    {
+      "ci95_high": -0.1695941455594134,
+      "ci95_low": -0.3863468078843912,
+      "estimate_it_minus_pt": -0.27493830934581664,
+      "key": "raw_late_kl",
+      "models": "olmo2_7b,qwen3_4b",
+      "n_models": 2,
+      "outcome": "late_kl_mean",
+      "probe_family": "raw"
+    },
+    {
+      "ci95_high": -0.19986610304919555,
+      "ci95_low": -0.43367514498874304,
+      "estimate_it_minus_pt": -0.31672908896899576,
+      "key": "raw_prefinal_late_kl",
+      "models": "olmo2_7b,qwen3_4b",
+      "n_models": 2,
+      "outcome": "prefinal_late_kl_mean",
+      "probe_family": "raw"
+    },
+    {
+      "ci95_high": 0.0017200043282126494,
+      "ci95_low": -0.011545757194242048,
+      "estimate_it_minus_pt": -0.005211822740265451,
+      "key": "raw_remaining_adj_js",
+      "models": "olmo2_7b,qwen3_4b",
+      "n_models": 2,
+      "outcome": "remaining_adj_js",
+      "probe_family": "raw"
+    },
+    {
+      "ci95_high": 0.08266758189719652,
+      "ci95_low": 0.043922283207913033,
+      "estimate_it_minus_pt": 0.06318927419969089,
+      "key": "raw_future_top1_flips",
+      "models": "olmo2_7b,qwen3_4b",
+      "n_models": 2,
+      "outcome": "future_top1_flips",
+      "probe_family": "raw"
+    },
+    {
+      "ci95_high": -0.026846276130619434,
+      "ci95_low": -0.034271717267671406,
+      "estimate_it_minus_pt": -0.030648597337904177,
+      "key": "raw_top5_churn",
+      "models": "olmo2_7b,qwen3_4b",
+      "n_models": 2,
+      "outcome": "top5_churn",
+      "probe_family": "raw"
+    }
+  ],
+  "lengths": [
+    {
+      "cap_rate_128": 0.365,
+      "mean_steps": 72.72,
+      "median_steps": 85.5,
+      "model": "olmo2_7b",
+      "n_records": 600,
+      "prompt_modes": "raw_no_template:600",
+      "variant": "it"
+    },
+    {
+      "cap_rate_128": 0.6466666666666666,
+      "mean_steps": 100.59666666666666,
+      "median_steps": 128.0,
+      "model": "olmo2_7b",
+      "n_records": 600,
+      "prompt_modes": "raw:600",
+      "variant": "pt"
+    },
+    {
+      "cap_rate_128": 1.0,
+      "mean_steps": 128,
+      "median_steps": 128.0,
+      "model": "qwen3_4b",
+      "n_records": 600,
+      "prompt_modes": "raw_no_template:600",
+      "variant": "it"
+    },
+    {
+      "cap_rate_128": 0.79,
+      "mean_steps": 107.905,
+      "median_steps": 128.0,
+      "model": "qwen3_4b",
+      "n_records": 600,
+      "prompt_modes": "raw:600",
+      "variant": "pt"
+    }
+  ],
+  "quality": {
+    "branch_record_ok": true,
+    "max_malformed_rate": 0.0,
+    "max_smd_after": 0.0833078893812259,
+    "min_retained_fraction": 0.99768092356202,
+    "nonempty_model_probe_ok": true,
+    "ok": true,
+    "retained_ok": true,
+    "smd_ok": true
+  },
+  "run_root": "/Users/Yifan/Research/structral-semantic-features/results/exp22_endpoint_deconfounded_gap/exp22_template_raw_public600_20260505_132816"
+}

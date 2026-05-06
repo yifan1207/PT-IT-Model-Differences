@@ -48,6 +48,63 @@ def exp22(key: str, column: str = "estimate_it_minus_pt") -> NumberFn:
     return _read
 
 
+def exp22_template_audit(key: str, column: str = "estimate_it_minus_pt") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "results/paper_synthesis/exp22_template_raw_public600_effects.csv")
+        for row in rows:
+            if row["key"] == key:
+                return float(row[column])
+        raise KeyError(key)
+
+    return _read
+
+
+def exp22_template_length(model: str, variant: str, column: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "results/paper_synthesis/exp22_template_raw_public600_lengths.csv")
+        for row in rows:
+            if row["model"] == model and row["variant"] == variant:
+                return float(row[column])
+        raise KeyError((model, variant, column))
+
+    return _read
+
+
+def exp22_template_quality(key: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(repo, "results/paper_synthesis/exp22_template_raw_public600_audit.json")
+        return float(data["quality"][key])
+
+    return _read
+
+
+def exp22_fixed_history(key: str, column: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "results/paper_synthesis/exp22_fixed_history_template_audit_effects.csv")
+        for row in rows:
+            if row["key"] == key:
+                return float(row[column])
+        raise KeyError(key)
+
+    return _read
+
+
+def exp22_fixed_history_quality(key: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(repo, "results/paper_synthesis/exp22_fixed_history_template_audit.json")
+        return float(data["quality"][key])
+
+    return _read
+
+
+def exp9_nsteps(model: str, branch: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(repo, "results/exp09_cross_model_observational_replication/data/exp9_summary.json")
+        return float(data[model][f"tuned_lens_raw_kl_final_n_steps_{branch}"])
+
+    return _read
+
+
 def exp11(condition: str, metric: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -60,6 +117,21 @@ def exp11(condition: str, metric: str) -> NumberFn:
     return _read
 
 
+def exp11_model(model: str, condition: str, metric: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp11_matched_prefix_mlp_graft/plots/"
+            "exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json",
+        )
+        for row in data["models"]:
+            if row["model"] == model:
+                return float(row["pipelines"][condition]["regions"]["final_20pct"]["kl_to_own_final"][metric])
+        raise KeyError((model, condition, metric))
+
+    return _read
+
+
 def exp14(group: str, condition: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -68,6 +140,22 @@ def exp14(group: str, condition: str) -> NumberFn:
             "exp13exp14_full_20260416/exp13_full_summary.json",
         )
         return float(data["dense_family_means"][group][condition])
+
+    return _read
+
+
+def exp14_model(model: str, condition: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp14_symmetric_matched_prefix_causality/"
+            "exp13exp14_full_20260416/exp13_full_summary.json",
+        )
+        return float(
+            data["models"][model]["it_side"][condition]["regions"]["final_20pct"][
+                "kl_to_own_final"
+            ]["delta"]
+        )
 
     return _read
 
@@ -92,6 +180,24 @@ CLAIMS = [
     Claim("Exp22 endpoint-free future top1 flips", 0.202966851, exp22("endpoint_free_future_top1_flips")),
     Claim("Exp22 min matched retention", 0.796257811, exp22("quality_min_matched_retention")),
     Claim("Exp22 max SMD after matching", 0.056949275, exp22("quality_max_smd_after")),
+    Claim("Exp22 raw-prompt public2 late KL", -0.274938309, exp22_template_audit("raw_late_kl")),
+    Claim("Exp22 raw-prompt public2 future top1 flips", 0.063189274, exp22_template_audit("raw_future_top1_flips")),
+    Claim("Exp22 raw-prompt public2 min matched retention", 0.997680924, exp22_template_quality("min_retained_fraction")),
+    Claim("Exp22 raw-prompt public2 max SMD", 0.083307889, exp22_template_quality("max_smd_after")),
+    Claim("Exp22 raw-prompt Qwen IT cap rate", 1.0, exp22_template_length("qwen3_4b", "it", "cap_rate_128")),
+    Claim("Exp22 raw-prompt Qwen PT cap rate", 0.79, exp22_template_length("qwen3_4b", "pt", "cap_rate_128")),
+    Claim("Exp9 Gemma PT token steps", 1273606, exp9_nsteps("gemma3_4b", "pt"), tolerance=0.5),
+    Claim("Exp9 Gemma IT token steps", 810347, exp9_nsteps("gemma3_4b", "it"), tolerance=0.5),
+    Claim("Exp9 Llama PT token steps", 517579, exp9_nsteps("llama31_8b", "pt"), tolerance=0.5),
+    Claim("Exp9 Llama IT token steps", 499240, exp9_nsteps("llama31_8b", "it"), tolerance=0.5),
+    Claim("Exp9 Qwen PT token steps", 482319, exp9_nsteps("qwen3_4b", "pt"), tolerance=0.5),
+    Claim("Exp9 Qwen IT token steps", 636979, exp9_nsteps("qwen3_4b", "it"), tolerance=0.5),
+    Claim("Exp9 Mistral PT token steps", 1380081, exp9_nsteps("mistral_7b", "pt"), tolerance=0.5),
+    Claim("Exp9 Mistral IT token steps", 501093, exp9_nsteps("mistral_7b", "it"), tolerance=0.5),
+    Claim("Exp9 OLMo PT token steps", 370171, exp9_nsteps("olmo2_7b", "pt"), tolerance=0.5),
+    Claim("Exp9 OLMo IT token steps", 166698, exp9_nsteps("olmo2_7b", "it"), tolerance=0.5),
+    Claim("Exp9 DeepSeek PT token steps", 184658, exp9_nsteps("deepseek_v2_lite", "pt"), tolerance=0.5),
+    Claim("Exp9 DeepSeek IT token steps", 163877, exp9_nsteps("deepseek_v2_lite", "it"), tolerance=0.5),
     Claim("Exp11 early graft final20 KL delta", -0.034725368, exp11("B_early_raw", "final_20pct_delta_kl_to_own_final")),
     Claim("Exp11 mid graft final20 KL delta", -0.045361679, exp11("B_mid_raw", "final_20pct_delta_kl_to_own_final")),
     Claim("Exp11 late graft final20 KL delta", 0.341448775, exp11("B_late_raw", "final_20pct_delta_kl_to_own_final")),
@@ -100,6 +206,16 @@ CLAIMS = [
     Claim("Exp14 IT-side late swap final20 KL delta", -0.508619582, exp14("it_side_final20_kl_delta", "D_late_ptswap")),
     Claim("Exp19 true late graft KL delta", 0.327112878, exp19("late", "true_delta")),
     Claim("Exp19 random late residual-projection KL delta", 0.003236096, exp19("late", "rand_resproj_delta")),
+    Claim("Exp11 Gemma late graft final20 KL delta", 0.609353042, exp11_model("gemma3_4b", "B_late_raw", "delta"), tolerance=5e-4),
+    Claim("Exp11 Qwen late graft final20 KL delta", 0.490619414, exp11_model("qwen3_4b", "B_late_raw", "delta"), tolerance=5e-4),
+    Claim("Exp11 Llama late graft final20 KL delta", 0.310460229, exp11_model("llama31_8b", "B_late_raw", "delta"), tolerance=5e-4),
+    Claim("Exp11 Mistral late graft final20 KL delta", 0.115389272, exp11_model("mistral_7b", "B_late_raw", "delta"), tolerance=5e-4),
+    Claim("Exp11 OLMo late graft final20 KL delta", 0.181421916, exp11_model("olmo2_7b", "B_late_raw", "delta"), tolerance=5e-4),
+    Claim("Exp14 Gemma late swap final20 KL delta", -0.822406870, exp14_model("gemma3_4b", "D_late_ptswap"), tolerance=5e-4),
+    Claim("Exp14 Qwen late swap final20 KL delta", -1.015086601, exp14_model("qwen3_4b", "D_late_ptswap"), tolerance=5e-4),
+    Claim("Exp14 Llama late swap final20 KL delta", -0.290872606, exp14_model("llama31_8b", "D_late_ptswap"), tolerance=5e-4),
+    Claim("Exp14 Mistral late swap final20 KL delta", -0.272626565, exp14_model("mistral_7b", "D_late_ptswap"), tolerance=5e-4),
+    Claim("Exp14 OLMo late swap final20 KL delta", -0.142105269, exp14_model("olmo2_7b", "D_late_ptswap"), tolerance=5e-4),
 ]
 
 

@@ -385,12 +385,9 @@ def plot_effects(effects: pd.DataFrame, out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(9, 4))
     x = np.arange(len(primary))
     ax.bar(x, primary["estimate"], color="#4C78A8")
-    yerr = np.vstack(
-        [
-            primary["estimate"].to_numpy(dtype=float) - primary["ci95_low"].to_numpy(dtype=float),
-            primary["ci95_high"].to_numpy(dtype=float) - primary["estimate"].to_numpy(dtype=float),
-        ]
-    )
+    lower = primary["estimate"].to_numpy(dtype=float) - primary["ci95_low"].to_numpy(dtype=float)
+    upper = primary["ci95_high"].to_numpy(dtype=float) - primary["estimate"].to_numpy(dtype=float)
+    yerr = np.vstack([np.maximum(lower, 0.0), np.maximum(upper, 0.0)])
     ax.errorbar(x, primary["estimate"], yerr=yerr, fmt="none", color="black", linewidth=0.8)
     ax.axhline(0, color="black", linewidth=0.8)
     ax.set_xticks(x, primary["label"], rotation=25, ha="right")

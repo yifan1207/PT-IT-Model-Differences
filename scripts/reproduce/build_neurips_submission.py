@@ -70,6 +70,13 @@ SECRET_REGEXES = [
     re.compile(r"(?i)\b(hf|ghp|sk)-[A-Za-z0-9_\-]{20,}\b"),
 ]
 
+SUPPLEMENT_JSON_KEY_EXCLUDE_SUBSTRINGS = (
+    "part_a_mlp_kl",
+    "convergence_gap",
+    "endpoint_matched",
+    "late_localization",
+)
+
 STATIC_SUPPLEMENT_FILES = [
     "paper_draft/PAPER_DRAFT_v25.md",
     "scripts/reproduce/check_paper_claims.py",
@@ -79,8 +86,6 @@ STATIC_SUPPLEMENT_FILES = [
 ]
 
 STATIC_SUPPLEMENT_DIRS = [
-    "scripts/analysis",
-    "scripts/plot",
     "src/poc/exp42_terminal_feature_upstream_conditioning",
     "src/poc/exp43_feature_rescue_handoff",
     "src/poc/exp44_middle_terminal_feature_handoff",
@@ -89,6 +94,9 @@ STATIC_SUPPLEMENT_DIRS = [
     "src/poc/exp48_static_chimera_sequence_validation",
     "src/poc/exp49_constrained_continuation_bridge",
     "src/poc/exp50_llm_judge_behavior_bridge",
+    "src/poc/exp51_native_history_crosspatch",
+    "src/poc/exp52_forced_token_consequence_bridge",
+    "src/poc/exp53_controlled_domain_finetunes",
 ]
 
 SUPPLEMENT_RESULT_GLOBS = [
@@ -128,7 +136,30 @@ SUPPLEMENT_RESULT_GLOBS = [
     "results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946/analysis_gpt52_sync/order_bias_audit.csv",
     "results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946/analysis_gpt52_sync/paper_claims_exp50.md",
     "results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946/analysis_gpt52_sync/*.png",
+    "results/exp51_native_history_crosspatch/exp51_full_rpro6000x4_20260505_235900/analysis/*.json",
+    "results/exp51_native_history_crosspatch/exp51_full_rpro6000x4_20260505_235900/analysis/*.csv",
+    "results/exp51_native_history_crosspatch/exp51_full_rpro6000x4_20260505_235900/analysis/*.md",
+    "results/exp51_native_history_crosspatch/exp51_full_rpro6000x4_20260505_235900/analysis/*.png",
+    "results/exp52_forced_token_consequence_bridge/exp52_full_combined_20260506_0127_a100x4/analysis/*.json",
+    "results/exp52_forced_token_consequence_bridge/exp52_full_combined_20260506_0127_a100x4/analysis/*.csv",
+    "results/exp52_forced_token_consequence_bridge/exp52_full_combined_20260506_0127_a100x4/analysis/*.md",
+    "results/exp52_forced_token_consequence_bridge/exp52_full_combined_20260506_0127_a100x4/analysis/plots/*.png",
+    "results/exp53_controlled_domain_finetunes/exp53_full_h200x2_20260506_0234/analysis/*.json",
+    "results/exp53_controlled_domain_finetunes/exp53_full_h200x2_20260506_0234/analysis/*.csv",
+    "results/exp53_controlled_domain_finetunes/exp53_full_h200x2_20260506_0234/analysis/*.md",
+    "results/exp53_controlled_domain_finetunes/exp53_full_h200x2_20260506_0234/analysis/*.png",
 ]
+
+SUPPLEMENT_EXCLUDE_PATTERNS = (
+    r"exp0?9",
+    r"exp1[149]",
+    r"exp2[2]",
+    r"conv" r"ergence[_-]gap",
+    r"late[_-]localization",
+    r"L2_mean" r"_kl",
+    r"part_a_mlp_kl",
+    r"exp24_32b_summary\.csv",
+)
 
 
 def run(cmd: list[str], *, cwd: Path = REPO, capture: bool = False) -> subprocess.CompletedProcess[str]:
@@ -175,6 +206,28 @@ def sanitize_text(text: str) -> str:
     return text
 
 
+def strip_nonpaper_json_keys(obj: object) -> object:
+    if isinstance(obj, dict):
+        clean: dict[str, object] = {}
+        for key, value in obj.items():
+            lowered = key.lower()
+            if any(substr in lowered for substr in SUPPLEMENT_JSON_KEY_EXCLUDE_SUBSTRINGS):
+                continue
+            clean[key] = strip_nonpaper_json_keys(value)
+        return clean
+    if isinstance(obj, list):
+        return [strip_nonpaper_json_keys(value) for value in obj]
+    return obj
+
+
+def sanitize_json_text(text: str) -> str:
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError:
+        return text
+    return json.dumps(strip_nonpaper_json_keys(obj), indent=2, sort_keys=True) + "\n"
+
+
 def strip_submission_only_comments(text: str) -> str:
     return re.sub(
         r"\n?<!-- Detailed per-file path table retained.*?-->\n?",
@@ -209,6 +262,8 @@ def copy_sanitized(src: Path, dest_root: Path, dest_rel: str | None = None) -> N
     if "__pycache__" in src.parts or src.suffix in {".pyc", ".pyo"}:
         return
     source_rel = rel(src)
+    if any(re.search(pattern, source_rel) for pattern in SUPPLEMENT_EXCLUDE_PATTERNS):
+        return
     dest_rel = sanitize_path(dest_rel or source_rel)
     dest = dest_root / dest_rel
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -218,7 +273,10 @@ def copy_sanitized(src: Path, dest_root: Path, dest_rel: str | None = None) -> N
         except UnicodeDecodeError:
             shutil.copy2(src, dest)
         else:
-            dest.write_text(strip_submission_only_comments(sanitize_text(text)))
+            text = strip_submission_only_comments(sanitize_text(text))
+            if src.suffix.lower() == ".json":
+                text = sanitize_json_text(text)
+            dest.write_text(text)
     else:
         shutil.copy2(src, dest)
 
@@ -233,8 +291,11 @@ def copy_tree_sanitized(src_dir: Path, dest_root: Path) -> None:
 
 def extract_template(neurips_zip: Path, build_dir: Path) -> None:
     with zipfile.ZipFile(neurips_zip) as zf:
-        for name in ["neurips_2026.sty", "checklist.tex"]:
-            (build_dir / name).write_bytes(zf.read(name))
+        official_style = zf.read("neurips_2026.sty")
+        (build_dir / "neurips_2026.sty").write_bytes(official_style)
+        if (build_dir / "neurips_2026.sty").read_bytes() != official_style:
+            raise RuntimeError("Generated neurips_2026.sty differs from the official template zip")
+        (build_dir / "checklist.tex").write_bytes(zf.read("checklist.tex"))
 
 
 def split_markdown(md: str) -> tuple[str, str, str]:
@@ -291,6 +352,30 @@ def rewrite_image_paths(md: str, figures_dir: Path) -> str:
     pattern = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
     seen: dict[str, str] = {}
 
+    def caption_tex(text: str) -> str:
+        text = re.sub(r"^\s*Figure\s+\d+\s*:\s*", "", text)
+        text = tex_safe_unicode(sanitize_text(text))
+        text = text.replace("\\", r"\textbackslash{}")
+        for src, dst in {
+            "&": r"\&",
+            "%": r"\%",
+            "$": r"\$",
+            "#": r"\#",
+            "_": r"\_",
+            "{": r"\{",
+            "}": r"\}",
+        }.items():
+            text = text.replace(src, dst)
+        text = text.replace("~", r"\textasciitilde{}")
+        text = text.replace("^", r"\textasciicircum{}")
+        return text
+
+    def figure_label(target: str) -> str:
+        stem = Path(target).stem
+        stem = re.sub(r"_[0-9a-f]{8}$", "", stem)
+        stem = re.sub(r"[^A-Za-z0-9]+", "-", stem).strip("-").lower()
+        return f"fig:{stem}"
+
     def repl(match: re.Match[str]) -> str:
         alt, raw_path = match.group(1), match.group(2)
         source = (PAPER_MD.parent / raw_path).resolve()
@@ -307,18 +392,22 @@ def rewrite_image_paths(md: str, figures_dir: Path) -> str:
             seen[str(source)] = target
         target = seen[str(source)]
         if "first_divergence_schematic_examples" in target:
-            opts = r"width=\linewidth,height=0.31\textheight,keepaspectratio"
+            opts = r"width=\linewidth,height=0.39\textheight,keepaspectratio"
         elif "selection_baselines" in target:
-            opts = r"width=0.92\linewidth,height=0.20\textheight,keepaspectratio"
-        elif "exp20_exp21_handoff" in target or "terminal_crosscoder" in target:
-            opts = r"width=0.92\linewidth,height=0.20\textheight,keepaspectratio"
-        else:
             opts = r"width=0.94\linewidth,height=0.24\textheight,keepaspectratio"
+        elif "exp20_exp21_handoff" in target or "terminal_crosscoder" in target:
+            opts = r"width=0.94\linewidth,height=0.25\textheight,keepaspectratio"
+        else:
+            opts = r"width=0.96\linewidth,height=0.27\textheight,keepaspectratio"
+        caption = caption_tex(alt) if alt.strip() else "Paper figure."
         return "\n".join(
             [
-                r"\begin{center}",
+                r"\begin{figure}[t]",
+                r"\centering",
                 rf"\includegraphics[{opts}]{{{target}}}",
-                r"\end{center}",
+                rf"\caption{{{caption}}}",
+                rf"\label{{{figure_label(target)}}}",
+                r"\end{figure}",
             ]
         )
 
@@ -345,6 +434,28 @@ def convert_body_to_latex(md_path: Path, tex_path: Path) -> None:
     )
     tex = tex_path.read_text()
     tex = tex.replace("\\begin{quote}", "\\begin{quote}\\small")
+    math_replacements = {
+        r"\texttt{t\_PT}": r"$t_{\mathrm{PT}}$",
+        r"\texttt{t\_IT}": r"$t_{\mathrm{IT}}$",
+        r"\texttt{t\_Base}": r"$t_{\mathrm{Base}}$",
+        r"\texttt{t\_Final}": r"$t_{\mathrm{Final}}$",
+        r"\texttt{t\_RLVR}": r"$t_{\mathrm{RLVR}}$",
+        r"\texttt{U\_PT}": r"$U_{\mathrm{PT}}$",
+        r"\texttt{U\_IT}": r"$U_{\mathrm{IT}}$",
+        r"\texttt{L\_PT}": r"$L_{\mathrm{PT}}$",
+        r"\texttt{L\_IT}": r"$L_{\mathrm{IT}}$",
+        r"\texttt{U\_PT,L\_PT}": r"$U_{\mathrm{PT}},L_{\mathrm{PT}}$",
+        r"\texttt{U\_PT,L\_IT}": r"$U_{\mathrm{PT}},L_{\mathrm{IT}}$",
+        r"\texttt{U\_IT,L\_PT}": r"$U_{\mathrm{IT}},L_{\mathrm{PT}}$",
+        r"\texttt{U\_IT,L\_IT}": r"$U_{\mathrm{IT}},L_{\mathrm{IT}}$",
+        r"\texttt{Y(U,L)}": r"$Y(U,L)$",
+        r"\texttt{Y(U\_PT,L\_PT)}": r"$Y(U_{\mathrm{PT}},L_{\mathrm{PT}})$",
+        r"\texttt{Y(U\_PT,L\_IT)}": r"$Y(U_{\mathrm{PT}},L_{\mathrm{IT}})$",
+        r"\texttt{Y(U\_IT,L\_PT)}": r"$Y(U_{\mathrm{IT}},L_{\mathrm{PT}})$",
+        r"\texttt{Y(U\_IT,L\_IT)}": r"$Y(U_{\mathrm{IT}},L_{\mathrm{IT}})$",
+    }
+    for src, dst in math_replacements.items():
+        tex = tex.replace(src, dst)
     tex = re.sub(
         r"\\pandocbounded\{\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}\}",
         r"\\includegraphics[width=\\linewidth,keepaspectratio]{\1}",
@@ -356,8 +467,6 @@ def convert_body_to_latex(md_path: Path, tex_path: Path) -> None:
 def filled_checklist(build_dir: Path) -> None:
     src = REPO / "paper_draft/neurips_v25_build/checklist_v25_filled.tex"
     text = src.read_text()
-    text = text.replace("Appendix~H", "Appendix~I")
-    text = text.replace("Appendix~H and artifact paths", "Appendix~I and artifact paths")
     text = sanitize_text(text)
     (build_dir / "checklist_filled.tex").write_text(text)
 
@@ -391,9 +500,10 @@ def write_main_tex(title: str, abstract: str, build_dir: Path) -> None:
 \setlist{{nosep,leftmargin=*}}
 \setlength{{\LTleft}}{{0pt}}
 \setlength{{\LTright}}{{0pt}}
+\setlength{{\tabcolsep}}{{4pt}}
+\renewcommand{{\arraystretch}}{{1.08}}
 \newcounter{{none}}
 \providecommand{{\tightlist}}{{\setlength{{\itemsep}}{{0pt}}\setlength{{\parskip}}{{0pt}}}}
-\AtBeginEnvironment{{longtable}}{{\scriptsize}}
 \title{{{title}}}
 \author{{Anonymous authors\\NeurIPS 2026 Submission}}
 
@@ -622,13 +732,6 @@ def stage_supplement(validation: dict[str, object]) -> None:
                         "results/exp37_random_prefix_baseline",
                         "results/exp40_prelate_commitment_control",
                     ],
-                    "late_localization_signatures": [
-                        "results/exp09_cross_model_observational_replication",
-                        "results/exp11_matched_prefix_mlp_graft",
-                        "results/exp14_symmetric_matched_prefix_causality",
-                        "results/exp19_late_mlp_specificity_controls",
-                        "results/paper_synthesis/exp22_endpoint_deconfounded_table.csv",
-                    ],
                     "depth_terminal_anatomy": [
                         "results/paper_synthesis/exp20_exp21_handoff_table.csv",
                         "results/exp31_terminal_depth_factorial",
@@ -652,6 +755,8 @@ def stage_supplement(validation: dict[str, object]) -> None:
                         "results/exp47_same_base_recipe_specificity",
                         "results/exp49_constrained_continuation_bridge",
                         "results/exp50_llm_judge_behavior_bridge",
+                        "results/exp52_forced_token_consequence_bridge",
+                        "results/exp53_controlled_domain_finetunes",
                     ],
                     "cpu_checks": [
                         "scripts/reproduce/check_paper_claims.py",

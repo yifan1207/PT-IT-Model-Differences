@@ -1,0 +1,5 @@
+model,variant,n_records,mean_steps,median_steps,cap_rate_128,prompt_modes
+olmo2_7b,it,600,72.72,85.5,0.365,raw_no_template:600
+olmo2_7b,pt,600,100.59666666666666,128.0,0.6466666666666666,raw:600
+qwen3_4b,it,600,128,128.0,1.0,raw_no_template:600
+qwen3_4b,pt,600,107.905,128.0,0.79,raw:600

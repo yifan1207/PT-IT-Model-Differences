@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 DENSE5_MODELS = ("gemma3_4b", "qwen3_4b", "llama31_8b", "mistral_7b", "olmo2_7b")
+PROMPT_REGIMES = ("native", "raw")
 
 
 @dataclass
@@ -139,6 +140,29 @@ def _record_id(record: dict[str, Any], fallback_index: int) -> str:
     return str(record.get("id") or record.get("record_id") or record.get("prompt_id") or fallback_index)
 
 
+def _prompt_for_regime(
+    record: dict[str, Any],
+    *,
+    variant: str,
+    tokenizer,
+    prompt_regime: str,
+) -> tuple[str, str]:
+    if prompt_regime not in PROMPT_REGIMES:
+        raise ValueError(f"unknown prompt_regime={prompt_regime!r}; choices={PROMPT_REGIMES}")
+    use_chat_template = prompt_regime == "native" and variant == "it"
+    prompt = get_prompt_for_variant(
+        record,
+        variant=variant,
+        tokenizer=tokenizer,
+        apply_chat_template=use_chat_template,
+    )
+    if variant == "it" and use_chat_template:
+        return prompt, "native_chat"
+    if variant == "it":
+        return prompt, "raw_no_template"
+    return prompt, "raw"
+
+
 @torch.no_grad()
 def collect_one_prompt(
     *,
@@ -153,14 +177,14 @@ def collect_one_prompt(
     max_new_tokens: int,
     readouts: dict[str, ProbeReadout],
     top_k: int,
+    prompt_regime: str,
 ) -> dict[str, Any]:
-    prompt = get_prompt_for_variant(
+    prompt, prompt_mode = _prompt_for_regime(
         record,
         variant=variant,
         tokenizer=tokenizer,
-        apply_chat_template=(variant == "it"),
+        prompt_regime=prompt_regime,
     )
-    prompt_mode = "native_chat" if variant == "it" else "raw"
     gen_device = device
     encoded = tokenizer(prompt, return_tensors="pt")
     input_ids = encoded["input_ids"].to(gen_device)
@@ -249,6 +273,7 @@ def collect_one_prompt(
         "prompt_id": prompt_id,
         "model": steering_adapter.model_name,
         "variant": variant,
+        "prompt_regime": prompt_regime,
         "prompt_mode": prompt_mode,
         "n_layers": len(layers),
         "n_steps": len(generated_ids),
@@ -336,6 +361,7 @@ def run_collect(args: argparse.Namespace) -> None:
                     max_new_tokens=args.max_new_tokens,
                     readouts=readouts,
                     top_k=args.top_k,
+                    prompt_regime=args.prompt_regime,
                 )
                 fout.write(json.dumps(out, ensure_ascii=False, allow_nan=False) + "\n")
                 fout.flush()
@@ -344,6 +370,7 @@ def run_collect(args: argparse.Namespace) -> None:
                     "prompt_id": prompt_id,
                     "model": args.model,
                     "variant": args.variant,
+                    "prompt_regime": args.prompt_regime,
                     "error": repr(exc),
                     "malformed": True,
                 }
@@ -367,6 +394,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--probe-families", nargs="+", choices=["raw", "tuned"], default=["raw", "tuned"])
     parser.add_argument("--tuned-lens-dir", default=None)
     parser.add_argument("--top-k", type=int, default=5)
+    parser.add_argument(
+        "--prompt-regime",
+        choices=PROMPT_REGIMES,
+        default="native",
+        help="native: PT raw, IT native chat template; raw: both PT/IT raw text for template-robustness ablation.",
+    )
     parser.add_argument("--merge-only", action="store_true")
     parser.add_argument("--allow-non-dense", action="store_true")
     return parser.parse_args()

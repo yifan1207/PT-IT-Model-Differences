@@ -147,6 +147,32 @@ MODEL_REGISTRY: dict[str, ModelSpec] = {
         pt_revision="d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
         it_revision="896ea440e5a9e6070e3d8a2774daf2b481ab425b",
     ),
+    "llama31_code_cpt_lora": ModelSpec(
+        name="llama31_code_cpt_lora",
+        pt_id="meta-llama/Llama-3.1-8B",
+        # Exp53 creates/updates this symlink after merging the LoRA adapter.
+        it_id="results/exp53_controlled_domain_finetunes/latest/models/llama31_code_cpt_lora_merged",
+        n_layers=32,
+        d_model=4096,
+        n_heads=32,
+        n_kv_heads=8,
+        global_attn_layers=frozenset(range(32)),
+        pt_revision="d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+        it_revision=None,
+    ),
+    "llama31_biomed_cpt_lora": ModelSpec(
+        name="llama31_biomed_cpt_lora",
+        pt_id="meta-llama/Llama-3.1-8B",
+        # Exp53 creates/updates this symlink after merging the LoRA adapter.
+        it_id="results/exp53_controlled_domain_finetunes/latest/models/llama31_biomed_cpt_lora_merged",
+        n_layers=32,
+        d_model=4096,
+        n_heads=32,
+        n_kv_heads=8,
+        global_attn_layers=frozenset(range(32)),
+        pt_revision="d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+        it_revision=None,
+    ),
     "qwen3_4b": ModelSpec(
         name="qwen3_4b",
         pt_id="Qwen/Qwen3-4B-Base",

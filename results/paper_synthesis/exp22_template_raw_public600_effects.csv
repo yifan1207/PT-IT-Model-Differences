@@ -1,0 +1,6 @@
+key,probe_family,outcome,estimate_it_minus_pt,ci95_low,ci95_high,models,n_models
+raw_late_kl,raw,late_kl_mean,-0.27493830934581664,-0.3863468078843912,-0.1695941455594134,"olmo2_7b,qwen3_4b",2
+raw_prefinal_late_kl,raw,prefinal_late_kl_mean,-0.31672908896899576,-0.43367514498874304,-0.19986610304919555,"olmo2_7b,qwen3_4b",2
+raw_remaining_adj_js,raw,remaining_adj_js,-0.005211822740265451,-0.011545757194242048,0.0017200043282126494,"olmo2_7b,qwen3_4b",2
+raw_future_top1_flips,raw,future_top1_flips,0.06318927419969089,0.043922283207913033,0.08266758189719652,"olmo2_7b,qwen3_4b",2
+raw_top5_churn,raw,top5_churn,-0.030648597337904177,-0.034271717267671406,-0.026846276130619434,"olmo2_7b,qwen3_4b",2

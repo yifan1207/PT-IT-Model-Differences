@@ -16,6 +16,8 @@ _ADAPTER_MAP: dict[str, type[ModelAdapter]] = {
     "llama31_tulu3_final": Llama31Adapter,
     "llama31_openmath2": Llama31Adapter,
     "llama31_hermes3": Llama31Adapter,
+    "llama31_code_cpt_lora": Llama31Adapter,
+    "llama31_biomed_cpt_lora": Llama31Adapter,
     "qwen3_4b":         Qwen3Adapter,
     "qwen25_32b":       Qwen3Adapter,
     "mistral_7b":       MistralAdapter,

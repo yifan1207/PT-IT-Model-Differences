@@ -58,6 +58,16 @@ DEPTH_ABLATION_WINDOWS = {
 }
 
 
+DEPTH_WINDOW_ALIASES = {
+    "llama31_code_cpt_lora": "llama31_8b",
+    "llama31_biomed_cpt_lora": "llama31_8b",
+}
+
+
+def _depth_window_key(model_name: str) -> str:
+    return DEPTH_WINDOW_ALIASES.get(model_name, model_name)
+
+
 @dataclass(frozen=True)
 class ConditionSpec:
     name: str
@@ -86,13 +96,14 @@ CONDITIONS = {
 
 def _window_defs(model_name: str, n_layers: int) -> dict[str, tuple[int, int]]:
     spec = get_spec(model_name)
+    depth_key = _depth_window_key(model_name)
     return {
         "early": (0, spec.phase_boundary),
         "mid_policy": (spec.phase_boundary, spec.corrective_onset),
         "late_reconciliation": (spec.corrective_onset, n_layers),
-        "exp11_early": DEPTH_ABLATION_WINDOWS[model_name]["early"],
-        "exp11_mid": DEPTH_ABLATION_WINDOWS[model_name]["mid"],
-        "exp11_late": DEPTH_ABLATION_WINDOWS[model_name]["late"],
+        "exp11_early": DEPTH_ABLATION_WINDOWS[depth_key]["early"],
+        "exp11_mid": DEPTH_ABLATION_WINDOWS[depth_key]["mid"],
+        "exp11_late": DEPTH_ABLATION_WINDOWS[depth_key]["late"],
         "terminal_last3": (n_layers - 3, n_layers),
         "terminal_last1": (n_layers - 1, n_layers),
     }
@@ -134,15 +145,16 @@ def _graft_window(model_name: str, condition: ConditionSpec) -> tuple[int, int] 
         return spec.n_layers - 3, spec.n_layers
     if condition.graft_kind == "last1":
         return spec.n_layers - 1, spec.n_layers
+    depth_key = _depth_window_key(model_name)
     if condition.graft_kind == "earlymid":
-        early_start, early_end = DEPTH_ABLATION_WINDOWS[model_name]["early"]
-        mid_start, mid_end = DEPTH_ABLATION_WINDOWS[model_name]["mid"]
+        early_start, early_end = DEPTH_ABLATION_WINDOWS[depth_key]["early"]
+        mid_start, mid_end = DEPTH_ABLATION_WINDOWS[depth_key]["mid"]
         return min(early_start, mid_start), max(early_end, mid_end)
     if condition.graft_kind == "midlate":
-        mid_start, mid_end = DEPTH_ABLATION_WINDOWS[model_name]["mid"]
-        late_start, late_end = DEPTH_ABLATION_WINDOWS[model_name]["late"]
+        mid_start, mid_end = DEPTH_ABLATION_WINDOWS[depth_key]["mid"]
+        late_start, late_end = DEPTH_ABLATION_WINDOWS[depth_key]["late"]
         return min(mid_start, late_start), max(mid_end, late_end)
-    return DEPTH_ABLATION_WINDOWS[model_name][condition.graft_kind]
+    return DEPTH_ABLATION_WINDOWS[depth_key][condition.graft_kind]
 
 
 def _make_capture(

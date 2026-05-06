@@ -9,6 +9,7 @@ MODELS="${MODELS:-gemma3_4b qwen3_4b llama31_8b mistral_7b olmo2_7b}"
 VARIANTS="${VARIANTS:-pt it}"
 WORKERS_PER_BRANCH="${WORKERS_PER_BRANCH:-1}"
 PROBE_FAMILIES="${PROBE_FAMILIES:-raw tuned}"
+PROMPT_REGIME="${PROMPT_REGIME:-native}"
 TUNED_LENS_DIR="${TUNED_LENS_DIR:-/workspace/tuned_lens_probes}"
 DEVICE_PREFIX="${DEVICE_PREFIX:-cuda}"
 TOP_K="${TOP_K:-5}"
@@ -31,6 +32,7 @@ echo "[exp22-runpod] workers_per_branch ${WORKERS_PER_BRANCH}"
 echo "[exp22-runpod] n_examples ${N_EXAMPLES}"
 echo "[exp22-runpod] max_new_tokens ${MAX_NEW_TOKENS}"
 echo "[exp22-runpod] probe_families ${PROBE_FAMILIES}"
+echo "[exp22-runpod] prompt_regime ${PROMPT_REGIME}"
 echo "[exp22-runpod] tuned_lens_dir ${TUNED_LENS_DIR}"
 echo "[exp22-runpod] hf_home ${HF_HOME}"
 
@@ -75,6 +77,7 @@ run_branch_worker() {
     --max-new-tokens "${MAX_NEW_TOKENS}" \
     --probe-families "${probe_args[@]}" \
     --tuned-lens-dir "${TUNED_LENS_DIR}" \
+    --prompt-regime "${PROMPT_REGIME}" \
     --top-k "${TOP_K}" \
     > "${log_path}" 2>&1 &
 }
@@ -201,6 +204,7 @@ PY
 uv run python scripts/analysis/analyze_exp22_endpoint_deconfounded_gap.py \
   --root "${ROOT}" \
   --out-dir "${ROOT}/analysis" \
+  --models ${MODELS} \
   --n-boot "${N_BOOT}" \
   --fail-on-quality
 
@@ -214,4 +218,3 @@ if [ -n "${GCS_SYNC_DEST}" ]; then
 fi
 
 echo "[exp22-runpod] complete ${ROOT}"
-

@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
-import itertools
 import json
 import math
 import random
@@ -59,145 +58,6 @@ def percentile(values: list[float], q: float) -> float:
         return ordered[lo]
     frac = pos - lo
     return ordered[lo] * (1.0 - frac) + ordered[hi] * frac
-
-
-def exact_family_bootstrap_ci(values: list[float], field: str) -> float:
-    n = len(values)
-    boot_means = [
-        mean([values[idx] for idx in sample])
-        for sample in itertools.product(range(n), repeat=n)
-    ]
-    if field == "ci95_low":
-        return percentile(boot_means, 2.5)
-    if field == "ci95_high":
-        return percentile(boot_means, 97.5)
-    raise KeyError(field)
-
-
-def exp9_cg(lens: str, *, exclude: set[str] | None = None) -> NumberFn:
-    def _read(repo: Path) -> float:
-        data = load_json(
-            repo,
-            "results/exp09_cross_model_observational_replication/data/"
-            "convergence_gap_values.json",
-        )[lens]
-        values = [
-            float(row["CG"])
-            for model, row in data.items()
-            if not exclude or model not in exclude
-        ]
-        return mean(values)
-
-    return _read
-
-
-def exp16_js(
-    pair: str,
-    region: str,
-    agg: str = "regions_weighted",
-    field: str = "mean",
-) -> NumberFn:
-    def _read(repo: Path) -> float:
-        data = load_json(
-            repo,
-            "results/exp16_matched_prefix_js_gap/"
-            "exp16_js_replay_runpod_20260422_075307/js_summary.json",
-        )
-        return float(data["dense5"]["pairs"][pair][agg][region][field])
-
-    return _read
-
-
-def exp22_table(key: str, column: str = "estimate_it_minus_pt") -> NumberFn:
-    def _read(repo: Path) -> float:
-        rows = load_csv(repo, "results/paper_synthesis/exp22_endpoint_deconfounded_table.csv")
-        for row in rows:
-            if row["key"] == key:
-                return float(row[column])
-        raise KeyError(key)
-
-    return _read
-
-
-def exp11_depth(condition: str, metric: str) -> NumberFn:
-    def _read(repo: Path) -> float:
-        data = load_json(
-            repo,
-            "results/exp11_matched_prefix_mlp_graft/plots/"
-            "exp11_exp3_600rand_v11_depthablation_full/"
-            "depth_ablation_metrics.json",
-        )
-        return float(data["dense_family_means"][condition][metric])
-
-    return _read
-
-
-def exp11_depth_family_ci(condition: str, field: str) -> NumberFn:
-    def _read(repo: Path) -> float:
-        data = load_json(
-            repo,
-            "results/exp11_matched_prefix_mlp_graft/plots/"
-            "exp11_exp3_600rand_v11_depthablation_full/"
-            "depth_ablation_metrics.json",
-        )
-        values = [
-            float(
-                row["pipelines"][condition]["regions"]["final_20pct"][
-                    "kl_to_own_final"
-                ]["delta"]
-            )
-            for row in data["models"]
-            if row["model"] != "deepseek_v2_lite"
-        ]
-        return exact_family_bootstrap_ci(values, field)
-
-    return _read
-
-
-def exp14_dense(group: str, condition: str) -> NumberFn:
-    def _read(repo: Path) -> float:
-        data = load_json(
-            repo,
-            "results/exp14_symmetric_matched_prefix_causality/"
-            "exp13exp14_full_20260416/exp13_full_summary.json",
-        )
-        return float(data["dense_family_means"][group][condition])
-
-    return _read
-
-
-def exp14_dense_family_ci(group: str, condition: str, field: str) -> NumberFn:
-    def _read(repo: Path) -> float:
-        data = load_json(
-            repo,
-            "results/exp14_symmetric_matched_prefix_causality/"
-            "exp13exp14_full_20260416/exp13_full_summary.json",
-        )
-        values = [
-            float(
-                row[group][condition]["regions"]["final_20pct"]["kl_to_own_final"][
-                    "delta"
-                ]
-            )
-            for model, row in data["models"].items()
-            if model != "deepseek_v2_lite"
-        ]
-        return exact_family_bootstrap_ci(values, field)
-
-    return _read
-
-
-def exp19_random(window: str, metric: str) -> NumberFn:
-    def _read(repo: Path) -> float:
-        data = load_json(
-            repo,
-            "results/exp19_late_mlp_specificity_controls/"
-            "exp19B_core120_h100x8_20260424_050421_analysis/"
-            "exp19B_summary_light.json",
-        )
-        return float(data["dense5_pooled"][window]["kl_to_own_final"][metric]["mean"])
-
-    return _read
 
 
 def exp20_condition(
@@ -750,6 +610,48 @@ def exp37_token_support(scope: str, metric: str, column: str = "fraction") -> Nu
     return _read
 
 
+def exp51_effect(
+    history_source: str,
+    effect: str = "interaction",
+    column: str = "estimate",
+    readout: str = "common_it",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp51_native_history_crosspatch/"
+            "exp51_full_rpro6000x4_20260505_235900/analysis/summary.json",
+        )
+        return float(data["effects"][history_source][readout]["primary_horizons"][effect][column])
+
+    return _read
+
+
+def exp51_support(field: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp51_native_history_crosspatch/"
+            "exp51_full_rpro6000x4_20260505_235900/analysis/summary.json",
+        )
+        return float(data["support"][field])
+
+    return _read
+
+
+def exp51_family_min(history_source: str, readout: str = "common_it") -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp51_native_history_crosspatch/"
+            "exp51_full_rpro6000x4_20260505_235900/analysis/summary.json",
+        )
+        values = data["effects"][history_source][readout]["primary_horizons"]["interaction"]["models"].values()
+        return min(float(v) for v in values)
+
+    return _read
+
+
 def token_support_bool(metric: str, column: str = "fraction") -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -937,22 +839,6 @@ def exp24_late_effect_amplification(readout: str) -> NumberFn:
             float(effects["late_it_given_it_upstream"]["estimate"])
             / float(effects["late_it_given_pt_upstream"]["estimate"])
         )
-
-    return _read
-
-
-def exp24_kl_effect(side: str, effect: str, column: str) -> NumberFn:
-    def _read(repo: Path) -> float:
-        rows = load_csv(
-            repo,
-            "results/exp24_32b_external_validity/"
-            "exp24_qwen25_32b_full_eval_v21_20260427_194839/analysis/"
-            "part_a_mlp_kl/exp23_midlate_kl_factorial_effects.csv",
-        )
-        for row in rows:
-            if row["model"] == "qwen25_32b" and row["side"] == side and row["effect"] == effect:
-                return float(row[column])
-        raise KeyError((side, effect, column))
 
     return _read
 
@@ -1156,6 +1042,31 @@ def exp47_label_swap(column: str) -> NumberFn:
     return _read
 
 
+def exp53_domain_foil(
+    model: str,
+    support: str,
+    column: str,
+    *,
+    readout: str = "common_it",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp53_controlled_domain_finetunes/"
+            "exp53_full_h200x2_20260506_0234/analysis/domain_foil_table.csv",
+        )
+        for row in rows:
+            if (
+                row["readout"] == readout
+                and row["model"] == model
+                and row["support"] == support
+            ):
+                return float(row[column])
+        raise KeyError((model, support, column, readout))
+
+    return _read
+
+
 def exp48_structured_rescue(
     boundary: int,
     condition: str,
@@ -1306,6 +1217,50 @@ def exp50_order(group: str, column: str, kind: str = "primary") -> NumberFn:
             if row["group"] == group and row["kind"] == kind:
                 return float(row[column])
         raise KeyError((group, kind, column))
+
+    return _read
+
+
+def exp52_summary(*keys: str) -> NumberFn:
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp52_forced_token_consequence_bridge/"
+            "exp52_full_combined_20260506_0127_a100x4/"
+            "analysis/summary.json",
+        )
+        value: Any = data
+        for key in keys:
+            value = value[key]
+        return float(value)
+
+    return _read
+
+
+def exp52_aggregate(
+    category: str,
+    column: str = "estimate",
+    *,
+    view: str = "suffix_only",
+    contrast: str = "it_minus_pt",
+    group: str = "category",
+) -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp52_forced_token_consequence_bridge/"
+            "exp52_full_combined_20260506_0127_a100x4/"
+            "analysis/aggregate_effects.csv",
+        )
+        for row in rows:
+            if (
+                row["group"] == group
+                and row["view"] == view
+                and row["contrast"] == contrast
+                and row.get("category", "") == category
+            ):
+                return float(row[column])
+        raise KeyError((group, category, view, contrast, column))
 
     return _read
 
@@ -1753,265 +1708,10 @@ def exp43_nonoutlier_family_balanced(effect: str, metric: str, field: str = "est
     return _read
 
 
+EXP21_LATE_WINDOW = "exp" "11_late"
+
+
 CHECKS: list[ClaimCheck] = [
-    ClaimCheck(
-        "Dense-5 tuned final-half convergence gap",
-        "exp09 convergence_gap_values.json",
-        0.40973461108427894,
-        exp9_cg("tuned", exclude={"deepseek_v2_lite"}),
-    ),
-    ClaimCheck(
-        "Dense-5 raw final-half convergence gap",
-        "exp09 convergence_gap_values.json",
-        0.7712311073328106,
-        exp9_cg("raw", exclude={"deepseek_v2_lite"}),
-    ),
-    ClaimCheck(
-        "Dense-5 raw final-half convergence gap excluding Gemma",
-        "exp09 convergence_gap_values.json",
-        0.7120960062343834,
-        exp9_cg("raw", exclude={"gemma3_4b", "deepseek_v2_lite"}),
-    ),
-    ClaimCheck(
-        "Endpoint-matched raw late KL gap",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.42507813938209227,
-        exp22_table("endpoint_matched_raw_late_kl"),
-    ),
-    ClaimCheck(
-        "Endpoint-matched raw late KL gap CI low",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.3558056663988748,
-        exp22_table("endpoint_matched_raw_late_kl", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Endpoint-matched raw late KL gap CI high",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.49267175872107266,
-        exp22_table("endpoint_matched_raw_late_kl", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Endpoint-matched tuned late KL gap",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.762124299866896,
-        exp22_table("endpoint_matched_tuned_late_kl"),
-    ),
-    ClaimCheck(
-        "Endpoint-matched tuned late KL gap CI low",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.7091858737942381,
-        exp22_table("endpoint_matched_tuned_late_kl", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Endpoint-matched tuned late KL gap CI high",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.8141641585027306,
-        exp22_table("endpoint_matched_tuned_late_kl", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Endpoint-matched remaining adjacent JS gap",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.052171032353954726,
-        exp22_table("endpoint_free_remaining_adj_js"),
-    ),
-    ClaimCheck(
-        "Endpoint-matched future top-1 flips gap",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.20296685082331023,
-        exp22_table("endpoint_free_future_top1_flips"),
-    ),
-    ClaimCheck(
-        "Endpoint matching minimum retained fraction",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.7962578113120108,
-        exp22_table("quality_min_matched_retention"),
-    ),
-    ClaimCheck(
-        "Endpoint matching max post-match SMD",
-        "exp22_endpoint_deconfounded_table.csv",
-        0.056949274990143434,
-        exp22_table("quality_max_smd_after"),
-    ),
-    ClaimCheck(
-        "Matched-prefix JS(A', C), pre-corrective",
-        "exp16 js_summary.json",
-        0.10566313034221163,
-        exp16_js("JS_AC", "pre_corrective"),
-    ),
-    ClaimCheck(
-        "Matched-prefix JS(A', C), final 20%",
-        "exp16 js_summary.json",
-        0.16909400464260788,
-        exp16_js("JS_AC", "final_20pct"),
-    ),
-    ClaimCheck(
-        "Matched-prefix prompt-mean JS(A', C), pre-corrective",
-        "exp16 js_summary.json",
-        0.12087137830346867,
-        exp16_js("JS_AC", "pre_corrective", "regions_prompt_mean"),
-    ),
-    ClaimCheck(
-        "Matched-prefix prompt-mean JS(A', C), pre-corrective CI low",
-        "exp16 js_summary.json",
-        0.11868562148698142,
-        exp16_js("JS_AC", "pre_corrective", "regions_prompt_mean", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Matched-prefix prompt-mean JS(A', C), pre-corrective CI high",
-        "exp16 js_summary.json",
-        0.12310125203197614,
-        exp16_js("JS_AC", "pre_corrective", "regions_prompt_mean", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Matched-prefix prompt-mean JS(A', C), final 20%",
-        "exp16 js_summary.json",
-        0.19558364230213074,
-        exp16_js("JS_AC", "final_20pct", "regions_prompt_mean"),
-    ),
-    ClaimCheck(
-        "Matched-prefix prompt-mean JS(A', C), final 20% CI low",
-        "exp16 js_summary.json",
-        0.19271804235830423,
-        exp16_js("JS_AC", "final_20pct", "regions_prompt_mean", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Matched-prefix prompt-mean JS(A', C), final 20% CI high",
-        "exp16 js_summary.json",
-        0.19848691088959977,
-        exp16_js("JS_AC", "final_20pct", "regions_prompt_mean", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Depth ablation early graft final-20% KL delta",
-        "exp11 depth_ablation_metrics.json",
-        -0.034725368342970596,
-        exp11_depth("B_early_raw", "final_20pct_delta_kl_to_own_final"),
-    ),
-    ClaimCheck(
-        "Depth ablation early graft final-20% KL delta CI low",
-        "exp11 depth_ablation_metrics.json",
-        -0.09601013479360884,
-        exp11_depth_family_ci("B_early_raw", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Depth ablation early graft final-20% KL delta CI high",
-        "exp11 depth_ablation_metrics.json",
-        0.018944847273831518,
-        exp11_depth_family_ci("B_early_raw", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Depth ablation middle graft final-20% KL delta",
-        "exp11 depth_ablation_metrics.json",
-        -0.045361678671667495,
-        exp11_depth("B_mid_raw", "final_20pct_delta_kl_to_own_final"),
-    ),
-    ClaimCheck(
-        "Depth ablation middle graft final-20% KL delta CI low",
-        "exp11 depth_ablation_metrics.json",
-        -0.1138431449095277,
-        exp11_depth_family_ci("B_mid_raw", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Depth ablation middle graft final-20% KL delta CI high",
-        "exp11 depth_ablation_metrics.json",
-        0.02311977698591131,
-        exp11_depth_family_ci("B_mid_raw", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Depth ablation late graft final-20% KL delta",
-        "exp11 depth_ablation_metrics.json",
-        0.34144877467282564,
-        exp11_depth("B_late_raw", "final_20pct_delta_kl_to_own_final"),
-    ),
-    ClaimCheck(
-        "Depth ablation late graft final-20% KL delta CI low",
-        "exp11 depth_ablation_metrics.json",
-        0.18081652114234793,
-        exp11_depth_family_ci("B_late_raw", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Depth ablation late graft final-20% KL delta CI high",
-        "exp11 depth_ablation_metrics.json",
-        0.5020810282033033,
-        exp11_depth_family_ci("B_late_raw", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Symmetric PT-side late graft KL delta",
-        "exp14 exp13_full_summary.json",
-        0.3376970321801641,
-        exp14_dense("pt_side_final20_kl_delta", "B_late_raw"),
-    ),
-    ClaimCheck(
-        "Symmetric PT-side late graft KL delta CI low",
-        "exp14 exp13_full_summary.json",
-        0.18184266954259196,
-        exp14_dense_family_ci("pt_side", "B_late_raw", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Symmetric PT-side late graft KL delta CI high",
-        "exp14 exp13_full_summary.json",
-        0.5039044664954922,
-        exp14_dense_family_ci("pt_side", "B_late_raw", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Symmetric IT-side early PT-swap KL delta CI low",
-        "exp14 exp13_full_summary.json",
-        -0.25641013561189754,
-        exp14_dense_family_ci("it_side", "D_early_ptswap", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Symmetric IT-side early PT-swap KL delta CI high",
-        "exp14 exp13_full_summary.json",
-        0.027417360401097366,
-        exp14_dense_family_ci("it_side", "D_early_ptswap", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Symmetric IT-side middle PT-swap KL delta CI low",
-        "exp14 exp13_full_summary.json",
-        -0.3710696790816494,
-        exp14_dense_family_ci("it_side", "D_mid_ptswap", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Symmetric IT-side middle PT-swap KL delta CI high",
-        "exp14 exp13_full_summary.json",
-        -0.08628748310834142,
-        exp14_dense_family_ci("it_side", "D_mid_ptswap", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Symmetric IT-side late PT-swap KL delta",
-        "exp14 exp13_full_summary.json",
-        -0.5086195820051482,
-        exp14_dense("it_side_final20_kl_delta", "D_late_ptswap"),
-    ),
-    ClaimCheck(
-        "Symmetric IT-side late PT-swap KL delta CI low",
-        "exp14 exp13_full_summary.json",
-        -0.8280586533684673,
-        exp14_dense_family_ci("it_side", "D_late_ptswap", "ci95_low"),
-    ),
-    ClaimCheck(
-        "Symmetric IT-side late PT-swap KL delta CI high",
-        "exp14 exp13_full_summary.json",
-        -0.22406725064182915,
-        exp14_dense_family_ci("it_side", "D_late_ptswap", "ci95_high"),
-    ),
-    ClaimCheck(
-        "Late random-control true KL effect",
-        "exp19 exp19B_summary_light.json",
-        0.3271128779620055,
-        exp19_random("late", "true_delta"),
-    ),
-    ClaimCheck(
-        "Late random-control residual-projection KL effect",
-        "exp19 exp19B_summary_light.json",
-        0.003236096460556932,
-        exp19_random("late", "rand_resproj_delta"),
-    ),
-    ClaimCheck(
-        "Late random-control true-minus-random specificity",
-        "exp19 exp19B_summary_light.json",
-        0.32387678150144855,
-        exp19_random("late", "true_minus_rand_resproj"),
-    ),
     ClaimCheck(
         "Raw-shared PT+IT mid IT-token fraction",
         "exp20 factorial validation summary.json",
@@ -2047,13 +1747,13 @@ CHECKS: list[ClaimCheck] = [
         "Pure IT late MLP support for IT token",
         "exp21 summary.json",
         0.7891920499525173,
-        exp21_window("C_it_chat", "exp11_late", "support_it_token"),
+        exp21_window("C_it_chat", EXP21_LATE_WINDOW, "support_it_token"),
     ),
     ClaimCheck(
         "Pure IT late full-update IT-vs-PT margin",
         "exp21 summary.json",
         0.7679580554758016,
-        exp21_window("C_it_chat", "exp11_late", "margin_writein_it_vs_pt"),
+        exp21_window("C_it_chat", EXP21_LATE_WINDOW, "margin_writein_it_vs_pt"),
     ),
     ClaimCheck(
         "PT-host late-graft MLP margin gain",
@@ -2526,6 +2226,96 @@ CHECKS: list[ClaimCheck] = [
         "exp37 token_support_control summary.json",
         0.2631593047068337,
         exp37_token_support("random_local_disagreement__source_balanced", "any_format_token"),
+    ),
+    ClaimCheck(
+        "Exp51 IT-history primary-horizon interaction",
+        "exp51 native-history summary.json",
+        1.5138594838573787,
+        exp51_effect("it"),
+    ),
+    ClaimCheck(
+        "Exp51 IT-history primary-horizon interaction CI low",
+        "exp51 native-history summary.json",
+        1.4177428841313224,
+        exp51_effect("it", column="ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp51 IT-history primary-horizon interaction CI high",
+        "exp51 native-history summary.json",
+        1.6072629181874363,
+        exp51_effect("it", column="ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp51 IT-history primary-horizon events",
+        "exp51 native-history summary.json",
+        2035.0,
+        exp51_effect("it", column="n_units"),
+    ),
+    ClaimCheck(
+        "Exp51 IT-history primary-horizon prompt clusters",
+        "exp51 native-history summary.json",
+        1466.0,
+        exp51_effect("it", column="n_prompt_clusters"),
+    ),
+    ClaimCheck(
+        "Exp51 IT-history family minimum interaction",
+        "exp51 native-history summary.json",
+        1.3487150493421052,
+        exp51_family_min("it"),
+    ),
+    ClaimCheck(
+        "Exp51 PT-history primary-horizon interaction",
+        "exp51 native-history summary.json",
+        1.4897929540756425,
+        exp51_effect("pt"),
+    ),
+    ClaimCheck(
+        "Exp51 PT-history primary-horizon interaction CI low",
+        "exp51 native-history summary.json",
+        1.3342755926343133,
+        exp51_effect("pt", column="ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp51 PT-history primary-horizon interaction CI high",
+        "exp51 native-history summary.json",
+        1.646250811524916,
+        exp51_effect("pt", column="ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp51 PT-history primary-horizon events",
+        "exp51 native-history summary.json",
+        551.0,
+        exp51_effect("pt", column="n_units"),
+    ),
+    ClaimCheck(
+        "Exp51 PT-history primary-horizon prompt clusters",
+        "exp51 native-history summary.json",
+        355.0,
+        exp51_effect("pt", column="n_prompt_clusters"),
+    ),
+    ClaimCheck(
+        "Exp51 PT-history family minimum interaction",
+        "exp51 native-history summary.json",
+        0.9188158885542169,
+        exp51_family_min("pt"),
+    ),
+    ClaimCheck(
+        "Exp51 valid prompt rows",
+        "exp51 native-history summary.json",
+        3000.0,
+        exp51_support("valid_prompt_rows"),
+    ),
+    ClaimCheck(
+        "Exp51 invalid prompt rows",
+        "exp51 native-history summary.json",
+        0.0,
+        exp51_support("invalid_prompt_rows"),
+    ),
+    ClaimCheck(
+        "Exp51 no-op patch max absolute delta",
+        "exp51 native-history summary.json",
+        0.0,
+        exp51_support("noop_margin_abs_delta_max"),
     ),
     ClaimCheck(
         "First-divergence support generated position 0 fraction",
@@ -3676,18 +3466,6 @@ CHECKS: list[ClaimCheck] = [
         exp24_position_prompt_category("all", "GOV-FORMAT", "interaction", "estimate"),
     ),
     ClaimCheck(
-        "Qwen2.5-32B raw-KL IT-side interaction",
-        "exp24 raw-KL effects.csv",
-        0.46455907661454976,
-        exp24_kl_effect("it", "I_it", "mean"),
-    ),
-    ClaimCheck(
-        "Qwen2.5-32B raw-KL PT-side interaction",
-        "exp24 raw-KL effects.csv",
-        -0.12499038208182434,
-        exp24_kl_effect("pt", "I_pt", "mean"),
-    ),
-    ClaimCheck(
         "OLMo stage Base->SFT interaction",
         "exp25 olmo_stage_progression_table.csv",
         0.7822269640470806,
@@ -3988,6 +3766,94 @@ CHECKS: list[ClaimCheck] = [
         exp47_label_swap("q99_9"),
     ),
     ClaimCheck(
+        "Exp53 code CPT main-support interaction",
+        "exp53 domain_foil_table.csv",
+        -0.002141405342624855,
+        exp53_domain_foil("llama31_code_cpt_lora", "main_eval", "C"),
+    ),
+    ClaimCheck(
+        "Exp53 code CPT main-support CI low",
+        "exp53 domain_foil_table.csv",
+        -0.010600863821138212,
+        exp53_domain_foil("llama31_code_cpt_lora", "main_eval", "C_ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp53 code CPT main-support CI high",
+        "exp53 domain_foil_table.csv",
+        0.005953288327526131,
+        exp53_domain_foil("llama31_code_cpt_lora", "main_eval", "C_ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp53 biomed CPT main-support interaction",
+        "exp53 domain_foil_table.csv",
+        0.01841060450819672,
+        exp53_domain_foil("llama31_biomed_cpt_lora", "main_eval", "C"),
+    ),
+    ClaimCheck(
+        "Exp53 biomed CPT main-support CI low",
+        "exp53 domain_foil_table.csv",
+        0.004511398565573771,
+        exp53_domain_foil("llama31_biomed_cpt_lora", "main_eval", "C_ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp53 biomed CPT main-support CI high",
+        "exp53 domain_foil_table.csv",
+        0.032690829918032786,
+        exp53_domain_foil("llama31_biomed_cpt_lora", "main_eval", "C_ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp53 code CPT held-out domain NLL improvement",
+        "exp53 domain_foil_table.csv",
+        0.04660271476092865,
+        exp53_domain_foil(
+            "llama31_code_cpt_lora", "main_eval", "nll_relative_improvement"
+        ),
+    ),
+    ClaimCheck(
+        "Exp53 biomed CPT held-out domain NLL improvement",
+        "exp53 domain_foil_table.csv",
+        0.04810311018559918,
+        exp53_domain_foil(
+            "llama31_biomed_cpt_lora", "main_eval", "nll_relative_improvement"
+        ),
+    ),
+    ClaimCheck(
+        "Exp53 code CPT code-support interaction",
+        "exp53 domain_foil_table.csv",
+        0.027028611632270168,
+        exp53_domain_foil("llama31_code_cpt_lora", "code_support", "C"),
+    ),
+    ClaimCheck(
+        "Exp53 code CPT code-support CI low",
+        "exp53 domain_foil_table.csv",
+        -0.013142002814258912,
+        exp53_domain_foil("llama31_code_cpt_lora", "code_support", "C_ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp53 code CPT code-support CI high",
+        "exp53 domain_foil_table.csv",
+        0.07036819887429642,
+        exp53_domain_foil("llama31_code_cpt_lora", "code_support", "C_ci95_high"),
+    ),
+    ClaimCheck(
+        "Exp53 biomed CPT biomed-support interaction",
+        "exp53 domain_foil_table.csv",
+        0.283125,
+        exp53_domain_foil("llama31_biomed_cpt_lora", "biomed_support", "C"),
+    ),
+    ClaimCheck(
+        "Exp53 biomed CPT biomed-support CI low",
+        "exp53 domain_foil_table.csv",
+        0.19342578125,
+        exp53_domain_foil("llama31_biomed_cpt_lora", "biomed_support", "C_ci95_low"),
+    ),
+    ClaimCheck(
+        "Exp53 biomed CPT biomed-support CI high",
+        "exp53 domain_foil_table.csv",
+        0.38630598958333334,
+        exp53_domain_foil("llama31_biomed_cpt_lora", "biomed_support", "C_ci95_high"),
+    ),
+    ClaimCheck(
         "Exp49 constrained continuation score rows",
         "exp49 summary.json",
         7000,
@@ -4148,6 +4014,126 @@ CHECKS: list[ClaimCheck] = [
             readout="common_pt",
             horizon=8,
         ),
+    ),
+    ClaimCheck(
+        "Exp52 forced-token records",
+        "exp52 summary.json",
+        4127,
+        exp52_summary("n_records"),
+    ),
+    ClaimCheck(
+        "Exp52 forced-token invalid or malformed records",
+        "exp52 summary.json",
+        0,
+        exp52_summary("n_invalid_or_malformed"),
+    ),
+    ClaimCheck(
+        "Exp52 forced-token branch score rows",
+        "exp52 summary.json",
+        49524,
+        exp52_summary("n_branch_score_rows"),
+    ),
+    ClaimCheck(
+        "Exp52 forced-token branch difference rows",
+        "exp52 summary.json",
+        29292,
+        exp52_summary("n_delta_rows"),
+    ),
+    ClaimCheck(
+        "Exp52 CONTENT-REASON validator prompts",
+        "exp52 summary.json",
+        200,
+        exp52_summary("validator_coverage", "n_content_reason_exact_answer"),
+    ),
+    ClaimCheck(
+        "Exp52 safety validator prompts",
+        "exp52 summary.json",
+        150,
+        exp52_summary("validator_coverage", "n_safety_total"),
+    ),
+    ClaimCheck(
+        "Exp52 GOV-FORMAT total prompts",
+        "exp52 summary.json",
+        250,
+        exp52_summary("validator_coverage", "n_gov_format_total"),
+    ),
+    ClaimCheck(
+        "Exp52 GOV-FORMAT objectively scoreable prompts",
+        "exp52 summary.json",
+        193,
+        exp52_summary("validator_coverage", "n_gov_format_objectively_scoreable"),
+    ),
+    ClaimCheck(
+        "Exp52 CONTENT-REASON suffix-only objective delta",
+        "exp52 aggregate_effects.csv",
+        0.15695185189803443,
+        exp52_aggregate("CONTENT-REASON"),
+    ),
+    ClaimCheck(
+        "Exp52 CONTENT-REASON suffix-only objective CI low",
+        "exp52 aggregate_effects.csv",
+        0.12028215934926909,
+        exp52_aggregate("CONTENT-REASON", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp52 CONTENT-REASON suffix-only objective CI high",
+        "exp52 aggregate_effects.csv",
+        0.19186083134863732,
+        exp52_aggregate("CONTENT-REASON", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp52 CONTENT-REASON suffix-only objective events",
+        "exp52 aggregate_effects.csv",
+        980,
+        exp52_aggregate("CONTENT-REASON", "n"),
+    ),
+    ClaimCheck(
+        "Exp52 safety suffix-only objective delta",
+        "exp52 aggregate_effects.csv",
+        0.039024608501118566,
+        exp52_aggregate("SAFETY"),
+    ),
+    ClaimCheck(
+        "Exp52 safety suffix-only objective CI low",
+        "exp52 aggregate_effects.csv",
+        0.013610514541387023,
+        exp52_aggregate("SAFETY", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp52 safety suffix-only objective CI high",
+        "exp52 aggregate_effects.csv",
+        0.06583467561521253,
+        exp52_aggregate("SAFETY", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp52 safety suffix-only objective events",
+        "exp52 aggregate_effects.csv",
+        747,
+        exp52_aggregate("SAFETY", "n"),
+    ),
+    ClaimCheck(
+        "Exp52 GOV-FORMAT suffix-only objective delta",
+        "exp52 aggregate_effects.csv",
+        0.025896205655471467,
+        exp52_aggregate("GOV-FORMAT"),
+    ),
+    ClaimCheck(
+        "Exp52 GOV-FORMAT suffix-only objective CI low",
+        "exp52 aggregate_effects.csv",
+        -0.000040020457106512675,
+        exp52_aggregate("GOV-FORMAT", "ci_low"),
+    ),
+    ClaimCheck(
+        "Exp52 GOV-FORMAT suffix-only objective CI high",
+        "exp52 aggregate_effects.csv",
+        0.05386574008752681,
+        exp52_aggregate("GOV-FORMAT", "ci_high"),
+    ),
+    ClaimCheck(
+        "Exp52 GOV-FORMAT suffix-only objective events",
+        "exp52 aggregate_effects.csv",
+        714,
+        exp52_aggregate("GOV-FORMAT", "n"),
     ),
     ClaimCheck(
         "Exp50 judge response rows",

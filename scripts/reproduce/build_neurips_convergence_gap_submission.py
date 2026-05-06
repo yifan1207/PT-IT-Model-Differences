@@ -33,6 +33,10 @@ STATIC_FILES = [
     "scripts/reproduce/check_convergence_gap_claims.py",
     "scripts/reproduce/reproduce_convergence_gap_minimal.sh",
     "scripts/analysis/build_exp22_endpoint_deconfounded_synthesis.py",
+    "scripts/analysis/build_exp22_template_regime_audit.py",
+    "scripts/analysis/analyze_exp22_fixed_history_template_audit.py",
+    "scripts/analysis/build_exp22_fixed_history_template_audit.py",
+    "scripts/run/run_exp22_fixed_history_template_audit_runpod.sh",
 ]
 
 RESULT_FILES = [
@@ -43,6 +47,15 @@ RESULT_FILES = [
     "results/exp09_cross_model_observational_replication/plots/L1_delta_cosine_6panel.png",
     "results/paper_synthesis/exp22_endpoint_deconfounded_table.csv",
     "results/paper_synthesis/exp22_endpoint_deconfounded_summary.png",
+    "results/paper_synthesis/exp22_template_raw_public600_audit.json",
+    "results/paper_synthesis/exp22_template_raw_public600_effects.csv",
+    "results/paper_synthesis/exp22_template_raw_public600_lengths.csv",
+    "results/paper_synthesis/exp22_template_raw_public600_note.md",
+    "results/paper_synthesis/exp22_fixed_history_template_audit.json",
+    "results/paper_synthesis/exp22_fixed_history_template_audit_effects.csv",
+    "results/paper_synthesis/exp22_fixed_history_template_audit_support.csv",
+    "results/paper_synthesis/exp22_fixed_history_template_audit_note.md",
+    "results/paper_synthesis/exp22_fixed_history_template_audit.png",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_paper_main.png",
     "results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json",
@@ -499,6 +512,7 @@ Full raw intervention reruns require multi-GPU hardware and are optional for aud
                     "convergence_gap": [
                         "results/exp09_cross_model_observational_replication",
                         "results/paper_synthesis/exp22_endpoint_deconfounded_table.csv",
+                        "results/paper_synthesis/exp22_fixed_history_template_audit.json",
                     ],
                     "matched_prefix_localization": [
                         "results/exp11_matched_prefix_mlp_graft",
