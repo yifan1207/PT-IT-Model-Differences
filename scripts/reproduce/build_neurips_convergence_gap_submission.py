@@ -482,7 +482,7 @@ as a separate prose document.
 ## Contents
 
 - `paper/`: generated LaTeX source, NeurIPS style file, filled checklist, figure assets, and PDF.
-- `paper_draft/PAPER_DRAFT_convergence_gap_v2.md`: source Markdown.
+- `paper_draft/PAPER_DRAFT_convergence_gap_v3.md`: source Markdown.
 - `results/`: compact JSON/CSV summaries and paper-facing figures.
 - `scripts/reproduce/check_convergence_gap_claims.py`: CPU-only claim checker.
 - `MANIFEST.sha256`: SHA-256 hash manifest.
