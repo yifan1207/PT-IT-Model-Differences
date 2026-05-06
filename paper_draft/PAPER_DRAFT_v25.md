@@ -1,4 +1,4 @@
-# Where in the Forward Pass Does Instruction Tuning Become a Logit? Evidence from First-Divergence Cross-Patching
+# Late-Layer Patching Is Mostly Upstream-Conditioned: A First-Divergence Diagnostic for Model Diffing
 
 **Anonymous authors** | NeurIPS 2026 Submission
 
@@ -6,24 +6,25 @@
 
 ## Abstract
 
-Late-layer patching can localize base-to-instruct preference changes, but not whether those late effects port across upstream states. We introduce first-divergence cross-patching: at the first token where pretrained base (PT) and instruct (IT) checkpoints disagree, we cross PT/IT upstream states with PT/IT late stacks and measure the IT-token margin. Across five dense families ($4\mathrm{B}$–$32\mathrm{B}$), the IT late stack is partially portable but mostly upstream-conditioned: it adds $+0.76$ logits from base upstream and $+2.44$ from IT upstream, a $3.2\times$ gap and $+1.68$ logit interaction that is positive in every family. The pattern survives hybrid-state, selection, native-history, and pre-late commitment controls. Same-base recipe checks show instruction-tuned descendants exhibit this profile, while OpenMath2 and controlled code/biomed CPT foils largely do not on the main support. Sparse terminal crosscoder features mediate $26$–$48$% of the interaction and respond to upstream patches; a low-rank boundary-state shift recovers $71$% of the missing margin. For model diffing, late-patch effects should be decomposed into portable and upstream-conditioned components rather than assumed portable.
+Late-layer patching can localize base-to-instruct preference changes, but not whether those late effects port across upstream states. We introduce first-divergence cross-patching: at the first token where pretrained base (PT) and instruct (IT) checkpoints disagree, we cross PT/IT upstream states with PT/IT late stacks and measure the IT-token margin. Across five dense families ($4\mathrm{B}$–$32\mathrm{B}$), the IT late stack adds $+0.76$ logits from base upstream but $+2.44$ from IT upstream, giving a $+1.68$ logit interaction that is positive in every family. The pattern survives hybrid-state, selection, native-history, and pre-late commitment controls. Same-base recipe checks show instruction-tuned descendants exhibit this profile, while OpenMath2 and controlled code/biomed continuation-pretraining foils largely do not on the main support. Sparse terminal crosscoder features mediate $26$–$48$% of the interaction and respond to upstream patches; a low-rank boundary-state shift recovers $71$% of the missing margin. For model diffing, late-patch effects should be decomposed into portable and upstream-conditioned components rather than assumed portable.
 
 ---
 
 ## 1. Introduction
 
-Late-layer patching can answer where a base-to-instruct difference is expressed, but not whether that late computation ports across upstream states. At the first next-token disagreement between a pretrained base and an instruction-following descendant, we ask a sharper diagnostic question: if instruction-tuned preferences were mostly portable late readouts, should the IT late stack retain most of its effect on PT upstream state?
+At the first PT/IT disagreement, the IT late stack adds $+0.76$ logits from PT upstream but $+2.44$ from IT upstream: the late readout is partially portable but mostly upstream-conditioned.
+
+Late-layer patching can answer where a base-to-instruct difference is expressed, but not whether that late computation ports across upstream states. We therefore ask a diagnostic question: if instruction-tuned preferences were mostly portable late readouts, should the IT late stack retain most of its effect on PT upstream state?
 
 We test portability directly with **first-divergence cross-patching**. For each prompt, we find the earliest generated position where PT and IT prefer different next tokens under the same generated history. Let those tokens be $t_{\mathrm{PT}}$ and $t_{\mathrm{IT}}$. At that prefix, cross-patching pairs one checkpoint's upstream residual state ($U_{\mathrm{PT}}$ or $U_{\mathrm{IT}}$) with one checkpoint's downstream late stack ($L_{\mathrm{PT}}$ or $L_{\mathrm{IT}}$) and measures $\mathrm{logit}(t_{\mathrm{IT}})-\mathrm{logit}(t_{\mathrm{PT}})$. The key estimand is a difference-in-differences: how much larger is the IT-minus-PT late-stack replacement effect when the upstream state is IT-shaped rather than PT-shaped? Because each upstream row subtracts the PT-late baseline, this is a portable-vs-upstream-conditioned decomposition rather than a generic native-stack compatibility score.
 
-The answer is a partially portable but mostly upstream-conditioned late readout. The IT late stack has a positive effect from PT upstream, but the matched-context effect is $3.2\times$ larger, producing a $+1.68$ logit interaction. For model diffing, a late patch should not be interpreted as a fully portable mechanism unless it is tested under both native and foreign upstream states.
+The answer is a partially portable but mostly upstream-conditioned late readout. The IT late stack has a positive effect from PT upstream, but the matched-context effect is much larger, producing a $+1.68$ logit interaction. For model diffing, a late patch should not be interpreted as a fully portable mechanism unless it is tested under both native and foreign upstream states.
 
 > **Result in one place.** Across five dense families ($4\mathrm{B}$-$32\mathrm{B}$), at the first token where PT and IT disagree:
 >
 > - Late stack from PT upstream: $+0.76$ logits toward the IT token.
 > - Late stack from IT upstream: $+2.44$ logits toward the IT token.
-> - Interaction: $+1.68$ logits; matched/portable ratio: $3.2\times$.
-> - Portable share: $31.1$% family-balanced, with family range $19.5$-$44.3$%.
+> - Interaction: $+1.68$ logits.
 > - Family sign: positive in $5/5$ Core-5 families.
 > - Recipe structure: instruction-following descendants show this profile; OpenMath2 does not show the same upstream-conditioned profile.
 
@@ -80,13 +81,13 @@ All raw-shared runs force PT and IT branches to raw text and validate identical 
 
 ### 3.1 Main First-Divergence Cross-Patching Result
 
-Prior work leaves three hypotheses open. **H1: late-only transfer story** -- the IT-minus-PT late-stack effect should be about the same from PT and IT upstream ($\sim 1\times$ matched/portable ratio). **H2: no portable component** -- the IT late stack should do little from PT upstream. **H3: partially portable, upstream-conditioned readout** -- both effects should be positive, but the matched-context effect should be much larger. The four-cell test distinguishes these hypotheses directly.
+Prior work leaves three hypotheses open. **H1: late-only transfer story** -- the IT-minus-PT late-stack effect should be about the same from PT and IT upstream. **H2: no portable component** -- the IT late stack should do little from PT upstream. **H3: partially portable, upstream-conditioned readout** -- both effects should be positive, but the matched-context effect should be much larger. The four-cell test distinguishes these hypotheses directly.
 
-At the first natural PT/IT disagreement, the Core-5 result supports H3. Replacing the PT late stack with the IT late stack shifts the IT-token margin by $+0.76$ logits from PT upstream, but by $+2.44$ logits from IT upstream. The primary magnitude is the $+1.68$ logit interaction; equivalently, the family-balanced portable share is $31.1$%, with family values from $19.5$% to $44.3$%, and the matched-context effect is $3.2\times$ larger. Most of the matched-context effect is therefore exposed only under IT-shaped upstream state.
+At the first natural PT/IT disagreement, the Core-5 result supports H3. Replacing the PT late stack with the IT late stack shifts the IT-token margin by $+0.76$ logits from PT upstream, but by $+2.44$ logits from IT upstream. The headline magnitude is the $+1.68$ logit interaction: most of the matched-context effect is exposed only under IT-shaped upstream state.
 
-The hypothesis verdict is therefore simple. H1 is rejected because the matched-context late effect is not $\sim 1\times$ the portable effect; it is $3.2\times$. H2 is rejected because the portable component is not zero; it is $+0.76$ logits. H3 is supported because both components are positive and the matched-context component dominates.
+The hypothesis verdict is therefore simple. H1 is rejected because the matched-context late effect is much larger than the portable effect. H2 is rejected because the portable component is not zero; it is $+0.76$ logits. H3 is supported because both components are positive and the matched-context component dominates.
 
-The sign pattern is consistent across families: every Core-5 interaction is positive, ranging from $+1.25$ to $+2.53$ logits. We treat the logit interaction as the primary magnitude; portable share and matched/portable ratio are normalized summaries of the same local divergent-token margin, not claims about deployment behavior. Appendix B reports native-shift shares and family-level ranges.
+The sign pattern is consistent across families: every Core-5 interaction is positive, ranging from $+1.25$ to $+2.53$ logits. We treat the logit interaction as the primary magnitude; Appendix B reports portable-share, ratio, and native-shift scale conversions as secondary summaries of the same local margin.
 
 The interaction is also not confined to response openings: generated position $\geq 3$ and $\geq 5$ subsets remain positive, though smaller and thinner.
 
@@ -96,19 +97,19 @@ The interaction is also not confined to response openings: generated position $\
 \noindent\textbf{Table 2: Core-5 headline four-cell effects.}
 
 \begin{center}
-\begin{tabular}{lrrrrr}
+\begin{tabular}{lrrr}
 \toprule
-Scope & PT-up late & IT-up late & Portable share & Interaction & Ratio \\
+Scope & PT-up late & IT-up late & Interaction \\
 \midrule
-Core-5, common-IT & +0.76 & +2.44 & 31.1\% & +1.68 & 3.2x \\
-Core-5, common-PT & +0.78 & +2.49 & 31.5\% & +1.70 & 3.2x \\
-Qwen2.5-32B only & +1.04 & +2.34 & 44.3\% & +1.30 & 2.3x \\
+Core-5, common-IT & +0.76 & +2.44 & +1.68 \\
+Core-5, common-PT & +0.78 & +2.49 & +1.70 \\
+Qwen2.5-32B only & +1.04 & +2.34 & +1.30 \\
 \bottomrule
 \end{tabular}
 \end{center}
 \end{samepage}
 
-The $+1.68$ logit interaction multiplies the odds of $t_{\mathrm{IT}}$ over $t_{\mathrm{PT}}$ by about $5.4\times$ within the constructed contrast and is $33.7$% of the native PT-to-IT diagonal margin shift. This is still a local token-margin quantity: the $31.1$% portable share does not mean $31.1$% of instruction-following behavior transfers during deployment. On a factual/reasoning-enriched stress support, the late-only PT-upstream effect is negative ($-1.18$) while the interaction remains positive ($+1.81$).
+The $+1.68$ logit interaction multiplies the odds of $t_{\mathrm{IT}}$ over $t_{\mathrm{PT}}$ by about $5.4\times$ within the constructed contrast. This is still a local token-margin quantity, not a deployment behavior estimate. On a factual/reasoning-enriched stress support, the late-only PT-upstream effect is negative ($-1.18$) while the interaction remains positive ($+1.81$).
 
 ### 3.2 Validation Against Hybrid and Selection Artifacts
 
@@ -185,11 +186,11 @@ Held-out autointerp and the predeclared `structure_readout` edit make the mediat
 
 ## 4. Related Work
 
-**Late refinement and post-training diffs.** Feed-forward layers promote vocabulary-space concepts and refine predictions (Geva et al., 2021, 2022), and layerwise/tuned-lens analyses describe late residual sharpening and confidence adjustment (nostalgebraist, 2020; Belrose et al., 2023; Lad et al., 2025; Joshi et al., 2025). Post-training diff work studies base-to-aligned or base-to-instruct shifts (Wu et al., 2024; Zhao, Ziser, and Cohen, 2024; Du et al., 2025; Chaudhury, 2025). Sparse but Critical analyzes RLVR token substitutions during sampling (Meng et al., 2026); our question is internal to paired checkpoints at the selected disagreement token.
+**Late refinement and post-training diffs.** Feed-forward layers promote vocabulary-space concepts and refine predictions (Geva et al., 2021, 2022), and layerwise/tuned-lens analyses describe late residual sharpening and confidence adjustment (nostalgebraist, 2020; Belrose et al., 2023; Lad et al., 2025; Joshi et al., 2025). Post-training diff work studies base-to-aligned or base-to-instruct shifts (Wu et al., 2024; Zhao, Ziser, and Cohen, 2024; Du et al., 2025; Chaudhury, 2025). Instruction Vectors find a complementary early-to-late conditionality: early task representations select later information pathways (Bigoulaeva et al., 2026). Sparse but Critical analyzes RLVR token substitutions during sampling (Meng et al., 2026); our question is internal to paired checkpoints at the selected disagreement token.
 
 **Activation patching and sparse model diffs.** Activation patching requires care because metric choice, intervention direction, and off-manifold hybrids affect interpretation (Heimersheim and Nanda, 2024). We therefore report intervention-scoped readout effects and validate them with readout swaps, diagonal reconstruction, interpolation, label-swap nulls, signed-permutation controls, and random-disagreement baselines. Cross-model activation patching across base and fine-tuned variants is the closest methodological precedent (Prakash et al., 2024), but their target is whether fine-tuning enhances an existing task circuit; ours is the portability of the IT late readout at the first natural PT/IT token disagreement. Sparse crosscoders provide a feature-level bridge for model diffing (Lindsey et al., 2024; Minder et al., 2025). Unlike global sparse model-diff work, we apply crosscoders after defining a paired-checkpoint causal estimand and ask which terminal features mediate that estimand.
 
-**Novelty.** The new object is the paired-checkpoint first-divergence factorial: a difference-in-differences that decomposes one late-stack replacement effect into portable and upstream-conditioned components at a natural PT/IT disagreement token. Validation controls, recipe foils, continuation/objective bridges, and sparse terminal features triangulate this estimand; prior model-diffing work does not define this decomposition.
+**Novelty.** The new object is the paired-checkpoint first-divergence factorial: a difference-in-differences that decomposes one late-stack replacement effect into portable and upstream-conditioned components at a natural PT/IT disagreement token. Instruction Vectors give convergent qualitative evidence for conditional early-to-late pathway selection; our contribution is the paired-checkpoint causal decomposition and sparse-feature bridge for the PT/IT readout margin. Validation controls, recipe foils, continuation/objective bridges, and sparse terminal features triangulate this estimand.
 
 ---
 
@@ -230,6 +231,8 @@ Aghajanyan, A., Gupta, S., & Zettlemoyer, L. (2021). Intrinsic Dimensionality Ex
 Arditi, A., et al. (2024). Refusal in Language Models Is Mediated by a Single Direction. *NeurIPS 2024*. arXiv:2406.11717.
 
 Belrose, N., et al. (2023). Eliciting Latent Predictions from Transformers with the Tuned Lens. arXiv:2303.08112.
+
+Bigoulaeva, I., Rohweder, J., Dutta, S., & Gurevych, I. (2026). Patches of Nonlinearity: Instruction Vectors in Large Language Models. arXiv:2602.07930.
 
 Bills, S., et al. (2023). Language Models Can Explain Neurons in Language Models. OpenAI.
 
@@ -292,7 +295,7 @@ The main text is written around stable claim names. For details, start with Appe
 | Claim | Main location | Appendix | Artifact/script pointer |
 |---|---|---|---|
 | Minimal reproducibility snapshot | Sec. 2.1 | A, B, H | model registry, dataset manifests, raw first-divergence records |
-| Core-5 first-divergence interaction, matched/portable ratio, and portable share | Sec. 3.1 | B | Core synthesis artifacts and first-divergence collectors |
+| Core-5 first-divergence interaction and scale conversions | Sec. 3.1 | B | Core synthesis artifacts and first-divergence collectors |
 | Validation ladder | Sec. 3.2 | C | hybrid-state validation, random-disagreement baselines, native-history local-disagreement check, token-support audit, pre-late logit-commitment control |
 | Recipe, continuation, behavior-audit, and released stage-lineage checks | Sec. 3.3 | F | same-base Llama recipe controls including controlled non-instruction CPT foils; constrained continuation bridge; forced-token objective bridge; blind short-completion judge audit; fixed-support Tulu-3 and OLMo-2 Base/SFT/DPO/Final stage sweeps |
 | Depth and terminal anatomy | Sec. 3.4 | D | identity/margin handoff, terminal-depth audit, terminal MLP audit |
@@ -305,7 +308,7 @@ Prompt-bootstrap CIs in the main text are conditional precision estimates over s
 
 | Appendix | Supports | Does not prove |
 |---|---|---|
-| B | Core-5 interaction magnitude, matched/portable ratio, portable share, family consistency, and readout robustness. | Population-level generalization over all dense or post-trained models. |
+| B | Core-5 interaction magnitude, secondary scale conversions, family consistency, and readout robustness. | Population-level generalization over all dense or post-trained models. |
 | C | Main artifact explanations are unlikely: broken hybrids, arbitrary token support, first-divergence-only support, and pre-late logit commitment. | Hybrid passes are natural deployment trajectories or completion-level behavior estimates. |
 | D | Depth anatomy: middle windows are relatively more identity-selective while late/terminal windows are more margin-sensitive. | A complete circuit or a unique layer boundary. |
 | E | Sparse terminal features partially mediate, gate, and rescue the terminal readout interaction; structured boundary-state shifts close much of the missing margin. | Full mechanism recovery, recipe-unique boundary directions, or feature monosemanticity. |
@@ -371,11 +374,11 @@ All rows use the holdout-600 support and the raw-shared first-divergence procedu
 - OLMo 2 7B: `allenai/OLMo-2-1124-7B` -> `allenai/OLMo-2-1124-7B-Instruct` (`7df9a82` -> `470b1fb`).
 - Qwen2.5 32B: `Qwen/Qwen2.5-32B` -> `Qwen/Qwen2.5-32B-Instruct` (`1818d35` -> `5ede1c9`).
 
-The Core-5 synthesis combines stored per-family prompt-bootstrap estimates for the five families in Sec. 2.1. The matched/portable ratio reported in Sec. 3.1 is:
+The Core-5 synthesis combines stored per-family prompt-bootstrap estimates for the five families in Sec. 2.1. Secondary scale conversions include the matched/portable ratio:
 
 $$\mathrm{matched/portable\ ratio}=\frac{Y(U_{\mathrm{IT}},L_{\mathrm{IT}})-Y(U_{\mathrm{IT}},L_{\mathrm{PT}})}{Y(U_{\mathrm{PT}},L_{\mathrm{IT}})-Y(U_{\mathrm{PT}},L_{\mathrm{PT}})}.$$
 
-This is the main scale reference because it compares the same IT late-stack replacement under the two upstream states. We also report a secondary native-shift scale, computed inside the same 2x2:
+This secondary scale compares the same IT late-stack replacement under the two upstream states. We also report a native-shift scale, computed inside the same 2x2:
 
 $$\mathrm{native\ PT\to IT\ diagonal\ margin\ shift}=Y(U_{\mathrm{IT}},L_{\mathrm{IT}})-Y(U_{\mathrm{PT}},L_{\mathrm{PT}}).$$
 
