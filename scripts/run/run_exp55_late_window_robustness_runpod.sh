@@ -18,6 +18,7 @@ SHARD_INDICES_BY_MODEL="${SHARD_INDICES_BY_MODEL:-}"
 N_PROMPTS="${N_PROMPTS:-600}"
 PROMPT_SEED="${PROMPT_SEED:-0}"
 MAX_NEW_TOKENS="${MAX_NEW_TOKENS:-512}"
+CHUNK_SIZE="${CHUNK_SIZE:-64}"
 TUNED_LENS_DIR="${TUNED_LENS_DIR:-/workspace/tuned_lens_probes}"
 WINDOW_SPECS="${WINDOW_SPECS:-prelate_half late_full late_front_half late_center_half late_terminal_half terminal_quarter}"
 N_BOOT="${N_BOOT:-2000}"
@@ -70,6 +71,8 @@ echo "[exp55] run_root ${RUN_ROOT}"
 echo "[exp55] dataset ${DATASET}"
 echo "[exp55] models ${MODELS}"
 echo "[exp55] window_specs ${WINDOW_SPECS}"
+echo "[exp55] max_new_tokens ${MAX_NEW_TOKENS}"
+echo "[exp55] chunk_size ${CHUNK_SIZE}"
 echo "[exp55] gpu_list ${GPU_LIST}"
 echo "[exp55] shards_by_model ${SHARDS_BY_MODEL:-default}"
 echo "[exp55] shard_indices_by_model ${SHARD_INDICES_BY_MODEL:-all}"
@@ -145,7 +148,7 @@ run_single() {
     --readout-mode raw \
     --tuned-lens-dir "$TUNED_LENS_DIR" \
     --max-new-tokens "$MAX_NEW_TOKENS" \
-    --chunk-size 64 \
+    --chunk-size "$CHUNK_SIZE" \
     --batch-size "$batch_size" \
     --num-shards "$num_shards" \
     --shard-index "$shard_index" \

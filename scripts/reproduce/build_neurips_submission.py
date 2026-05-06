@@ -491,7 +491,6 @@ def write_main_tex(title: str, abstract: str, build_dir: Path) -> None:
 \usepackage{{longtable}}
 \usepackage{{array}}
 \usepackage{{calc}}
-\usepackage{{caption}}
 \usepackage{{textcomp}}
 \usepackage{{upquote}}
 \usepackage{{enumitem}}

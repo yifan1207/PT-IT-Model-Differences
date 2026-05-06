@@ -1,4 +1,4 @@
-# Instruction Tuning Reshapes Upstream-Late Coupling: A First-Divergence Cross-Patching Test
+# Instruction Tuning Changes How Upstream State Prepares Late Readout: A Cross-Patching Diagnostic
 
 **Anonymous authors** | NeurIPS 2026 Submission
 
@@ -6,7 +6,7 @@
 
 ## Abstract
 
-Recent interpretability work has identified native-checkpoint handles on post-trained behavior, including refusal directions, assistant/persona axes, and sparse chat-tuning features. These results localize where behaviors can be read out or controlled, often in middle-to-late layers. We ask how upstream computation and the late stack cooperate to turn those differences into next-token margins. Localization leaves open whether post-training only changes features expressed near readout, or also changes upstream states that make those features active. We test this with first-divergence cross-patching: at the first token where pretrained base (PT) and instruction-tuned (IT) checkpoints disagree, we cross each model's upstream state with each model's late stack. Across five dense families ($4\mathrm{B}$-$32\mathrm{B}$), the IT late stack adds $+0.76$ logits from PT upstream and $+2.44$ from IT upstream — a $+1.68$ interaction, positive in every family. Thus the late stack has a real PT-upstream effect, but its larger native effect appears only when it reads its own post-trained upstream state. The diagnostic is recipe-discriminative: same-base instruction-following descendants show this profile, while OpenMath2 math-domain SFT and controlled code/biomed CPT foils with verified domain learning do not; for OpenMath2, the late effect is already exposed by base upstream. Sparse terminal features partially mediate the effect and are driven by upstream patches, supporting a handoff from preterminal state to terminal feature activation to IT-token margin. Forced-token scoring shows downstream suffix consequences on exact-answer prompts. Operationally, paired-checkpoint studies that localize a difference to late layers should test whether it survives under foreign upstream state before treating the late stack as self-contained.
+Recent interpretability work has identified native-checkpoint handles on post-trained behavior, including refusal directions, assistant/persona axes, and sparse chat-tuning features. These results localize where behaviors can be read out or controlled, often in middle-to-late layers. We ask how upstream computation and the late stack cooperate to turn those differences into next-token margins. We test this with first-divergence cross-patching: at the first token where pretrained base (PT) and instruction-tuned (IT) checkpoints disagree, we cross each model's upstream state with each model's late stack. The diagnostic is recipe-discriminative: same-base instruction-following descendants show an upstream-conditioned profile, while OpenMath2 math-domain SFT and controlled code/biomed CPT foils with verified domain learning do not; for OpenMath2, the late effect is already exposed by base upstream. Across five dense families ($4\mathrm{B}$-$32\mathrm{B}$), the IT late stack adds $+0.76$ logits from PT upstream and $+2.44$ from IT upstream, giving a $+1.68$ interaction that is positive in every family. Thus the late stack has a real PT-upstream effect, but its larger native effect appears only when it reads its own post-trained upstream state. Sparse terminal features partially mediate the effect and are driven by upstream patches, supporting a handoff from preterminal state to terminal feature activation to IT-token margin. Forced-token scoring shows downstream suffix consequences on exact-answer prompts. Operationally, paired-checkpoint studies that localize a difference to late layers should test whether it survives under foreign upstream state before treating the late stack as self-contained.
 
 ---
 
@@ -23,11 +23,11 @@ At the first PT/IT disagreement, the IT late stack adds $+0.76$ logits from PT u
 > - Late stack from PT upstream: $+0.76$ logits toward the IT token.
 > - Late stack from IT upstream: $+2.44$ logits toward the IT token.
 > - Interaction: $+1.68$ logits, positive in $5/5$ Core-5 families.
+> - Recipe discrimination: same-base instruction-following descendants show this upstream-conditioned profile; OpenMath2's math-domain effect is already exposed by base upstream (`C=-0.154` on math support), and controlled code/biomed CPT foils are near zero on the main support (`C=-0.002`, `+0.018`) despite verified domain learning.
 > - Component split: a direct late-stack component plus a larger upstream-conditioned component.
 > - Direct component share: $31.1%$ family-balanced; family range $19.5$-$44.3%$.
-> - Recipe discrimination: general-purpose instruction-following descendants show this profile; OpenMath2's math-domain effect is already exposed by base upstream (`C=-0.154` on math support), and controlled code/biomed CPT foils are near zero on the main support (`C=-0.002`, `+0.018`) despite verified domain learning.
 
-This makes the same four-cell test a worked example of model-diffing discrimination, not just a measurement of one base/instruct gap. On the same base and architecture, instruction-following descendants require native upstream state for their late effects; a math-domain SFT and controlled continuation-trained foils do not reproduce that main-support pathway.
+This makes the same four-cell test a worked example of model-diffing discrimination, not just a measurement of one base/instruct gap. On the same base and architecture, instruction-following descendants require native upstream state for their late effects; OpenMath2's math-domain effect is already exposed by base upstream, and controlled continuation-trained foils do not reproduce the main-support pathway.
 
 > **Operational takeaway.** When a paired-checkpoint study localizes a difference to late layers, report the same late-stack effect under both native and foreign upstream state. A native late effect localizes expression; by itself it does not show that the computation is self-contained.
 
@@ -35,8 +35,8 @@ This makes the same four-cell test a worked example of model-diffing discriminat
 
 The paper has three contributions.
 
-1. **Upstream-late coupling at PT/IT disagreements.** First-divergence cross-patching decomposes the IT-minus-PT late-stack replacement effect into PT-upstream and IT-upstream components.
-2. **Recipe discrimination across same-base descendants.** Instruction-following descendants show upstream-conditioned late effects, while OpenMath2 and controlled CPT foils show that this profile is not automatic same-base post-training.
+1. **A cross-patching diagnostic for upstream dependence.** First-divergence cross-patching decomposes the IT-minus-PT late-stack replacement effect into PT-upstream and IT-upstream components.
+2. **Recipe discrimination across same-base descendants.** This is the main empirical payoff: instruction-following descendants show upstream-conditioned late effects, while OpenMath2 and controlled CPT foils show that this profile is not automatic same-base post-training.
 3. **Mechanistic and consequence bridges.** Terminal crosscoders identify sparse MLP features that partially mediate, gate, and rescue the interaction; forced-token scoring and constrained continuation show suffix consequences and short-horizon persistence. These are bridges, not full circuit reconstruction or broad behavior estimates.
 
 Scope is intentionally local. In Core-5 contrasts, **PT** is the released pretrained/base checkpoint and **IT** is the released instruction-following descendant; recipe and lineage checks name stages explicitly.
@@ -215,7 +215,7 @@ For paired checkpoints, a large native late effect localizes expression but does
 
 First-divergence cross-patching turns "do late layers explain the base-to-instruct difference?" into an upstream-late coupling test. At the first PT/IT disagreement, the IT-minus-PT late-stack replacement effect decomposes into a positive direct component from PT upstream and a larger upstream-conditioned component exposed by IT-shaped upstream state. The result is positive across five dense families, recipe-discriminative under released and controlled same-base foils, coherent along two lineages, and robust to artifact and native-history checks.
 
-Together, terminal-feature mediation and boundary-state rescue support an upstream-to-late handoff: post-training changes upstream computation that conditions late readout, rather than merely adding standalone late-stack features.
+Taken together, the results support an upstream-to-late compatibility story rather than a standalone late-stack story: post-training changes upstream computation that conditions late readout, and the same four-cell test exposes both this coupling and recipe differences.
 
 ---
 
