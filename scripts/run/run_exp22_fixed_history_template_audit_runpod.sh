@@ -112,6 +112,16 @@ run_collect_phase() {
   echo "[exp22-fixed] phase collect"
   local pids=()
   local idx=0
+  local status=0
+  wait_for_batch() {
+    local pid
+    for pid in "${pids[@]}"; do
+      if ! wait "$pid"; then
+        status=1
+      fi
+    done
+    pids=()
+  }
   for model in $MODELS; do
     for ((w=0; w<WORKERS_PER_MODEL; w++)); do
       local gpu="${GPUS[$((idx % ${#GPUS[@]}))]}"
@@ -139,15 +149,13 @@ run_collect_phase() {
         >"$log_path" 2>&1 &
       pids+=("$!")
       idx=$((idx + 1))
+      if [[ "${#pids[@]}" -ge "${#GPUS[@]}" ]]; then
+        wait_for_batch
+      fi
     done
   done
 
-  local status=0
-  for pid in "${pids[@]}"; do
-    if ! wait "$pid"; then
-      status=1
-    fi
-  done
+  wait_for_batch
   if [[ "$status" -ne 0 ]]; then
     echo "[exp22-fixed] at least one collect worker failed; syncing partial outputs" >&2
     sync_outputs || true
