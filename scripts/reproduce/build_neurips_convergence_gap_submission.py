@@ -398,8 +398,8 @@ def write_main_tex(title: str, abstract: str) -> None:
 \usepackage{{enumitem}}
 \usepackage{{etoolbox}}
 \setlist{{nosep,leftmargin=*}}
-\setlength{{\LTleft}}{{0pt}}
-\setlength{{\LTright}}{{0pt}}
+\setlength{{\LTleft}}{{\fill}}
+\setlength{{\LTright}}{{\fill}}
 \newcounter{{none}}
 \providecommand{{\tightlist}}{{\setlength{{\itemsep}}{{0pt}}\setlength{{\parskip}}{{0pt}}}}
 \AtBeginEnvironment{{longtable}}{{\scriptsize}}

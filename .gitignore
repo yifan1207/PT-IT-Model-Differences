@@ -424,3 +424,8 @@ docs/*
 docs/assets/*
 !docs/assets/readme_broad_convergence_gap.png
 !docs/assets/readme_exp14_causal_main.png
+
+# Local PDF review scratch renders.
+/tmp/pdf_contact_sheets/
+/tmp/pdf_review*/
+/tmp/pdfs/
