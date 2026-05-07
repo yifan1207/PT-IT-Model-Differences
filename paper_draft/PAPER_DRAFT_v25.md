@@ -201,7 +201,7 @@ The behavioral connection is deliberately narrower than a benchmark claim. Local
 
 ### 5.2 Scope
 
-The primary estimand is local to first-divergence next-token readouts; native-history checks show a same-sign local-disagreement variant, but neither is an average over deployment behavior. The interventions are window-level compatibility tests: validation makes practical hybrid artifacts unlikely, constrained continuation shows short-horizon likelihood persistence, and crosscoders expose a partial, terminal, quality-gated sparse-feature trace. The raw-shared design is intentional because exact residual comparisons require aligned token IDs; a template-aware variant remains future work. A separate fixed-history native-template late-KL audit shows that the related late-convergence signal survives identical forced token histories and endpoint matching, supporting the late-readout context without replacing template-aware cross-patching.
+The primary estimand is local to first-divergence next-token readouts; native-history checks show a same-sign local-disagreement variant, but neither is an average over deployment behavior. The interventions are window-level compatibility tests: validation makes practical hybrid artifacts unlikely, constrained continuation shows short-horizon likelihood persistence, and crosscoders expose a partial, terminal, quality-gated sparse-feature trace. The raw-shared design is intentional because exact residual comparisons require aligned token IDs; a template-aware cross-patching variant remains future work.
 
 The empirical scope is five dense core PT/IT pairs including one 32B pair, same-base released and controlled recipe controls, and two released dense lineages. DeepSeek-V2-Lite is artifact-only because MoE routing and expert swaps need different controls; architecture and MoE generalization remain next-step questions.
 
@@ -506,21 +506,6 @@ This check drops the shared-history first-divergence support. For each prompt, w
 | PT history mirror, $h=4,8,16$ | `+1.490` `[+1.334, +1.646]` | `551 / 355` | `4/4` |
 
 Because the PT-history mirror is also strongly positive, the claim is native-history/local-disagreement generalization rather than IT-history specificity. This does not turn the estimand into a deployment-level behavior measure; it shows that the upstream-conditioned late-stack pattern is not confined to the first shared-history disagreement.
-
-### C.5 Fixed-History Native-Template Late-KL Audit
-
-This audit is supporting context for the late-readout picture, not a replacement for the first-divergence cross-patching estimand. It asks whether the related native IT late-convergence signal survives when the token history is fixed. We generate one teacher continuation, replay the same forced token IDs through PT raw, IT native-chat, and IT raw/no-template cells, and measure the raw-lens late `KL(layer || own final)`.
-
-**Table C.5: Fixed-history native-template late-KL audit.**
-
-| Teacher history | Paired same-history effect | Endpoint-matched CEM effect |
-|---|---:|---:|
-| IT-native teacher, IT native-chat minus PT raw | `+1.181` nats `[+1.153,+1.211]` | `+0.548` `[+0.502,+0.594]` |
-| PT-raw teacher, IT native-chat minus PT raw | `+0.547` nats `[+0.506,+0.588]` | `+0.121` `[+0.059,+0.183]` |
-
-Quality gates are clean for the Core-small fixed-history audit: malformed rows `0`, missing aligned steps `0`, CEM retention `99.9%`, and maximum post-match SMD `0.061`. We therefore use this result to reduce the concern that the late-readout context is only a rollout-length, generated-history, or endpoint-confidence artifact. It does not directly test the cross-patched margin and does not make the raw-shared factorial a native-chat behavior estimate.
-
----
 
 ## Appendix D: Depth and Terminal Anatomy
 
@@ -896,7 +881,7 @@ The submitted supplement contains the exact paths and SHA256 hashes for every in
 | Claim group | Reproduction entry point | Supplement key |
 |---|---|---|
 | Core-5 four-cell result including Qwen2.5 32B | Core synthesis scripts and first-divergence collectors | `core5`; `qwen25_32b`; `exp23_core5` |
-| Hybrid-state, token-selection, native-history, fixed-history late-KL, and pre-late controls | Validation and selection-control analyzers | `validation`; `exp36`; `exp37`; `exp40`; `exp51`; `exp54_fixed_history` |
+| Hybrid-state, token-selection, native-history, and pre-late controls | Validation and selection-control analyzers | `validation`; `exp36`; `exp37`; `exp40`; `exp51` |
 | Depth and terminal anatomy | Handoff, terminal-depth, and terminal-MLP analyzers | `depth_terminal`; `exp20`; `exp21`; `exp31-33` |
 | Sparse terminal feature bridge | Crosscoder mediation, gating, rescue, handoff, autointerp, and structure-readout analyses | `sparse_features`; `exp34`; `exp39`; `exp41-44` |
 | Structured boundary-state closure | Static-chimera and structured-rescue analysis | `boundary_state`; `exp48` |

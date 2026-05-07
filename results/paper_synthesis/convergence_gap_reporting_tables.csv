@@ -21,16 +21,16 @@ intervention_windows,1,PT MLP swap into IT host,Middle,`-0.23`
 intervention_windows,1,PT MLP swap into IT host,Late,`-0.51`
 fixed_history_replay,0,IT-native continuation,Teacher history,IT-native continuation
 fixed_history_replay,0,IT-native continuation,Estimator,paired same prompt/step
-fixed_history_replay,0,IT-native continuation,IT native - PT raw,"`+1.354` `[+1.334, +1.390]`"
-fixed_history_replay,0,IT-native continuation,IT raw - PT raw,"`+0.656` `[+0.632, +0.670]`"
-fixed_history_replay,0,IT-native continuation,IT native - IT raw,"`+0.698` `[+0.693, +0.730]`"
+fixed_history_replay,0,IT-native continuation,IT native - PT raw,"`+1.181` `[+1.153, +1.211]`"
+fixed_history_replay,0,IT-native continuation,IT raw - PT raw,"`+0.549` `[+0.531, +0.568]`"
+fixed_history_replay,0,IT-native continuation,IT native - IT raw,"`+0.632` `[+0.611, +0.654]`"
 fixed_history_replay,0,IT-native continuation,Use/quality,primary fixed-history replay
 fixed_history_replay,1,IT-native continuation,Teacher history,IT-native continuation
 fixed_history_replay,1,IT-native continuation,Estimator,endpoint-matched CEM
-fixed_history_replay,1,IT-native continuation,IT native - PT raw,"`+0.754` `[+0.702, +0.806]`"
-fixed_history_replay,1,IT-native continuation,IT raw - PT raw,"`+0.246` `[+0.202, +0.289]`"
-fixed_history_replay,1,IT-native continuation,IT native - IT raw,"`+0.338` `[+0.284, +0.394]`"
-fixed_history_replay,1,IT-native continuation,Use/quality,retention `0.797`; max SMD `0.079`
+fixed_history_replay,1,IT-native continuation,IT native - PT raw,"`+0.548` `[+0.502, +0.594]`"
+fixed_history_replay,1,IT-native continuation,IT raw - PT raw,"`+0.202` `[+0.158, +0.247]`"
+fixed_history_replay,1,IT-native continuation,IT native - IT raw,"`+0.357` `[+0.306, +0.411]`"
+fixed_history_replay,1,IT-native continuation,Use/quality,retention `0.999`; max SMD `0.061`
 fixed_history_replay,2,PT-raw continuation,Teacher history,PT-raw continuation
 fixed_history_replay,2,PT-raw continuation,Estimator,paired same prompt/step
 fixed_history_replay,2,PT-raw continuation,IT native - PT raw,"`+0.610` `[+0.135, +1.079]`"

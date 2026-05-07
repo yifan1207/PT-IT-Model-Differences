@@ -540,11 +540,16 @@ as a separate prose document.
 python scripts/reproduce/check_convergence_gap_claims.py
 ```
 
-Full raw intervention reruns require multi-GPU hardware and are optional for audit.
+The CPU claim checker and reporting-table check are self-contained within this
+archive and use only the bundled JSON/CSV summaries. The included
+`scripts/analysis/` and `scripts/run/` entrypoints document how the summaries
+were produced, but they are non-minimal audit scripts: full raw intervention
+reruns require the full repository environment, model access, and multi-GPU
+hardware.
 
 ## Built PDF Summary
 
-- PDF path: `{validation["pdf"]}`
+- PDF path inside this archive: `paper/neurips2026_main.pdf`
 - Main pages before references: `{validation["main_pages_before_references"]}`
 - Total pages including appendices/checklist: `{validation["total_pages"]}`
 - Checklist page: `{validation["checklist_page"]}`
@@ -553,8 +558,8 @@ Full raw intervention reruns require multi-GPU hardware and are optional for aud
     (SUPP_STAGE / "artifact_map.json").write_text(
         json.dumps(
             {
-                "pdf": rel(PDF_OUT),
-                "supplement_zip": rel(SUPP_ZIP),
+                "pdf": "paper/neurips2026_main.pdf",
+                "supplement_root": ".",
                 "claim_groups": {
                     "convergence_gap": [
                         "results/exp09_cross_model_observational_replication",
@@ -572,6 +577,11 @@ Full raw intervention reruns require multi-GPU hardware and are optional for aud
                         "scripts/reproduce/check_convergence_gap_claims.py",
                         "scripts/reproduce/reproduce_convergence_gap_minimal.sh",
                     ],
+                },
+                "optional_full_repo_scripts": "Bundled scripts/analysis and scripts/run entrypoints document provenance but are not the minimal reproduction path.",
+                "notes": {
+                    "minimal_reproduction": "Run the CPU claim checker from this supplement root; it uses bundled summaries only.",
+                    "optional_reruns": "Analysis and remote multi-GPU scripts are included for audit provenance and require the full repository environment, model access, and multi-GPU hardware.",
                 },
             },
             indent=2,
