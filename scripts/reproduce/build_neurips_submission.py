@@ -58,6 +58,9 @@ TEXT_SUFFIXES = {
 LEAK_PATTERNS = [
     "Yifan",
     "/Users/",
+    "/mnt/storage/",
+    "/workspace/structral-semantic-features",
+    "/home/",
     "github.com/yifan",
     "pt-vs-it-results",
     "gs://",
@@ -76,6 +79,19 @@ SUPPLEMENT_JSON_KEY_EXCLUDE_SUBSTRINGS = (
     "endpoint_matched",
     "late_localization",
 )
+
+SUPPLEMENT_JSON_KEYS_EXCLUDE = {
+    "requests",
+    "responses",
+    "raw_requests",
+    "raw_responses",
+}
+
+EXP50_RAW_RUN_PREFIX = (
+    "results/exp50_llm_judge_behavior_bridge/"
+    "exp50_openai_judge_requests_20260504_233946/analysis_gpt52_sync"
+)
+EXP50_SUPPLEMENT_PREFIX = "results/exp50_llm_judge_behavior_bridge/analysis_summary"
 
 STATIC_SUPPLEMENT_FILES = [
     "scripts/reproduce/check_paper_claims.py",
@@ -153,6 +169,7 @@ SUPPLEMENT_EXCLUDE_PATTERNS = (
     r"exp0?9",
     r"exp1[149]",
     r"exp2[2]",
+    r"exp55",
     r"conv" r"ergence[_-]gap",
     r"late[_-]localization",
     r"L2_mean" r"_kl",
@@ -178,6 +195,7 @@ def rel(path: Path) -> str:
 
 
 def sanitize_path(relpath: str) -> str:
+    relpath = relpath.replace(EXP50_RAW_RUN_PREFIX, EXP50_SUPPLEMENT_PREFIX)
     relpath = relpath.replace("runpod", "remotejob")
     relpath = relpath.replace("RunPod", "RemoteJob")
     relpath = relpath.replace("pt-vs-it-results", "anonymous-artifact-store")
@@ -187,9 +205,19 @@ def sanitize_path(relpath: str) -> str:
 
 def sanitize_text(text: str) -> str:
     replacements = {
+        EXP50_RAW_RUN_PREFIX: EXP50_SUPPLEMENT_PREFIX,
+        "results/exp50_llm_judge_behavior_bridge/exp50_openai_judge_requests_20260504_233946": "results/exp50_llm_judge_behavior_bridge/analysis_summary",
+        "exp50_openai_judge_requests": "exp50_judge_batch",
+        "llm_judge_requests.jsonl": "llm_judge_inputs.jsonl",
+        "judge_requests.jsonl": "judge_inputs.jsonl",
+        "judge_responses_gpt52_sync.jsonl.gz": "judge_outputs_gpt52_sync.jsonl.gz",
+        "judge_responses.jsonl.gz": "judge_outputs.jsonl.gz",
         "/Users/Yifan/Research/structral-semantic-features/": "",
         "/Users/Yifan/Research/structral-semantic-features": ".",
         "/Users/Yifan/": "./",
+        "/mnt/storage/": "anonymous-remote-storage/",
+        "/workspace/structral-semantic-features/": "",
+        "/workspace/structral-semantic-features": ".",
         "Yifan": "Anonymous",
         "github.com/yifan1207/PT-IT-Model-Differences": "anonymous-code-archive.invalid/reviewer-artifacts",
         "github.com/yifan1207": "anonymous-code-archive.invalid",
@@ -210,6 +238,8 @@ def strip_nonpaper_json_keys(obj: object) -> object:
         clean: dict[str, object] = {}
         for key, value in obj.items():
             lowered = key.lower()
+            if lowered in SUPPLEMENT_JSON_KEYS_EXCLUDE:
+                continue
             if any(substr in lowered for substr in SUPPLEMENT_JSON_KEY_EXCLUDE_SUBSTRINGS):
                 continue
             clean[key] = strip_nonpaper_json_keys(value)
@@ -665,7 +695,8 @@ here; they are part of the main PDF.
 - `results/`: compact JSON/CSV summaries and paper-facing plots.
 - `scripts/`: CPU claim checker plus analysis/plot scripts.
 - `src/poc/`: selected experiment packages for the feature/recipe/continuation analyses.
-- `MANIFEST.sha256`: SHA-256 hash manifest for all files in this archive.
+- `MANIFEST.sha256`: SHA-256 hash manifest for all files in this archive,
+  compatible with `sha256sum -c MANIFEST.sha256`.
 
 ## Reviewer-Facing Reproduction
 
@@ -677,9 +708,13 @@ This CPU-only check verifies paper-facing numeric claims against the included
 summary artifacts. Full raw intervention reruns require multi-GPU A100/H100
 hardware and are documented in the paper appendix.
 
+Optional shard-level smoke checks are exposed through
+`bash scripts/reproduce/reproduce_minimal.sh`. The raw shard itself is not
+bundled in this compact supplement; the script exits cleanly with instructions
+unless `SHARD_DIR` points to an unpacked anonymous audit shard.
+
 ## Built PDF Summary
 
-- PDF path: `{validation["pdf"]}`
 - Main pages before references: `{validation["main_pages_before_references"]}`
 - Total pages including appendices/checklist: `{validation["total_pages"]}`
 - Checklist page: `{validation["checklist_page"]}`
@@ -708,8 +743,6 @@ def stage_supplement(validation: dict[str, object]) -> None:
     (SUPP_STAGE / "artifact_map.json").write_text(
         json.dumps(
             {
-                "pdf": rel(PDF_OUT),
-                "supplement_zip": rel(SUPP_ZIP),
                 "note": "MANIFEST.sha256 contains per-file hashes for this archive.",
                 "claim_groups": {
                     "core5_first_divergence": [
@@ -775,14 +808,14 @@ def stage_supplement(validation: dict[str, object]) -> None:
 
 
 def write_manifest(stage: Path) -> None:
-    rows: list[tuple[str, str, int]] = []
+    rows: list[tuple[str, str]] = []
     for path in sorted(stage.rglob("*")):
         if path.is_file() and path.name != "MANIFEST.sha256":
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            rows.append((digest, path.relative_to(stage).as_posix(), path.stat().st_size))
+            rows.append((digest, path.relative_to(stage).as_posix()))
     with (stage / "MANIFEST.sha256").open("w") as f:
-        for digest, relpath, size in rows:
-            f.write(f"{digest}  {relpath}  {size}\\n")
+        for digest, relpath in rows:
+            f.write(f"{digest}  {relpath}\n")
 
 
 def scan_for_leaks(root: Path) -> None:

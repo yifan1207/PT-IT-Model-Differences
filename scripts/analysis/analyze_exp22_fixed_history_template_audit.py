@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import hashlib
 import json
 import math
 import sys
@@ -209,9 +210,25 @@ def _paired_effect(
     if merged.empty:
         return float("nan"), {}
     merged["diff"] = merged["treatment"].astype(float) - merged["control"].astype(float)
-    model_means = merged.groupby("model")["diff"].mean()
-    by_model = {str(model): group[[col for col in ["teacher_source", "prompt_id", "diff"] if col in group.columns]].copy() for model, group in merged.groupby("model", sort=True)}
-    return float(model_means.mean()), by_model
+    model_means = []
+    by_model: dict[str, pd.DataFrame] = {}
+    for model, group in merged.groupby("model", sort=True):
+        # The paired CI is a prompt-cluster bootstrap, so use the same
+        # prompt-cluster estimand for the printed point estimate.
+        cluster_cols = [col for col in ["teacher_source", "prompt_id"] if col in group.columns]
+        prompt_means = group.groupby(cluster_cols, sort=False)["diff"].mean().reset_index()
+        if prompt_means.empty:
+            continue
+        by_model[str(model)] = prompt_means
+        model_means.append(float(prompt_means["diff"].mean()))
+    if not model_means:
+        return float("nan"), {}
+    return float(np.mean(model_means)), by_model
+
+
+def _stable_seed_offset(*parts: Any) -> int:
+    payload = "\x1f".join(str(part) for part in parts).encode("utf-8")
+    return int.from_bytes(hashlib.blake2b(payload, digest_size=8).digest(), "little") % 100_000
 
 
 def _paired_bootstrap_ci(
@@ -270,7 +287,11 @@ def paired_effects(
                 outcome=outcome,
                 probe_family=probe_family,
             )
-            lo, hi = _paired_bootstrap_ci(by_model, n_boot=n_boot, seed=seed + abs(hash((comparison_name, probe_family, outcome))) % 100_000)
+            lo, hi = _paired_bootstrap_ci(
+                by_model,
+                n_boot=n_boot,
+                seed=seed + _stable_seed_offset(comparison_name, probe_family, outcome),
+            )
             rows.append(
                 {
                     "comparison": comparison_name,

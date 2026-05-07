@@ -6,13 +6,13 @@
 
 ## Abstract
 
-Recent interpretability work has identified native-checkpoint handles on post-trained behavior, including refusal directions, assistant/persona axes, and sparse chat-tuning features. These results localize where behaviors can be read out or controlled, often in middle-to-late layers. We ask how upstream computation and the late stack cooperate to turn those differences into next-token margins. To test this, we introduce first-divergence cross-patching: at the first token where pretrained base (PT) and instruction-tuned (IT) checkpoints disagree, we cross each model's upstream state with each model's late stack. The diagnostic is recipe-discriminative: same-base instruction-following descendants show an upstream-conditioned profile, while OpenMath2 math-domain SFT and controlled code/biomed CPT foils with verified domain learning do not; for OpenMath2, the late effect is already exposed by base upstream. Across five dense families ($4\mathrm{B}$-$32\mathrm{B}$), the IT late stack adds $+0.76$ logits from PT upstream and $+2.44$ from IT upstream, giving a $+1.68$ interaction that is positive in every family. Thus the late stack has a real PT-upstream effect, but its larger native effect appears only when it reads its own post-trained upstream state. Sparse terminal features partially mediate the effect and are driven by upstream patches, supporting a handoff from preterminal state to terminal feature activation to IT-token margin. Forced-token scoring shows downstream suffix consequences on exact-answer prompts. Operationally, paired-checkpoint studies that localize a difference to late layers should test whether it survives under foreign upstream state before treating the late stack as self-contained.
+Recent interpretability work has identified directions, features, and layers that are most responsible for post-trained behavior, including refusal directions, assistant/persona axes, and sparse chat-tuning features. These results localize where behaviors can be read out or controlled, often in middle-to-late layers. We ask how upstream computation and the late stack cooperate to turn those differences into next-token margins. To test this, we introduce first-divergence cross-patching: at the first token where pretrained base (PT) and instruction-tuned (IT) checkpoints disagree, we cross each model's upstream state with each model's late stack. The diagnostic is recipe-discriminative: same-base instruction-following descendants show an upstream-conditioned profile, while OpenMath2 math-domain supervised fine-tuning (SFT) and controlled code/biomed continuation-pretraining (CPT) foils with verified domain learning do not show it on the main support; for OpenMath2, the late effect is already exposed by base upstream. Across five dense families ($4\mathrm{B}$-$32\mathrm{B}$), the IT late stack adds $+0.76$ logits from PT upstream and $+2.44$ from IT upstream, giving a $+1.68$ interaction that is positive in every family. Thus the late stack has a real PT-upstream effect, but its larger effect appears only when it reads upstream state from its own post-trained checkpoint. Sparse terminal features partially mediate the effect and are driven by upstream patches, supporting a handoff from preterminal state to terminal feature activation to IT-token margin. Forced-token scoring shows downstream suffix consequences on exact-answer prompts. Operationally, paired-checkpoint studies that localize a difference to late layers should test whether it survives when the late stack is run on the other checkpoint's upstream state before treating the late stack as self-contained.
 
 ---
 
 ## 1. Introduction
 
-Where in the forward pass does instruction tuning become a logit? Recent mechanistic interpretability work has found native-checkpoint handles on post-trained behavior: refusal and harmfulness directions, assistant/persona axes, instruction-following steering vectors, preference-sensitive layers, and sparse chat-tuning features. Many appear in middle-to-late or late layers, where post-training differences are expressed near readout. Our question is the pathway that makes this expression work: does post-training mainly change late features themselves, or also the upstream computation that activates and conditions them? A late-layer feature can be a reader: it changes output only when upstream computation supplies the residual pattern that activates it.
+Where in the forward pass does instruction tuning become a logit? Recent mechanistic interpretability work has found directions, features, and layers that affect post-trained behavior: refusal and harmfulness directions, assistant/persona axes, instruction-following steering vectors, preference-sensitive layers, and sparse chat-tuning features. Many appear in middle-to-late or late layers, where post-training differences are expressed near readout. Our question is the pathway that makes this expression work: does post-training mainly change late features themselves, or also the upstream computation that activates and conditions them? A late-layer feature can be a reader: it changes output only when upstream computation supplies the residual pattern that activates it.
 
 We measure this coupling with **first-divergence cross-patching**. For each prompt, we find the earliest generated position where PT and IT prefer different next tokens under the same generated history. At that prefix, we pair one checkpoint's upstream residual state ($U_{\mathrm{PT}}$ or $U_{\mathrm{IT}}$) with one checkpoint's downstream late stack ($L_{\mathrm{PT}}$ or $L_{\mathrm{IT}}$) and score $\mathrm{logit}(t_{\mathrm{IT}})-\mathrm{logit}(t_{\mathrm{PT}})$. The difference-in-differences asks how much larger the IT-minus-PT late-stack replacement effect is when the upstream state is IT-shaped rather than PT-shaped, separating direct late-stack contribution from upstream-conditioned contribution.
 
@@ -23,20 +23,20 @@ At the first PT/IT disagreement, the IT late stack adds $+0.76$ logits from PT u
 > - Late stack from PT upstream: $+0.76$ logits toward the IT token.
 > - Late stack from IT upstream: $+2.44$ logits toward the IT token.
 > - Interaction: $+1.68$ logits, positive in $5/5$ Core-5 families.
-> - Recipe discrimination: same-base instruction-following descendants show this upstream-conditioned profile; OpenMath2's math-domain effect is already exposed by base upstream (`C=-0.154` on math support), and controlled code/biomed CPT foils are near zero on the main support (`C=-0.002`, `+0.018`) despite verified domain learning.
+> - Recipe discrimination: same-base instruction-following descendants show this upstream-conditioned profile; OpenMath2's math-domain effect is already exposed by base upstream (interaction $-0.154$ on math support), and controlled code/biomed continuation-pretraining foils are near zero on the main support (interactions $-0.002$, $+0.018$) despite verified domain learning.
 > - Component split: a direct late-stack component plus a larger upstream-conditioned component.
-> - Direct component share: $31.1%$ family-balanced; family range $19.5$-$44.3%$.
+> - Direct component share: $31.1\%$ family-balanced; family range $19.5$-$44.3\%$.
 
-This makes the same four-cell test a worked example of model-diffing discrimination, not just a measurement of one base/instruct gap. On the same base and architecture, instruction-following descendants require native upstream state for their late effects; OpenMath2's math-domain effect is already exposed by base upstream, and controlled continuation-trained foils do not reproduce the main-support pathway.
+This makes the same four-cell test a worked example of model-diffing discrimination, not just a measurement of one base/instruct gap. On the same base and architecture, instruction-following descendants require their own upstream state for their late effects; OpenMath2's math-domain effect is already exposed by base upstream, and controlled continuation-trained foils do not reproduce the main-support pathway.
 
-> **Operational takeaway.** When a paired-checkpoint study localizes a difference to late layers, report the same late-stack effect under both native and foreign upstream state. A native late effect localizes expression; by itself it does not show that the computation is self-contained.
+> **Operational takeaway.** When a paired-checkpoint study localizes a difference to late layers, report the same late-stack effect under both its own checkpoint's upstream state and the other checkpoint's upstream state. A late effect measured only in its own checkpoint localizes expression; by itself it does not show that the computation is self-contained.
 
 > **Behavioral scope.** The main claim is local: it concerns the first moment where released base and instruct checkpoints choose different next tokens. Forced-token scoring improves suffix-only exact-answer success on CONTENT-REASON prompts, and constrained continuation shows short-horizon persistence, but broad free-running behavior is not the load-bearing claim.
 
 The paper has three contributions.
 
 1. **A cross-patching diagnostic for upstream dependence.** First-divergence cross-patching decomposes the IT-minus-PT late-stack replacement effect into PT-upstream and IT-upstream components.
-2. **Recipe discrimination across same-base descendants.** This is the main empirical payoff: instruction-following descendants show upstream-conditioned late effects, while OpenMath2 and controlled CPT foils show that this profile is not automatic same-base post-training.
+2. **Recipe discrimination across same-base descendants.** This is the main empirical payoff: instruction-following descendants show upstream-conditioned late effects, while OpenMath2 and controlled continuation-pretraining foils show that this profile is not automatic same-base post-training.
 3. **Mechanistic and consequence bridges.** Terminal crosscoders identify sparse MLP features that partially mediate, gate, and rescue the interaction; forced-token scoring and constrained continuation show suffix consequences and short-horizon persistence. These are bridges, not full circuit reconstruction or broad behavior estimates.
 
 Scope is intentionally local. In Core-5 contrasts, **PT** is the released pretrained/base checkpoint and **IT** is the released instruction-following descendant; recipe and lineage checks name stages explicitly.
@@ -86,15 +86,15 @@ All raw-shared runs force PT and IT branches to raw text and validate identical 
 
 ### 3.1 Main Upstream-Late Decomposition
 
-The four-cell result separates three interpretations of a native late-stack effect: self-contained across upstream states, useless under PT upstream, or coupled to IT-shaped upstream state. Replacing the PT late stack with the IT late stack shifts the IT-token margin by $+0.76$ logits from PT upstream, but by $+2.44$ logits from IT upstream. The headline magnitude is the $+1.68$ interaction: a direct late-stack component is present, but most of the matched-context effect is exposed only under IT-shaped upstream state.
+The four-cell result separates three interpretations of a late-stack effect: self-contained across upstream states, useless under PT upstream, or coupled to IT-shaped upstream state. Replacing the PT late stack with the IT late stack shifts the IT-token margin by $+0.76$ logits from PT upstream, but by $+2.44$ logits from IT upstream. The headline magnitude is the $+1.68$ interaction: a direct late-stack component is present, but most of the matched-context effect is exposed only under IT-shaped upstream state.
 
 The verdict is simple. A self-contained account is disfavored because the matched-context effect is much larger than the PT-upstream effect. A no-transfer account is also disfavored because the PT-upstream component is $+0.76$ logits. The supported picture is upstream-late coupling.
 
-The sign pattern is consistent across families: every Core-5 interaction is positive, ranging from $+1.25$ to $+2.53$ logits. The direct late-stack share ranges from $19.5%$ to $44.3%$ across families, with median $29.2%$ and family-balanced center $31.1%$. We treat the logit interaction as primary; Appendix B reports scale conversions.
+The sign pattern is consistent across families: every Core-5 interaction is positive, ranging from $+1.25$ to $+2.53$ logits. The direct late-stack share ranges from $19.5\%$ to $44.3\%$ across families, with median $29.2\%$ and family-balanced center $31.1\%$. We treat the logit interaction as primary; Appendix B reports scale conversions.
 
 The interaction is also not confined to response openings: generated position $\geq 3$ and $\geq 5$ subsets remain positive, though smaller and thinner.
 
-![Core-5 first-divergence interaction by family. The upstream x late interaction is positive in every core dense family, including the 32B scale check.](../results/paper_synthesis/exp23_core5/exp23_core5_interaction.png)
+![Core-5 first-divergence interaction by family. The upstream x late interaction is positive in every core dense family, including Qwen2.5 32B.](../results/paper_synthesis/exp23_core5/exp23_core5_interaction.png)
 
 \begin{samepage}
 \noindent\textbf{Table 2: Core-5 headline four-cell effects.}
@@ -116,21 +116,21 @@ The $+1.68$ interaction multiplies the odds of $t_{\mathrm{IT}}$ over $t_{\mathr
 
 ### 3.2 Recipe Discrimination: Instruction-Following Descendants Are More Upstream-Conditioned
 
-The same coupling diagnostic separates instruction-following descendants from same-base domain/task foils. This is the worked example of why foreign-upstream reporting matters: a native late effect can look strong in two descendants of the same base, while the four-cell diagnostic shows different pathways. OpenMath2 shares the Llama-3.1-8B base and architecture with the instruction descendants (Toshniwal et al., 2024); on math-domain support its matched-context late effect is large, but base upstream already exposes it. Instruction-following descendants remain upstream-conditioned.
+The same coupling diagnostic separates instruction-following descendants from same-base domain/task foils. This is the worked example of why reporting the other-checkpoint upstream condition matters: a late effect can look strong in its own checkpoint for two descendants of the same base, while the four-cell diagnostic shows different pathways. OpenMath2 shares the Llama-3.1-8B base and architecture with the instruction descendants (Toshniwal et al., 2024); on math-domain support its matched-context late effect is large, but base upstream already exposes it. Instruction-following descendants remain upstream-conditioned.
 
 **Table 3: Same-base recipe discrimination.**
 
 | Same-base comparison | Main result | Read |
 |---|---:|---|
 | OpenMath2 math-domain SFT | math-support interaction `-0.154` despite matched-context `+3.275` and base-upstream `+3.430` late effects | the domain late effect is already exposed by base upstream, not upstream-conditioned |
-| General-purpose instruction-following descendants | instruction mean `+0.959`; instruction-minus-OpenMath matched contrast `+1.335`; math-support instruction mean `+1.670` | instruction-following descendants show the upstream-conditioned profile |
+| General-purpose instruction-following descendants | instruction mean `+0.959`; instruction-minus-OpenMath2 matched contrast `+1.335`; math-support instruction mean `+1.670` | instruction-following descendants show the upstream-conditioned profile |
 | Controlled code/biomed CPT foils | main-support code `-0.002`; main-support biomed `+0.018`; biomed-domain `+0.283` | same-base continuation training is not enough; upstream-conditioning can be support-local |
 
 This is the main empirical payoff of the diagnostic: upstream-conditioned late effects are not an automatic consequence of sharing a base model and applying further training. OpenMath2's math-domain effect is strong, but base upstream already exposes it. By contrast, general-purpose instruction-following descendants retain a larger IT-upstream component on matched instruction/format and math supports. Appendix F gives per-descendant tables and controls.
 
 Controlled CPT foils sharpen the same point. Code and biomedical continuation adapters improve held-out domain NLL and pass merge/generation-health checks, but they do not reproduce the large instruction/governance-support interaction on the main support. The biomedical adapter does show a domain-local interaction, so the claim is recipe/support structure.
 
-Consequence and persistence checks support the interpretation without replacing the token-level estimand. On CONTENT-REASON exact-answer prompts, forcing the descendant-preferred divergent token improves suffix-only objective success by `+0.157` `[+0.120,+0.192]`; the forced token itself is excluded from scoring. Constrained continuation stays positive through `N=8`, coherent descendant tails carry more interaction than shuffled tails, and OpenMath again behaves differently. Released Tulu-3 and OLMo-2 sweeps (Lambert et al., 2025; Team OLMo et al., 2025) show partial SFT presence and DPO/preference checkpoints near the final fixed-support score; these are cumulative checkpoint comparisons, not causal stage attributions.
+Consequence and persistence checks support the interpretation without replacing the token-level estimand. On CONTENT-REASON exact-answer prompts, forcing the descendant-preferred divergent token improves suffix-only objective success by `+0.157` `[+0.120,+0.192]`; the forced token itself is excluded from scoring. Constrained continuation stays positive through `N=8`, coherent descendant tails carry more interaction than shuffled tails, and OpenMath2 again behaves differently. Released Tulu-3 and OLMo-2 sweeps (Lambert et al., 2025; Team OLMo et al., 2025) show partial supervised-fine-tuning (SFT) presence and direct-preference-optimization (DPO)/preference checkpoints near the final fixed-support score; these are cumulative checkpoint comparisons, not causal stage attributions.
 
 ### 3.3 Validation Against Hybrid and Selection Artifacts
 
@@ -140,7 +140,7 @@ The cross-patching factorial selects a high-signal disagreement point and constr
 
 - **Hybrid-state checks pass.** Native diagonals reconstruct exactly, PT->IT boundary interpolation is smooth and positive, and signed permutations recover only a minority of the effect.
 - **First divergence is high-signal but not arbitrary.** Random local disagreements from the same prompts retain `56%` of the interaction, while pre-divergence prefixes scored on the future token pair are near zero (`3%`).
-- **Native histories preserve the interaction.** Because raw-shared scoring omits native chat templates, we also drop the shared-history requirement. Local disagreements after greedy native IT histories give `+1.51` logits `[+1.42,+1.61]`; a PT-history mirror gives `+1.49` `[+1.33,+1.65]`, with all four smaller non-Gemma dense families positive in both directions.
+- **Native histories preserve the interaction.** Because raw-shared scoring omits native chat templates, we also drop the shared-history requirement. Local disagreements after greedy native IT histories give `+1.51` logits `[+1.42,+1.61]`; a PT-history mirror gives `+1.49` `[+1.33,+1.65]`, with all four Core-small dense families positive in both directions.
 - **Pre-late logit commitment does not explain the effect.** The interaction remains positive when the IT boundary readout does not yet favor $t_{\mathrm{IT}}$ and in the lowest boundary-margin tercile.
 - **Readout choice agrees.** Common-IT and common-PT readouts give the same answer (`+1.68` vs `+1.70`).
 - **The label-swap null passes.** Reversing the PT/IT token labels does not reproduce the observed orientation.
@@ -149,7 +149,7 @@ The selected-support control is important enough to visualize directly. Random l
 
 ![Selection baselines for first divergence. Random local disagreements from the same rollouts preserve the sign of the upstream x late interaction at reduced magnitude, while pre-divergence future-token scoring is near zero. Values are Core-small family-balanced means.](../results/paper_synthesis/exp37_core_small_selection_baseline/selection_baselines_core_small.png)
 
-Secondary checks agree: later-position subsets remain positive, every core family has a positive interaction, and native-history local disagreements remain positive in every smaller non-Gemma dense family. The exact magnitude remains intervention-scoped, but the pattern is robust under tests that would otherwise explain it away.
+Secondary checks agree: later-position subsets remain positive, every core family has a positive interaction, and native-history local disagreements remain positive in every Core-small dense family. The exact magnitude remains intervention-scoped, but the pattern is robust under tests that would otherwise explain it away.
 
 ### 3.4 Mechanistic Bridge: Sparse Terminal Features and Structured State
 
@@ -159,21 +159,21 @@ We use two units in this section. **Feature rescue** means an absolute logit gai
 
 #### 3.4.1 Window Anatomy
 
-The window-level anatomy is a candidate-to-margin handoff: middle windows transfer divergent-token identity more often, while late and terminal windows are more margin-sensitive. Middle-positioned MLP substitutions transfer which token wins more often than late substitutions, while late windows dominate native IT-token support. Terminal-depth audits in Appendix D sharpen the same story. The handoff is operational rather than a complete circuit.
+The window-level anatomy is a candidate-to-margin handoff: middle windows transfer divergent-token identity more often, while late and terminal windows are more margin-sensitive. Middle-positioned MLP substitutions transfer which token wins more often than late substitutions, while late windows dominate IT-token support under IT upstream state. Terminal-depth audits in Appendix D sharpen the same story. The handoff is operational rather than a complete circuit.
 
 #### 3.4.2 Sparse Terminal Features Carry a Concentrated Part
 
-Terminal crosscoders connect the window-level handoff to sparse MLP features. We train paired PT/IT BatchTopK crosscoders on terminal MLP outputs, rank features by held-out causal effect, and ablate their IT-branch decoder contribution inside the terminal IT stack. The fixed top-200 subset accounts for `26-48%` of the terminal readout interaction, while matched-random sets have the wrong sign or near-zero effect.
+Terminal crosscoders connect the window-level handoff to sparse MLP features in the three families that pass the predeclared crosscoder quality gate. We train paired PT/IT BatchTopK crosscoders on terminal MLP outputs, rank features by held-out causal effect, and ablate their IT-branch decoder contribution inside the terminal IT stack. The fixed top-200 subset accounts for `26-48%` of the terminal readout interaction in these quality-gated families, while matched-random sets have the wrong sign or near-zero effect.
 
 For the feature edits below, rescue is an absolute logit gain; rescue fractions in Appendix E divide by the missing margin defined above.
 
-![Terminal crosscoder mediation. Ablating the top causally ranked terminal features reduces the upstream x late interaction in each clean terminal-crosscoder family, while matched random features do not reproduce the effect. Percent labels show the top-200 share of the family interaction.](../results/paper_synthesis/exp34_core_feature_mediation/terminal_crosscoder_core3_mediation.png)
+![Terminal crosscoder mediation. Ablating the top causally ranked terminal features reduces the upstream x late interaction in each quality-gated terminal-crosscoder family, while matched random features do not reproduce the effect. Percent labels show the top-200 share of the family interaction.](../results/paper_synthesis/exp34_core_feature_mediation/terminal_crosscoder_core3_mediation.png)
 
 #### 3.4.3 Upstream Patches Drive Terminal Features
 
-The same sparse terminal features inherit the upstream conditioning seen at window level. Ablating the top-200 causal terminal features hurts the $U_{\mathrm{IT}},L_{\mathrm{IT}}$ readout much more than the $U_{\mathrm{PT}},L_{\mathrm{IT}}$ readout, and patching their native activations into the weak $U_{\mathrm{PT}},L_{\mathrm{IT}}$ hybrid gives a $+0.49$ logit rescue. Both effects beat matched-random controls. This is not full reconstruction, but it recovers a measurable slice of the missing IT-token margin.
+Within the same quality-gated families, the sparse terminal features inherit the upstream conditioning seen at window level. Ablating the top-200 causal terminal features hurts the $U_{\mathrm{IT}},L_{\mathrm{IT}}$ readout much more than the $U_{\mathrm{PT}},L_{\mathrm{IT}}$ readout, and patching their activations from the $U_{\mathrm{IT}},L_{\mathrm{IT}}$ pass into the weak $U_{\mathrm{PT}},L_{\mathrm{IT}}$ hybrid gives a $+0.49$ logit rescue. Both effects beat matched-random controls. This is not full reconstruction, but it recovers a measurable slice of the missing IT-token margin.
 
-A direct handoff test perturbs upstream computation and re-measures the same terminal features. Injecting IT mid-to-preterminal computation into the weak $U_{\mathrm{PT}},L_{\mathrm{IT}}$ hybrid rescues $+1.71$ logits, with $+0.13$ mediated by selected terminal features. The reverse PT patch into native IT causes a $+3.57$ drop, with $+0.53$ mediated. Thus preterminal state changes drive a measurable part of terminal sparse-feature readout.
+A direct handoff test perturbs upstream computation and re-measures the same terminal features. Injecting IT mid-to-preterminal computation into the weak $U_{\mathrm{PT}},L_{\mathrm{IT}}$ hybrid rescues $+1.71$ logits, with $+0.13$ mediated by selected terminal features. The reverse PT patch into the $U_{\mathrm{IT}},L_{\mathrm{IT}}$ pass causes a $+3.57$ drop, with $+0.53$ mediated. Thus preterminal state changes drive a measurable part of terminal sparse-feature readout.
 
 #### 3.4.4 Independent Structured Boundary-State Closure
 
@@ -181,9 +181,9 @@ This is an independent state-space check, not a crosscoder result. On Llama-3.1 
 
 ## 4. Related Work
 
-**Late refinement and post-training diffs.** Feed-forward layers promote vocabulary-space concepts and refine predictions (Geva et al., 2021, 2022), and layerwise/tuned-lens or layer-contrast analyses describe late residual sharpening and confidence adjustment (nostalgebraist, 2020; Belrose et al., 2023; Chuang et al., 2024; Lad et al., 2025; Joshi et al., 2025). Fine-tuning and post-training studies report low-dimensional, localized, or layerwise shifts in trained models (Aghajanyan et al., 2021; Panigrahi et al., 2023; Lin et al., 2024; Wu et al., 2024; Zhao, Ziser, and Cohen, 2024; Du et al., 2025; Chaudhury, 2025). Instruction Vectors find complementary early-to-late conditionality (Bigoulaeva et al., 2026), while Sparse but Critical analyzes RLVR token substitutions during sampling (Meng et al., 2026). Divergent-token metrics also use token-level changes as degradation signals (Deiseroth et al., 2024); our question is internal to paired checkpoints at the selected disagreement token.
+**Late refinement and post-training diffs.** Feed-forward layers promote vocabulary-space concepts and refine predictions (Geva et al., 2021, 2022), and layerwise/tuned-lens or layer-contrast analyses describe late residual sharpening and confidence adjustment (nostalgebraist, 2020; Belrose et al., 2023; Chuang et al., 2024; Lad et al., 2025; Joshi et al., 2025). Fine-tuning and post-training studies report low-dimensional, localized, or layerwise shifts in trained models (Aghajanyan et al., 2021; Panigrahi et al., 2023; Lin et al., 2024; Wu et al., 2024; Zhao, Ziser, and Cohen, 2024; Du et al., 2025; Chaudhury, 2025). Instruction Vectors find complementary early-to-late conditionality (Bigoulaeva et al., 2026), while Sparse but Critical analyzes reinforcement-learning-with-verifiable-rewards (RLVR) token substitutions during sampling (Meng et al., 2026). Divergent-token metrics also use token-level changes as degradation signals (Deiseroth et al., 2024); our question is internal to paired checkpoints at the selected disagreement token.
 
-**Activation patching, steering axes, and sparse model diffs.** Activation patching requires care because metric choice, intervention direction, and off-manifold hybrids affect interpretation (Heimersheim and Nanda, 2024). Representation-engineering and activation-steering work identifies native-checkpoint handles on sentiment, refusal, harmfulness, assistant persona, and instruction-following directions (Zou et al., 2023; Turner et al., 2023; Rimsky et al., 2024; Arditi et al., 2024; Stolfo et al., 2025; Zhao et al., 2025; Lu et al., 2026). Our contribution is to make upstream dependence of a localized late effect measurable by scoring the same late-stack replacement under native and foreign upstream state. Cross-model activation patching is the closest methodological precedent (Prakash et al., 2024), but asks whether fine-tuning enhances an existing task circuit; ours asks how the IT late-stack replacement depends on upstream state at a natural PT/IT disagreement. Unlike global sparse model-diff work (Lindsey et al., 2024; Minder et al., 2025), and complementary to sparse-autoencoder evaluation work (Makelov et al., 2024), we apply crosscoders after defining the causal estimand and ask which terminal features mediate it. Full circuit discovery is a separate goal (Conmy et al., 2023).
+**Activation patching, steering axes, and sparse model diffs.** Activation patching requires care because metric choice, intervention direction, and off-manifold hybrids affect interpretation (Heimersheim and Nanda, 2024). Representation-engineering and activation-steering work identifies directions and layers associated with sentiment, refusal, harmfulness, assistant persona, and instruction following (Zou et al., 2023; Turner et al., 2023; Rimsky et al., 2024; Arditi et al., 2024; Stolfo et al., 2025; Zhao et al., 2025; Lu et al., 2026). Our contribution is to make upstream dependence of a localized late effect measurable by scoring the same late-stack replacement under its own checkpoint's upstream state and the other checkpoint's upstream state. Cross-model activation patching is the closest methodological precedent (Prakash et al., 2024), but asks whether fine-tuning enhances an existing task circuit; ours asks how the IT late-stack replacement depends on upstream state at a natural PT/IT disagreement. Unlike global sparse model-diff work (Lindsey et al., 2024; Minder et al., 2025), and complementary to sparse-autoencoder evaluation work (Makelov et al., 2024), we apply crosscoders after defining the causal estimand and ask which terminal features mediate it. Full circuit discovery is a separate goal (Conmy et al., 2023).
 
 **Novelty.** Prior work localizes fine-tuning effects, steering directions, or chat-specific features; here upstream-late coupling is the estimand. We score the same late-stack replacement under PT-shaped and IT-shaped upstream state at a natural PT/IT disagreement, decomposing one late-stack effect into direct and upstream-conditioned components. Instruction Vectors give convergent qualitative evidence; our contribution is the paired-checkpoint causal decomposition and sparse-feature bridge for the PT/IT readout margin.
 
@@ -201,13 +201,13 @@ The behavioral connection is deliberately narrower than a benchmark claim. Local
 
 ### 5.2 Scope
 
-The primary estimand is local to first-divergence next-token readouts; native-history checks show a same-sign local-disagreement variant, but neither is an average over deployment behavior. The interventions are window-level compatibility tests: validation makes practical hybrid artifacts unlikely, constrained continuation shows short-horizon likelihood persistence, and crosscoders expose a partial, terminal, quality-gated sparse-feature trace. The raw-shared design is intentional because exact residual comparisons require aligned token IDs; a template-aware variant remains future work.
+The primary estimand is local to first-divergence next-token readouts; native-history checks show a same-sign local-disagreement variant, but neither is an average over deployment behavior. The interventions are window-level compatibility tests: validation makes practical hybrid artifacts unlikely, constrained continuation shows short-horizon likelihood persistence, and crosscoders expose a partial, terminal, quality-gated sparse-feature trace. The raw-shared design is intentional because exact residual comparisons require aligned token IDs; a template-aware variant remains future work. A separate fixed-history native-template late-KL audit shows that the related late-convergence signal survives identical forced token histories and endpoint matching, supporting the late-readout context without replacing template-aware cross-patching.
 
-The empirical scope is five dense core PT/IT pairs, same-base released and controlled recipe controls, two released dense lineages, and one dense 32B scale check. DeepSeek-V2-Lite is artifact-only because MoE routing and expert swaps need different controls; architecture and MoE generalization remain next-step questions.
+The empirical scope is five dense core PT/IT pairs including one 32B pair, same-base released and controlled recipe controls, and two released dense lineages. DeepSeek-V2-Lite is artifact-only because MoE routing and expert swaps need different controls; architecture and MoE generalization remain next-step questions.
 
 ### 5.3 Practical Implications and Next Tests
 
-For paired checkpoints, a large native late effect localizes expression but does not show whether the computation is self-contained or upstream-conditioned. The four-cell test distinguishes direct late-stack contribution, upstream-conditioned contribution, and no useful late-stack transfer; next work should identify middle/preterminal drivers of the terminal features.
+For paired checkpoints, a large late effect measured only in its own checkpoint localizes expression but does not show whether the computation is self-contained or upstream-conditioned. The four-cell test distinguishes direct late-stack contribution, upstream-conditioned contribution, and no useful late-stack transfer; next work should identify middle/preterminal drivers of the terminal features.
 
 ---
 
@@ -215,7 +215,7 @@ For paired checkpoints, a large native late effect localizes expression but does
 
 First-divergence cross-patching turns "do late layers explain the base-to-instruct difference?" into an upstream-late coupling test. At the first PT/IT disagreement, the IT-minus-PT late-stack replacement effect decomposes into a positive direct component from PT upstream and a larger upstream-conditioned component exposed by IT-shaped upstream state. The result is positive across five dense families, recipe-discriminative under released and controlled same-base foils, coherent along two lineages, and robust to artifact and native-history checks.
 
-Taken together, the results support an upstream-to-late compatibility story rather than a standalone late-stack story: post-training changes upstream computation that conditions late readout, and the same four-cell test exposes both this coupling and recipe differences.
+Taken together, the results support an upstream-to-late compatibility story rather than a standalone late-stack story: released base-to-instruct contrasts show upstream-state differences that condition late readout, and the same four-cell test exposes both this coupling and recipe differences.
 
 ---
 
@@ -315,6 +315,7 @@ Prompt-bootstrap CIs in the main text are conditional precision estimates over s
 
 | Appendix | Supports | Does not prove |
 |---|---|---|
+| A | Model scope, prompt supports, sampling, revision pins, boundary choices, and dataset documentation. | Population-level model-family generalization or template-aware deployment behavior. |
 | B | Core-5 interaction magnitude, secondary scale conversions, family consistency, and readout robustness. | Population-level generalization over all dense or post-trained models. |
 | C | Main artifact explanations are unlikely: broken hybrids, arbitrary token support, first-divergence-only support, and pre-late logit commitment. | Hybrid passes are natural deployment trajectories or completion-level behavior estimates. |
 | D | Depth anatomy: middle windows are relatively more identity-selective while late/terminal windows are more margin-sensitive. | A complete circuit or a unique layer boundary. |
@@ -495,7 +496,7 @@ The support-run control restricts to events where the IT boundary readout does n
 
 ### C.4 Native-History Local-Disagreement Check
 
-This check drops the shared-history first-divergence support. For each prompt, we greedily generate a native PT or IT history, take fixed horizons $h\in\{4,8,16\}$, keep horizons where the two checkpoints disagree on the next token at that native prefix, and run the same four-cell late-stack factorial. The run covers four smaller non-Gemma dense families (Llama, Qwen3, Mistral, OLMo); all `3000` prompt rows are valid and diagonal no-op patch deltas are `0.0`.
+This check drops the shared-history first-divergence support. For each prompt, we greedily generate a native PT or IT history, take fixed horizons $h\in\{4,8,16\}$, keep horizons where the two checkpoints disagree on the next token at that native prefix, and run the same four-cell late-stack factorial. The run covers the four Core-small dense families (Llama, Qwen3, Mistral, OLMo); all `3000` prompt rows are valid and diagonal no-op patch deltas are `0.0`.
 
 **Table C.4: Native-history local-disagreement check.**
 
@@ -505,6 +506,19 @@ This check drops the shared-history first-divergence support. For each prompt, w
 | PT history mirror, $h=4,8,16$ | `+1.490` `[+1.334, +1.646]` | `551 / 355` | `4/4` |
 
 Because the PT-history mirror is also strongly positive, the claim is native-history/local-disagreement generalization rather than IT-history specificity. This does not turn the estimand into a deployment-level behavior measure; it shows that the upstream-conditioned late-stack pattern is not confined to the first shared-history disagreement.
+
+### C.5 Fixed-History Native-Template Late-KL Audit
+
+This audit is supporting context for the late-readout picture, not a replacement for the first-divergence cross-patching estimand. It asks whether the related native IT late-convergence signal survives when the token history is fixed. We generate one teacher continuation, replay the same forced token IDs through PT raw, IT native-chat, and IT raw/no-template cells, and measure the raw-lens late `KL(layer || own final)`.
+
+**Table C.5: Fixed-history native-template late-KL audit.**
+
+| Teacher history | Paired same-history effect | Endpoint-matched CEM effect |
+|---|---:|---:|
+| IT-native teacher, IT native-chat minus PT raw | `+1.181` nats `[+1.153,+1.211]` | `+0.548` `[+0.502,+0.594]` |
+| PT-raw teacher, IT native-chat minus PT raw | `+0.547` nats `[+0.506,+0.588]` | `+0.121` `[+0.059,+0.183]` |
+
+Quality gates are clean for the Core-small fixed-history audit: malformed rows `0`, missing aligned steps `0`, CEM retention `99.9%`, and maximum post-match SMD `0.061`. We therefore use this result to reduce the concern that the late-readout context is only a rollout-length, generated-history, or endpoint-confidence artifact. It does not directly test the cross-patched margin and does not make the raw-shared factorial a native-chat behavior estimate.
 
 ---
 
@@ -702,7 +716,7 @@ The recipe-structure check compares descendants of the same Llama-3.1-8B base. O
 | Tulu Final | instr./format | `+1.365` | `+2.407` | `+1.041` |
 | OpenMath2 | instr./format | `-0.358` | `+1.052` | `+1.411` |
 
-The instruction-following mean interaction is `+0.959` `[+0.907, +1.017]`; the matched instruction-following-minus-OpenMath contrast is `+1.335` logits after controlling for prompt category, generated-position bin, and token category. On math-domain support, OpenMath2 still does not show a positive interaction (`-0.154` `[-0.450, +0.128]`), even though both its matched-context and base-upstream late effects are large (`+3.275` and `+3.430`). The instruction-following mean on the same math-domain support is `+1.670` `[+1.540, +1.795]`. Thus the OpenMath control is not merely failing because instruction/format prompts are out of domain; in these supports, base upstream already exposes the domain late effect rather than requiring the same upstream-conditioned handoff. The sign-flip null for the instruction-following orientation is clean (`+0.968` observed vs `+0.108` null 99.9th percentile; `p=5e-5`). We use this as evidence that the readout interaction is recipe-structured, not as a claim that the same token-level interaction directly predicts natural behavior for every descendant.
+The instruction-following mean interaction is `+0.959` `[+0.907, +1.017]`; the matched instruction-following-minus-OpenMath2 contrast is `+1.335` logits after controlling for prompt category, generated-position bin, and token category. On math-domain support, OpenMath2 still does not show a positive interaction (`-0.154` `[-0.450, +0.128]`), even though both its matched-context and base-upstream late effects are large (`+3.275` and `+3.430`). The instruction-following mean on the same math-domain support is `+1.670` `[+1.540, +1.795]`. Thus the OpenMath2 control is not merely failing because instruction/format prompts are out of domain; in these supports, base upstream already exposes the domain late effect rather than requiring the same upstream-conditioned handoff. The sign-flip null for the instruction-following orientation is clean (`+0.968` observed vs `+0.108` null 99.9th percentile; `p=5e-5`). We use this as evidence that the readout interaction is recipe-structured, not as a claim that the same token-level interaction directly predicts natural behavior for every descendant.
 
 We also trained two LoRA continuation adapters from the same pinned Llama-3.1-8B base on code and biomedical text, merged them into BF16 checkpoints, and verified domain learning before applying the same factorial. Code CPT improves held-out code NLL by `4.66%`, biomed CPT improves held-out biomedical NLL by `4.81%`, and both pass merge-equivalence and generation-health checks. On the main support, code CPT is essentially zero and biomed CPT is tiny; on biomedical support, biomed CPT has a real domain-local interaction. This separates the instruction/governance-support result from generic continuation training while leaving room for domain-local upstream-conditioning.
 
@@ -835,7 +849,7 @@ We provide a CPU-only reviewer artifact bundle that regenerates all paper tables
 |---|---|---|
 | CPU synthesis | Paper tables and figures from committed JSON/CSV artifacts. | CPU |
 | Small raw rerun | One 4B/7B family first-divergence cross-patching run and analysis. | 1-8 A100/H100/RTX PRO 6000 GPUs, depending on batching |
-| Full raw rerun | Core-small dense runs plus Qwen2.5 32B scale check and feature experiments. | Multi-GPU A100/H100/RTX PRO 6000-class jobs |
+| Full raw rerun | Core-small dense runs plus the Qwen2.5 32B pair and feature experiments. | Multi-GPU A100/H100/RTX PRO 6000-class jobs |
 
 **Approximate compute budget.** We report GPU time as 80GB-class GPU-hours, counting one GPU used for one wall-clock hour as one GPU-hour. This is an engineering audit estimate, not a FLOP count: runs mix A100, H100, and RTX PRO 6000 96GB hardware, model-download/cache overhead, CPU synthesis, and failed or smoke-test retries. The successful paper-facing GPU runs used approximately `1.4k` GPU-hours; including exploratory pilots, failed preflights, and reruns used during method development, the total project budget for this paper was approximately `2.0k` GPU-hours.
 
@@ -843,7 +857,7 @@ We provide a CPU-only reviewer artifact bundle that regenerates all paper tables
 
 | Compute group | Included runs | Approx. GPU-hours |
 |---|---|---:|
-| Core first-divergence factorial, Qwen2.5 32B scale check, and content/reasoning-enriched stress support | Core-5 raw collection/synthesis, 32B holdout restriction, Exp23 stress support | `300` |
+| Core first-divergence factorial, Qwen2.5 32B pair, and content/reasoning-enriched stress support | Core-5 raw collection/synthesis, 32B holdout restriction, Exp23 stress support | `300` |
 | Hybrid/selection/pre-late validation controls | off-manifold validation, random-local/pre-divergence controls, native-history local disagreements, pre-late logit-commitment checks | `250` |
 | Depth, terminal MLP, and feature-level analyses | handoff runs, terminal-depth/MLP audits, crosscoder training/mediation, feature gating/rescue/handoff, structure bucket | `550` |
 | Recipe, stage, continuation, and structured-state checks | Tulu/OLMo sweeps, same-base recipe controls, controlled CPT foils, constrained continuation, static-chimera/structured-rescue checks | `350` |
@@ -859,7 +873,7 @@ We provide a CPU-only reviewer artifact bundle that regenerates all paper tables
 | Meta Llama 3.1 8B and Llama 3.1 8B Instruct | Core Llama PT/IT pair; Meta Instruct same-base descendant | Meta Llama 3.1 Community License (`llama3.1`) |
 | Tulu-3 Llama 3.1 descendants and OpenMath2-Llama3.1-8B | same-base recipe and Tulu stage checks | Meta Llama 3.1 Community License (`llama3.1`) |
 | Exp53 code and biomedical CPT foils | controlled non-instruction continuation fine-tunes on the Llama-3.1-8B base | Meta Llama 3.1 Community License for base weights; code rows filtered to permissive licenses; biomedical rows filtered to Creative Commons/CC BY/CC0 metadata |
-| Qwen3 4B Base/Instruct and Qwen2.5 32B Base/Instruct | Core Qwen PT/IT pairs and 32B scale check | Apache-2.0 |
+| Qwen3 4B Base/Instruct and Qwen2.5 32B Base/Instruct | Core Qwen PT/IT pairs including the 32B member of Core-5 | Apache-2.0 |
 | Mistral 7B v0.3 Base/Instruct | Core Mistral PT/IT pair | Apache-2.0 |
 | OLMo-2 1124 7B Base/SFT/DPO/Instruct | Core OLMo pair and OLMo stage-lineage check | Apache-2.0 |
 | MMLU (`cais/mmlu`) | `CONTENT-FACT` prompts | MIT |
@@ -881,8 +895,8 @@ The submitted supplement contains the exact paths and SHA256 hashes for every in
 
 | Claim group | Reproduction entry point | Supplement key |
 |---|---|---|
-| Core-5 four-cell result and 32B scale check | Core synthesis scripts and first-divergence collectors | `core5`; `qwen25_32b`; `exp23_core5` |
-| Hybrid-state, token-selection, native-history, and pre-late controls | Validation and selection-control analyzers | `validation`; `exp36`; `exp37`; `exp40`; `exp51` |
+| Core-5 four-cell result including Qwen2.5 32B | Core synthesis scripts and first-divergence collectors | `core5`; `qwen25_32b`; `exp23_core5` |
+| Hybrid-state, token-selection, native-history, fixed-history late-KL, and pre-late controls | Validation and selection-control analyzers | `validation`; `exp36`; `exp37`; `exp40`; `exp51`; `exp54_fixed_history` |
 | Depth and terminal anatomy | Handoff, terminal-depth, and terminal-MLP analyzers | `depth_terminal`; `exp20`; `exp21`; `exp31-33` |
 | Sparse terminal feature bridge | Crosscoder mediation, gating, rescue, handoff, autointerp, and structure-readout analyses | `sparse_features`; `exp34`; `exp39`; `exp41-44` |
 | Structured boundary-state closure | Static-chimera and structured-rescue analysis | `boundary_state`; `exp48` |

@@ -43,6 +43,13 @@ def load_csv(repo: Path, relpath: str) -> list[dict[str, str]]:
         return list(csv.DictReader(f))
 
 
+def first_existing(repo: Path, *relpaths: str) -> str:
+    for relpath in relpaths:
+        if (repo / relpath).exists():
+            return relpath
+    raise FileNotFoundError("None of these artifact paths exist: " + ", ".join(relpaths))
+
+
 def mean(values: list[float]) -> float:
     return sum(values) / len(values)
 
@@ -1151,9 +1158,13 @@ def exp50_summary(*keys: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
             repo,
-            "results/exp50_llm_judge_behavior_bridge/"
-            "exp50_openai_judge_requests_20260504_233946/"
-            "analysis_gpt52_sync/judge_summary.json",
+            first_existing(
+                repo,
+                "results/exp50_llm_judge_behavior_bridge/analysis_summary/judge_summary.json",
+                "results/exp50_llm_judge_behavior_bridge/"
+                "exp50_openai_judge_requests_20260504_233946/"
+                "analysis_gpt52_sync/judge_summary.json",
+            ),
         )
         value: Any = data
         for key in keys:
@@ -1167,9 +1178,13 @@ def exp50_interaction(group: str, column: str = "estimate") -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
             repo,
-            "results/exp50_llm_judge_behavior_bridge/"
-            "exp50_openai_judge_requests_20260504_233946/"
-            "analysis_gpt52_sync/behavioral_interactions.csv",
+            first_existing(
+                repo,
+                "results/exp50_llm_judge_behavior_bridge/analysis_summary/behavioral_interactions.csv",
+                "results/exp50_llm_judge_behavior_bridge/"
+                "exp50_openai_judge_requests_20260504_233946/"
+                "analysis_gpt52_sync/behavioral_interactions.csv",
+            ),
         )
         for row in rows:
             if row["group"] == group and row["metric"] == "behavioral_interaction":
@@ -1189,9 +1204,13 @@ def exp50_pairwise(
     def _read(repo: Path) -> float:
         rows = load_csv(
             repo,
-            "results/exp50_llm_judge_behavior_bridge/"
-            "exp50_openai_judge_requests_20260504_233946/"
-            "analysis_gpt52_sync/pairwise_winrates.csv",
+            first_existing(
+                repo,
+                "results/exp50_llm_judge_behavior_bridge/analysis_summary/pairwise_winrates.csv",
+                "results/exp50_llm_judge_behavior_bridge/"
+                "exp50_openai_judge_requests_20260504_233946/"
+                "analysis_gpt52_sync/pairwise_winrates.csv",
+            ),
         )
         for row in rows:
             if (
@@ -1209,9 +1228,13 @@ def exp50_order(group: str, column: str, kind: str = "primary") -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
             repo,
-            "results/exp50_llm_judge_behavior_bridge/"
-            "exp50_openai_judge_requests_20260504_233946/"
-            "analysis_gpt52_sync/order_bias_audit.csv",
+            first_existing(
+                repo,
+                "results/exp50_llm_judge_behavior_bridge/analysis_summary/order_bias_audit.csv",
+                "results/exp50_llm_judge_behavior_bridge/"
+                "exp50_openai_judge_requests_20260504_233946/"
+                "analysis_gpt52_sync/order_bias_audit.csv",
+            ),
         )
         for row in rows:
             if row["group"] == group and row["kind"] == kind:
@@ -1415,6 +1438,37 @@ def exp39_validation(field: str) -> NumberFn:
     return _read
 
 
+def exp39_validation_clean_terminal(field: str) -> NumberFn:
+    """Paper-facing clean terminal-crosscoder autointerp subset.
+
+    The appendix feature-label claim intentionally excludes Gemma because the
+    paper-facing terminal-crosscoder mediation/rescue bridge uses the
+    quality-gated Llama, Mistral, and Qwen families.
+    """
+
+    clean_models = {"llama31_8b", "mistral_7b", "qwen3_4b"}
+
+    def _read(repo: Path) -> float:
+        data = load_json(
+            repo,
+            "results/exp39_causal_feature_interpretation/"
+            "exp39_reinterp_specific_labels_ctrl_h100x8_20260503_110345/"
+            "autointerp/label_validation.json",
+        )
+        rows = [
+            row
+            for row in data["feature_results"]
+            if str(row["feature_id"]).split(":")[0] in clean_models
+        ]
+        if field == "n_features":
+            return float(len(rows))
+        if field == "mean_auroc":
+            return float(sum(float(row["auroc"]) for row in rows) / len(rows))
+        raise KeyError(field)
+
+    return _read
+
+
 def exp39_taxonomy_summary_count(category: str) -> NumberFn:
     def _read(repo: Path) -> float:
         data = load_json(
@@ -1522,6 +1576,29 @@ def exp41_structure_count() -> NumberFn:
     return _read
 
 
+def exp41_structure_count_clean() -> NumberFn:
+    clean_models = {"llama31_8b", "mistral_7b", "qwen3_4b"}
+
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp41_causal_feature_bucket_steering/"
+            "exp41_terminal_bucket_logit_full_h100x8_20260503_1520/"
+            "bucket_manifest/strict_primary/bucket_features.csv",
+        )
+        return float(
+            sum(
+                1
+                for row in rows
+                if row["bucket"] == "structure_readout"
+                and row["include_primary"] == "True"
+                and row["model"] in clean_models
+            )
+        )
+
+    return _read
+
+
 def exp41_structure_interaction_drop(alpha: float, condition_kind: str, model: str | None = None) -> NumberFn:
     def _read(repo: Path) -> float:
         rows = load_csv(
@@ -1543,6 +1620,34 @@ def exp41_structure_interaction_drop(alpha: float, condition_kind: str, model: s
             vals.append(float(row["interaction_drop_mean"]))
         if not vals:
             raise KeyError((alpha, condition_kind, model))
+        return float(sum(vals) / len(vals))
+
+    return _read
+
+
+def exp41_structure_interaction_drop_clean(alpha: float, condition_kind: str) -> NumberFn:
+    clean_models = {"llama31_8b", "mistral_7b", "qwen3_4b"}
+
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp41_causal_feature_bucket_steering/"
+            "exp41_terminal_bucket_logit_full_h100x8_20260503_1520/"
+            "analysis/bucket_effects_by_model.csv",
+        )
+        vals = []
+        for row in rows:
+            if row["source_bucket"] != "structure_readout":
+                continue
+            if row["condition_kind"] != condition_kind:
+                continue
+            if abs(float(row["alpha"]) - alpha) > 1e-9:
+                continue
+            if row["model"] not in clean_models:
+                continue
+            vals.append(float(row["interaction_drop_mean"]))
+        if not vals:
+            raise KeyError((alpha, condition_kind, "clean"))
         return float(sum(vals) / len(vals))
 
     return _read
@@ -1584,6 +1689,66 @@ def exp42_effect(feature_set: str, k: int, field: str, model: str | None = None)
         if not vals:
             raise KeyError((feature_set, k, field, model))
         return float(sum(vals) / len(vals))
+
+    return _read
+
+
+def exp42_effect_clean(feature_set: str, k: int, field: str) -> NumberFn:
+    clean_models = {"llama31_8b", "mistral_7b", "qwen3_4b"}
+
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp42_terminal_feature_upstream_conditioning/"
+            "exp42_full_4fam_h100x8_20260503_155212/analysis/"
+            "feature_gating_effects.csv",
+        )
+        vals = []
+        for row in rows:
+            if row["feature_set"] != feature_set:
+                continue
+            if int(float(row["k"])) != k:
+                continue
+            if row["model"] not in clean_models:
+                continue
+            vals.append(float(row[field]))
+        if not vals:
+            raise KeyError((feature_set, k, field, "clean"))
+        return float(sum(vals) / len(vals))
+
+    return _read
+
+
+def exp42_clean_gate_minus(control_feature_set: str, metric: str = "feature_causal_gate_mean") -> NumberFn:
+    clean_models = {"llama31_8b", "mistral_7b", "qwen3_4b"}
+
+    def _read(repo: Path) -> float:
+        rows = load_csv(
+            repo,
+            "results/exp42_terminal_feature_upstream_conditioning/"
+            "exp42_full_4fam_h100x8_20260503_155212/analysis/"
+            "feature_gating_effects.csv",
+        )
+        diffs = []
+        for model in sorted(clean_models):
+            causal = [
+                float(row[metric])
+                for row in rows
+                if row["model"] == model
+                and row["feature_set"] == "causal_top"
+                and int(float(row["k"])) == 200
+            ]
+            control = [
+                float(row[metric])
+                for row in rows
+                if row["model"] == model
+                and row["feature_set"] == control_feature_set
+                and int(float(row["k"])) == 200
+            ]
+            if not causal or not control:
+                raise KeyError((model, control_feature_set, metric))
+            diffs.append(sum(causal) / len(causal) - sum(control) / len(control))
+        return float(sum(diffs) / len(diffs))
 
     return _read
 
@@ -4567,6 +4732,18 @@ CHECKS: list[ClaimCheck] = [
         exp39_validation("mean_auroc"),
     ),
     ClaimCheck(
+        "Exp39 clean terminal autointerp feature count",
+        "exp39 label_validation.json",
+        225.0,
+        exp39_validation_clean_terminal("n_features"),
+    ),
+    ClaimCheck(
+        "Exp39 clean terminal autointerp mean AUROC",
+        "exp39 label_validation.json",
+        0.8863580246913579,
+        exp39_validation_clean_terminal("mean_auroc"),
+    ),
+    ClaimCheck(
         "Exp39 causal behavior/readout feature count",
         "exp39_causal_paper_taxonomy_summary_v3.json",
         42.0,
@@ -4591,6 +4768,12 @@ CHECKS: list[ClaimCheck] = [
         exp41_structure_count(),
     ),
     ClaimCheck(
+        "Exp41 clean structure-readout feature count",
+        "exp41 bucket_features.csv",
+        10.0,
+        exp41_structure_count_clean(),
+    ),
+    ClaimCheck(
         "Exp41 structure-readout alpha 0 mean interaction drop",
         "exp41 bucket_effects_by_model.csv",
         0.0,
@@ -4603,10 +4786,22 @@ CHECKS: list[ClaimCheck] = [
         exp41_structure_interaction_drop(0.5, "feature_bucket"),
     ),
     ClaimCheck(
+        "Exp41 clean structure-readout alpha 0.5 mean interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.039094369825472854,
+        exp41_structure_interaction_drop_clean(0.5, "feature_bucket"),
+    ),
+    ClaimCheck(
         "Exp41 structure-readout alpha 1.0 mean interaction drop",
         "exp41 bucket_effects_by_model.csv",
         0.0658083273218305,
         exp41_structure_interaction_drop(1.0, "feature_bucket"),
+    ),
+    ClaimCheck(
+        "Exp41 clean structure-readout alpha 1.0 mean interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.07757082531799624,
+        exp41_structure_interaction_drop_clean(1.0, "feature_bucket"),
     ),
     ClaimCheck(
         "Exp41 structure-readout alpha 1.5 mean interaction drop",
@@ -4615,10 +4810,22 @@ CHECKS: list[ClaimCheck] = [
         exp41_structure_interaction_drop(1.5, "feature_bucket"),
     ),
     ClaimCheck(
+        "Exp41 clean structure-readout alpha 1.5 mean interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.12531693365372873,
+        exp41_structure_interaction_drop_clean(1.5, "feature_bucket"),
+    ),
+    ClaimCheck(
         "Exp41 structure-readout alpha 2.0 mean interaction drop",
         "exp41 bucket_effects_by_model.csv",
         0.14902497436932383,
         exp41_structure_interaction_drop(2.0, "feature_bucket"),
+    ),
+    ClaimCheck(
+        "Exp41 clean structure-readout alpha 2.0 mean interaction drop",
+        "exp41 bucket_effects_by_model.csv",
+        0.17994996582576508,
+        exp41_structure_interaction_drop_clean(2.0, "feature_bucket"),
     ),
     ClaimCheck(
         "Exp41 structure-readout alpha 2.0 matched-random mean",
@@ -4627,10 +4834,22 @@ CHECKS: list[ClaimCheck] = [
         exp41_structure_interaction_drop(2.0, "matched_random"),
     ),
     ClaimCheck(
+        "Exp41 clean structure-readout alpha 2.0 matched-random mean",
+        "exp41 bucket_effects_by_model.csv",
+        -0.04786227756076389,
+        exp41_structure_interaction_drop_clean(2.0, "matched_random"),
+    ),
+    ClaimCheck(
         "Exp41 structure-readout alpha 2.0 same-delta-random mean",
         "exp41 bucket_effects_by_model.csv",
         0.029755577841396107,
         exp41_structure_interaction_drop(2.0, "same_delta_random"),
+    ),
+    ClaimCheck(
+        "Exp41 clean structure-readout alpha 2.0 same-delta-random mean",
+        "exp41 bucket_effects_by_model.csv",
+        0.03894493712186148,
+        exp41_structure_interaction_drop_clean(2.0, "same_delta_random"),
     ),
     ClaimCheck(
         "Exp41 Gemma structure-readout alpha 2.0 interaction drop",
@@ -4661,6 +4880,30 @@ CHECKS: list[ClaimCheck] = [
         "exp42 feature_gating_effects.csv",
         1.0226069353573286,
         exp42_effect("causal_top", 200, "feature_causal_gate_mean"),
+    ),
+    ClaimCheck(
+        "Exp42 clean top-200 absolute causal feature gate mean",
+        "exp42 feature_gating_effects.csv",
+        0.7026056881153271,
+        exp42_effect_clean("causal_top", 200, "feature_causal_gate_mean"),
+    ),
+    ClaimCheck(
+        "Exp42 clean top-200 causal gate minus matched-random",
+        "exp42 feature_gating_effects.csv",
+        0.8873486931887992,
+        exp42_clean_gate_minus("causal_matched_random", "feature_causal_gate_mean"),
+    ),
+    ClaimCheck(
+        "Exp42 clean top-200 causal gate minus top-active",
+        "exp42 feature_gating_effects.csv",
+        1.4945962793636696,
+        exp42_clean_gate_minus("top_active_noncausal", "feature_causal_gate_mean"),
+    ),
+    ClaimCheck(
+        "Exp42 clean top-200 margin-weighted activation gate minus matched-random",
+        "exp42 feature_gating_effects.csv",
+        0.5195070678403377,
+        exp42_clean_gate_minus("causal_matched_random", "activation_gate_decoder_margin_weighted_mean"),
     ),
     ClaimCheck(
         "Exp42 top-200 causal gate vs matched-random estimate",
