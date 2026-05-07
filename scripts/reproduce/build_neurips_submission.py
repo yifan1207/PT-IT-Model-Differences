@@ -753,6 +753,7 @@ def stage_supplement(validation: dict[str, object]) -> None:
                         "results/exp36_offmanifold_validation",
                         "results/exp37_random_prefix_baseline",
                         "results/exp40_prelate_commitment_control",
+                        "results/exp51_native_history_crosspatch",
                     ],
                     "depth_terminal_anatomy": [
                         "results/paper_synthesis/exp20_exp21_handoff_table.csv",
