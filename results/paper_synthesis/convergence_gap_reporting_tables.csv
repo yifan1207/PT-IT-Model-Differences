@@ -91,3 +91,33 @@ late_window_family,5,Dense mean,Family,Dense mean
 late_window_family,5,Dense mean,Late IT graft into PT host,`+0.341`
 late_window_family,5,Dense mean,Late PT swap into IT host,`-0.509`
 late_window_family,5,Dense mean,Late window,-
+late_window_width_center,0,Pre-late half,Window,Pre-late half
+late_window_width_center,0,Pre-late half,Final-20 IT graft into PT,`-0.001`
+late_window_width_center,0,Pre-late half,Final-20 PT swap into IT,`-0.384`
+late_window_width_center,0,Pre-late half,Edited-window IT graft into PT,`+0.069`
+late_window_width_center,0,Pre-late half,Edited-window PT swap into IT,`-2.674`
+late_window_width_center,1,Late full,Window,Late full
+late_window_width_center,1,Late full,Final-20 IT graft into PT,`+0.070`
+late_window_width_center,1,Late full,Final-20 PT swap into IT,`-0.625`
+late_window_width_center,1,Late full,Edited-window IT graft into PT,`+0.365`
+late_window_width_center,1,Late full,Edited-window PT swap into IT,`-1.605`
+late_window_width_center,2,Late front half,Window,Late front half
+late_window_width_center,2,Late front half,Final-20 IT graft into PT,`+0.008`
+late_window_width_center,2,Late front half,Final-20 PT swap into IT,`-0.352`
+late_window_width_center,2,Late front half,Edited-window IT graft into PT,`+0.142`
+late_window_width_center,2,Late front half,Edited-window PT swap into IT,`-1.321`
+late_window_width_center,3,Late center half,Window,Late center half
+late_window_width_center,3,Late center half,Final-20 IT graft into PT,`+0.022`
+late_window_width_center,3,Late center half,Final-20 PT swap into IT,`-0.352`
+late_window_width_center,3,Late center half,Edited-window IT graft into PT,`+0.094`
+late_window_width_center,3,Late center half,Edited-window PT swap into IT,`-0.701`
+late_window_width_center,4,Late terminal half,Window,Late terminal half
+late_window_width_center,4,Late terminal half,Final-20 IT graft into PT,`+0.050`
+late_window_width_center,4,Late terminal half,Final-20 PT swap into IT,`-0.443`
+late_window_width_center,4,Late terminal half,Edited-window IT graft into PT,`+0.040`
+late_window_width_center,4,Late terminal half,Edited-window PT swap into IT,`-0.403`
+late_window_width_center,5,Terminal quarter,Window,Terminal quarter
+late_window_width_center,5,Terminal quarter,Final-20 IT graft into PT,`+0.033`
+late_window_width_center,5,Terminal quarter,Final-20 PT swap into IT,`-0.347`
+late_window_width_center,5,Terminal quarter,Edited-window IT graft into PT,`-0.012`
+late_window_width_center,5,Terminal quarter,Edited-window PT swap into IT,`-0.134`

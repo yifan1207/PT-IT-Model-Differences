@@ -13,25 +13,73 @@ import csv
 import json
 import math
 import random
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
+try:
+    import orjson
+except Exception:  # pragma: no cover - optional speedup
+    orjson = None
 
 
 MODEL_ORDER = ["gemma3_4b", "qwen3_4b", "llama31_8b", "mistral_7b", "olmo2_7b"]
 METRICS = ["kl_to_own_final", "delta_cosine", "cross_kl"]
 REGIONS = ["final_20pct", "graft_window"]
+FAST_METRICS = ["kl_to_own_final"]
+
+_PROMPT_RE = re.compile(br'"prompt_id": "([^"]+)"')
+_PIPELINE_RE = re.compile(br'"pipeline": "([^"]+)"')
+_STEP_RE = re.compile(br'"step": ([0-9]+)')
+
+
+def _loads(raw: bytes | str) -> Any:
+    if orjson is not None:
+        return orjson.loads(raw)
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="ignore")
+    return json.loads(raw)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text())
+    return _loads(path.read_bytes())
 
 
 def _iter_jsonl(path: Path):
     with path.open("rb") as f:
         for raw in f:
             if raw.strip():
-                yield json.loads(raw.decode("utf-8", errors="ignore"))
+                yield _loads(raw)
+
+
+def _bytes_match(regex: re.Pattern[bytes], raw: bytes) -> str | None:
+    match = regex.search(raw)
+    if match is None:
+        return None
+    return match.group(1).decode("utf-8")
+
+
+def _bytes_step(raw: bytes) -> int | None:
+    match = _STEP_RE.search(raw)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _extract_kl_to_own_final(raw: bytes) -> list[Any] | None:
+    key = b'"kl_to_own_final": '
+    key_pos = raw.find(key)
+    if key_pos < 0:
+        return None
+    value_pos = key_pos + len(key)
+    if raw.startswith(b"null", value_pos):
+        return None
+    start = raw.find(b"[", value_pos)
+    end = raw.find(b"]", start)
+    if start < 0 or end < start:
+        return None
+    return _loads(raw[start : end + 1])
 
 
 def _mean(vals: list[float]) -> float | None:
@@ -130,8 +178,14 @@ def _summarize_model(model: str, model_dir: Path, *, n_boot: int, seed: int) -> 
 
     final_region = _final_region(config)
     records: dict[tuple[str, int, str], dict[str, Any]] = {}
+    records_by_pipeline: dict[str, list[tuple[str, int, dict[str, Any]]]] = defaultdict(list)
     for row in _iter_jsonl(model_dir / "step_metrics.jsonl"):
-        records[(str(row["prompt_id"]), int(row["step"]), str(row["pipeline"]))] = row["metrics"]
+        prompt_id = str(row["prompt_id"])
+        step = int(row["step"])
+        pipeline = str(row["pipeline"])
+        metrics = row["metrics"]
+        records[(prompt_id, step, pipeline)] = metrics
+        records_by_pipeline[pipeline].append((prompt_id, step, metrics))
 
     rows: list[dict[str, Any]] = []
     for pipeline, window in sorted(branches.items()):
@@ -139,17 +193,22 @@ def _summarize_model(model: str, model_dir: Path, *, n_boot: int, seed: int) -> 
         side = _side_label(window)
         start, end = _window_region(window)
         window_name = str(window.get("window_name") or pipeline)
-        for region in REGIONS:
-            for metric in METRICS:
-                deltas_by_prompt: dict[str, list[float]] = defaultdict(list)
-                n_pairs = 0
-                for prompt_id, step, pipe in list(records):
-                    if pipe != pipeline:
-                        continue
-                    branch_metrics = records[(prompt_id, step, pipeline)]
-                    base_metrics = records.get((prompt_id, step, baseline))
-                    if base_metrics is None:
-                        continue
+        deltas_by_combo: dict[tuple[str, str], dict[str, list[float]]] = {
+            (region, metric): defaultdict(list)
+            for region in REGIONS
+            for metric in METRICS
+        }
+        n_pairs_by_combo: dict[tuple[str, str], int] = {
+            (region, metric): 0
+            for region in REGIONS
+            for metric in METRICS
+        }
+        for prompt_id, step, branch_metrics in records_by_pipeline.get(pipeline, []):
+            base_metrics = records.get((prompt_id, step, baseline))
+            if base_metrics is None:
+                continue
+            for region in REGIONS:
+                for metric in METRICS:
                     branch_value = _region_value(
                         metrics=branch_metrics,
                         metric=metric,
@@ -166,8 +225,13 @@ def _summarize_model(model: str, model_dir: Path, *, n_boot: int, seed: int) -> 
                     )
                     if branch_value is None or base_value is None:
                         continue
-                    deltas_by_prompt[prompt_id].append(branch_value - base_value)
-                    n_pairs += 1
+                    key = (region, metric)
+                    deltas_by_combo[key][prompt_id].append(branch_value - base_value)
+                    n_pairs_by_combo[key] += 1
+        for region in REGIONS:
+            for metric in METRICS:
+                deltas_by_prompt = deltas_by_combo[(region, metric)]
+                n_pairs = n_pairs_by_combo[(region, metric)]
                 prompt_means = [
                     mean
                     for vals in deltas_by_prompt.values()
@@ -198,6 +262,120 @@ def _summarize_model(model: str, model_dir: Path, *, n_boot: int, seed: int) -> 
                         "n_prompt_clusters": len(prompt_means),
                     }
                 )
+    return rows
+
+
+def _summarize_model_fast_kl(model: str, model_dir: Path, *, n_boot: int, seed: int) -> list[dict[str, Any]]:
+    """Stream only KL arrays from very large Exp55 JSONL files.
+
+    The full analyzer decodes every metric, including top-k token tables. For
+    full dense5 runs that is tens of GB of JSON and is unnecessarily expensive
+    when the paper-facing robustness table only needs final-window KL effects.
+    """
+
+    config = _read_json(model_dir / "config.json")
+    windows = config.get("graft_windows_by_pipeline") or {}
+    branches = {
+        name: window
+        for name, window in windows.items()
+        if str(window.get("host_variant")) in {"pt", "it"}
+    }
+    if not branches:
+        return []
+
+    final_region = _final_region(config)
+    baseline_windows: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    for _pipeline, window in branches.items():
+        baseline_windows[_baseline_pipeline(window)][str(window.get("window_name") or _pipeline)] = window
+
+    wanted_pipelines = set(branches) | set(baseline_windows)
+    branch_payloads: dict[str, list[tuple[str, int, float | None, float | None]]] = defaultdict(list)
+    baseline_payloads: dict[tuple[str, str, int], dict[str, float | None]] = {}
+
+    with (model_dir / "step_metrics.jsonl").open("rb") as f:
+        for raw in f:
+            pipeline = _bytes_match(_PIPELINE_RE, raw)
+            if pipeline not in wanted_pipelines:
+                continue
+            prompt_id = _bytes_match(_PROMPT_RE, raw)
+            step = _bytes_step(raw)
+            if prompt_id is None or step is None:
+                continue
+            values = _extract_kl_to_own_final(raw)
+            if values is None:
+                continue
+            final_value = _slice_mean(values, *final_region)
+            if pipeline in branches:
+                window = branches[pipeline]
+                branch_payloads[pipeline].append(
+                    (
+                        prompt_id,
+                        step,
+                        final_value,
+                        _slice_mean(values, *_window_region(window)),
+                    )
+                )
+            if pipeline in baseline_windows:
+                payload: dict[str, float | None] = {"final_20pct": final_value}
+                for window_name, window in baseline_windows[pipeline].items():
+                    payload[window_name] = _slice_mean(values, *_window_region(window))
+                baseline_payloads[(pipeline, prompt_id, step)] = payload
+
+    rows: list[dict[str, Any]] = []
+    for pipeline, window in sorted(branches.items()):
+        baseline = _baseline_pipeline(window)
+        side = _side_label(window)
+        start, end = _window_region(window)
+        window_name = str(window.get("window_name") or pipeline)
+        deltas_by_combo: dict[str, dict[str, list[float]]] = {
+            region: defaultdict(list)
+            for region in REGIONS
+        }
+        n_pairs_by_region = {region: 0 for region in REGIONS}
+        for prompt_id, step, branch_final, branch_window in branch_payloads.get(pipeline, []):
+            base = baseline_payloads.get((baseline, prompt_id, step))
+            if base is None:
+                continue
+            region_values = {
+                "final_20pct": (branch_final, base.get("final_20pct")),
+                "graft_window": (branch_window, base.get(window_name)),
+            }
+            for region, (branch_value, base_value) in region_values.items():
+                if branch_value is None or base_value is None:
+                    continue
+                deltas_by_combo[region][prompt_id].append(branch_value - base_value)
+                n_pairs_by_region[region] += 1
+        for region in REGIONS:
+            prompt_means = [
+                mean
+                for vals in deltas_by_combo[region].values()
+                if (mean := _mean(vals)) is not None
+            ]
+            estimate = _mean(prompt_means)
+            ci_low, ci_high = _ci(prompt_means, n_boot=n_boot, seed=seed + len(rows))
+            rows.append(
+                {
+                    "level": "model",
+                    "model": model,
+                    "pipeline": pipeline,
+                    "side": side,
+                    "host_variant": window.get("host_variant"),
+                    "donor_variant": window.get("donor_variant"),
+                    "baseline_pipeline": baseline,
+                    "window_name": window_name,
+                    "start_layer": start,
+                    "end_layer_exclusive": end,
+                    "width": end - start,
+                    "center": (start + end - 1) / 2.0,
+                    "region": region,
+                    "metric": "kl_to_own_final",
+                    "estimate": estimate,
+                    "ci95_low": ci_low,
+                    "ci95_high": ci_high,
+                    "n_pairs": n_pairs_by_region[region],
+                    "n_prompt_clusters": len(prompt_means),
+                }
+            )
     return rows
 
 
@@ -267,7 +445,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         "models",
     ]
     with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore", lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -276,6 +454,12 @@ def _fmt(value: float | None) -> str:
     if value is None:
         return "NA"
     return f"{value:+.3f}"
+
+
+def _fmt_interval(row: dict[str, Any] | None) -> str:
+    if row is None:
+        return "NA"
+    return f"{_fmt(row.get('estimate'))} [{_fmt(row.get('ci95_low'))}, {_fmt(row.get('ci95_high'))}]"
 
 
 def _write_note(path: Path, dense_rows: list[dict[str, Any]], models_seen: list[str]) -> None:
@@ -307,11 +491,21 @@ def _write_note(path: Path, dense_rows: list[dict[str, Any]], models_seen: list[
             f"- `{window_name}`: graft `{_fmt(graft and graft.get('estimate'))}`, "
             f"swap `{_fmt(swap and swap.get('estimate'))}`."
         )
+    late_full_graft = by_key.get(("late_full", "it_graft_into_pt", "final_20pct", "kl_to_own_final"))
+    late_full_swap = by_key.get(("late_full", "pt_swap_into_it", "final_20pct", "kl_to_own_final"))
+    late_full_graft_window = by_key.get(("late_full", "it_graft_into_pt", "graft_window", "kl_to_own_final"))
+    prelate_swap = by_key.get(("prelate_half", "pt_swap_into_it", "final_20pct", "kl_to_own_final"))
     lines.extend(
         [
             "",
-            "Interpretation rule: this audit supports the paper only if late-centered or terminal windows "
-            "preserve the expected graft-positive/swap-negative direction and pre-late controls are weaker.",
+            "Observed interpretation:",
+            "",
+            f"- Late-full final-20% signs are in the expected direction: graft `{_fmt_interval(late_full_graft)}`, "
+            f"swap `{_fmt_interval(late_full_swap)}`.",
+            f"- The direct edited-window late-full graft is clearer: `{_fmt_interval(late_full_graft_window)}`.",
+            f"- The pre-late swap also moves final-20% KL: `{_fmt_interval(prelate_swap)}`.",
+            "- Use this audit as support for the late window being the strongest tested bidirectional handle, "
+            "not as evidence for a sharp late-only boundary.",
         ]
     )
     path.write_text("\n".join(lines) + "\n")
@@ -394,6 +588,45 @@ def analyze(run_root: Path, out_dir: Path, *, models: list[str], n_boot: int, se
     return summary
 
 
+def analyze_fast_kl(run_root: Path, out_dir: Path, *, models: list[str], n_boot: int, seed: int) -> dict[str, Any]:
+    model_rows: list[dict[str, Any]] = []
+    models_seen: list[str] = []
+    for model, model_dir in _collect_model_dirs(run_root, models):
+        print(f"[exp55] fast KL parse {model_dir}")
+        rows = _summarize_model_fast_kl(model, model_dir, n_boot=n_boot, seed=seed)
+        if rows:
+            models_seen.append(model)
+            model_rows.extend(rows)
+    dense = _dense_rows(model_rows, n_boot=n_boot, seed=seed + 1000)
+    all_rows = model_rows + dense
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    effects_csv = out_dir / "exp55_late_window_robustness_effects.csv"
+    summary_json = out_dir / "exp55_late_window_robustness.json"
+    note_md = out_dir / "exp55_late_window_robustness_note.md"
+    plot_png = out_dir / "exp55_late_window_robustness.png"
+    _write_csv(effects_csv, all_rows)
+    _write_note(note_md, dense, models_seen)
+    _maybe_plot(plot_png, dense)
+    summary = {
+        "analysis": "exp55_late_window_robustness",
+        "analysis_mode": "fast_kl_only",
+        "run_root": str(run_root),
+        "models_requested": models,
+        "models_analyzed": models_seen,
+        "n_boot": n_boot,
+        "metrics_analyzed": FAST_METRICS,
+        "effects": all_rows,
+        "artifacts": {
+            "effects_csv": str(effects_csv),
+            "note": str(note_md),
+            "plot": str(plot_png) if plot_png.exists() else None,
+        },
+    }
+    summary_json.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    return summary
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-root", type=Path, required=True)
@@ -401,8 +634,12 @@ def main() -> int:
     parser.add_argument("--models", nargs="*", default=MODEL_ORDER)
     parser.add_argument("--n-boot", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--fast-kl-only", action="store_true")
     args = parser.parse_args()
-    summary = analyze(args.run_root, args.out_dir, models=list(args.models), n_boot=args.n_boot, seed=args.seed)
+    if args.fast_kl_only:
+        summary = analyze_fast_kl(args.run_root, args.out_dir, models=list(args.models), n_boot=args.n_boot, seed=args.seed)
+    else:
+        summary = analyze(args.run_root, args.out_dir, models=list(args.models), n_boot=args.n_boot, seed=args.seed)
     print(f"[exp55] wrote {summary['artifacts']['effects_csv']}")
     return 0
 

@@ -8,7 +8,8 @@
     "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_effects.csv",
     "results/exp09_cross_model_observational_replication/data/exp9_summary.json",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json",
-    "results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json"
+    "results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json",
+    "results/paper_synthesis/exp55_late_window_robustness_effects.csv"
   ],
   "tables": {
     "discovery_counts": {
@@ -238,6 +239,68 @@
         ]
       ],
       "title": "Per-family late-window effects"
+    },
+    "late_window_width_center": {
+      "align": [
+        "---",
+        "---:",
+        "---:",
+        "---:",
+        "---:"
+      ],
+      "headers": [
+        "Window",
+        "Final-20 IT graft into PT",
+        "Final-20 PT swap into IT",
+        "Edited-window IT graft into PT",
+        "Edited-window PT swap into IT"
+      ],
+      "markdown": "| Window | Final-20 IT graft into PT | Final-20 PT swap into IT | Edited-window IT graft into PT | Edited-window PT swap into IT |\n| --- | ---: | ---: | ---: | ---: |\n| Pre-late half | `-0.001` | `-0.384` | `+0.069` | `-2.674` |\n| Late full | `+0.070` | `-0.625` | `+0.365` | `-1.605` |\n| Late front half | `+0.008` | `-0.352` | `+0.142` | `-1.321` |\n| Late center half | `+0.022` | `-0.352` | `+0.094` | `-0.701` |\n| Late terminal half | `+0.050` | `-0.443` | `+0.040` | `-0.403` |\n| Terminal quarter | `+0.033` | `-0.347` | `-0.012` | `-0.134` |",
+      "rows": [
+        [
+          "Pre-late half",
+          "`-0.001`",
+          "`-0.384`",
+          "`+0.069`",
+          "`-2.674`"
+        ],
+        [
+          "Late full",
+          "`+0.070`",
+          "`-0.625`",
+          "`+0.365`",
+          "`-1.605`"
+        ],
+        [
+          "Late front half",
+          "`+0.008`",
+          "`-0.352`",
+          "`+0.142`",
+          "`-1.321`"
+        ],
+        [
+          "Late center half",
+          "`+0.022`",
+          "`-0.352`",
+          "`+0.094`",
+          "`-0.701`"
+        ],
+        [
+          "Late terminal half",
+          "`+0.050`",
+          "`-0.443`",
+          "`+0.040`",
+          "`-0.403`"
+        ],
+        [
+          "Terminal quarter",
+          "`+0.033`",
+          "`-0.347`",
+          "`-0.012`",
+          "`-0.134`"
+        ]
+      ],
+      "title": "Late-window width/center audit"
     }
   }
 }

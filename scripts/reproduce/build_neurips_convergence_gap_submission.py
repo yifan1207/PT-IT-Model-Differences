@@ -37,7 +37,9 @@ STATIC_FILES = [
     "scripts/analysis/build_exp22_template_regime_audit.py",
     "scripts/analysis/analyze_exp22_fixed_history_template_audit.py",
     "scripts/analysis/build_exp22_fixed_history_template_audit.py",
+    "scripts/analysis/analyze_exp55_late_window_robustness.py",
     "scripts/run/run_exp22_fixed_history_template_audit_runpod.sh",
+    "scripts/run/run_exp55_late_window_robustness_runpod.sh",
 ]
 
 RESULT_FILES = [
@@ -65,6 +67,10 @@ RESULT_FILES = [
     "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_support.csv",
     "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_note.md",
     "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit.png",
+    "results/paper_synthesis/exp55_late_window_robustness.json",
+    "results/paper_synthesis/exp55_late_window_robustness_effects.csv",
+    "results/paper_synthesis/exp55_late_window_robustness_note.md",
+    "results/paper_synthesis/exp55_late_window_robustness.png",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_paper_main.png",
     "results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json",

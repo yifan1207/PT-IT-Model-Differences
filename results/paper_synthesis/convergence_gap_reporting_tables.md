@@ -56,3 +56,16 @@
 | OLMo 2 7B | `+0.181` | `-0.142` | `19-31` |
 | Dense mean | `+0.341` | `-0.509` | - |
 <!-- /REPORT_TABLE -->
+
+## Late-window width/center audit
+
+<!-- REPORT_TABLE: late_window_width_center -->
+| Window | Final-20 IT graft into PT | Final-20 PT swap into IT | Edited-window IT graft into PT | Edited-window PT swap into IT |
+| --- | ---: | ---: | ---: | ---: |
+| Pre-late half | `-0.001` | `-0.384` | `+0.069` | `-2.674` |
+| Late full | `+0.070` | `-0.625` | `+0.365` | `-1.605` |
+| Late front half | `+0.008` | `-0.352` | `+0.142` | `-1.321` |
+| Late center half | `+0.022` | `-0.352` | `+0.094` | `-0.701` |
+| Late terminal half | `+0.050` | `-0.443` | `+0.040` | `-0.403` |
+| Terminal quarter | `+0.033` | `-0.347` | `-0.012` | `-0.134` |
+<!-- /REPORT_TABLE -->

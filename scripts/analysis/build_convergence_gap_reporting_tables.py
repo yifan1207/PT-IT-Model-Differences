@@ -34,6 +34,7 @@ EXP14_SUMMARY = (
     "results/exp14_symmetric_matched_prefix_causality/"
     "exp13exp14_full_20260416/exp13_full_summary.json"
 )
+EXP55_EFFECTS = "results/paper_synthesis/exp55_late_window_robustness_effects.csv"
 
 SOURCE_ARTIFACTS = [
     ENDPOINT_TABLE,
@@ -44,6 +45,7 @@ SOURCE_ARTIFACTS = [
     EXP9_SUMMARY,
     EXP11_METRICS,
     EXP14_SUMMARY,
+    EXP55_EFFECTS,
 ]
 
 MODEL_ORDER = [
@@ -315,6 +317,54 @@ def build_late_window_family(repo: Path) -> Table:
     )
 
 
+def build_late_window_width_center(repo: Path) -> Table:
+    effects = load_csv(repo, EXP55_EFFECTS)
+
+    def effect(window: str, side: str, region: str) -> str:
+        for row in effects:
+            if (
+                row["level"] == "dense5_model_mean"
+                and row["window_name"] == window
+                and row["side"] == side
+                and row["region"] == region
+                and row["metric"] == "kl_to_own_final"
+            ):
+                return fmt_signed(row["estimate"])
+        raise KeyError((window, side, region))
+
+    specs = [
+        ("prelate_half", "Pre-late half"),
+        ("late_full", "Late full"),
+        ("late_front_half", "Late front half"),
+        ("late_center_half", "Late center half"),
+        ("late_terminal_half", "Late terminal half"),
+        ("terminal_quarter", "Terminal quarter"),
+    ]
+    rows = [
+        [
+            label,
+            effect(window, "it_graft_into_pt", "final_20pct"),
+            effect(window, "pt_swap_into_it", "final_20pct"),
+            effect(window, "it_graft_into_pt", "graft_window"),
+            effect(window, "pt_swap_into_it", "graft_window"),
+        ]
+        for window, label in specs
+    ]
+    return Table(
+        key="late_window_width_center",
+        title="Late-window width/center audit",
+        headers=[
+            "Window",
+            "Final-20 IT graft into PT",
+            "Final-20 PT swap into IT",
+            "Edited-window IT graft into PT",
+            "Edited-window PT swap into IT",
+        ],
+        rows=rows,
+        align=["---", "---:", "---:", "---:", "---:"],
+    )
+
+
 def build_tables(repo: Path) -> list[Table]:
     return [
         build_endpoint_controls(repo),
@@ -322,6 +372,7 @@ def build_tables(repo: Path) -> list[Table]:
         build_fixed_history_replay(repo),
         build_discovery_counts(repo),
         build_late_window_family(repo),
+        build_late_window_width_center(repo),
     ]
 
 

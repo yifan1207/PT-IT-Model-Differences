@@ -194,6 +194,23 @@ def exp19(window: str, metric: str) -> NumberFn:
     return _read
 
 
+def exp55(window: str, side: str, region: str, column: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "results/paper_synthesis/exp55_late_window_robustness_effects.csv")
+        for row in rows:
+            if (
+                row["level"] == "dense5_model_mean"
+                and row["window_name"] == window
+                and row["side"] == side
+                and row["region"] == region
+                and row["metric"] == "kl_to_own_final"
+            ):
+                return float(row[column])
+        raise KeyError((window, side, region, column))
+
+    return _read
+
+
 def check_generated_reporting_tables(repo: Path) -> None:
     script = repo / "scripts/analysis/build_convergence_gap_reporting_tables.py"
     if not script.exists():
@@ -203,6 +220,40 @@ def check_generated_reporting_tables(repo: Path) -> None:
         cwd=repo,
         check=True,
     )
+
+
+EXP55_TABLE_CLAIMS = [
+    Claim("Exp55 prelate final20 graft KL delta", -0.000919429, exp55("prelate_half", "it_graft_into_pt", "final_20pct")),
+    Claim("Exp55 prelate final20 swap KL delta", -0.383723697, exp55("prelate_half", "pt_swap_into_it", "final_20pct")),
+    Claim("Exp55 prelate edited-window graft KL delta", 0.068550355, exp55("prelate_half", "it_graft_into_pt", "graft_window")),
+    Claim("Exp55 prelate edited-window swap KL delta", -2.674308927, exp55("prelate_half", "pt_swap_into_it", "graft_window")),
+    Claim("Exp55 late-full final20 graft KL delta", 0.070077778, exp55("late_full", "it_graft_into_pt", "final_20pct")),
+    Claim("Exp55 late-full final20 graft KL CI low", -0.047642406, exp55("late_full", "it_graft_into_pt", "final_20pct", "ci95_low")),
+    Claim("Exp55 late-full final20 graft KL CI high", 0.188532657, exp55("late_full", "it_graft_into_pt", "final_20pct", "ci95_high")),
+    Claim("Exp55 late-full final20 swap KL delta", -0.625367707, exp55("late_full", "pt_swap_into_it", "final_20pct")),
+    Claim("Exp55 late-full final20 swap KL CI low", -1.075560776, exp55("late_full", "pt_swap_into_it", "final_20pct", "ci95_low")),
+    Claim("Exp55 late-full final20 swap KL CI high", -0.201026364, exp55("late_full", "pt_swap_into_it", "final_20pct", "ci95_high")),
+    Claim("Exp55 late-full edited-window graft KL delta", 0.364734734, exp55("late_full", "it_graft_into_pt", "graft_window")),
+    Claim("Exp55 late-full edited-window graft KL CI low", 0.107971200, exp55("late_full", "it_graft_into_pt", "graft_window", "ci95_low")),
+    Claim("Exp55 late-full edited-window graft KL CI high", 0.628987279, exp55("late_full", "it_graft_into_pt", "graft_window", "ci95_high")),
+    Claim("Exp55 late-full edited-window swap KL delta", -1.604592178, exp55("late_full", "pt_swap_into_it", "graft_window")),
+    Claim("Exp55 late-front final20 graft KL delta", 0.008264746, exp55("late_front_half", "it_graft_into_pt", "final_20pct")),
+    Claim("Exp55 late-front final20 swap KL delta", -0.351917537, exp55("late_front_half", "pt_swap_into_it", "final_20pct")),
+    Claim("Exp55 late-front edited-window graft KL delta", 0.142462530, exp55("late_front_half", "it_graft_into_pt", "graft_window")),
+    Claim("Exp55 late-front edited-window swap KL delta", -1.320787294, exp55("late_front_half", "pt_swap_into_it", "graft_window")),
+    Claim("Exp55 late-center final20 graft KL delta", 0.022144812, exp55("late_center_half", "it_graft_into_pt", "final_20pct")),
+    Claim("Exp55 late-center final20 swap KL delta", -0.351788969, exp55("late_center_half", "pt_swap_into_it", "final_20pct")),
+    Claim("Exp55 late-center edited-window graft KL delta", 0.093934874, exp55("late_center_half", "it_graft_into_pt", "graft_window")),
+    Claim("Exp55 late-center edited-window swap KL delta", -0.700689994, exp55("late_center_half", "pt_swap_into_it", "graft_window")),
+    Claim("Exp55 late-terminal final20 graft KL delta", 0.050348030, exp55("late_terminal_half", "it_graft_into_pt", "final_20pct")),
+    Claim("Exp55 late-terminal final20 swap KL delta", -0.442889594, exp55("late_terminal_half", "pt_swap_into_it", "final_20pct")),
+    Claim("Exp55 late-terminal edited-window graft KL delta", 0.039998630, exp55("late_terminal_half", "it_graft_into_pt", "graft_window")),
+    Claim("Exp55 late-terminal edited-window swap KL delta", -0.403257171, exp55("late_terminal_half", "pt_swap_into_it", "graft_window")),
+    Claim("Exp55 terminal-quarter final20 graft KL delta", 0.032808853, exp55("terminal_quarter", "it_graft_into_pt", "final_20pct")),
+    Claim("Exp55 terminal-quarter final20 swap KL delta", -0.347234229, exp55("terminal_quarter", "pt_swap_into_it", "final_20pct")),
+    Claim("Exp55 terminal-quarter edited-window graft KL delta", -0.012300406, exp55("terminal_quarter", "it_graft_into_pt", "graft_window")),
+    Claim("Exp55 terminal-quarter edited-window swap KL delta", -0.133966810, exp55("terminal_quarter", "pt_swap_into_it", "graft_window")),
+]
 
 
 CLAIMS = [
@@ -277,6 +328,7 @@ CLAIMS = [
     Claim("Exp14 Llama late swap final20 KL delta", -0.290872606, exp14_model("llama31_8b", "D_late_ptswap"), tolerance=5e-4),
     Claim("Exp14 Mistral late swap final20 KL delta", -0.272626565, exp14_model("mistral_7b", "D_late_ptswap"), tolerance=5e-4),
     Claim("Exp14 OLMo late swap final20 KL delta", -0.142105269, exp14_model("olmo2_7b", "D_late_ptswap"), tolerance=5e-4),
+    *EXP55_TABLE_CLAIMS,
 ]
 
 
