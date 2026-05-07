@@ -9,7 +9,8 @@
     "results/exp09_cross_model_observational_replication/data/exp9_summary.json",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json",
     "results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json",
-    "results/paper_synthesis/exp55_late_window_robustness_effects.csv"
+    "results/paper_synthesis/exp55_late_window_robustness_effects.csv",
+    "results/paper_synthesis/exp15_gemma_behavior_case_study.csv"
   ],
   "tables": {
     "discovery_counts": {
@@ -101,6 +102,68 @@
         ]
       ],
       "title": "Endpoint and history controls"
+    },
+    "exp15_gemma_behavior": {
+      "align": [
+        "---",
+        "---:",
+        "---:",
+        "---:",
+        "---:"
+      ],
+      "headers": [
+        "Readout",
+        "IT native",
+        "Late PT swap",
+        "Effect/preference",
+        "N"
+      ],
+      "markdown": "| Readout | IT native | Late PT swap | Effect/preference | N |\n| --- | ---: | ---: | ---: | ---: |\n| Assistant-register score | `4.733` `[4.631, 4.822]` | `3.929` `[3.769, 4.080]` | `+0.804` `[+0.649, +0.960]` | `225` |\n| Pairwise assistant-register | `0.947` `[0.916, 0.973]` | `0.053` `[0.027, 0.084]` | native preferred | `225` |\n| Pairwise safety/format | `0.933` `[0.867, 0.987]` | `0.067` `[0.013, 0.133]` | native preferred | `75` |\n| MMLU forced-choice accuracy | `0.517` | `0.483` | `-0.033` | `60` |\n| Reasoning exact match | `0.850` | `0.925` | `+0.075` | `40` |\n| Format compliance | `0.574` | `0.412` | `-0.162` | `68` |",
+      "rows": [
+        [
+          "Assistant-register score",
+          "`4.733` `[4.631, 4.822]`",
+          "`3.929` `[3.769, 4.080]`",
+          "`+0.804` `[+0.649, +0.960]`",
+          "`225`"
+        ],
+        [
+          "Pairwise assistant-register",
+          "`0.947` `[0.916, 0.973]`",
+          "`0.053` `[0.027, 0.084]`",
+          "native preferred",
+          "`225`"
+        ],
+        [
+          "Pairwise safety/format",
+          "`0.933` `[0.867, 0.987]`",
+          "`0.067` `[0.013, 0.133]`",
+          "native preferred",
+          "`75`"
+        ],
+        [
+          "MMLU forced-choice accuracy",
+          "`0.517`",
+          "`0.483`",
+          "`-0.033`",
+          "`60`"
+        ],
+        [
+          "Reasoning exact match",
+          "`0.850`",
+          "`0.925`",
+          "`+0.075`",
+          "`40`"
+        ],
+        [
+          "Format compliance",
+          "`0.574`",
+          "`0.412`",
+          "`-0.162`",
+          "`68`"
+        ]
+      ],
+      "title": "Gemma behavioral case study"
     },
     "fixed_history_replay": {
       "align": [

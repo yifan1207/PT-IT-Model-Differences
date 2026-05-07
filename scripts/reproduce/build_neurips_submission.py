@@ -463,28 +463,6 @@ def convert_body_to_latex(md_path: Path, tex_path: Path) -> None:
     )
     tex = tex_path.read_text()
     tex = tex.replace("\\begin{quote}", "\\begin{quote}\\small")
-    math_replacements = {
-        r"\texttt{t\_PT}": r"$t_{\mathrm{PT}}$",
-        r"\texttt{t\_IT}": r"$t_{\mathrm{IT}}$",
-        r"\texttt{t\_Base}": r"$t_{\mathrm{Base}}$",
-        r"\texttt{t\_Final}": r"$t_{\mathrm{Final}}$",
-        r"\texttt{t\_RLVR}": r"$t_{\mathrm{RLVR}}$",
-        r"\texttt{U\_PT}": r"$U_{\mathrm{PT}}$",
-        r"\texttt{U\_IT}": r"$U_{\mathrm{IT}}$",
-        r"\texttt{L\_PT}": r"$L_{\mathrm{PT}}$",
-        r"\texttt{L\_IT}": r"$L_{\mathrm{IT}}$",
-        r"\texttt{U\_PT,L\_PT}": r"$U_{\mathrm{PT}},L_{\mathrm{PT}}$",
-        r"\texttt{U\_PT,L\_IT}": r"$U_{\mathrm{PT}},L_{\mathrm{IT}}$",
-        r"\texttt{U\_IT,L\_PT}": r"$U_{\mathrm{IT}},L_{\mathrm{PT}}$",
-        r"\texttt{U\_IT,L\_IT}": r"$U_{\mathrm{IT}},L_{\mathrm{IT}}$",
-        r"\texttt{Y(U,L)}": r"$Y(U,L)$",
-        r"\texttt{Y(U\_PT,L\_PT)}": r"$Y(U_{\mathrm{PT}},L_{\mathrm{PT}})$",
-        r"\texttt{Y(U\_PT,L\_IT)}": r"$Y(U_{\mathrm{PT}},L_{\mathrm{IT}})$",
-        r"\texttt{Y(U\_IT,L\_PT)}": r"$Y(U_{\mathrm{IT}},L_{\mathrm{PT}})$",
-        r"\texttt{Y(U\_IT,L\_IT)}": r"$Y(U_{\mathrm{IT}},L_{\mathrm{IT}})$",
-    }
-    for src, dst in math_replacements.items():
-        tex = tex.replace(src, dst)
     tex = re.sub(
         r"\\pandocbounded\{\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}\}",
         r"\\includegraphics[width=\\linewidth,keepaspectratio]{\1}",
@@ -526,8 +504,8 @@ def write_main_tex(title: str, abstract: str, build_dir: Path) -> None:
 \usepackage{{enumitem}}
 \usepackage{{etoolbox}}
 \setlist{{nosep,leftmargin=*}}
-\setlength{{\LTleft}}{{0pt}}
-\setlength{{\LTright}}{{0pt}}
+\setlength{{\LTleft}}{{\fill}}
+\setlength{{\LTright}}{{\fill}}
 \setlength{{\tabcolsep}}{{4pt}}
 \renewcommand{{\arraystretch}}{{1.08}}
 \newcounter{{none}}

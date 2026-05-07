@@ -211,6 +211,17 @@ def exp55(window: str, side: str, region: str, column: str = "estimate") -> Numb
     return _read
 
 
+def exp15_gemma(key: str, column: str = "estimate") -> NumberFn:
+    def _read(repo: Path) -> float:
+        rows = load_csv(repo, "results/paper_synthesis/exp15_gemma_behavior_case_study.csv")
+        for row in rows:
+            if row["key"] == key:
+                return float(row[column])
+        raise KeyError(key)
+
+    return _read
+
+
 def check_generated_reporting_tables(repo: Path) -> None:
     script = repo / "scripts/analysis/build_convergence_gap_reporting_tables.py"
     if not script.exists():
@@ -318,6 +329,21 @@ CLAIMS = [
     Claim("Exp14 IT-side late swap final20 KL delta", -0.508619582, exp14("it_side_final20_kl_delta", "D_late_ptswap")),
     Claim("Exp19 true late graft KL delta", 0.327112878, exp19("late", "true_delta")),
     Claim("Exp19 random late residual-projection KL delta", 0.003236096, exp19("late", "rand_resproj_delta")),
+    Claim("Exp15 Gemma native assistant-register score", 4.733333333, exp15_gemma("gemma_g2_pointwise_C_it_chat")),
+    Claim("Exp15 Gemma late-swap assistant-register score", 3.928888889, exp15_gemma("gemma_g2_pointwise_D_late_ptswap")),
+    Claim("Exp15 Gemma late-swap assistant-register drop", 0.804444444, exp15_gemma("gemma_g2_late_swap_drop")),
+    Claim("Exp15 Gemma late-swap assistant-register drop CI low", 0.648888889, exp15_gemma("gemma_g2_late_swap_drop", "ci95_low")),
+    Claim("Exp15 Gemma late-swap assistant-register drop CI high", 0.960000000, exp15_gemma("gemma_g2_late_swap_drop", "ci95_high")),
+    Claim("Exp15 Gemma assistant-register native pairwise win", 0.946666667, exp15_gemma("gemma_pairwise_assistant_register_g2_native_win")),
+    Claim("Exp15 Gemma assistant-register native pairwise win CI low", 0.915555556, exp15_gemma("gemma_pairwise_assistant_register_g2_native_win", "ci95_low")),
+    Claim("Exp15 Gemma assistant-register native pairwise win CI high", 0.973333333, exp15_gemma("gemma_pairwise_assistant_register_g2_native_win", "ci95_high")),
+    Claim("Exp15 Gemma safety-format native pairwise win", 0.933333333, exp15_gemma("gemma_pairwise_safety_format_s2_native_win")),
+    Claim("Exp15 Gemma safety-format native pairwise win CI low", 0.866666667, exp15_gemma("gemma_pairwise_safety_format_s2_native_win", "ci95_low")),
+    Claim("Exp15 Gemma safety-format native pairwise win CI high", 0.986666667, exp15_gemma("gemma_pairwise_safety_format_s2_native_win", "ci95_high")),
+    Claim("Exp15 Gemma native MMLU forced choice", 0.516666667, exp15_gemma("gemma_programmatic_mmlu_forced_choice_C_it_chat")),
+    Claim("Exp15 Gemma late-swap MMLU forced choice", 0.483333333, exp15_gemma("gemma_programmatic_mmlu_forced_choice_D_late_ptswap")),
+    Claim("Exp15 Gemma native reasoning EM", 0.850000000, exp15_gemma("gemma_programmatic_reasoning_em_C_it_chat")),
+    Claim("Exp15 Gemma late-swap reasoning EM", 0.925000000, exp15_gemma("gemma_programmatic_reasoning_em_D_late_ptswap")),
     Claim("Exp11 Gemma late graft final20 KL delta", 0.609353042, exp11_model("gemma3_4b", "B_late_raw", "delta"), tolerance=5e-4),
     Claim("Exp11 Qwen late graft final20 KL delta", 0.490619414, exp11_model("qwen3_4b", "B_late_raw", "delta"), tolerance=5e-4),
     Claim("Exp11 Llama late graft final20 KL delta", 0.310460229, exp11_model("llama31_8b", "B_late_raw", "delta"), tolerance=5e-4),

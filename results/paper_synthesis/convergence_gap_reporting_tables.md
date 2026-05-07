@@ -20,6 +20,19 @@
 | PT MLP swap into IT host | `-0.10` | `-0.23` | `-0.51` |
 <!-- /REPORT_TABLE -->
 
+## Gemma behavioral case study
+
+<!-- REPORT_TABLE: exp15_gemma_behavior -->
+| Readout | IT native | Late PT swap | Effect/preference | N |
+| --- | ---: | ---: | ---: | ---: |
+| Assistant-register score | `4.733` `[4.631, 4.822]` | `3.929` `[3.769, 4.080]` | `+0.804` `[+0.649, +0.960]` | `225` |
+| Pairwise assistant-register | `0.947` `[0.916, 0.973]` | `0.053` `[0.027, 0.084]` | native preferred | `225` |
+| Pairwise safety/format | `0.933` `[0.867, 0.987]` | `0.067` `[0.013, 0.133]` | native preferred | `75` |
+| MMLU forced-choice accuracy | `0.517` | `0.483` | `-0.033` | `60` |
+| Reasoning exact match | `0.850` | `0.925` | `+0.075` | `40` |
+| Format compliance | `0.574` | `0.412` | `-0.162` | `68` |
+<!-- /REPORT_TABLE -->
+
 ## Fixed-history replay audit
 
 <!-- REPORT_TABLE: fixed_history_replay -->

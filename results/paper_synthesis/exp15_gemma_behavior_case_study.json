@@ -1,0 +1,156 @@
+{
+  "assistant_register_late_delta": {
+    "ci95": [
+      0.6488888888888888,
+      0.96
+    ],
+    "mean": 0.8044444444444444,
+    "n": 225
+  },
+  "assistant_register_pointwise": {
+    "C_it_chat": {
+      "ci95": [
+        4.631111111111111,
+        4.822222222222222
+      ],
+      "mean": 4.733333333333333,
+      "n": 225
+    },
+    "D_early_ptswap": {
+      "ci95": [
+        4.666666666666667,
+        4.831111111111111
+      ],
+      "mean": 4.751111111111111,
+      "n": 225
+    },
+    "D_late_ptswap": {
+      "ci95": [
+        3.7688888888888887,
+        4.08
+      ],
+      "mean": 3.928888888888889,
+      "n": 225
+    },
+    "D_mid_ptswap": {
+      "ci95": [
+        4.1066666666666665,
+        4.36
+      ],
+      "mean": 4.235555555555556,
+      "n": 225
+    }
+  },
+  "conditions": {
+    "baseline": "C_it_chat",
+    "early_control": "D_early_ptswap",
+    "late_swap": "D_late_ptswap",
+    "mid_control": "D_mid_ptswap"
+  },
+  "model": "gemma3_4b",
+  "n_prompt_records": 975,
+  "pairwise_native_vs_late_swap": {
+    "assistant_register_g2": {
+      "counts": {
+        "C_it_chat": 213,
+        "D_late_ptswap": 12
+      },
+      "n": 225,
+      "other_win_ci95": [
+        0.02666666666666667,
+        0.08444444444444445
+      ],
+      "other_win_rate": 0.05333333333333334,
+      "other_win_rate_resolved": 0.05333333333333334,
+      "other_win_rate_resolved_ci95": [
+        0.02666666666666667,
+        0.08444444444444445
+      ],
+      "resolved_n": 225,
+      "target_condition": "C_it_chat",
+      "target_win_ci95": [
+        0.9155555555555556,
+        0.9733333333333334
+      ],
+      "target_win_rate": 0.9466666666666667,
+      "target_win_rate_resolved": 0.9466666666666667,
+      "target_win_rate_resolved_ci95": [
+        0.9155555555555556,
+        0.9733333333333334
+      ],
+      "tie_rate": 0.0,
+      "tie_rate_ci95": [
+        0.0,
+        0.0
+      ]
+    },
+    "safety_format_s2": {
+      "counts": {
+        "C_it_chat": 70,
+        "D_late_ptswap": 5
+      },
+      "n": 75,
+      "other_win_ci95": [
+        0.013333333333333334,
+        0.13333333333333333
+      ],
+      "other_win_rate": 0.06666666666666667,
+      "other_win_rate_resolved": 0.06666666666666667,
+      "other_win_rate_resolved_ci95": [
+        0.013333333333333334,
+        0.13333333333333333
+      ],
+      "resolved_n": 75,
+      "target_condition": "C_it_chat",
+      "target_win_ci95": [
+        0.8666666666666667,
+        0.9866666666666667
+      ],
+      "target_win_rate": 0.9333333333333333,
+      "target_win_rate_resolved": 0.9333333333333333,
+      "target_win_rate_resolved_ci95": [
+        0.8666666666666667,
+        0.9866666666666667
+      ],
+      "tie_rate": 0.0,
+      "tie_rate_ci95": [
+        0.0,
+        0.0
+      ]
+    }
+  },
+  "programmatic_checks": {
+    "format_compliance_v2": {
+      "C_it_chat": {
+        "n": 68,
+        "value": 0.5735294117647058
+      },
+      "D_late_ptswap": {
+        "n": 68,
+        "value": 0.4117647058823529
+      }
+    },
+    "mmlu_forced_choice": {
+      "C_it_chat": {
+        "n": 60,
+        "value": 0.5166666666666667
+      },
+      "D_late_ptswap": {
+        "n": 60,
+        "value": 0.48333333333333334
+      }
+    },
+    "reasoning_em": {
+      "C_it_chat": {
+        "n": 40,
+        "value": 0.85
+      },
+      "D_late_ptswap": {
+        "n": 40,
+        "value": 0.925
+      }
+    }
+  },
+  "selection_rule": "Gemma is used as an illustrative case study because it has the largest bidirectional late-window convergence intervention effects in the dense-family late-window table.",
+  "source_artifact": "results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/exp15_behavior_summary.json"
+}

@@ -19,6 +19,36 @@ intervention_windows,1,PT MLP swap into IT host,Intervention,PT MLP swap into IT
 intervention_windows,1,PT MLP swap into IT host,Early,`-0.10`
 intervention_windows,1,PT MLP swap into IT host,Middle,`-0.23`
 intervention_windows,1,PT MLP swap into IT host,Late,`-0.51`
+exp15_gemma_behavior,0,Assistant-register score,Readout,Assistant-register score
+exp15_gemma_behavior,0,Assistant-register score,IT native,"`4.733` `[4.631, 4.822]`"
+exp15_gemma_behavior,0,Assistant-register score,Late PT swap,"`3.929` `[3.769, 4.080]`"
+exp15_gemma_behavior,0,Assistant-register score,Effect/preference,"`+0.804` `[+0.649, +0.960]`"
+exp15_gemma_behavior,0,Assistant-register score,N,`225`
+exp15_gemma_behavior,1,Pairwise assistant-register,Readout,Pairwise assistant-register
+exp15_gemma_behavior,1,Pairwise assistant-register,IT native,"`0.947` `[0.916, 0.973]`"
+exp15_gemma_behavior,1,Pairwise assistant-register,Late PT swap,"`0.053` `[0.027, 0.084]`"
+exp15_gemma_behavior,1,Pairwise assistant-register,Effect/preference,native preferred
+exp15_gemma_behavior,1,Pairwise assistant-register,N,`225`
+exp15_gemma_behavior,2,Pairwise safety/format,Readout,Pairwise safety/format
+exp15_gemma_behavior,2,Pairwise safety/format,IT native,"`0.933` `[0.867, 0.987]`"
+exp15_gemma_behavior,2,Pairwise safety/format,Late PT swap,"`0.067` `[0.013, 0.133]`"
+exp15_gemma_behavior,2,Pairwise safety/format,Effect/preference,native preferred
+exp15_gemma_behavior,2,Pairwise safety/format,N,`75`
+exp15_gemma_behavior,3,MMLU forced-choice accuracy,Readout,MMLU forced-choice accuracy
+exp15_gemma_behavior,3,MMLU forced-choice accuracy,IT native,`0.517`
+exp15_gemma_behavior,3,MMLU forced-choice accuracy,Late PT swap,`0.483`
+exp15_gemma_behavior,3,MMLU forced-choice accuracy,Effect/preference,`-0.033`
+exp15_gemma_behavior,3,MMLU forced-choice accuracy,N,`60`
+exp15_gemma_behavior,4,Reasoning exact match,Readout,Reasoning exact match
+exp15_gemma_behavior,4,Reasoning exact match,IT native,`0.850`
+exp15_gemma_behavior,4,Reasoning exact match,Late PT swap,`0.925`
+exp15_gemma_behavior,4,Reasoning exact match,Effect/preference,`+0.075`
+exp15_gemma_behavior,4,Reasoning exact match,N,`40`
+exp15_gemma_behavior,5,Format compliance,Readout,Format compliance
+exp15_gemma_behavior,5,Format compliance,IT native,`0.574`
+exp15_gemma_behavior,5,Format compliance,Late PT swap,`0.412`
+exp15_gemma_behavior,5,Format compliance,Effect/preference,`-0.162`
+exp15_gemma_behavior,5,Format compliance,N,`68`
 fixed_history_replay,0,IT-native continuation,Teacher history,IT-native continuation
 fixed_history_replay,0,IT-native continuation,Estimator,paired same prompt/step
 fixed_history_replay,0,IT-native continuation,IT native - PT raw,"`+1.181` `[+1.153, +1.211]`"

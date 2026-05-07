@@ -35,6 +35,7 @@ EXP14_SUMMARY = (
     "exp13exp14_full_20260416/exp13_full_summary.json"
 )
 EXP55_EFFECTS = "results/paper_synthesis/exp55_late_window_robustness_effects.csv"
+EXP15_GEMMA_BEHAVIOR = "results/paper_synthesis/exp15_gemma_behavior_case_study.csv"
 
 SOURCE_ARTIFACTS = [
     ENDPOINT_TABLE,
@@ -46,6 +47,7 @@ SOURCE_ARTIFACTS = [
     EXP11_METRICS,
     EXP14_SUMMARY,
     EXP55_EFFECTS,
+    EXP15_GEMMA_BEHAVIOR,
 ]
 
 MODEL_ORDER = [
@@ -365,10 +367,88 @@ def build_late_window_width_center(repo: Path) -> Table:
     )
 
 
+def build_exp15_gemma_behavior(repo: Path) -> Table:
+    rows = load_csv(repo, EXP15_GEMMA_BEHAVIOR)
+
+    def row(key: str) -> dict[str, str]:
+        return by_key(rows, key)
+
+    def effect(key: str, digits: int = 3, *, signed: bool = True) -> str:
+        r = row(key)
+        if r["ci95_low"] and r["ci95_high"]:
+            value = fmt_num(r["estimate"], digits, signed=signed)
+            ci_low = fmt_num(r["ci95_low"], digits, signed=signed)
+            ci_high = fmt_num(r["ci95_high"], digits, signed=signed)
+            return f"`{value}` `[{ci_low}, {ci_high}]`"
+        return f"`{fmt_num(r['estimate'], digits, signed=signed)}`"
+
+    c_g2 = row("gemma_g2_pointwise_C_it_chat")
+    d_g2 = row("gemma_g2_pointwise_D_late_ptswap")
+    mmlu_c = row("gemma_programmatic_mmlu_forced_choice_C_it_chat")
+    mmlu_d = row("gemma_programmatic_mmlu_forced_choice_D_late_ptswap")
+    reason_c = row("gemma_programmatic_reasoning_em_C_it_chat")
+    reason_d = row("gemma_programmatic_reasoning_em_D_late_ptswap")
+    fmt_c = row("gemma_programmatic_format_compliance_v2_C_it_chat")
+    fmt_d = row("gemma_programmatic_format_compliance_v2_D_late_ptswap")
+
+    table_rows = [
+        [
+            "Assistant-register score",
+            f"`{float(c_g2['estimate']):.3f}` `[{float(c_g2['ci95_low']):.3f}, {float(c_g2['ci95_high']):.3f}]`",
+            f"`{float(d_g2['estimate']):.3f}` `[{float(d_g2['ci95_low']):.3f}, {float(d_g2['ci95_high']):.3f}]`",
+            effect("gemma_g2_late_swap_drop"),
+            f"`{int(c_g2['n'])}`",
+        ],
+        [
+            "Pairwise assistant-register",
+            effect("gemma_pairwise_assistant_register_g2_native_win", signed=False),
+            effect("gemma_pairwise_assistant_register_g2_late_swap_win", signed=False),
+            "native preferred",
+            f"`{int(row('gemma_pairwise_assistant_register_g2_native_win')['n'])}`",
+        ],
+        [
+            "Pairwise safety/format",
+            effect("gemma_pairwise_safety_format_s2_native_win", signed=False),
+            effect("gemma_pairwise_safety_format_s2_late_swap_win", signed=False),
+            "native preferred",
+            f"`{int(row('gemma_pairwise_safety_format_s2_native_win')['n'])}`",
+        ],
+        [
+            "MMLU forced-choice accuracy",
+            f"`{float(mmlu_c['estimate']):.3f}`",
+            f"`{float(mmlu_d['estimate']):.3f}`",
+            f"`{float(mmlu_d['estimate']) - float(mmlu_c['estimate']):+.3f}`",
+            f"`{int(mmlu_c['n'])}`",
+        ],
+        [
+            "Reasoning exact match",
+            f"`{float(reason_c['estimate']):.3f}`",
+            f"`{float(reason_d['estimate']):.3f}`",
+            f"`{float(reason_d['estimate']) - float(reason_c['estimate']):+.3f}`",
+            f"`{int(reason_c['n'])}`",
+        ],
+        [
+            "Format compliance",
+            f"`{float(fmt_c['estimate']):.3f}`",
+            f"`{float(fmt_d['estimate']):.3f}`",
+            f"`{float(fmt_d['estimate']) - float(fmt_c['estimate']):+.3f}`",
+            f"`{int(fmt_c['n'])}`",
+        ],
+    ]
+    return Table(
+        key="exp15_gemma_behavior",
+        title="Gemma behavioral case study",
+        headers=["Readout", "IT native", "Late PT swap", "Effect/preference", "N"],
+        rows=table_rows,
+        align=["---", "---:", "---:", "---:", "---:"],
+    )
+
+
 def build_tables(repo: Path) -> list[Table]:
     return [
         build_endpoint_controls(repo),
         build_intervention_windows(repo),
+        build_exp15_gemma_behavior(repo),
         build_fixed_history_replay(repo),
         build_discovery_counts(repo),
         build_late_window_family(repo),

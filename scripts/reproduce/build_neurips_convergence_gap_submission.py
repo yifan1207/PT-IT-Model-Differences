@@ -38,6 +38,7 @@ STATIC_FILES = [
     "scripts/analysis/analyze_exp22_fixed_history_template_audit.py",
     "scripts/analysis/build_exp22_fixed_history_template_audit.py",
     "scripts/analysis/analyze_exp55_late_window_robustness.py",
+    "scripts/analysis/build_exp15_gemma_behavior_case_study.py",
     "scripts/run/run_exp22_fixed_history_template_audit_runpod.sh",
     "scripts/run/run_exp55_late_window_robustness_runpod.sh",
 ]
@@ -62,6 +63,7 @@ RESULT_FILES = [
     "results/paper_synthesis/exp22_fixed_history_template_audit_support.csv",
     "results/paper_synthesis/exp22_fixed_history_template_audit_note.md",
     "results/paper_synthesis/exp22_fixed_history_template_audit.png",
+    "results/paper_synthesis/exp22_fixed_history_template_audit_main.png",
     "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit.json",
     "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_effects.csv",
     "results/paper_synthesis/exp22_fixed_history_pt_teacher_audit_support.csv",
@@ -71,6 +73,11 @@ RESULT_FILES = [
     "results/paper_synthesis/exp55_late_window_robustness_effects.csv",
     "results/paper_synthesis/exp55_late_window_robustness_note.md",
     "results/paper_synthesis/exp55_late_window_robustness.png",
+    "results/paper_synthesis/exp15_gemma_behavior_case_study.json",
+    "results/paper_synthesis/exp15_gemma_behavior_case_study.csv",
+    "results/paper_synthesis/exp15_gemma_behavior_case_study_note.md",
+    "results/paper_synthesis/exp15_gemma_behavior_case_study.png",
+    "results/exp15_symmetric_behavioral_causality/plots/exp15_eval_core_600_t512_dense5/exp15_behavior_summary.json",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_metrics.json",
     "results/exp11_matched_prefix_mlp_graft/plots/exp11_exp3_600rand_v11_depthablation_full/depth_ablation_paper_main.png",
     "results/exp14_symmetric_matched_prefix_causality/exp13exp14_full_20260416/exp13_full_summary.json",
@@ -168,6 +175,7 @@ def split_markdown(md: str) -> tuple[str, str, str]:
 
 
 def refresh_reporting_tables() -> None:
+    run(["python", "scripts/analysis/build_exp15_gemma_behavior_case_study.py"])
     run(["python", "scripts/analysis/build_convergence_gap_reporting_tables.py"])
 
 
@@ -203,11 +211,30 @@ def strip_heading_number(text: str) -> str:
     return text
 
 
+def latex_escape_caption(text: str) -> str:
+    """Escape plain-text Markdown image captions for raw LaTeX figure blocks."""
+    text = re.sub(r"^Figure\s+\d+:\s*", "", text.strip())
+    replacements = {
+        "\\": r"\textbackslash{}",
+        "&": r"\&",
+        "%": r"\%",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "{": r"\{",
+        "}": r"\}",
+    }
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+    return text
+
+
 def rewrite_image_paths(md: str, figures_dir: Path) -> str:
     pattern = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
     seen: dict[str, str] = {}
 
     def repl(match: re.Match[str]) -> str:
+        caption = latex_escape_caption(match.group(1))
         raw_path = match.group(2)
         source = (PAPER_MD.parent / raw_path).resolve()
         if not source.exists():
@@ -218,16 +245,18 @@ def rewrite_image_paths(md: str, figures_dir: Path) -> str:
             shutil.copy2(source, figures_dir / Path(target).name)
             seen[str(source)] = target
         target = seen[str(source)]
-        height = "0.24\\textheight"
+        height = "0.20\\textheight"
         if "L2_mean_kl_per_layer" in target:
-            height = "0.30\\textheight"
-        if "dose_response" in target:
             height = "0.22\\textheight"
+        if "dose_response" in target:
+            height = "0.18\\textheight"
         return "\n".join(
             [
-                r"\begin{center}",
+                r"\begin{figure}[H]",
+                r"\centering",
                 rf"\includegraphics[width=0.94\linewidth,height={height},keepaspectratio]{{{target}}}",
-                r"\end{center}",
+                rf"\caption{{{caption}}}",
+                r"\end{figure}",
             ]
         )
 
@@ -286,75 +315,61 @@ def convert_body_to_latex() -> None:
 
 
 def write_checklist() -> None:
-    text = r"""
-\section*{NeurIPS Paper Checklist}
+    """Fill the official NeurIPS checklist while preserving all questions/guidelines."""
 
-\begin{enumerate}
-\item {\bf Claims}
-\item[] Answer: \answerYes{}
-\item[] Justification: The abstract and introduction state the convergence-gap target, endpoint controls, and matched-prefix intervention scope.
-
-\item {\bf Limitations}
-\item[] Answer: \answerYes{}
-\item[] Justification: The discussion and appendices cover endpoint/probe dependence, constructed interventions, model-family scope, and MoE scope.
-
-\item {\bf Theory assumptions and proofs}
-\item[] Answer: \answerNA{}
-\item[] Justification: The paper is empirical and presents no formal theorem.
-
-\item {\bf Experimental result reproducibility}
-\item[] Answer: \answerYes{}
-\item[] Justification: The appendix and supplement include a CPU claim checker over committed JSON/CSV summaries and identify the raw multi-GPU rerun families.
-
-\item {\bf Open access to data and code}
-\item[] Answer: \answerYes{}
-\item[] Justification: The intended anonymous supplement includes analysis code, summary artifacts, figures, and a manifest.
-
-\item {\bf Experimental setting/details}
-\item[] Answer: \answerYes{}
-\item[] Justification: The setup describes model pairs, convergence metrics, endpoint controls, and matched-prefix interventions.
-
-\item {\bf Experiment statistical significance}
-\item[] Answer: \answerYes{}
-\item[] Justification: Main numeric claims report bootstrap confidence intervals or matched random controls where applicable.
-
-\item {\bf Experiments compute resources}
-\item[] Answer: \answerYes{}
-\item[] Justification: The artifact map distinguishes CPU summary checks from optional multi-GPU raw reruns.
-
-\item {\bf Code of ethics}
-\item[] Answer: \answerYes{}
-\item[] Justification: The work analyzes released language-model checkpoints and synthetic/evaluation prompts.
-
-\item {\bf Broader impacts}
-\item[] Answer: \answerYes{}
-\item[] Justification: The work is a mechanistic diagnostic for model diffing; it does not release a new deployed model.
-
-\item {\bf Safeguards}
-\item[] Answer: \answerNA{}
-\item[] Justification: No new high-risk model or dataset is released.
-
-\item {\bf Licenses for existing assets}
-\item[] Answer: \answerYes{}
-\item[] Justification: Final artifacts should preserve model and dataset license metadata.
-
-\item {\bf New assets}
-\item[] Answer: \answerNA{}
-\item[] Justification: The paper releases derived summaries and code, not a new dataset or model.
-
-\item {\bf Crowdsourcing and research with human subjects}
-\item[] Answer: \answerNA{}
-\item[] Justification: No human-subject data collection is used for the main claims.
-
-\item {\bf Institutional review board approvals or equivalent}
-\item[] Answer: \answerNA{}
-\item[] Justification: No human-subject study was conducted.
-
-\item {\bf Declaration of LLM usage}
-\item[] Answer: \answerYes{}
-\item[] Justification: LLMs are used in auxiliary judge-style scoring; the core convergence-gap and intervention estimands are deterministic.
-\end{enumerate}
-"""
+    text = (BUILD_DIR / "checklist.tex").read_text()
+    text = re.sub(
+        r"\n?%%% BEGIN INSTRUCTIONS %%%.*?%%% END INSTRUCTIONS %%%\n?",
+        "\n",
+        text,
+        flags=re.S,
+    )
+    answers = [
+        r"\answerYes{}",
+        r"\answerYes{}",
+        r"\answerNA{}",
+        r"\answerYes{}",
+        r"\answerYes{}",
+        r"\answerYes{}",
+        r"\answerYes{}",
+        r"\answerYes{}",
+        r"\answerYes{}",
+        r"\answerYes{}",
+        r"\answerNA{}",
+        r"\answerYes{}",
+        r"\answerNA{}",
+        r"\answerNA{}",
+        r"\answerNA{}",
+        r"\answerYes{}",
+    ]
+    justifications = [
+        r"The abstract and introduction state the convergence-gap target, paired base-to-instruct scope, endpoint/history controls, and matched-prefix intervention scope; limitations are revisited in the discussion.",
+        r"The discussion and appendices cover endpoint/probe dependence, fixed-history and template controls, constructed interventions, dense-family scope, MoE scope, and the lack of full circuit recovery.",
+        r"The paper is empirical and does not present formal theoretical results requiring proof.",
+        r"The setup and appendices specify the paired checkpoints, datasets, convergence metrics, endpoint controls, matched-prefix interventions, scripts, and artifact map needed to reproduce the main claims.",
+        r"The paper is intended to be submitted with an anonymized code/artifact bundle; Appendix~D maps the main claims to scripts, summary artifacts, and a CPU claim checker.",
+        r"Sections~2--3 and the appendices describe model pairs, prompt supports, convergence-gap metrics, endpoint matching, fixed-history replay, matched-prefix intervention windows, and evaluation metrics.",
+        r"Main numeric claims report bootstrap confidence intervals, endpoint-matched controls, matched-random controls, or family-balanced summaries where appropriate.",
+        r"Appendix~D separates CPU-only summary checks from optional multi-GPU raw reruns and identifies the GPU class needed for raw convergence-gap and matched-prefix intervention regeneration.",
+        r"The work analyzes released/open checkpoints and synthetic/evaluation prompts and is intended to conform to the NeurIPS Code of Ethics.",
+        r"The work is a mechanistic diagnostic for model diffing rather than a deployed system. Positive impacts are improved auditability of post-trained models; negative impacts could include more precise model-editing diagnostics, so claims and artifacts are scoped to analysis.",
+        r"The paper does not release a new high-risk model or dataset requiring additional safeguards.",
+        r"The paper uses released model checkpoints and public or synthetic evaluation prompts; the supplement does not redistribute model weights, and final artifacts should preserve model and dataset license metadata.",
+        r"The paper does not introduce a new dataset or model as a primary artifact, beyond analysis code and derived experimental summaries.",
+        r"No crowdsourcing or human-subject data collection was used.",
+        r"No human-subject study was conducted.",
+        r"LLMs are not used for the deterministic convergence-gap and intervention estimands; LLM usage is limited to writing/editing assistance and any explicitly marked auxiliary interpretation or scoring artifacts.",
+    ]
+    if text.count(r"\answerTODO{}") != len(answers):
+        raise RuntimeError("Official checklist answer count changed")
+    if text.count(r"\justificationTODO{}") != len(justifications):
+        raise RuntimeError("Official checklist justification count changed")
+    for answer in answers:
+        text = text.replace(r"\answerTODO{}", answer, 1)
+    for justification in justifications:
+        text = text.replace(r"\justificationTODO{}", justification, 1)
+    if "BEGIN INSTRUCTIONS" in text or "TODO" in text:
+        raise RuntimeError("Filled checklist still contains instructions or TODO markers")
     (BUILD_DIR / "checklist_filled.tex").write_text(text.strip() + "\n")
 
 
@@ -377,6 +392,7 @@ def write_main_tex(title: str, abstract: str) -> None:
 \usepackage{{array}}
 \usepackage{{calc}}
 \usepackage{{caption}}
+\usepackage{{float}}
 \usepackage{{textcomp}}
 \usepackage{{upquote}}
 \usepackage{{enumitem}}
@@ -572,6 +588,10 @@ hardware.
                         "results/exp11_matched_prefix_mlp_graft",
                         "results/exp14_symmetric_matched_prefix_causality",
                         "results/exp19_late_mlp_specificity_controls",
+                    ],
+                    "gemma_behavior_case_study": [
+                        "results/paper_synthesis/exp15_gemma_behavior_case_study.json",
+                        "results/paper_synthesis/exp15_gemma_behavior_case_study.csv",
                     ],
                     "cpu_checks": [
                         "scripts/reproduce/check_convergence_gap_claims.py",
