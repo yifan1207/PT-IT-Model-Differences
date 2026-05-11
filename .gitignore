@@ -413,6 +413,7 @@ results/exp23_midlate_interaction_suite/**
 paper_draft/*
 !paper_draft/PAPER_DRAFT_v25.md
 !paper_draft/PAPER_DRAFT_v25.pdf
+paper_draft/submission_convergence_gap/
 
 .DS_Store
 cache/
